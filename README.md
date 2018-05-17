@@ -58,18 +58,35 @@ We hope this proves useful for medical imaging research. If you use our work, we
 **Install packages**
 1. Numpy+MKL from https://www.lfd.uci.edu/~gohlke/pythonlibs/#numpy
 2. ```conda install matplotlib```
-3. ```conda install -c conda-forge numexpr```
-4. ```conda install -c conda-forge pydicom```
-5. ```conda install -c anaconda scikit-image```
-6. ```pip install pycuda```
-7. ```Pip install tensorboard```
-8. ```Pip install tensorboardX```
+3. ```conda install -c conda-forge pydicom```
+4. ```conda install -c anaconda scikit-image```
+5. ```pip install pycuda```
+6. ```Pip install tensorboard```
+7. ```Pip install tensorboardX```
 
 **Install pytorch**
 1. Follow [peterjc123's scripts to run PyTorch on Windows](https://github.com/peterjc123/pytorch-scripts "peterjc123 PyTorch").
 2. ```conda install -c peterjc123 pytorch```
 3. ```pip install torchvision```
+
+**Getting started**
+* The script example_projector.py implements a complete pipeline for data generation.
   
 **PyCuda not working?**
 * Try to add C compiler to path. Most likely the path is: “C:\Program Files (x86)\Microsoft Visual Studio 14.0\VC\bin\”.
 
+## Acknowledgments
+CUDA Cubic B-Spline Interpolation (CI) used in the projector:  
+https://github.com/DannyRuijters/CubicInterpolationCUDA  
+D. Ruijters, B. M. ter Haar Romeny, and P. Suetens. Efficient GPU-Based Texture Interpolation using Uniform B-Splines. Journal of Graphics Tools, vol. 13, no. 4, pp. 61-69, 2008.  
+
+The projector is a heavily modified and ported version of the implementation in CONRAD:  
+https://github.com/akmaier/CONRAD  
+A. Maier, H. G. Hofmann, M. Berger, P. Fischer, C. Schwemmer, H. Wu, K. Müller, J. Hornegger, J. H. Choi, C. Riess, A. Keil, and R. Fahrig. CONRAD—A software framework for cone-beam imaging in radiology. Medical Physics 40(11):111914-1-8. 2013.  
+
+Spectra are taken from MCGPU:  
+A. Badal, A. Badano, Accelerating Monte Carlo simulations of photon transport in a voxelized geometry using a massively parallel graphics processing unit. Med Phys. 2009 Nov;36(11): 4878–80.  
+
+The segmentation pipeline is based on the Vnet architecture:  
+https://github.com/mattmacy/vnet.pytorch  
+F. Milletari, N. Navab, S-A. Ahmadi. V-Net: Fully Convolutional Neural Networks for Volumetric Medical Image Segmentation. arXiv:160604797. 2016.
