@@ -57,7 +57,7 @@ We hope this proves useful for medical imaging research. If you use our work, we
 
 **Install CUDA 8.0**
 1. ```conda create -n pytorch python=3.6```
-2. ```conda activate pytorch```
+2. ```activate pytorch```
 
 **Install packages**
 1. Numpy+MKL from https://www.lfd.uci.edu/~gohlke/pythonlibs/#numpy
