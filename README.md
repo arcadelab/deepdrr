@@ -52,7 +52,7 @@ We hope this proves useful for medical imaging research. If you use our work, we
 ### Instructions for Windows:
 
 **Download segmentation network weights**
-* Due to file size limitations, please download the segmentation network weights from https://www.dropbox.com/s/0kqsjdg9mbldmpa/model_segmentation.pth.tar?dl=0.
+* Due to file size limitations, please download the segmentation network weights from https://www.dropbox.com/s/pn4aw4z2i01eoo4/model_segmentation.pth.tar?dl=0.
 * Place the file "model_segmentation.pth.tar" in the DeepDRR source folder.
 
 **Install CUDA 8.0**
