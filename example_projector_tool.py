@@ -23,7 +23,7 @@ def generate_projections_on_sphere(CT_volume_path,save_path,min_theta,max_theta,
     origin = [70,0,10]
     origin_metal = [0,50,10]
     
-    metal_path =  r"./sample_metal_volume/cement.dcm"
+    metal_path =  r"./sample_metal_volume/sample.dcm"
     #load CT volume
     trun = 1000
     ori_CT_volume, CT_volume, CT_materials, CT_voxel_size = load_dicom_CT(CT_volume_path, fixed_slice_thinckness=1.0, truncate=[[0,None],[0,None],[0,trun]], use_thresholding_segmentation=True)
@@ -87,8 +87,7 @@ def main():
     ####
     #define the path to your dicoms here or use the simple phantom from the code above
     ####
-    #dicompath = r".\your_dicom_directory\\"
-    CT_volume_path = r"/home/cong/Documents/Research/Snake_Registration/DRR_Projection/data/CT_data/PAO_1"
+    CT_volume_path = r".\your_dicom_directory\\"
 
     #save_path = r".\generated_data\test"
     save_path = r"./test"
