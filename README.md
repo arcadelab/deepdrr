@@ -47,6 +47,10 @@ DeepDRR has also been applied to simulate X-rays of the femur during insertion o
 2. The density of the tool needs to be provided via hard coding in the file 'load_dicom_tool.py' (line 127). The pose of the tool/implant with respect to the CT volume requires manual setup. We provide one example origin setting at line 23-24.
 3. The tool/implant will supersede the anatomy defined by the CT volume intensities. To this end, we sample the CT materials and densities at the location of the tool in the tool volume, and subtract them from the anatomy forward projections in detector domain (to enable different resolutions of CT and tool volume). Further information can be found in the IJCARS article.
 
+### Running DeepDRR in Google Colaboratory
+
+The codebase provided here was not developed with Google Colaboratory in mind, but our userbase has found small tweaks to the code to make it work in Colab. Kindly refer to https://github.com/mathiasunberath/DeepDRR/issues/6 and https://github.com/mathiasunberath/DeepDRR/issues/5 for the required changes. 
+
 ## Reference
 
 We hope this proves useful for medical imaging research. If you use our work, we would kindly ask you to reference our work. 
