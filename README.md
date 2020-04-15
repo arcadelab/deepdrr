@@ -49,7 +49,7 @@ DeepDRR has also been applied to simulate X-rays of the femur during insertion o
 
 ### Running DeepDRR in Google Colaboratory
 
-The codebase provided here was not developed with Google Colaboratory in mind, but our userbase has found small tweaks to the code to make it work in Colab. Kindly refer to https://github.com/mathiasunberath/DeepDRR/issues/6 and https://github.com/mathiasunberath/DeepDRR/issues/5 for the required changes. 
+The codebase provided here was not developed with Google Colaboratory in mind, but our userbase has found small tweaks to the code to make it work in Colab. Kindly refer to https://github.com/mathiasunberath/DeepDRR/issues/6 and https://github.com/mathiasunberath/DeepDRR/issues/5 for the required changes. More guidance is available in https://github.com/mathiasunberath/DeepDRR/issues/13#issuecomment-614246840.
 
 ## Reference
 
