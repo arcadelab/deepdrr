@@ -1,3 +1,15 @@
+# `deepdrr`
+
+`deepdrr` (note the lower-case) is an easy-to-use version of
+[DeepDRR](https://github.com/mathiasunberath/DeepDRR). It's main advantage is being
+`pip`-installable:
+
+```bash
+pip install deepdrr
+```
+
+The original README follows.
+
 # DeepDRR
 Implementation of our early-accepted MICCAI'18 paper "DeepDRR: A Catalyst for Machine Learning in Fluoroscopy-guided Procedures" and the subsequent Invited Journal Article in the IJCARS Special Issue of MICCAI "Enabling Machine Learning in X-ray-based Procedures via Realistic Simulation of Image Formation". 
 The conference preprint can be accessed on arXiv here:  https://arxiv.org/abs/1803.08606.
@@ -12,23 +24,23 @@ DeepDRR aims at providing medical image computing and computer assisted interven
 ### Method Overview
 To this end, DeepDRR combines machine learning models for material decomposition and scatter estimation in 3D and 2D, respectively, with analytic models for projection, attenuation, and noise injection to achieve the required performance. The pipeline is illustrated below. 
 
-![DeepDRR Pipeline](https://raw.githubusercontent.com/mathiasunberath/DeepDRR/master/readme_images/deepdrr_workflow.png)
+![DeepDRR Pipeline](images/deepdrr_workflow.png)
 
 ### Representative Results
 The figure below shows representative radiographs generated using DeepDRR from CT data downloaded from the NIH Cancer Imaging Archive. Please find qualitative results in the **Applications** section.
 
-![Representative DeepDRRs](https://raw.githubusercontent.com/mathiasunberath/DeepDRR/master/readme_images/examples.PNG)
+![Representative DeepDRRs](images/examples.PNG)
 
 ### Applications - Pelvis Landmark Detection
 
 We have applied DeepDRR to anatomical landmark detection in pelvic X-ray: "X-ray-transform Invariant Anatomical Landmark Detection for Pelvic Trauma Surgery", also early-accepted at MICCAI'18: https://arxiv.org/abs/1803.08608 and now with quantitative evaluation in the IJCARS Special Issue on MICCAI'18: https://link.springer.com/article/10.1007/s11548-019-01975-5. The ConvNet for prediction was trained on DeepDRRs of 18 CT scans of the NIH Cancer Imaging Archive and then applied to ex vivo data acquired with a Siemens Cios Fusion C-arm machine equipped with a flat panel detector (Siemens Healthineers, Forchheim, Germany). Some representative results on the ex vivo data are shown below.
 
-![Prediction Performance](https://raw.githubusercontent.com/mathiasunberath/DeepDRR/master/readme_images/landmark_performance_real_data.PNG)
+![Prediction Performance](images/landmark_performance_real_data.PNG)
 
 ### Applications - Metal Tool Insertion
 DeepDRR has also been applied to simulate X-rays of the femur during insertion of dexterous manipulaters in orthopedic surgery: "Localizing dexterous surgical tools in X-ray for image-based navigation", which has been accepted at IPCAI'19: https://arxiv.org/abs/1901.06672. Simulated images are used to train a concurrent segmentation and localization network for tool detection. We found consistent performance on both synthetic and real X-rays of ex vivo specimens. The tool model, simulation image and detection results are shown below. 
 
-![Robot Insertion and Detection](https://raw.githubusercontent.com/mathiasunberath/DeepDRR/master/readme_images/tool_insertion.png)
+![Robot Insertion and Detection](images/tool_insertion.png)
 
 
 ### Potential Challenges - General 
