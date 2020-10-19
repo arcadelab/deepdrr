@@ -21,6 +21,7 @@ def param_saver(thetas, phis, proj_mats, camera, origin, photons, spectrum, pref
     return True
 
 
+
 class Camera():
     def __init__(self, sensor_width, sensor_height, pixel_size, source_to_detector_distance, isocenter_distance):
         self.sensor_width = sensor_width
@@ -28,6 +29,7 @@ class Camera():
         self.pixel_size = pixel_size
         self.source_to_detector_distance = source_to_detector_distance
         self.isocenter_distance = isocenter_distance
+        raise DeprecationWarning("Use deepdrr.geometry.Camera instead")        
 
     def __str__(self):
         return f"""\

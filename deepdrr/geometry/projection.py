@@ -1,24 +1,24 @@
 from __future__ import annotations
 
 from typing import Union, Tuple, Iterable, List
-from numpy.typing import ArrayLike
 
 import numpy as np
+from pathlib import Path
 
 
 class Projection(object):
     def __init__(
         self,
-        R: ArrayLike,
-        K: ArrayLike,
-        t: ArrayLike,
+        R: np.ndarray,
+        K: np.ndarray,
+        t: np.ndarray,
     ) -> None:
         """Make a projection matrix from camera parameters.
 
         Args:
-            R (ArrayLike): rotation matrix of extrinsic parameters
-            K (ArrayLike): camera intrinsic matrix
-            t (ArrayLike): translation matrix of extrinsic parameters
+            R (np.ndarray): rotation matrix of extrinsic parameters
+            K (np.ndarray): camera intrinsic matrix
+            t (np.ndarray): translation matrix of extrinsic parameters
         """
         self.R = np.array(R, dtype=np.float32)
         self.t = np.array(t, dtype=np.float32)
@@ -29,14 +29,14 @@ class Projection(object):
     @classmethod
     def from_camera_parameters(
         cls,
-        intrinsic: ArrayLike,
-        extrinsic: Tuple[ArrayLike, ArrayLike],
+        intrinsic: np.ndarray,
+        extrinsic: Tuple[np.ndarray, np.ndarray],
     ) -> ProjMatrix:
         """Alternative to the init function, more readable.
 
         Args:
-            intrinsic (ArrayLike): intrinsic camera matrix
-            extrinsic (Tuple[ArrayLike, ArrayLike]): the tuple extrinsic parameters [R, T]
+            intrinsic (np.ndarray): intrinsic camera matrix
+            extrinsic (Tuple[np.ndarray, np.ndarray]): the tuple extrinsic parameters [R, T]
 
         Returns:
             ProjMatrix: a projection matrix object
@@ -71,3 +71,23 @@ class Projection(object):
         source_point[1] = -(-0.5 * (volume_size[1] - 1.0) + origin_shift[1] * inv_voxel_scale[1, 1] + inv_voxel_scale[1, 1] * camera_ceter[1])
         source_point[2] = -(-0.5 * (volume_size[2] - 1.0) + origin_shift[2] * inv_voxel_scale[2, 2] + inv_voxel_scale[2, 2] * camera_ceter[2])
         return inv_ar, source_point
+
+    
+def load_projections(
+    path: str,
+    lim: int = 100000000,
+) -> List[Projection]:
+    """Load all the projections saved in the directory at `path`
+
+    Args:
+        path (str): path to the directory containing R.txt, T.txt, and K.txt.
+        lim (int, optional): Limits number of projections to read. Defaults to 100000000.
+
+    Returns:
+        List[Projection]: list of the projections
+    """
+    root = Path(path)
+    Rs = np.loadtxt(root / 'R.txt', max_rows=lim)[:, 0:9].reshape(-1, 3, 3)
+    Ks = np.loadtxt(root / 'K.txt', max_rows=lim)[:, 0:3]
+    ts = np.loadtxt(root / 'T.txt', max_rows=lim)[:, 0:9].reshape(-1, 3, 3)
+    return [Projection(R, K, t) for R, K, t in zip(Rs, Ks, ts)]

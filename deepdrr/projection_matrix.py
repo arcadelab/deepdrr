@@ -1,3 +1,8 @@
+"""This file is deprecated."""
+
+print(f'this file is deprecated: {__file__}')
+
+
 import numpy as np
 import os
 

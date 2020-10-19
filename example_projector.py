@@ -5,71 +5,21 @@ import matplotlib.pyplot as plt
 import numpy as np
 from pathlib import Path
 
+# old deepdrr imports
 from deepdrr import projector
 from deepdrr import projection_matrix
 from deepdrr.load_dicom import load_dicom, conv_hu_to_materials_thresholding, conv_hu_to_density
-from deepdrr.utils import image_saver, Camera, param_saver
 from deepdrr.analytic_generators import add_noise
 from deepdrr import mass_attenuation_gpu as mass_attenuation
-from deepdrr import spectrums
 from deepdrr import add_scatter
 
+# new deepdrr imports
+from deepdrr import utils
+from deepdrr import spectrums
+from deepdrr.geometry import Camera, Projection
 
-def generate_projections_on_sphere(
-        volume_path: str,
-        save_path: str,
-        min_theta,
-        max_theta,
-        min_phi,
-        max_phi,
-        spacing_theta,
-        spacing_phi,
-        photon_count,
-        camera,
-        spectrum,
-        scatter=False,
-        origin=[0, 0, 0]):
 
-    print(f'volume_path: {volume_path}')
-    print(f'save_path: {save_path}')
-    print(f'min_theta: {min_theta}')
-    print(f'max_theta: {max_theta}')
-    print(f'min_phi: {min_phi}')
-    print(f'max_phi: {max_phi}')
-    print(f'spacing_theta: {spacing_theta}')
-    print(f'spacing_phi: {spacing_phi}')
-    print(f'photon_count: {photon_count}')
-    print(f'camera: {camera}')
-    print(f'spectrum: {spectrum}')
-    print(f'scatter: {scatter})')
-    print(f'origin: {origin}')
-
-    # generate angle pairs on a sphere
-    thetas, phis = projection_matrix.generate_uniform_angels(
-        min_theta,
-        max_theta,
-        min_phi,
-        max_phi,
-        spacing_theta,
-        spacing_phi,
-    )
-
-    print(f'thetas, phis: {thetas}, {phis}')
-    
-    # generate projection matrices from angles
-    proj_mats = projection_matrix.generate_projection_matrices_from_values(
-        camera.source_to_detector_distance,
-        camera.pixel_size,
-        camera.pixel_size,
-        camera.sensor_width,
-        camera.sensor_height,
-        camera.isocenter_distance,
-        phis,
-        thetas,
-    )
-
-    print(f'projection matrices: {proj_mats}')
-    
+def main():
     ####
     # Use this if you have a volume
     ####
@@ -97,10 +47,46 @@ def generate_projections_on_sphere(
     materials["bone"] = volume == 2
     voxel_size = np.array([1, 1, 1], dtype=np.float32)
     # end of phantom
-    
+
+    # 2x2 binning
+    camera = Camera.from_parameters(
+        sensor_size=(1240, 960),
+        pixel_size=0.31,
+        source_to_detector_distance=1200, 
+        isocenter_distance=800
+    )
+
+    # 4x4 binning
+    # camera = Camera(
+    #     ensor_width=620, 
+    #     sensor_height=480, 
+    #     pixel_size=0.62,
+    #     source_to_detector_distance=1200,
+    #     isocenter_distance=800
+    # )
+
+    # Define angles
+    min_theta = 60
+    max_theta = 120
+    min_phi = 0
+    max_phi = 91
+    spacing_theta = 30
+    spacing_phi = 90
+    photon_count = 100000
+    # origin [0,0,0] corresponds to the center of the volume
+    origin = [0, 0, 0]
+    spectrum = spectrums.SPECTRUM90KV_AL40
+    scatter = False
+        
+    # generate projection matrices over uniform angles on a sphere
+    projections = camera.make_projections_from_range(
+        phi_range=(min_phi, max_phi, spacing_phi),
+        theta_range=(min_theta, max_theta, spacing_theta)
+    )
+
     # forward project densities
     forward_projections = projector.generate_projections(
-        proj_mats,
+        projections,
         volume,
         materials,
         origin,
@@ -111,7 +97,7 @@ def generate_projections_on_sphere(
         max_blockind=200,
         threads=8,
     )
-    
+
     # calculate intensity at detector (images: mean energy one photon emitted from the source
     # deposits at the detector element, photon_prob: probability of a photon emitted from the
     # source to arrive at the detector)
@@ -128,61 +114,12 @@ def generate_projections_on_sphere(
     
     # add poisson noise
     images = add_noise(images, photon_prob, photon_count)
-    
-    # save images
-    image_saver(images, "DRR", save_path)
-    # save parameters
-    param_saver(thetas, phis, proj_mats, camera, origin, photon_count, spectrum, "simulation_data", save_path)
 
     # show result
     plt.imshow(images[0, :, :], cmap="gray")
     plt.show()
 
-
-def main():
-    # 2x2 binning
-    camera = Camera(sensor_width=1240, sensor_height=960, pixel_size=0.31,
-                    source_to_detector_distance=1200, isocenter_distance=800)
-    # 4x4 binning
-    # camera = Camera(sensor_width=620, sensor_height=480, pixel_size=0.62,
-    # source_to_detector_distance=1200,isocenter_distance=800)
-
-    ####
-    # define the path to your dicoms here or use the simple phantom from the code above
-    ####
-    dicompath = r"./your_dicom_directory/"
     
-    save_path = r"./generated_data/test"
-    min_theta = 60
-    max_theta = 120
-    min_phi = 0
-    max_phi = 91
-    spacing_theta = 30
-    spacing_phi = 90
-    photon_count = 100000
-    # origin [0,0,0] corresponds to the center of the volume
-    origin = [0, 0, 0]
-    spectrum = spectrums.SPECTRUM90KV_AL40
-    
-    if not os.path.isdir(save_path):
-        os.makedirs(save_path)
-        
-    generate_projections_on_sphere(
-        dicompath,
-        save_path,
-        min_theta,
-        max_theta,
-        min_phi,
-        max_phi,
-        spacing_theta,
-        spacing_phi,
-        photon_count,
-        camera,
-        spectrum,
-        origin=origin,
-        scatter=False,
-    )
-
 
 if __name__ == "__main__":
     main()
