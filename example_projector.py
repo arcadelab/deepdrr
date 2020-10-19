@@ -3,20 +3,21 @@
 import os
 import matplotlib.pyplot as plt
 import numpy as np
+from pathlib import Path
 
 from deepdrr import projector
 from deepdrr import projection_matrix
-from deepdrr.load_dicom import load_dicom
+from deepdrr.load_dicom import load_dicom, conv_hu_to_materials_thresholding, conv_hu_to_density
 from deepdrr.utils import image_saver, Camera, param_saver
 from deepdrr.analytic_generators import add_noise
 from deepdrr import mass_attenuation_gpu as mass_attenuation
-from deepdrr import spectrum_generator
+from deepdrr import spectrums
 from deepdrr import add_scatter
 
 
 def generate_projections_on_sphere(
-        volume_path,
-        save_path,
+        volume_path: str,
+        save_path: str,
         min_theta,
         max_theta,
         min_phi,
@@ -52,6 +53,8 @@ def generate_projections_on_sphere(
         spacing_theta,
         spacing_phi,
     )
+
+    print(f'thetas, phis: {thetas}, {phis}')
     
     # generate projection matrices from angles
     proj_mats = projection_matrix.generate_projection_matrices_from_values(
@@ -64,12 +67,22 @@ def generate_projections_on_sphere(
         phis,
         thetas,
     )
+
+    print(f'projection matrices: {proj_mats}')
     
     ####
     # Use this if you have a volume
     ####
     # load and segment volume
     # volume, materials, voxel_size = load_dicom(volume_path, use_thresholding_segmentation=False)
+    # dataset = DeepFluoro(Path.home() / 'datasets')
+    # vol = dataset.get_volume(0)
+    # volume = np.array(vol['pixels'])
+    # # origin = np.array(vol['origin']).reshape(3)
+    # oritin = [0, 0, 0]
+    # materials = conv_hu_to_materials_thresholding(volume)
+    # voxel_size = np.array([1, 1, 1], dtype=np.float32)
+    # volume = conv_hu_to_density(volume, smoothAir=False)
     
     ####
     # Otherwise use this simple phantom for test
@@ -149,7 +162,7 @@ def main():
     photon_count = 100000
     # origin [0,0,0] corresponds to the center of the volume
     origin = [0, 0, 0]
-    spectrum = spectrum_generator.SPECTRUM90KV_AL40
+    spectrum = spectrums.SPECTRUM90KV_AL40
     
     if not os.path.isdir(save_path):
         os.makedirs(save_path)
