@@ -1,4 +1,4 @@
-from typing import Literal, List, Union, Tuple, Optional
+from typing import Literal, List, Union, Tuple, Optional, Dict
 
 import pycuda.driver as cuda
 import pycuda.autoinit
@@ -7,6 +7,50 @@ from pycuda.compiler import SourceModule
 import numpy as np
 import os
 from pathlib import Path 
+
+
+def _get_kernel_projector_module() -> SourceModule:
+    """Compile the cuda code for the kernel projector.
+
+    Assumes `kernel_projector.cu` and `cubic` interpolation library is in the same directory as THIS file.
+
+    Returns:
+        SourceModule: pycuda SourceModule object.
+    """
+    #path to files for cubic interpolation (folder cubic in DeepDRR)
+    d = Path(__file__).resolve().parent
+    bicubic_path = str(d / 'cubic')
+    source_path = str(d / 'project_kernel.cu')        
+
+    with open(source_path, 'r') as file:
+        source = file.read()
+
+    return SourceModule(source, include_dirs=[bicubic_path], no_extern_c=True)
+
+
+class Projector(object):
+    """Forward projector object.
+
+    """
+
+    mod = _get_kernel_projector_module()
+    project_kernel = mod.get_function("projectKernel")
+
+    def __init__(
+        self,
+        volume: np.ndarray,
+        materials: Union[Dict[str, np.ndarray], np.ndarray],
+        voxel_size: np.ndarray,
+        origin: np.ndarray = [0, 0, 0],
+        step: float = 0.1,
+        mode: Literal['linear'] = 'linear',
+    ) -> None:
+        self.volume = volume
+        
+
+
+
+
 
 
 class ForwardProjector():
@@ -134,6 +178,7 @@ class ForwardProjector():
         pixel_array = np.swapaxes(pixel_array, 0, 1)
         #normalize to cm
         return pixel_array/10
+
 
 def generate_projections(projection_matrices, density, materials, origin, voxel_size, sensor_width, sensor_height, mode="linear", max_blockind = 1024, threads = 8):
     # projections = np.zeros((projection_matrices.__len__(), sensor_width, sensor_height, materials.__len__()),dtype=np.float32)
