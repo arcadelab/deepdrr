@@ -72,7 +72,7 @@ class Camera(object):
     ) -> Camera:
         """Generate the camera from human-readable parameters.
 
-        This is the recommended way to create the camera. TODO: flip this with __init__?
+        This is the recommended way to create the camera.
 
         Args:
             sensor_size (Union[float, Tuple[float, float]]): (width, height) of the sensor, or a single value for both.

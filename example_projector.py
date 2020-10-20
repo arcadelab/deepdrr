@@ -7,7 +7,6 @@ from pathlib import Path
 
 # old deepdrr imports
 from deepdrr import projector
-from deepdrr import projection_matrix
 from deepdrr.load_dicom import load_dicom, conv_hu_to_materials_thresholding, conv_hu_to_density
 from deepdrr.analytic_generators import add_noise
 from deepdrr import mass_attenuation_gpu as mass_attenuation
@@ -17,6 +16,7 @@ from deepdrr import add_scatter
 from deepdrr import utils
 from deepdrr import spectrums
 from deepdrr.geometry import Camera, Projection
+from deepdrr.projector import generate_projections
 
 
 def main():
