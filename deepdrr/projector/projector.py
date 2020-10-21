@@ -8,6 +8,8 @@ import numpy as np
 import os
 from pathlib import Path 
 
+from ..geometry.projection import Projection
+
 
 def _get_kernel_projector_module() -> SourceModule:
     """Compile the cuda code for the kernel projector.
@@ -115,12 +117,17 @@ class ForwardProjector():
         return SourceModule(source, include_dirs=[bicubic_path], no_extern_c=True)
 
 
-    def project(self, proj_mat, threads = 8, max_blockind = 1024):
+    def project(
+        self, 
+        proj_mat: Projection, 
+        threads: int = 8,
+        max_blockind: int = 1024,
+    ) -> np.ndarray:
         if not self.initialized:
             print("Projector is not initialized")
             return
 
-        inv_ar_mat, source_point = proj_mat.get_conanical_proj_matrix(voxel_size=self.voxelsize, volume_size=self.volumesize, origin_shift=self.origin)
+        inv_ar_mat, source_point = proj_mat.get_canonical_matrix(voxel_size=self.voxelsize, volume_size=self.volumesize, origin_shift=self.origin)
 
         can_proj_matrix = inv_ar_mat.astype(np.float32)
         pixel_array = np.zeros((self.proj_width, self.proj_height)).astype(np.float32)
