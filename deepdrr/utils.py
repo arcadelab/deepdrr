@@ -21,20 +21,17 @@ def param_saver(thetas, phis, proj_mats, camera, origin, photons, spectrum, pref
     return True
 
 
+def one_hot(x: np.ndarray, num_classes: Optional[int] = None) -> np.ndarray:
+    """One-hot encode the vector x.
 
-class Camera():
-    def __init__(self, sensor_width, sensor_height, pixel_size, source_to_detector_distance, isocenter_distance):
-        self.sensor_width = sensor_width
-        self.sensor_height = sensor_height
-        self.pixel_size = pixel_size
-        self.source_to_detector_distance = source_to_detector_distance
-        self.isocenter_distance = isocenter_distance
-        raise DeprecationWarning("Use deepdrr.geometry.Camera instead")        
+    Args:
+        x (np.ndarray): n-dim array x.
+        num_classes (Optional[int]): number of classes. Uses maximum label if not provided.
 
-    def __str__(self):
-        return f"""\
-Camera(sensor_width = {self.sensor_width},
-       sensor_height = {self.sensor_height},
-       pixel_size = {self.pixel_size},
-       source_to_detector_distance = {self.source_to_detector_distance},
-       isocenter_distance = {self.isocenter_distance})"""
+    Returns:
+        np.ndarray: one-hot encoded labels with n + 1 axes.
+    """
+    if num_classes is None:
+        num_classes = x.max()
+        
+    return x[..., np.newaxis] == np.arange(num_classes + 1)

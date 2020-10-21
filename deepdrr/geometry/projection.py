@@ -68,7 +68,7 @@ class Projection(object):
 
         Args:
             voxel_size (np.ndarray): size of a voxel of the volume in [x, y, z]
-            volume_size (np.ndarray): size of the volume in [x, y, z] (TODO: world space or volume index space?)
+            volume_size (np.ndarray): size of the volume in [x, y, z] (i.e. the shape of the 3D array)
             origin_shift (np.ndarray): shift of the origin in world space.
 
         Returns:

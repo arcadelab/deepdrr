@@ -9,6 +9,7 @@ import os
 from pathlib import Path 
 
 from ..geometry.projection import Projection
+from .. import utils
 
 
 def _get_kernel_projector_module() -> SourceModule:
@@ -33,6 +34,15 @@ def _get_kernel_projector_module() -> SourceModule:
 class Projector(object):
     """Forward projector object.
 
+    The goal is to get to a point where reloads are done only when a new volume is needed.
+
+    Usage:
+    ```
+    with Projector(volume, materials, ...) as projector:
+        for projection in projections:
+            yield projector(projection)
+    ```
+
     """
 
     mod = _get_kernel_projector_module()
@@ -45,11 +55,55 @@ class Projector(object):
         voxel_size: np.ndarray,
         origin: np.ndarray = [0, 0, 0],
         step: float = 0.1,
+        num_materials: Optional[int] = 3,
         mode: Literal['linear'] = 'linear',
+        threads: int = 8,
+        max_blocks: int = 1024,
     ) -> None:
-        self.volume = volume
         
+        # set variables
+        self.volume = volume
+        self.materials = self._format_materials(materials)
+        self.voxel_size = np.array(voxel_size)
+        self.origin = np.array(origin)
+        self.step = step
+        self.num_materials = num_materials
+        self.mode = mode
+        self.threads = threads
+        self.max_blocks = max_blocks
 
+        # assertions
+        assert materials.shape
+
+    def _format_materials(
+        self, 
+        materials: Union[Dict[str, np.ndarray], np.ndarray]
+    ) -> np.ndarray:
+        """Standardize the input materials to a one-hot array.
+
+        Args:
+            materials (Union[Dict[str, np.ndarray], np.ndarray]): Either a mapping of material name to segmentation, a flat segmentation, or a one-hot segmentation.
+
+        Returns:
+            np.ndarray: 4D one-hot segmentation of the materials with labels along the last axis.
+        """
+        if isinstance(materials, dict):
+            return np.stack([mat == i for i, mat in enumerate(materials.items())], axis=-1)
+        elif materials.ndim == 3:
+            return utils.one_hot(materials, self.num_materials)
+        elif materials.ndim == 4:
+            return materials
+        else:
+            raise TypeError
+
+    def __enter__(self):
+        # TODO: allocate GPU memory
+
+        return self
+
+    def __exit__(self, type, value, tb):
+        # TODO: cleanup GPU memory.
+        pass
 
 
 
@@ -116,7 +170,6 @@ class ForwardProjector():
 
         return SourceModule(source, include_dirs=[bicubic_path], no_extern_c=True)
 
-
     def project(
         self, 
         proj_mat: Projection, 
@@ -127,7 +180,11 @@ class ForwardProjector():
             print("Projector is not initialized")
             return
 
-        inv_ar_mat, source_point = proj_mat.get_canonical_matrix(voxel_size=self.voxelsize, volume_size=self.volumesize, origin_shift=self.origin)
+        inv_ar_mat, source_point = proj_mat.get_canonical_matrix(
+            voxel_size=self.voxelsize,
+            volume_size=self.volumesize, 
+            origin_shift=self.origin
+        )
 
         can_proj_matrix = inv_ar_mat.astype(np.float32)
         pixel_array = np.zeros((self.proj_width, self.proj_height)).astype(np.float32)
@@ -160,23 +217,59 @@ class ForwardProjector():
             #run kernel
             offset_w = np.int32(0)
             offset_h = np.int32(0)
-            self.projKernel(self.proj_width, self.proj_height, self.stepsize, g_volume_edge_min_point_x, g_volume_edge_min_point_y, g_volume_edge_min_point_z,
-                            g_volume_edge_max_point_x, g_volume_edge_max_point_y, g_volume_edge_max_point_z, g_voxel_element_size_x, g_voxel_element_size_y, g_voxel_element_size_z, sourcex, sourcey, sourcez,
-                            proj_matrix_gpu, pixel_array_gpu, offset_w, offset_h, block=(8, 8, 1), grid=(blocks_w, blocks_h))
+            self.projKernel(
+                self.proj_width, 
+                self.proj_height, 
+                self.stepsize, 
+                g_volume_edge_min_point_x, 
+                g_volume_edge_min_point_y, 
+                g_volume_edge_min_point_z,
+                g_volume_edge_max_point_x, 
+                g_volume_edge_max_point_y, 
+                g_volume_edge_max_point_z, 
+                g_voxel_element_size_x, 
+                g_voxel_element_size_y, 
+                g_voxel_element_size_z, 
+                sourcex, 
+                sourcey, 
+                sourcez,
+                proj_matrix_gpu, 
+                pixel_array_gpu, 
+                offset_w, 
+                offset_h, 
+                block=(8, 8, 1), 
+                grid=(blocks_w, blocks_h)
+            )
         else:
             print("running kernel patchwise")
-            for w in range(0, (blocks_w-1)//max_blockind+1):
+            for w in range(0, (blocks_w-1) // max_blockind+1):
                 for h in range(0, (blocks_h-1) // max_blockind+1):
                     offset_w = np.int32(w * max_blockind)
                     offset_h = np.int32(h * max_blockind)
                     # print(offset_w, offset_h)
-                    self.projKernel(self.proj_width, self.proj_height, self.stepsize, g_volume_edge_min_point_x,
-                                    g_volume_edge_min_point_y, g_volume_edge_min_point_z,
-                                    g_volume_edge_max_point_x, g_volume_edge_max_point_y, g_volume_edge_max_point_z,
-                                    g_voxel_element_size_x, g_voxel_element_size_y, g_voxel_element_size_z, sourcex, sourcey,
-                                    sourcez,
-                                    proj_matrix_gpu, pixel_array_gpu, offset_w, offset_h, block=(8, 8, 1),
-                                    grid=(max_blockind, max_blockind))
+                    self.projKernel(
+                        self.proj_width, 
+                        self.proj_height, 
+                        self.stepsize, 
+                        g_volume_edge_min_point_x,
+                        g_volume_edge_min_point_y, 
+                        g_volume_edge_min_point_z,
+                        g_volume_edge_max_point_x, 
+                        g_volume_edge_max_point_y, 
+                        g_volume_edge_max_point_z,
+                        g_voxel_element_size_x, 
+                        g_voxel_element_size_y, 
+                        g_voxel_element_size_z, 
+                        sourcex, 
+                        sourcey,
+                        sourcez,
+                        proj_matrix_gpu, 
+                        pixel_array_gpu, 
+                        offset_w, 
+                        offset_h, 
+                        block=(8, 8, 1),
+                        grid=(max_blockind, max_blockind)
+                    )
                     context.synchronize()
 
         #context.synchronize()
@@ -198,7 +291,7 @@ def generate_projections(projection_matrices, density, materials, origin, voxel_
         projector.initialize_sensor(sensor_width, sensor_height)
 
         for i, proj_mat in enumerate(projection_matrices):
-            curr_projections[i, :, :] = projector.project(proj_mat, max_blockind= max_blockind, threads=threads)
+            curr_projections[i, :, :] = projector.project(proj_mat, max_blockind=max_blockind,threads=threads)
         projections[mat] = curr_projections
         #clean projector to free Memory on GPU
         projector = None
