@@ -22,7 +22,7 @@ extern "C" {
         float sy,
         float sz,
         float* gInvARmatrix,
-        float* pixel,
+        float* output,
         int offsetW,
         int offsetH)
     {
@@ -109,7 +109,7 @@ extern "C" {
             px = sx + minAlpha * rx;
             py = sy + minAlpha * ry;
             pz = sz + minAlpha * rz;
-            pixel[idx] += 0.5 * tex3D(tex_density, px + 0.5, py + 0.5, pz - gVolumeEdgeMinPointZ) * round(cubicTex3D(tex_segmentation, px + 0.5, py + 0.5, pz - gVolumeEdgeMinPointZ));
+            output[idx] += 0.5 * tex3D(tex_density, px + 0.5, py + 0.5, pz - gVolumeEdgeMinPointZ) * round(cubicTex3D(tex_segmentation, px + 0.5, py + 0.5, pz - gVolumeEdgeMinPointZ));
             minAlpha += stepsize;
         }
 
@@ -119,30 +119,30 @@ extern "C" {
             px = sx + minAlpha * rx;
             py = sy + minAlpha * ry;
             pz = sz + minAlpha * rz;
-            pixel[idx] += tex3D(tex_density, px + 0.5, py + 0.5, pz - gVolumeEdgeMinPointZ) * round(cubicTex3D(tex_segmentation, px + 0.5, py + 0.5, pz - gVolumeEdgeMinPointZ));
+            output[idx] += tex3D(tex_density, px + 0.5, py + 0.5, pz - gVolumeEdgeMinPointZ) * round(cubicTex3D(tex_segmentation, px + 0.5, py + 0.5, pz - gVolumeEdgeMinPointZ));
             minAlpha += stepsize;
         }
 
         // Scaling by stepsize;
-        pixel[idx] *= stepsize;
+        output[idx] *= stepsize;
 
         // Last segment of the line
-        if (pixel[idx] > 0.0f ) {
-            pixel[idx] -= 0.5 * stepsize * tex3D(tex_density, px + 0.5, py + 0.5, pz - gVolumeEdgeMinPointZ) * round(cubicTex3D(tex_segmentation, px + 0.5, py + 0.5, pz - gVolumeEdgeMinPointZ));
+        if (output[idx] > 0.0f ) {
+            output[idx] -= 0.5 * stepsize * tex3D(tex_density, px + 0.5, py + 0.5, pz - gVolumeEdgeMinPointZ) * round(cubicTex3D(tex_segmentation, px + 0.5, py + 0.5, pz - gVolumeEdgeMinPointZ));
             minAlpha -= stepsize;
             float lastStepsize = maxAlpha - minAlpha;
-            pixel[idx] += 0.5 * lastStepsize * tex3D(tex_density, px + 0.5, py + 0.5, pz - gVolumeEdgeMinPointZ) * round(cubicTex3D(tex_segmentation, px + 0.5, py + 0.5, pz - gVolumeEdgeMinPointZ));
+            output[idx] += 0.5 * lastStepsize * tex3D(tex_density, px + 0.5, py + 0.5, pz - gVolumeEdgeMinPointZ) * round(cubicTex3D(tex_segmentation, px + 0.5, py + 0.5, pz - gVolumeEdgeMinPointZ));
 
             px = sx + maxAlpha * rx;
             py = sy + maxAlpha * ry;
             pz = sz + maxAlpha * rz;
             // The last segment of the line integral takes care of the
             // varying length.
-            pixel[idx] += 0.5 * lastStepsize * tex3D(tex_density, px + 0.5, py + 0.5, pz - gVolumeEdgeMinPointZ) * round(cubicTex3D(tex_segmentation, px + 0.5, py + 0.5, pz - gVolumeEdgeMinPointZ));
+            output[idx] += 0.5 * lastStepsize * tex3D(tex_density, px + 0.5, py + 0.5, pz - gVolumeEdgeMinPointZ) * round(cubicTex3D(tex_segmentation, px + 0.5, py + 0.5, pz - gVolumeEdgeMinPointZ));
         }
 
-        // normalize pixel value to world coordinate system units
-        pixel[idx] *= sqrt((rx * gVoxelElementSizeX)*(rx * gVoxelElementSizeX) + (ry * gVoxelElementSizeY)*(ry * gVoxelElementSizeY) + (rz * gVoxelElementSizeZ)*(rz * gVoxelElementSizeZ));
+        // normalize output value to world coordinate system units
+        output[idx] *= sqrt((rx * gVoxelElementSizeX)*(rx * gVoxelElementSizeX) + (ry * gVoxelElementSizeY)*(ry * gVoxelElementSizeY) + (rz * gVoxelElementSizeZ)*(rz * gVoxelElementSizeZ));
     
         return;
     }

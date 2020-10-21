@@ -13,7 +13,7 @@ class Projection(object):
         K: np.ndarray,
         t: np.ndarray,
     ) -> None:
-        """Make a projection matrix from camera parameters.
+        """Make a 3D to 2D projection matrix from camera parameters.
 
         Args:
             R (np.ndarray): rotation matrix of extrinsic parameters
@@ -30,18 +30,21 @@ class Projection(object):
     def from_camera_parameters(
         cls,
         intrinsic: np.ndarray,
-        extrinsic: Tuple[np.ndarray, np.ndarray],
+        extrinsic: Union[Tuple[np.ndarray, np.ndarray], np.ndarray],
     ) -> ProjMatrix:
         """Alternative to the init function, more readable.
 
         Args:
             intrinsic (np.ndarray): intrinsic camera matrix
-            extrinsic (Tuple[np.ndarray, np.ndarray]): the tuple extrinsic parameters [R, T]
+            extrinsic (Union[Tuple[np.ndarray, np.ndarray], np.ndarray]): the tuple extrinsic parameters [R, T]
 
         Returns:
             ProjMatrix: a projection matrix object
         """
-        R, t = extrinsic
+        if isinstance(extrinsic, tuple):
+            R, t = extrinsic
+        else:
+            raise NotImplementedError
         K = intrinsic
         return cls(R, K, t)
 
@@ -52,7 +55,7 @@ class Projection(object):
         return self.P
 
     def get_camera_center(self):
-        return -np.matmul(np.transpose(self.R), self.t)
+        return np.matmul(np.transpose(self.R), self.t)
 
     def get_principle_axis(self):
         axis = self.R[2, :] / self.K[2, 2]
@@ -75,7 +78,7 @@ class Projection(object):
             Tuple[np.ndarray, np.ndarray]: [description]
         """
         inv_ar = np.diag(1 / voxel_size) @ self.rtk_inv
-        camera_center = -self.get_camera_center() # why is this negated if the function is too?
+        camera_center = self.get_camera_center() # why is this negated if the function is too?
         source_point = (volume_size - 1) / 2 - origin_shift / voxel_size - camera_center / voxel_size
         return inv_ar, source_point
 
