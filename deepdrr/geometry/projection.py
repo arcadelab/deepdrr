@@ -51,25 +51,32 @@ class Projection(object):
     def get_projection(self):
         return self.P
 
-    def get_camera_ceter(self):
+    def get_camera_center(self):
         return -np.matmul(np.transpose(self.R), self.t)
 
     def get_principle_axis(self):
         axis = self.R[2, :] / self.K[2, 2]
         return axis
 
-    def get_conanical_proj_matrix(self, voxel_size, volume_size, origin_shift):
-        inv_voxel_scale = np.zeros([3, 3])
-        inv_voxel_scale[0][0] = 1 / voxel_size[0]
-        inv_voxel_scale[1][1] = 1 / voxel_size[1]
-        inv_voxel_scale[2][2] = 1 / voxel_size[2]
-        inv_ar = np.matmul(inv_voxel_scale, self.rtk_inv)
+    def get_canonical_matrix(
+        self, 
+        voxel_size: np.ndarray, 
+        volume_size: np.ndarray, 
+        origin_shift: np.ndarray
+    ) -> Tuple[np.ndarray, np.ndarray]:
+        """Get the inverse transformation matrix and the source point for the projection.
 
-        source_point = np.zeros((3, 1), dtype=np.float32)
-        camera_ceter = - self.get_camera_ceter()
-        source_point[0] = -(-0.5 * (volume_size[0] - 1.0) + origin_shift[0] * inv_voxel_scale[0, 0] + inv_voxel_scale[0, 0] * camera_ceter[0])
-        source_point[1] = -(-0.5 * (volume_size[1] - 1.0) + origin_shift[1] * inv_voxel_scale[1, 1] + inv_voxel_scale[1, 1] * camera_ceter[1])
-        source_point[2] = -(-0.5 * (volume_size[2] - 1.0) + origin_shift[2] * inv_voxel_scale[2, 2] + inv_voxel_scale[2, 2] * camera_ceter[2])
+        Args:
+            voxel_size (np.ndarray): size of a voxel of the volume in [x, y, z]
+            volume_size (np.ndarray): size of the volume in [x, y, z] (TODO: world space or volume index space?)
+            origin_shift (np.ndarray): shift of the origin in world space.
+
+        Returns:
+            Tuple[np.ndarray, np.ndarray]: [description]
+        """
+        inv_ar = np.diag(1 / voxel_size) @ self.rtk_inv
+        camera_center = -self.get_camera_center() # why is this negated if the function is too?
+        source_point = (volume_size - 1) / 2 - origin_shift / voxel_size - camera_center / voxel_size
         return inv_ar, source_point
 
     
