@@ -21,17 +21,27 @@ def param_saver(thetas, phis, proj_mats, camera, origin, photons, spectrum, pref
     return True
 
 
-def one_hot(x: np.ndarray, num_classes: Optional[int] = None) -> np.ndarray:
-    """One-hot encode the vector x.
+def one_hot(
+    x: np.ndarray, 
+    num_classes: Optional[int] = None,
+    axis: int = -1,
+) -> np.ndarray:
+    """One-hot encode the vector x along the axis.
 
     Args:
         x (np.ndarray): n-dim array x.
         num_classes (Optional[int]): number of classes. Uses maximum label if not provided.
+        axis (int): the axis to insert the labels along.
 
     Returns:
         np.ndarray: one-hot encoded labels with n + 1 axes.
     """
     if num_classes is None:
         num_classes = x.max()
+
+    x = x[..., np.newaxis] == np.arange(num_classes + 1)
+    if axis != -1:
+        # copy x to actually move the axis, not just make a new view.
+        x = np.moveaxis(x, -1, axis).copy()
         
-    return x[..., np.newaxis] == np.arange(num_classes + 1)
+    return x

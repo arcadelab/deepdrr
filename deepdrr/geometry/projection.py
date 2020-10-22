@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Union, Tuple, Iterable, List
+from typing import Union, Tuple, Iterable, List, Any
 
 import numpy as np
 from pathlib import Path
@@ -61,26 +61,31 @@ class Projection(object):
         axis = self.R[2, :] / self.K[2, 2]
         return axis
 
-    def get_canonical_matrix(
+    def get_ray_transform(
         self, 
         voxel_size: np.ndarray, 
         volume_size: np.ndarray, 
-        origin_shift: np.ndarray
+        origin: np.ndarray,
+        dtype: Any = np.float64,
     ) -> Tuple[np.ndarray, np.ndarray]:
-        """Get the inverse transformation matrix and the source point for the projection.
+        """Get the inverse transformation matrix and the source point for the projection ray.
 
         Args:
             voxel_size (np.ndarray): size of a voxel of the volume in [x, y, z]
             volume_size (np.ndarray): size of the volume in [x, y, z] (i.e. the shape of the 3D array)
-            origin_shift (np.ndarray): shift of the origin in world space.
+            origin (np.ndarray): the origin in world space.
 
         Returns:
             Tuple[np.ndarray, np.ndarray]: [description]
         """
-        inv_ar = np.diag(1 / voxel_size) @ self.rtk_inv
+        voxel_size = np.array(voxel_size)
+        volume_size = np.array(volume_size)
+        origin = np.array(origin)
+
+        inv_proj = np.diag(1 / voxel_size) @ self.rtk_inv
         camera_center = self.get_camera_center() # why is this negated if the function is too?
-        source_point = (volume_size - 1) / 2 - origin_shift / voxel_size - camera_center / voxel_size
-        return inv_ar, source_point
+        source_point = (volume_size - 1) / 2 - origin / voxel_size - camera_center / voxel_size
+        return inv_proj.astype(dtype), source_point.astype(dtype)
 
     
 def load_projections(

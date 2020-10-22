@@ -53,27 +53,114 @@ class Projector(object):
         volume: np.ndarray,
         materials: Union[Dict[str, np.ndarray], np.ndarray],
         voxel_size: np.ndarray,
+        sensor_size: Tuple[int, int], # width, heigt
         origin: np.ndarray = [0, 0, 0],
         step: float = 0.1,
         num_materials: Optional[int] = 3,
         mode: Literal['linear'] = 'linear',
         threads: int = 8,
-        max_blocks: int = 1024,
+        max_block_index: int = 1024,
+        centimeters: bool = True,
     ) -> None:
         
         # set variables
         self.volume = volume
         self.materials = self._format_materials(materials)
         self.voxel_size = np.array(voxel_size)
+        self.sensor_size = sensor_size
         self.origin = np.array(origin)
         self.step = step
-        self.num_materials = num_materials
+        self.num_materials = self.materials.shape[0] if num_materials is None else num_materials
         self.mode = mode
         self.threads = threads
-        self.max_blocks = max_blocks
+        self.max_block_index = max_block_index
+        self.centimeters = centimeters
+
+        # Has the cuda memory been allocated.
+        self.initialized = False
 
         # assertions
-        assert materials.shape
+        assert self.materials.shape[1:] == self.volume.shape, 'materials segmentation shape does not match the volume'
+
+    def project(
+        self,
+        projection: Projection,
+    ) -> np.ndarray:
+        if not self.initialized:
+            raise RuntimeError("Projector has not been initialized.")
+
+        # initialize projection-specific arguments
+        inv_proj, source_point = projection.get_ray_transform(
+            voxel_size=self.voxel_size,
+            volume_size=self.volume.shape,
+            origin=self.origin,
+            dtype=np.float32,
+        )
+
+        # copy the projection matrix to CUDA (output array initialized to zero by the kernel)
+        cuda.memcpy_htod(self.inv_proj_gpu, inv_proj)
+
+        # Make the arguments to the CUDA "projectKernel".
+        args = [
+            np.int32(self.sensor_size[0]),          # out_width
+            np.int32(self.sensor_size[1]),          # out_height
+            np.int32(self.num_materials),           # num_materials
+            np.float32(self.step),                  # step
+            np.float32(-0.5),                       # gVolumeEdgeMinPointX
+            np.float32(-0.5),                       # gVolumeEdgeMinPointY
+            np.float32(-0.5),                       # gVolumeEdgeMinPointZ
+            np.float32(self.volume.shape[0] - 0.5), # gVolumeEdgeMaxPointX
+            np.float32(self.volume.shape[1] - 0.5), # gVolumeEdgeMaxPointY
+            np.float32(self.volume.shape[2] - 0.5), # gVolumeEdgeMaxPointZ
+            np.float32(self.voxel_size[0]),         # gVoxelElementSizeX
+            np.float32(self.voxel_size[1]),         # gVoxelElementSizeY
+            np.float32(self.voxel_size[2]),         # gVoxelElementSizeZ
+            source_point[0],                        # sx
+            source_point[1],                        # sy
+            source_point[2],                        # sz
+            self.inv_proj_gpu,                      # gInvARmatrix
+            self.output_gpu,                        # output
+        ]
+
+        # Calculate required blocks
+        blocks_w = np.int(np.ceil(self.sensor_size[0] / threads))
+        blocks_h = np.int(np.ceil(self.sensor_size[1] / threads))
+        block = (8, 8, 1)
+        print("running:", blocks_w, "x", blocks_h, "blocks with ", threads, "x", threads, "threads")
+
+        if blocks_w <= self.max_block_index and blocks_h <= self.max_block_index:
+            offset_w = np.int32(0)
+            offset_h = np.int32(0)
+            self.project_kernel(*args, offset_w, offset_h, block=block, grid=(blocks_w, blocks_h))
+        else:
+            print("running kernel patchwise")
+            for w in range((blocks_w - 1) // (self.max_block_index + 1)):
+                for h in range((blocks_h - 1) // (self.max_block_index + 1)):
+                    offset_w = np.int32(w * self.max_block_index)
+                    offset_h = np.int32(h * self.max_block_index)
+                    self.project_kernel(*args, offset_w, offset_h, block=block, grid=(self.max_block_index, self.max_block_index))
+                    context.synchronize()
+                
+        # copy the output to CPU
+        output = np.empty(self.output_shape, np.float32)
+        cuda.memcpy_dtoh(output, self.output_gpu)
+
+        # transpose the axes
+        output = np.swapaxes(output, 0, 1)
+
+        # convert to centimeters
+        if self.centimeters:
+            output /= 10
+
+        return output
+
+    @property
+    def output_shape(self):
+        return (self.sensor_size[0], self.sensor_size[1], self.num_materials)
+    
+    @property
+    def output_size(self):
+        return self.sensor_size[0] * self.sensor_size[1] * self.num_materials
 
     def _format_materials(
         self, 
@@ -82,32 +169,81 @@ class Projector(object):
         """Standardize the input materials to a one-hot array.
 
         Args:
-            materials (Union[Dict[str, np.ndarray], np.ndarray]): Either a mapping of material name to segmentation, a flat segmentation, or a one-hot segmentation.
+            materials (Union[Dict[str, np.ndarray], np.ndarray]): Either a mapping of material name to segmentation, 
+                a segmentation with the same shape as the volume, or a one-hot segmentation.
 
         Returns:
-            np.ndarray: 4D one-hot segmentation of the materials with labels along the last axis.
+            np.ndarray: 4D one-hot segmentation of the materials with labels along the 0th axis.
         """
         if isinstance(materials, dict):
-            return np.stack([mat == i for i, mat in enumerate(materials.items())], axis=-1)
+            materials = np.stack([mat == i for i, mat in enumerate(materials.items())], axis=-1)
+            return utils.one_hot(materials, self.num_materials, axis=0)
         elif materials.ndim == 3:
-            return utils.one_hot(materials, self.num_materials)
+            return utils.one_hot(materials, self.num_materials, axis=0)
         elif materials.ndim == 4:
+            print("materials is already one hot. Ensure label dimension is along axis 0.")
             return materials
         else:
             raise TypeError
 
-    def __enter__(self):
-        # TODO: allocate GPU memory
+    def initialize(self):
+        """Allocate GPU memory and transfer the volume, materials to GPU."""
+        # allocate and transfer volume texture to GPU
+        volume = np.moveaxis(volume, [0, 1, 2], [2, 1, 0]).copy()
+        self.volume_gpu = cuda.np_to_array(volume, order='C')
+        self.volume_texref = self.mod.get_texref("volume")
+        cuda.bind_array_to_texref(self.volume_gpu, self.volume_texref)
+        if self.mode == 'linear':
+            self.volume_texref.set_filter_mode(cuda.filter_mode.LINEAR)
 
+        # allocate and transfer materials texture to GPU
+        materials = np.moveaxis(self.materials, [1, 2, 3], [3, 2, 1]).copy()
+        self.materials_gpu = cuda.np_to_array(materials, order='C')
+        self.materials_texref = self.mod.get_texref("materials")
+        cuda.bind_array_to_texref(self.materials_gpu, self.materials_texref)
+        if self.mode == 'linear':
+            self.materials_texref.set_filter_mode(cuda.filter_mode.LINEAR)
+
+        # allocate output array on GPU
+        self.output_gpu = cuda.mem_alloc(self.output_size * 4)
+
+        # allocate inverse projection matrix array on GPU (3x3 array x 4 bytes)
+        self.inv_proj_gpu = cuda.mem_alloc(3 * 3 * 4)
+        
+        self.initialized = True
+
+    def close(self):
+        """Free the allocated GPU memory."""
+        self.volume_gpu.free()
+        self.materials_gpu.free()
+        self.output_gpu.free()
+        self.inv_proj_gpu.free()
+        self.initialized = False
+
+    def __enter__(self):
+        self.initialize()
         return self
 
     def __exit__(self, type, value, tb):
-        # TODO: cleanup GPU memory.
-        pass
+        self.close()
+        
+    def __call__(self, *args, **kwargs):
+        return self.project(*args, **kwargs)
 
+def generate_projections(
+    projections,
+    volume,
+    materials,
+    origin,
+    voxel_size,
+    sensor_size, # width, height
+    **kwargs
+):
+    pass
 
-
-
+"""
+Begin deprecated code.
+"""
 
 class ForwardProjector():
     def __init__(
@@ -250,7 +386,7 @@ class ForwardProjector():
                     self.projKernel(
                         self.proj_width, 
                         self.proj_height, 
-                        self.stepsize, 
+                        self.stepsize,
                         g_volume_edge_min_point_x,
                         g_volume_edge_min_point_y, 
                         g_volume_edge_min_point_z,

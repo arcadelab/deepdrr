@@ -1,14 +1,18 @@
 
 #include <stdio.h>
 #include <cubicTex3D.cu>
+ 
+// the CT volume (used to be tex_density)
+texture<float, 3, cudaReadModeElementType> volume;
 
-texture<float, 3, cudaReadModeElementType> tex_density;
-texture<float, 3, cudaReadModeElementType> tex_segmentation;
+// segmentation of each material in the volume, shape: (num_materials, volumeSizeX, volumeSizeY, volumeSizeZ)
+texture<float, 4, cudaReadModeElementType> materials;
 extern "C" {
     __global__  void projectKernel(
-        int proj_width,
-        int proj_height,
-        float stepsize,
+        int out_width, // width of the output image
+        int out_height, // height of the output image
+        int num_materials, // number of materials
+        float step,
         float gVolumeEdgeMinPointX,
         float gVolumeEdgeMinPointY,
         float gVolumeEdgeMinPointZ,
@@ -18,36 +22,44 @@ extern "C" {
         float gVoxelElementSizeX,
         float gVoxelElementSizeY,
         float gVoxelElementSizeZ,
-        float sx,
+        float sx, // x-coordinate of source point for rays in world-space
         float sy,
         float sz,
-        float* gInvARmatrix,
-        float* output,
+        float* gInvARmatrix, // (3, 3) array giving the image-to-world-ray transform.
+        float* output, // flat array, with shape (out_height, out_width, num_materials).
         int offsetW,
         int offsetH)
     {
-        int udx = threadIdx.x + (blockIdx.x + offsetW) * blockDim.x;
-        int vdx = threadIdx.y + (blockIdx.y + offsetH) * blockDim.y;
-        int idx = udx*proj_height + vdx;
+        int widx = threadIdx.x + (blockIdx.x + offsetW) * blockDim.x; // index into output width
+        int hidx = threadIdx.y + (blockIdx.y + offsetH) * blockDim.y; // index into output height
 
-        if (udx >= proj_width || vdx >= proj_height) {
-            return;}
-        float u = (float) udx + 0.5;
-        float v = (float) vdx + 0.5;
+        // if the current point is outside the output image, no computation needed
+        if (widx >= out_width || hidx >= out_height)
+            return;
 
-        // compute ray direction
+        // flat index to first material in output "channel". 
+        // So (idx + m) gets you the pixel for material index m in [0, num_materials)
+        int idx = widx * (out_height * num_materials) + hidx * num_materials; 
+
+        // image-space point corresponding to pixel
+        float u = (float) widx + 0.5;
+        float v = (float) hidx + 0.5;
+
+        // vector along world-space ray from source-point to pixel on the image plane
         float rx = gInvARmatrix[2] + v * gInvARmatrix[1] + u * gInvARmatrix[0];
         float ry = gInvARmatrix[5] + v * gInvARmatrix[4] + u * gInvARmatrix[3];
         float rz = gInvARmatrix[8] + v * gInvARmatrix[7] + u * gInvARmatrix[6];
 
-        // normalize ray direction float
+        // make the ray a unit-vector
         float normFactor = 1.0f / (sqrt((rx * rx) + (ry * ry) + (rz * rz)));
         rx *= normFactor;
         ry *= normFactor;
         rz *= normFactor;
 
-        //calculate projections
-        // Step 1: compute alpha value at entry and exit point of the volume
+        // calculate projections
+        // Part 1: compute alpha value at entry and exit point of the volume on either side of the ray.
+        // minAlpha: the distance from source point to volume entry point of the ray.
+        // maxAlpha: the distance from source point to volume exit point of the ray.
         float minAlpha, maxAlpha;
         minAlpha = 0;
         maxAlpha = INFINITY;
@@ -93,52 +105,63 @@ extern "C" {
 
         // we start not at the exact entry point 
         // => we can be sure to be inside the volume
-        //minAlpha += stepsize * 0.5f;
+        // (this is commented out intentionally, seemingly)
+        //minAlpha += step * 0.5f;
         
-        // Step 2: Cast ray if it intersects the volume
+        // Part 2: Cast ray if it intersects the volume
 
         // Trapezoidal rule (interpolating function = piecewise linear func)
-        float px, py, pz;
+        float px, py, pz; // world-space point
+        int t; // number of steps along ray
+        int m; // materials index
+        float alpha; // distance along ray (alpha = minAlpha + step * t)
+        float boundary_factor; // factor to multiply at the boundary.
 
-        // Entrance boundary
-        // In CUDA, voxel centers are located at (xx.5, xx.5, xx.5),
-        //  whereas, SwVolume has voxel centers at integers.
-        // For the initial interpolated value, only a half stepsize is
-        //  considered in the computation.
-        if (minAlpha < maxAlpha) {
-            px = sx + minAlpha * rx;
-            py = sy + minAlpha * ry;
-            pz = sz + minAlpha * rz;
-            output[idx] += 0.5 * tex3D(tex_density, px + 0.5, py + 0.5, pz - gVolumeEdgeMinPointZ) * round(cubicTex3D(tex_segmentation, px + 0.5, py + 0.5, pz - gVolumeEdgeMinPointZ));
-            minAlpha += stepsize;
+        // initialize the output to 0.
+        for (m = 0; m < num_materials; m++) {
+            output[idx + m] = 0;
         }
 
-        // Mid segments
-        while (minAlpha < maxAlpha)
+        // Sample the points along the ray at the entrance boundary of the volume and the mid segments.
+        for (t = 0, alpha = minAlpha; alpha < maxAlpha; t++, alpha += step)
         {
-            px = sx + minAlpha * rx;
-            py = sy + minAlpha * ry;
-            pz = sz + minAlpha * rz;
-            output[idx] += tex3D(tex_density, px + 0.5, py + 0.5, pz - gVolumeEdgeMinPointZ) * round(cubicTex3D(tex_segmentation, px + 0.5, py + 0.5, pz - gVolumeEdgeMinPointZ));
-            minAlpha += stepsize;
+            // Get the current sample point in the volume world-space.
+            // In CUDA, voxel centeras are located at (xx.5, xx.5, xx.5), whereas SwVolume has voxel centers at integers.
+            px = sx + alpha * rx + 0.5;
+            py = sy + alpha * ry + 0.5;
+            pz = sz + alpha * rz - gVolumeEdgeMinPointZ;
+
+            /* For the entry boundary, multiply by 0.5 (this is the i == 0 check). That is, for the initial interpolated value, 
+             * only a half step-size is considered in the computation.
+             * For the second-to-last interpolation point, also multiply by 0.5, since there will be a final step at the maxAlpha boundary.
+             */ 
+            boundary_factor = (t == 0 || alpha + step >= maxAlpha) ? 0.5 : 1.0
+
+            for (m = 0; m < num_materials; m++) {
+                // Perform the interpolation.
+                output[idx + m] += boundary_factor * tex3D(volume, px, py, pz) * round(cubicTex3D(materials[m], px, py, pz));
+            }
         }
 
-        // Scaling by stepsize;
-        output[idx] *= stepsize;
+        // Scaling by step;
+        output[idx] *= step;
 
         // Last segment of the line
         if (output[idx] > 0.0f ) {
-            output[idx] -= 0.5 * stepsize * tex3D(tex_density, px + 0.5, py + 0.5, pz - gVolumeEdgeMinPointZ) * round(cubicTex3D(tex_segmentation, px + 0.5, py + 0.5, pz - gVolumeEdgeMinPointZ));
-            minAlpha -= stepsize;
-            float lastStepsize = maxAlpha - minAlpha;
-            output[idx] += 0.5 * lastStepsize * tex3D(tex_density, px + 0.5, py + 0.5, pz - gVolumeEdgeMinPointZ) * round(cubicTex3D(tex_segmentation, px + 0.5, py + 0.5, pz - gVolumeEdgeMinPointZ));
+            alpha -= step;
+            float lastStepsize = maxAlpha - alpha;
+            for (m = 0; m < num_materials; m++) {
+                output[idx + m] += 0.5 * lastStepsize * tex3D(volume, px, py, pz) * round(cubicTex3D(materials[m], px, py, pz));
+            }
 
-            px = sx + maxAlpha * rx;
-            py = sy + maxAlpha * ry;
-            pz = sz + maxAlpha * rz;
-            // The last segment of the line integral takes care of the
-            // varying length.
-            output[idx] += 0.5 * lastStepsize * tex3D(tex_density, px + 0.5, py + 0.5, pz - gVolumeEdgeMinPointZ) * round(cubicTex3D(tex_segmentation, px + 0.5, py + 0.5, pz - gVolumeEdgeMinPointZ));
+            // The last segment of the line integral takes care of the varying length.
+            px = sx + alpha * rx + 0.5;
+            py = sy + alpha * ry + 0.5;
+            pz = sz + alpha * rz - gVolumeEdgeMinPointZ;
+            for (m = 0; m < num_materials; m++) {
+                output[idx + m] += 0.5 * lastStepsize * tex3D(volume, px, py, pz) * round(cubicTex3D(materials[m], px, py, pz));
+            }
+            
         }
 
         // normalize output value to world coordinate system units
@@ -148,3 +171,4 @@ extern "C" {
     }
 }
     
+{}
