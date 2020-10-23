@@ -6,7 +6,7 @@ import numpy as np
 from pathlib import Path
 
 # old deepdrr imports
-from deepdrr import projector
+from deepdrr import Projector
 from deepdrr.load_dicom import load_dicom, conv_hu_to_materials_thresholding, conv_hu_to_density
 from deepdrr.analytic_generators import add_noise
 from deepdrr import mass_attenuation_gpu as mass_attenuation
@@ -16,7 +16,7 @@ from deepdrr import add_scatter
 from deepdrr import utils
 from deepdrr import spectrums
 from deepdrr.geometry import Camera, Projection
-from deepdrr.projector import generate_projections
+from deepdrr.projector import Projector
 
 
 def main():
@@ -78,11 +78,29 @@ def main():
     spectrum = spectrums.SPECTRUM90KV_AL40
     scatter = False
         
-    # generate projection matrices over uniform angles on a sphere
-    projections = camera.make_projections_from_range(
-        phi_range=(min_phi, max_phi, spacing_phi),
-        theta_range=(min_theta, max_theta, spacing_theta)
-    )
+    # arrange angles as ranges over uniform angles on a sphere
+    phi_range = (min_phi, max_phi, spacing_phi)
+    theta_range = (min_theta, max_theta, spacing_theta)
+    # projections = camera.make_projections_from_range(
+    #     phi_range=(min_phi, max_phi, spacing_phi),
+    #     theta_range=(min_theta, max_theta, spacing_theta)
+    # )
+
+    with Projector(
+        volume=volume,
+        materials=materials,
+        voxel_size=voxel_size,
+        camera=camera,
+        origin=origin,
+        mode="linear",
+        max_block_index=200,
+        threads=8,
+        centimeters=True,
+    ) as projector:
+        forward_projections = projector.over_range(phi_range, theta_range)
+
+    print(forward_projections.shape)
+    exit()
 
     # forward project densities
     forward_projections = projector.generate_projections(

@@ -1,5 +1,5 @@
 from .geometry.camera import Camera
 from .geometry.projection import Projection
-from .projector import generate_projections
+from .projector.projector import Projector
 
-__all__ = [Camera, Projection, generate_projections]
+__all__ = [Camera, Projection, Projector]

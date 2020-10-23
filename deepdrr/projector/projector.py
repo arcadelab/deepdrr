@@ -8,6 +8,7 @@ import numpy as np
 import os
 from pathlib import Path 
 
+from ..geometry.camera import Camera
 from ..geometry.projection import Projection
 from .. import utils
 
@@ -45,32 +46,32 @@ class Projector(object):
 
     """
 
+    NUM_MATERIALS = 3 # unfortunately this is hard-coded in the kernel.
     mod = _get_kernel_projector_module()
     project_kernel = mod.get_function("projectKernel")
 
     def __init__(
         self,
-        volume: np.ndarray,
+        volume: np.ndarray, # TODO: make volume class containing voxel_size, origin, materials, and other params, so that projector can just take in a Volume and a Camera.
         materials: Union[Dict[str, np.ndarray], np.ndarray],
         voxel_size: np.ndarray,
-        sensor_size: Tuple[int, int], # width, heigt
-        origin: np.ndarray = [0, 0, 0],
-        step: float = 0.1,
-        num_materials: Optional[int] = 3,
+        camera: Camera,
+        origin: np.ndarray = [0, 0, 0], # origin of the volume?
+        step: float = 0.1, # step size along ray
         mode: Literal['linear'] = 'linear',
         threads: int = 8,
         max_block_index: int = 1024,
         centimeters: bool = True,
-    ) -> None:
-        
+    ):
+                    
         # set variables
         self.volume = volume
         self.materials = self._format_materials(materials)
         self.voxel_size = np.array(voxel_size)
-        self.sensor_size = sensor_size
+        self.camera = camera
+        self.sensor_size = camera.sensor_size
         self.origin = np.array(origin)
         self.step = step
-        self.num_materials = self.materials.shape[0] if num_materials is None else num_materials
         self.mode = mode
         self.threads = threads
         self.max_block_index = max_block_index
@@ -80,9 +81,9 @@ class Projector(object):
         self.initialized = False
 
         # assertions
-        assert self.materials.shape[1:] == self.volume.shape, 'materials segmentation shape does not match the volume'
+        assert self.materials.shape[1:] == self.volume.shape, f'materials segmentation shape does not match the volume: {self.materials.shape}, {self.volume.shape}'
 
-    def project(
+    def _project(
         self,
         projection: Projection,
     ) -> np.ndarray:
@@ -104,7 +105,6 @@ class Projector(object):
         args = [
             np.int32(self.sensor_size[0]),          # out_width
             np.int32(self.sensor_size[1]),          # out_height
-            np.int32(self.num_materials),           # num_materials
             np.float32(self.step),                  # step
             np.float32(-0.5),                       # gVolumeEdgeMinPointX
             np.float32(-0.5),                       # gVolumeEdgeMinPointY
@@ -123,10 +123,10 @@ class Projector(object):
         ]
 
         # Calculate required blocks
-        blocks_w = np.int(np.ceil(self.sensor_size[0] / threads))
-        blocks_h = np.int(np.ceil(self.sensor_size[1] / threads))
+        blocks_w = np.int(np.ceil(self.sensor_size[0] / self.threads))
+        blocks_h = np.int(np.ceil(self.sensor_size[1] / self.threads))
         block = (8, 8, 1)
-        print("running:", blocks_w, "x", blocks_h, "blocks with ", threads, "x", threads, "threads")
+        print("running:", blocks_w, "x", blocks_h, "blocks with ", self.threads, "x", self.threads, "threads")
 
         if blocks_w <= self.max_block_index and blocks_h <= self.max_block_index:
             offset_w = np.int32(0)
@@ -151,16 +151,35 @@ class Projector(object):
         # convert to centimeters
         if self.centimeters:
             output /= 10
-
+            
         return output
+
+    def project(
+        self,
+        *projections: Projection,
+    ) -> np.ndarray:
+        outputs = []
+
+        for proj in projections:
+            outputs.append(self._project(proj))
+
+        return np.stack(outputs)
+
+    def over_range(
+        self,
+        phi_range: Tuple[float, float, float],
+        theta_range: Tuple[float, float, float],        
+    ) -> np.ndarray:
+        projections = self.camera.make_projections_from_range(phi_range=phi_range, theta_range=theta_range)
+        return self.project(*projections)
 
     @property
     def output_shape(self):
-        return (self.sensor_size[0], self.sensor_size[1], self.num_materials)
+        return (self.sensor_size[0], self.sensor_size[1], self.NUM_MATERIALS)
     
     @property
     def output_size(self):
-        return self.sensor_size[0] * self.sensor_size[1] * self.num_materials
+        return self.sensor_size[0] * self.sensor_size[1] * self.NUM_MATERIALS
 
     def _format_materials(
         self, 
@@ -176,20 +195,27 @@ class Projector(object):
             np.ndarray: 4D one-hot segmentation of the materials with labels along the 0th axis.
         """
         if isinstance(materials, dict):
-            materials = np.stack([mat == i for i, mat in enumerate(materials.items())], axis=-1)
-            return utils.one_hot(materials, self.num_materials, axis=0)
+            assert len(materials) == self.NUM_MATERIALS
+            materials = np.stack([mat == i for i, mat in enumerate(materials.values())], axis=0)
         elif materials.ndim == 3:
-            return utils.one_hot(materials, self.num_materials, axis=0)
+            assert np.all(materials < self.NUM_MATERIALS)
+            materials = utils.one_hot(materials, self.NUM_MATERIALS, axis=0)
         elif materials.ndim == 4:
-            print("materials is already one hot. Ensure label dimension is along axis 0.")
-            return materials
+            pass
         else:
             raise TypeError
 
+        assert materials.shape[0] == self.NUM_MATERIALS
+        materials = materials.astype(np.float32)
+        return materials
+
     def initialize(self):
         """Allocate GPU memory and transfer the volume, materials to GPU."""
+        if self.initialized:
+            raise RuntimeError("Close projector before initializing again.")
+
         # allocate and transfer volume texture to GPU
-        volume = np.moveaxis(volume, [0, 1, 2], [2, 1, 0]).copy()
+        volume = np.moveaxis(self.volume, [0, 1, 2], [2, 1, 0]).copy()
         self.volume_gpu = cuda.np_to_array(volume, order='C')
         self.volume_texref = self.mod.get_texref("volume")
         cuda.bind_array_to_texref(self.volume_gpu, self.volume_texref)
@@ -198,11 +224,12 @@ class Projector(object):
 
         # allocate and transfer materials texture to GPU
         materials = np.moveaxis(self.materials, [1, 2, 3], [3, 2, 1]).copy()
-        self.materials_gpu = cuda.np_to_array(materials, order='C')
-        self.materials_texref = self.mod.get_texref("materials")
-        cuda.bind_array_to_texref(self.materials_gpu, self.materials_texref)
-        if self.mode == 'linear':
-            self.materials_texref.set_filter_mode(cuda.filter_mode.LINEAR)
+        self.materials_gpu = [cuda.np_to_array(materials[m], order='C') for m in range(self.NUM_MATERIALS)]
+        self.materials_texref = [self.mod.get_texref(f"materials_{m}") for m in range(self.NUM_MATERIALS)]
+        for mat, tex in zip(self.materials_gpu, self.materials_texref):
+            cuda.bind_array_to_texref(mat, tex)
+            if self.mode == 'linear':
+                tex.set_filter_mode(cuda.filter_mode.LINEAR)
 
         # allocate output array on GPU
         self.output_gpu = cuda.mem_alloc(self.output_size * 4)
@@ -210,14 +237,18 @@ class Projector(object):
         # allocate inverse projection matrix array on GPU (3x3 array x 4 bytes)
         self.inv_proj_gpu = cuda.mem_alloc(3 * 3 * 4)
         
+        # Mark self as initialized.
         self.initialized = True
 
     def close(self):
         """Free the allocated GPU memory."""
-        self.volume_gpu.free()
-        self.materials_gpu.free()
-        self.output_gpu.free()
-        self.inv_proj_gpu.free()
+        if self.initialized:
+            self.volume_gpu.free()
+            for mat in self.materials_gpu:
+                mat.free()
+
+            self.output_gpu.free()
+            self.inv_proj_gpu.free()
         self.initialized = False
 
     def __enter__(self):
@@ -229,17 +260,6 @@ class Projector(object):
         
     def __call__(self, *args, **kwargs):
         return self.project(*args, **kwargs)
-
-def generate_projections(
-    projections,
-    volume,
-    materials,
-    origin,
-    voxel_size,
-    sensor_size, # width, height
-    **kwargs
-):
-    pass
 
 """
 Begin deprecated code.
@@ -304,7 +324,7 @@ class ForwardProjector():
         with open(source_path, 'r') as file:
             source = file.read()
 
-        return SourceModule(source, include_dirs=[bicubic_path], no_extern_c=True)
+        return SourceModule(source, include_dirs=[bicubic_path], no_extern_c=True, build_options=['-D', f'NUM_MATERIALS={NUM_MATERIALS}'])
 
     def project(
         self, 

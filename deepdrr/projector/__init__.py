@@ -1,1 +1,1 @@
-from .projector import generate_projections
+from .projector import Projector

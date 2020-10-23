@@ -1,17 +1,23 @@
 
 #include <stdio.h>
 #include <cubicTex3D.cu>
- 
+
+#ifndef NUM_MATERIALS
+#define NUM_MATERIALS 3
+#endif
+
 // the CT volume (used to be tex_density)
 texture<float, 3, cudaReadModeElementType> volume;
 
-// segmentation of each material in the volume, shape: (num_materials, volumeSizeX, volumeSizeY, volumeSizeZ)
-texture<float, 4, cudaReadModeElementType> materials;
+//  channel of the materials array, same size as the volume.
+texture<float, 3, cudaReadModeElementType> materials_0;
+texture<float, 3, cudaReadModeElementType> materials_1;
+texture<float, 3, cudaReadModeElementType> materials_2;
+
 extern "C" {
     __global__  void projectKernel(
         int out_width, // width of the output image
         int out_height, // height of the output image
-        int num_materials, // number of materials
         float step,
         float gVolumeEdgeMinPointX,
         float gVolumeEdgeMinPointY,
@@ -26,7 +32,7 @@ extern "C" {
         float sy,
         float sz,
         float* gInvARmatrix, // (3, 3) array giving the image-to-world-ray transform.
-        float* output, // flat array, with shape (out_height, out_width, num_materials).
+        float* output, // flat array, with shape (out_height, out_width, NUM_MATERIALS).
         int offsetW,
         int offsetH)
     {
@@ -38,8 +44,8 @@ extern "C" {
             return;
 
         // flat index to first material in output "channel". 
-        // So (idx + m) gets you the pixel for material index m in [0, num_materials)
-        int idx = widx * (out_height * num_materials) + hidx * num_materials; 
+        // So (idx + m) gets you the pixel for material index m in [0, NUM_MATERIALS)
+        int idx = widx * (out_height * NUM_MATERIALS) + hidx * NUM_MATERIALS; 
 
         // image-space point corresponding to pixel
         float u = (float) widx + 0.5;
@@ -118,7 +124,7 @@ extern "C" {
         float boundary_factor; // factor to multiply at the boundary.
 
         // initialize the output to 0.
-        for (m = 0; m < num_materials; m++) {
+        for (m = 0; m < NUM_MATERIALS; m++) {
             output[idx + m] = 0;
         }
 
@@ -135,12 +141,12 @@ extern "C" {
              * only a half step-size is considered in the computation.
              * For the second-to-last interpolation point, also multiply by 0.5, since there will be a final step at the maxAlpha boundary.
              */ 
-            boundary_factor = (t == 0 || alpha + step >= maxAlpha) ? 0.5 : 1.0
+            boundary_factor = (t == 0 || alpha + step >= maxAlpha) ? 0.5 : 1.0;
 
-            for (m = 0; m < num_materials; m++) {
-                // Perform the interpolation.
-                output[idx + m] += boundary_factor * tex3D(volume, px, py, pz) * round(cubicTex3D(materials[m], px, py, pz));
-            }
+            // Perform the interpolation.
+            output[idx + 0] += boundary_factor * tex3D(volume, px, py, pz) * round(cubicTex3D(materials_0, px, py, pz));
+            output[idx + 1] += boundary_factor * tex3D(volume, px, py, pz) * round(cubicTex3D(materials_1, px, py, pz));
+            output[idx + 2] += boundary_factor * tex3D(volume, px, py, pz) * round(cubicTex3D(materials_2, px, py, pz));
         }
 
         // Scaling by step;
@@ -150,18 +156,21 @@ extern "C" {
         if (output[idx] > 0.0f ) {
             alpha -= step;
             float lastStepsize = maxAlpha - alpha;
-            for (m = 0; m < num_materials; m++) {
-                output[idx + m] += 0.5 * lastStepsize * tex3D(volume, px, py, pz) * round(cubicTex3D(materials[m], px, py, pz));
-            }
+
+            // scaled last step interpolation (something weird?)
+            output[idx + 0] += 0.5 * lastStepsize * tex3D(volume, px, py, pz) * round(cubicTex3D(materials_0, px, py, pz));
+            output[idx + 1] += 0.5 * lastStepsize * tex3D(volume, px, py, pz) * round(cubicTex3D(materials_1, px, py, pz));
+            output[idx + 2] += 0.5 * lastStepsize * tex3D(volume, px, py, pz) * round(cubicTex3D(materials_2, px, py, pz));
 
             // The last segment of the line integral takes care of the varying length.
             px = sx + alpha * rx + 0.5;
             py = sy + alpha * ry + 0.5;
             pz = sz + alpha * rz - gVolumeEdgeMinPointZ;
-            for (m = 0; m < num_materials; m++) {
-                output[idx + m] += 0.5 * lastStepsize * tex3D(volume, px, py, pz) * round(cubicTex3D(materials[m], px, py, pz));
-            }
-            
+
+            // interpolation
+            output[idx + 0] += 0.5 * lastStepsize * tex3D(volume, px, py, pz) * round(cubicTex3D(materials_0, px, py, pz));
+            output[idx + 1] += 0.5 * lastStepsize * tex3D(volume, px, py, pz) * round(cubicTex3D(materials_1, px, py, pz));
+            output[idx + 2] += 0.5 * lastStepsize * tex3D(volume, px, py, pz) * round(cubicTex3D(materials_2, px, py, pz));
         }
 
         // normalize output value to world coordinate system units
@@ -171,4 +180,3 @@ extern "C" {
     }
 }
     
-{}
