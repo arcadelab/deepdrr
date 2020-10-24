@@ -6,15 +6,10 @@ import numpy as np
 from pathlib import Path
 
 # old deepdrr imports
-from deepdrr import Projector
 from deepdrr.load_dicom import load_dicom, conv_hu_to_materials_thresholding, conv_hu_to_density
-from deepdrr.analytic_generators import add_noise
-from deepdrr import mass_attenuation_gpu as mass_attenuation
-from deepdrr import add_scatter
 
 # new deepdrr imports
 from deepdrr import utils
-from deepdrr import spectrums
 from deepdrr.geometry import Camera, Projection
 from deepdrr.projector import Projector
 
@@ -53,7 +48,7 @@ def main():
         sensor_size=(1240, 960),
         pixel_size=0.31,
         source_to_detector_distance=1200, 
-        isocenter_distance=800
+        isocenter_distance=800,
     )
 
     # 4x4 binning
@@ -73,51 +68,27 @@ def main():
     spacing_theta = 30
     spacing_phi = 90
     photon_count = 100000
-    # origin [0,0,0] corresponds to the center of the volume
-    origin = [0, 0, 0]
-    spectrum = spectrums.SPECTRUM90KV_AL40
-    scatter = False
         
     # arrange angles as ranges over uniform angles on a sphere
     phi_range = (min_phi, max_phi, spacing_phi)
     theta_range = (min_theta, max_theta, spacing_theta)
-    # projections = camera.make_projections_from_range(
-    #     phi_range=(min_phi, max_phi, spacing_phi),
-    #     theta_range=(min_theta, max_theta, spacing_theta)
-    # )
 
     with Projector(
-        volume=volume, # should be converted to a "volume density". TODO: deal with this in a Volume class.
-        materials=materials,
+        volume=volume, # TODO: should be converted to a "VolumeData" object.
+        segmentation=materials,
+        materials=list(materials.keys()),
         voxel_size=voxel_size,
         camera=camera,
-        origin=origin,
+        origin=[0, 0, 0], # corresponds to center of volume
         mode="linear",
         max_block_index=200,
+        spectrum='90KV_AL40',
+        photon_count=photon_count,
+        add_scatter=False, # add photon scatter
         threads=8,
         centimeters=True,
     ) as projector:
-        forward_projections = projector.over_range(phi_range, theta_range)
-
-    print(forward_projections.shape)
-    forward_projections = dict((k, forward_projections[:, :, :, i]) for i, k in enumerate(materials.keys()))
-
-    # calculate intensity at detector (images: mean energy one photon emitted from the source
-    # deposits at the detector element, photon_prob: probability of a photon emitted from the
-    # source to arrive at the detector)
-    images, photon_prob = mass_attenuation.calculate_intensity_from_spectrum(forward_projections, spectrum)
-    # add scatter
-    if scatter:
-        scatter_net = add_scatter.ScatterNet()
-        scatter = scatter_net.add_scatter(images, camera)
-        photon_prob *= 1 + scatter / images
-        images += scatter
-        
-    # transform to collected energy in keV per cm^2
-    # images = images * (photon_count / (camera.pixel_size * camera.pixel_size))
-    
-    # add poisson noise
-    images = add_noise(images, photon_prob, photon_count)
+        images = projector.over_range(phi_range, theta_range)
 
     # show result
     plt.imshow(images[0, :, :], cmap="gray")

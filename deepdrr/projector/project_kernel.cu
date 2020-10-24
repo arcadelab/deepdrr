@@ -3,16 +3,205 @@
 #include <cubicTex3D.cu>
 
 #ifndef NUM_MATERIALS
-#define NUM_MATERIALS 3
+#define NUM_MATERIALS 14
 #endif
+
+#define _seg(n) seg_##n
+#define seg(n) _seg(n)
+
+//  channel of the materials array, same size as the volume.
+#if NUM_MATERIALS > 0
+texture<float, 3, cudaReadModeElementType> seg(0);
+#endif
+#if NUM_MATERIALS > 1
+texture<float, 3, cudaReadModeElementType> seg(1);
+#endif
+#if NUM_MATERIALS > 2
+texture<float, 3, cudaReadModeElementType> seg(2);
+#endif
+#if NUM_MATERIALS > 3
+texture<float, 3, cudaReadModeElementType> seg(3);
+#endif
+#if NUM_MATERIALS > 4
+texture<float, 3, cudaReadModeElementType> seg(4);
+#endif
+#if NUM_MATERIALS > 5
+texture<float, 3, cudaReadModeElementType> seg(5);
+#endif
+#if NUM_MATERIALS > 6
+texture<float, 3, cudaReadModeElementType> seg(6);
+#endif
+#if NUM_MATERIALS > 7
+texture<float, 3, cudaReadModeElementType> seg(7);
+#endif
+#if NUM_MATERIALS > 8
+texture<float, 3, cudaReadModeElementType> seg(8);
+#endif
+#if NUM_MATERIALS > 9
+texture<float, 3, cudaReadModeElementType> seg(9);
+#endif
+#if NUM_MATERIALS > 10
+texture<float, 3, cudaReadModeElementType> seg(10);
+#endif
+#if NUM_MATERIALS > 11
+texture<float, 3, cudaReadModeElementType> seg(11)
+#endif
+#if NUM_MATERIALS > 12
+texture<float, 3, cudaReadModeElementType> seg(12);
+#endif
+#if NUM_MATERIALS > 13
+texture<float, 3, cudaReadModeElementType> seg(13);
+#endif
+
+#define UPDATE(multiplier, n) ({\
+    output[idx + n] += (multiplier) * tex3D(volume, px, py, pz) * round(cubicTex3D(seg(n), px, py, pz));\
+})
+
+#if NUM_MATERIALS == 1
+#define INTERPOLATE(multiplier) ({\
+    UPDATE(multiplier, 0);\
+})
+#elif NUM_MATERIALS == 2
+#define INTERPOLATE(multiplier) ({\
+    UPDATE(multiplier, 0);\
+    UPDATE(multiplier, 1);\
+})
+#elif NUM_MATERIALS == 3
+#define INTERPOLATE(multiplier) ({\
+    UPDATE(multiplier, 0);\
+    UPDATE(multiplier, 1);\
+    UPDATE(multiplier, 2);\
+})
+#elif NUM_MATERIALS == 4
+#define INTERPOLATE(multiplier) ({\
+    UPDATE(multiplier, 0);\
+    UPDATE(multiplier, 1);\
+    UPDATE(multiplier, 2);\
+    UPDATE(multiplier, 3);\
+})
+#elif NUM_MATERIALS == 5
+#define INTERPOLATE(multiplier) ({\
+    UPDATE(multiplier, 0);\
+    UPDATE(multiplier, 1);\
+    UPDATE(multiplier, 2);\
+    UPDATE(multiplier, 3);\
+    UPDATE(multiplier, 4);\
+})
+#elif NUM_MATERIALS == 6
+#define INTERPOLATE(multiplier) ({\
+    UPDATE(multiplier, 0);\
+    UPDATE(multiplier, 1);\
+    UPDATE(multiplier, 2);\
+    UPDATE(multiplier, 4);\
+    UPDATE(multiplier, 5);\
+})  
+#elif NUM_MATERIALS == 7
+#define INTERPOLATE(multiplier) ({\
+    UPDATE(multiplier, 0);\
+    UPDATE(multiplier, 1);\
+    UPDATE(multiplier, 2);\
+    UPDATE(multiplier, 4);\
+    UPDATE(multiplier, 5);\
+    UPDATE(multiplier, 6);\
+})
+#elif NUM_MATERIALS == 8
+#define INTERPOLATE(multiplier) ({\
+    UPDATE(multiplier, 0);\
+    UPDATE(multiplier, 1);\
+    UPDATE(multiplier, 2);\
+    UPDATE(multiplier, 4);\
+    UPDATE(multiplier, 5);\
+    UPDATE(multiplier, 6);\
+    UPDATE(multiplier, 7);\
+})
+#elif NUM_MATERIALS == 9
+#define INTERPOLATE(multiplier) ({\
+    UPDATE(multiplier, 0);\
+    UPDATE(multiplier, 1);\
+    UPDATE(multiplier, 2);\
+    UPDATE(multiplier, 4);\
+    UPDATE(multiplier, 5);\
+    UPDATE(multiplier, 6);\
+    UPDATE(multiplier, 7);\
+    UPDATE(multiplier, 8);\
+})
+#elif NUM_MATERIALS == 10
+#define INTERPOLATE(multiplier) ({\
+    UPDATE(multiplier, 0);\
+    UPDATE(multiplier, 1);\
+    UPDATE(multiplier, 2);\
+    UPDATE(multiplier, 4);\
+    UPDATE(multiplier, 5);\
+    UPDATE(multiplier, 6);\
+    UPDATE(multiplier, 7);\
+    UPDATE(multiplier, 8);\
+    UPDATE(multiplier, 9);\
+})
+#elif NUM_MATERIALS == 11
+#define INTERPOLATE(multiplier) ({\
+    UPDATE(multiplier, 0);\
+    UPDATE(multiplier, 1);\
+    UPDATE(multiplier, 2);\
+    UPDATE(multiplier, 4);\
+    UPDATE(multiplier, 5);\
+    UPDATE(multiplier, 6);\
+    UPDATE(multiplier, 7);\
+    UPDATE(multiplier, 8);\
+    UPDATE(multiplier, 9);\
+    UPDATE(multiplierl, 10);\
+})
+#elif NUM_MATERIALS == 12
+#define INTERPOLATE(multiplier) ({\
+    UPDATE(multiplier, 0);\
+    UPDATE(multiplier, 1);\
+    UPDATE(multiplier, 2);\
+    UPDATE(multiplier, 4);\
+    UPDATE(multiplier, 5);\
+    UPDATE(multiplier, 6);\
+    UPDATE(multiplier, 7);\
+    UPDATE(multiplier, 8);\
+    UPDATE(multiplier, 9);\
+    UPDATE(multiplier, 10);\
+    UPDATE(multiplier, 11);\
+})
+#elif NUM_MATERIALS == 13
+#define INTERPOLATE(multiplier) ({\
+    UPDATE(multiplier, 0);\
+    UPDATE(multiplier, 1);\
+    UPDATE(multiplier, 2);\
+    UPDATE(multiplier, 4);\
+    UPDATE(multiplier, 5);\
+    UPDATE(multiplier, 6);\
+    UPDATE(multiplier, 7);\
+    UPDATE(multiplier, 8);\
+    UPDATE(multiplier, 9);\
+    UPDATE(multiplier, 10);\
+    UPDATE(multiplier, 11);\
+    UPDATE(multiplier, 12);\
+})
+#elif NUM_MATERIALS == 14
+#define INTERPOLATE(multiplier) ({\
+    UPDATE(multiplier, 0);\
+    UPDATE(multiplier, 1);\
+    UPDATE(multiplier, 2);\
+    UPDATE(multiplier, 4);\
+    UPDATE(multiplier, 5);\
+    UPDATE(multiplier, 6);\
+    UPDATE(multiplier, 7);\
+    UPDATE(multiplier, 8);\
+    UPDATE(multiplier, 9);\
+    UPDATE(multiplier, 10);\
+    UPDATE(multiplier, 11);\
+    UPDATE(multiplier, 12);\
+    UPDATE(multiplier, 13);\
+})
+#else
+#define INTERPOLATE(multiplier) (fprintf("NUM_MATERIALS not in [1, 14]"))
+#endif
+
 
 // the CT volume (used to be tex_density)
 texture<float, 3, cudaReadModeElementType> volume;
-
-//  channel of the materials array, same size as the volume.
-texture<float, 3, cudaReadModeElementType> materials_0;
-texture<float, 3, cudaReadModeElementType> materials_1;
-texture<float, 3, cudaReadModeElementType> materials_2;
 
 extern "C" {
     __global__  void projectKernel(
@@ -119,12 +308,11 @@ extern "C" {
         // Trapezoidal rule (interpolating function = piecewise linear func)
         float px, py, pz; // world-space point
         int t; // number of steps along ray
-        int m; // materials index
         float alpha; // distance along ray (alpha = minAlpha + step * t)
         float boundary_factor; // factor to multiply at the boundary.
 
         // initialize the output to 0.
-        for (m = 0; m < NUM_MATERIALS; m++) {
+        for (int m = 0; m < NUM_MATERIALS; m++) {
             output[idx + m] = 0;
         }
 
@@ -144,9 +332,10 @@ extern "C" {
             boundary_factor = (t == 0 || alpha + step >= maxAlpha) ? 0.5 : 1.0;
 
             // Perform the interpolation.
-            output[idx + 0] += boundary_factor * tex3D(volume, px, py, pz) * round(cubicTex3D(materials_0, px, py, pz));
-            output[idx + 1] += boundary_factor * tex3D(volume, px, py, pz) * round(cubicTex3D(materials_1, px, py, pz));
-            output[idx + 2] += boundary_factor * tex3D(volume, px, py, pz) * round(cubicTex3D(materials_2, px, py, pz));
+            INTERPOLATE(boundary_factor);
+            // output[idx + 0] += boundary_factor * tex3D(volume, px, py, pz) * round(cubicTex3D(materials_0, px, py, pz));
+            // output[idx + 1] += boundary_factor * tex3D(volume, px, py, pz) * round(cubicTex3D(materials_1, px, py, pz));
+            // output[idx + 2] += boundary_factor * tex3D(volume, px, py, pz) * round(cubicTex3D(materials_2, px, py, pz));
         }
 
         // Scaling by step;
@@ -158,9 +347,10 @@ extern "C" {
             float lastStepsize = maxAlpha - alpha;
 
             // scaled last step interpolation (something weird?)
-            output[idx + 0] += 0.5 * lastStepsize * tex3D(volume, px, py, pz) * round(cubicTex3D(materials_0, px, py, pz));
-            output[idx + 1] += 0.5 * lastStepsize * tex3D(volume, px, py, pz) * round(cubicTex3D(materials_1, px, py, pz));
-            output[idx + 2] += 0.5 * lastStepsize * tex3D(volume, px, py, pz) * round(cubicTex3D(materials_2, px, py, pz));
+            INTERPOLATE(0.5 * lastStepsize);
+            // output[idx + 0] += 0.5 * lastStepsize * tex3D(volume, px, py, pz) * round(cubicTex3D(materials_0, px, py, pz));
+            // output[idx + 1] += 0.5 * lastStepsize * tex3D(volume, px, py, pz) * round(cubicTex3D(materials_1, px, py, pz));
+            // output[idx + 2] += 0.5 * lastStepsize * tex3D(volume, px, py, pz) * round(cubicTex3D(materials_2, px, py, pz));
 
             // The last segment of the line integral takes care of the varying length.
             px = sx + alpha * rx + 0.5;
@@ -168,13 +358,16 @@ extern "C" {
             pz = sz + alpha * rz - gVolumeEdgeMinPointZ;
 
             // interpolation
-            output[idx + 0] += 0.5 * lastStepsize * tex3D(volume, px, py, pz) * round(cubicTex3D(materials_0, px, py, pz));
-            output[idx + 1] += 0.5 * lastStepsize * tex3D(volume, px, py, pz) * round(cubicTex3D(materials_1, px, py, pz));
-            output[idx + 2] += 0.5 * lastStepsize * tex3D(volume, px, py, pz) * round(cubicTex3D(materials_2, px, py, pz));
+            INTERPOLATE(0.5 * lastStepsize);
+            // output[idx + 0] += 0.5 * lastStepsize * tex3D(volume, px, py, pz) * round(cubicTex3D(materials_0, px, py, pz));
+            // output[idx + 1] += 0.5 * lastStepsize * tex3D(volume, px, py, pz) * round(cubicTex3D(materials_1, px, py, pz));
+            // output[idx + 2] += 0.5 * lastStepsize * tex3D(volume, px, py, pz) * round(cubicTex3D(materials_2, px, py, pz));
         }
 
         // normalize output value to world coordinate system units
-        output[idx] *= sqrt((rx * gVoxelElementSizeX)*(rx * gVoxelElementSizeX) + (ry * gVoxelElementSizeY)*(ry * gVoxelElementSizeY) + (rz * gVoxelElementSizeZ)*(rz * gVoxelElementSizeZ));
+        for (int m = 0; m < NUM_MATERIALS; m++) {
+            output[idx] *= sqrt((rx * gVoxelElementSizeX)*(rx * gVoxelElementSizeX) + (ry * gVoxelElementSizeY)*(ry * gVoxelElementSizeY) + (rz * gVoxelElementSizeZ)*(rz * gVoxelElementSizeZ));
+        }
     
         return;
     }

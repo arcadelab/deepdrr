@@ -2,7 +2,7 @@ import numpy as np
 from pycuda import gpuarray, cumath
 from pycuda.tools import DeviceMemoryPool
 
-from .materials import materials
+from .material_coefficients import material_coefficients
 
 
 def calculate_intensity_from_spectrum(projections, spectrum, blocksize=50):
@@ -47,7 +47,7 @@ def calculate_attenuation_gpu(projections_gpu, energy, p, pool):
 def get_absorbtion_coefs(x, material):
     # returns absorbtion coefficient at x in keV
     xMev = x.copy() / 1000
-    return log_interp(xMev, materials[material][:, 0], materials[material][:, 1])
+    return log_interp(xMev, material_coefficients[material][:, 0], material_coefficients[material][:, 1])
 
 
 def log_interp(xInterp, x, y):

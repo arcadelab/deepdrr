@@ -2,6 +2,7 @@ import torch
 import numpy as np
 from skimage.transform import resize
 import torchvision.transforms as transforms
+from pathlib import Path
 
 from .network_scatter import SimpleNetGenerator
 
@@ -9,7 +10,8 @@ from .network_scatter import SimpleNetGenerator
 class ScatterNet():
     def __init__(self):
         torch.cuda.set_device(0)
-        self.model_path = "./model_scatter.pth"
+        d = Path(__file__).resolve().parent
+        self.model_path = d / "model_scatter.pth"
         self.model = SimpleNetGenerator()
         self.model.load_state_dict(torch.load(self.model_path))
         self.model = self.model.cuda()

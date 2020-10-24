@@ -305,5 +305,18 @@ teflon = np.array([[1.00000E-03,4.823E+03,4.797E+03],
 [2.00000E+01,1.722E-02,1.310E-02]])
 
 
-materials = {"bone": bone, "soft tissue": softTissue, "air": air, "iron": iron, "lung": lung, "titanium": titanium, "teflon": teflon,
-             "bone external": bone, "soft tissue external": softTissue, "air external": air, "iron external": iron, "lung external": lung, "titanium external": titanium, "teflon external": teflon}
+material_coefficients = {
+    "bone": bone, 
+    "soft tissue": softTissue, 
+    "air": air, 
+    "iron": iron, 
+    "lung": lung, 
+    "titanium": titanium,
+    "teflon": teflon,
+    "bone external": bone, 
+    "soft tissue external": softTissue, 
+    "air external": air, 
+    "iron external": iron, 
+    "lung external": lung, 
+    "titanium external": titanium, 
+    "teflon external": teflon}
