@@ -73,7 +73,8 @@ def main():
     phi_range = (min_phi, max_phi, spacing_phi)
     theta_range = (min_theta, max_theta, spacing_theta)
 
-    with Projector(
+    # make the projector object, but do not reserve GPU resources yet.
+    projector = Projector(
         volume=volume, # TODO: should be converted to a "VolumeData" object.
         segmentation=materials,
         materials=list(materials.keys()),
@@ -87,7 +88,11 @@ def main():
         add_scatter=False, # add photon scatter
         threads=8,
         centimeters=True,
-    ) as projector:
+    )
+
+    # use a with block to allocate memory for the projector.
+    # Alternatively, use projector.initialize() and projector.free()
+    with projector:
         images = projector.over_range(phi_range, theta_range)
 
     # show result

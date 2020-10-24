@@ -308,7 +308,7 @@ class Projector(object):
         # Mark self as initialized.
         self.initialized = True
 
-    def close(self):
+    def free(self):
         """Free the allocated GPU memory."""
         if self.initialized:
             self.volume_gpu.free()
@@ -324,7 +324,7 @@ class Projector(object):
         return self
 
     def __exit__(self, type, value, tb):
-        self.close()
+        self.free()
         
     def __call__(self, *args, **kwargs):
         return self.project(*args, **kwargs)

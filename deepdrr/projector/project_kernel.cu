@@ -331,11 +331,9 @@ extern "C" {
              */ 
             boundary_factor = (t == 0 || alpha + step >= maxAlpha) ? 0.5 : 1.0;
 
-            // Perform the interpolation.
+            // Perform the interpolation. This involves the variables: output, idx, px, py, pz, and volume. 
+            // It is done for each segmentation.
             INTERPOLATE(boundary_factor);
-            // output[idx + 0] += boundary_factor * tex3D(volume, px, py, pz) * round(cubicTex3D(materials_0, px, py, pz));
-            // output[idx + 1] += boundary_factor * tex3D(volume, px, py, pz) * round(cubicTex3D(materials_1, px, py, pz));
-            // output[idx + 2] += boundary_factor * tex3D(volume, px, py, pz) * round(cubicTex3D(materials_2, px, py, pz));
         }
 
         // Scaling by step;
@@ -348,9 +346,6 @@ extern "C" {
 
             // scaled last step interpolation (something weird?)
             INTERPOLATE(0.5 * lastStepsize);
-            // output[idx + 0] += 0.5 * lastStepsize * tex3D(volume, px, py, pz) * round(cubicTex3D(materials_0, px, py, pz));
-            // output[idx + 1] += 0.5 * lastStepsize * tex3D(volume, px, py, pz) * round(cubicTex3D(materials_1, px, py, pz));
-            // output[idx + 2] += 0.5 * lastStepsize * tex3D(volume, px, py, pz) * round(cubicTex3D(materials_2, px, py, pz));
 
             // The last segment of the line integral takes care of the varying length.
             px = sx + alpha * rx + 0.5;
@@ -359,14 +354,11 @@ extern "C" {
 
             // interpolation
             INTERPOLATE(0.5 * lastStepsize);
-            // output[idx + 0] += 0.5 * lastStepsize * tex3D(volume, px, py, pz) * round(cubicTex3D(materials_0, px, py, pz));
-            // output[idx + 1] += 0.5 * lastStepsize * tex3D(volume, px, py, pz) * round(cubicTex3D(materials_1, px, py, pz));
-            // output[idx + 2] += 0.5 * lastStepsize * tex3D(volume, px, py, pz) * round(cubicTex3D(materials_2, px, py, pz));
         }
 
         // normalize output value to world coordinate system units
         for (int m = 0; m < NUM_MATERIALS; m++) {
-            output[idx] *= sqrt((rx * gVoxelElementSizeX)*(rx * gVoxelElementSizeX) + (ry * gVoxelElementSizeY)*(ry * gVoxelElementSizeY) + (rz * gVoxelElementSizeZ)*(rz * gVoxelElementSizeZ));
+            output[idx + m] *= sqrt((rx * gVoxelElementSizeX)*(rx * gVoxelElementSizeX) + (ry * gVoxelElementSizeY)*(ry * gVoxelElementSizeY) + (rz * gVoxelElementSizeZ)*(rz * gVoxelElementSizeZ));
         }
     
         return;
