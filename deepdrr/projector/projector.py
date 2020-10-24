@@ -146,7 +146,7 @@ class Projector(object):
         cuda.memcpy_dtoh(output, self.output_gpu)
 
         # transpose the axes
-        output = np.swapaxes(output, 0, 1)
+        output = np.swapaxes(output, 0, 1).copy()
 
         # convert to centimeters
         if self.centimeters:

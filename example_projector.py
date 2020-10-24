@@ -87,7 +87,7 @@ def main():
     # )
 
     with Projector(
-        volume=volume,
+        volume=volume, # should be converted to a "volume density". TODO: deal with this in a Volume class.
         materials=materials,
         voxel_size=voxel_size,
         camera=camera,
@@ -100,21 +100,7 @@ def main():
         forward_projections = projector.over_range(phi_range, theta_range)
 
     print(forward_projections.shape)
-    exit()
-
-    # forward project densities
-    forward_projections = projector.generate_projections(
-        projections,
-        volume,
-        materials,
-        origin,
-        voxel_size,
-        camera.sensor_width,
-        camera.sensor_height,
-        mode="linear",
-        max_blockind=200,
-        threads=8,
-    )
+    forward_projections = dict((k, forward_projections[:, :, :, i]) for i, k in enumerate(materials.keys()))
 
     # calculate intensity at detector (images: mean energy one photon emitted from the source
     # deposits at the detector element, photon_prob: probability of a photon emitted from the
