@@ -241,9 +241,9 @@ extern "C" {
         float v = (float) hidx + 0.5;
 
         // vector along world-space ray from source-point to pixel on the image plane
-        float rx = gInvARmatrix[2] + v * gInvARmatrix[1] + u * gInvARmatrix[0];
-        float ry = gInvARmatrix[5] + v * gInvARmatrix[4] + u * gInvARmatrix[3];
-        float rz = gInvARmatrix[8] + v * gInvARmatrix[7] + u * gInvARmatrix[6];
+        float rx = u * gInvARmatrix[0] + v * gInvARmatrix[1] + gInvARmatrix[2];
+        float ry = u * gInvARmatrix[3] + v * gInvARmatrix[4] + gInvARmatrix[5];
+        float rz = u * gInvARmatrix[6] + v * gInvARmatrix[7] + gInvARmatrix[8];
 
         // make the ray a unit-vector
         float normFactor = 1.0f / (sqrt((rx * rx) + (ry * ry) + (rz * rz)));
