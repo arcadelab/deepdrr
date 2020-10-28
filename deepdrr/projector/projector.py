@@ -238,7 +238,7 @@ class Projector(object):
         phi_range: Tuple[float, float, float],
         theta_range: Tuple[float, float, float],        
     ) -> np.ndarray:
-        projections = self.camera.make_projections_from_range(phi_range=phi_range, theta_range=theta_range)
+        projections = self.camera.make_projections_over_range(phi_range=phi_range, theta_range=theta_range)
         return self.project(*projections)
 
     @property

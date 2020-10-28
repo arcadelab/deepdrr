@@ -45,7 +45,7 @@ class Projection(object):
             R, t = extrinsic
         else:
             R = extrinsic[0:3, 0:3]
-            t = extrinsic[0:3, 3}]
+            t = extrinsic[0:3, 3]
 
         K = intrinsic
         return cls(R, K, t)
