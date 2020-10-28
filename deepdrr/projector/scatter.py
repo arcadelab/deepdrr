@@ -19,7 +19,7 @@ class ScatterNet():
         print("loaded scatter net")
 
     def add_scatter(self, input_image, camera):
-        scale_factor = 0.1334 * camera.pixel_size / 0.31
+        scale_factor = 0.1334 * camera.pixel_size[0] / 0.31
         # input_image = np.ascontiguousarray(np.swapaxes(input_image,0,1))
         input_image = np.ascontiguousarray(np.swapaxes(input_image, 1, 2))
         maxlen = np.max(input_image.shape[1:-1]) * scale_factor
@@ -35,7 +35,7 @@ class ScatterNet():
             tensor_list.append(self.transform(image).unsqueeze(0))
         image_tensor = torch.cat(tensor_list).cuda()
         output = self.model.forward(image_tensor) * 0.10
-        scatter = np.array(output.data)
+        scatter = output.cpu().detach().numpy()
         scatter = np.squeeze(scatter, 1)
         # cut relevant part
         scatter = scatter[:, cuts[0][0]:uselen - cuts[0][1], cuts[1][0]:uselen - cuts[1][1]]

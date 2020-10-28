@@ -39,20 +39,21 @@ class Camera(object):
         self,
         intrinsic_matrix: np.ndarray,
         pixel_size: Union[int, Tuple[int, int]],
-        isocenter_distance: float,
+        isocenter_distance: float = 1000,
     ) -> None:
         """Generate the camera object.
 
         Args:
             intrinsic_matrix (np.ndarray): the camera intrinsic matrix K.
             pixel_size (Union[float, Tuple[float, float]]): (width, height) of a pixel, or a single value for both.
-            isocenter_distance (float): the isocenter is the point through which the central ray of the radiation beams passes.
+            isocenter_distance (float): distance to the isocenter in mm. Usually about 1000.
+                The isocenter is the point through which the central ray of the radiation beams passes.
         """
         self.K = intrinsic_matrix
         self.pixel_size = pixel_size
         self.isocenter_distance = isocenter_distance
 
-        self.sensor_size = (int(2 * self.K[0, 2]), int(2 * self.K[1, 2]))
+        self.sensor_size = (int(np.ceil(2 * self.K[0, 2])), int(np.ceil(2 * self.K[1, 2])))
         self.source_to_detector_distance = int(self.K[0, 0] * self.pixel_size[0])
 
     def __str__(self):
@@ -83,10 +84,10 @@ class Camera(object):
         Returns:
             Camera: camera object
         """
-        if not isinstance(sensor_size, tuple):
+        if isinstance(sensor_size, (int, float)):
             sensor_size = (sensor_size, sensor_size)
         
-        if not isinstance(pixel_size, tuple):
+        if isinstance(pixel_size, (int, float)):
             pixel_size = (pixel_size, pixel_size)
         
         K = np.zeros((3, 3))
