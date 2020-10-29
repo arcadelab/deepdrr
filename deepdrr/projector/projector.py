@@ -214,7 +214,7 @@ class Projector(object):
         images, photon_prob = mass_attenuation.calculate_intensity_from_spectrum(forward_projections, self.spectrum)
 
         if self.add_scatter:
-            noise = self.scatter_net.add_scatter(images, camera)
+            noise = self.scatter_net.add_scatter(images, self.camera)
             photon_prob *= 1 + noise / images
             images += noise
 
@@ -226,6 +226,16 @@ class Projector(object):
 
         return images
 
+    def from_view(
+            self,
+            phi: float,
+            theta: float,
+            rho: float = 0,
+            offset: List[float] = [0., 0., 0.],
+    ):
+        projection = self.camera.make_projections([phi], [theta], [rho], [offset])[0]
+        return self.project(projection)
+        
     def over_range(
         self,
         phi_range: Tuple[float, float, float],

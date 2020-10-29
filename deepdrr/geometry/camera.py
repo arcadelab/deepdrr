@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Union, Tuple, Iterable, List
+from typing import Union, Tuple, Iterable, List, Optional
 
 import numpy as np
 import logging
@@ -151,7 +151,7 @@ class Camera(object):
 
     def make_translation(
         self,
-        offset: Optional[ArrayLike] = None,
+        offset: Optional[List[float]] = None,
     ) -> np.ndarray:
         """Make a translation with the given offset from the isocenter.
 
@@ -171,7 +171,7 @@ class Camera(object):
         phis: List[float],
         thetas: List[float],
         rhos: Optional[List[float]] = None,
-        offsets: Optional[List[ArrayLike]] = None,
+        offsets: Optional[List[List[float]]] = None,
     ) -> List[Projection]:
         """Generate projection matrices for the given phis and thetas, with optional rhos and offsets.
 
