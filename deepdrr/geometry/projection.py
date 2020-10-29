@@ -27,7 +27,7 @@ class Projection(object):
         self.rtk_inv = np.matmul(np.transpose(self.R), np.linalg.inv(self.K))
 
     @classmethod
-    def from_camera_parameters(
+    def from_camera_matrices(
         cls,
         intrinsic: np.ndarray,
         extrinsic: Union[Tuple[np.ndarray, np.ndarray], np.ndarray],
@@ -36,7 +36,7 @@ class Projection(object):
 
         Args:
             intrinsic (np.ndarray): intrinsic camera matrix
-            extrinsic (Union[Tuple[np.ndarray, np.ndarray], np.ndarray]): the tuple extrinsic parameters [R, T]
+            extrinsic (Union[Tuple[np.ndarray, np.ndarray], np.ndarray]): the extrinsic parameters [R, T], either as a tuple or a single matrix.
 
         Returns:
             ProjMatrix: a projection matrix object
@@ -44,7 +44,9 @@ class Projection(object):
         if isinstance(extrinsic, tuple):
             R, t = extrinsic
         else:
-            raise NotImplementedError
+            R = extrinsic[0:3, 0:3]
+            t = extrinsic[0:3, 3]
+
         K = intrinsic
         return cls(R, K, t)
 

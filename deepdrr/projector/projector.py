@@ -52,9 +52,9 @@ class Projector(object):
     """
 
     material_names = [
-        "bone",
-        "soft tissue",
         "air",
+        "soft tissue",
+        "bone",
         "iron",
         "lung",
         "titanium",
@@ -88,7 +88,7 @@ class Projector(object):
     ):
                     
         # set variables
-        self.volume = volume
+        self.volume = np.array(volume).astype(np.float32)
         self.segmentation = self._format_segmentation(segmentation, num_materials=len(materials))
         self.materials = materials
         self.voxel_size = np.array(voxel_size)
@@ -199,6 +199,7 @@ class Projector(object):
     ) -> np.ndarray:
         outputs = []
 
+        print('projecting views')
         for proj in projections:
             outputs.append(self._project(proj))
 
@@ -211,9 +212,11 @@ class Projector(object):
         # calculate intensity at detector (images: mean energy one photon emitted from the source
         # deposits at the detector element, photon_prob: probability of a photon emitted from the
         # source to arrive at the detector)
+        print("mass attenuation")
         images, photon_prob = mass_attenuation.calculate_intensity_from_spectrum(forward_projections, self.spectrum)
 
         if self.add_scatter:
+            print('adding scatter (may cause Nan errors)')
             noise = self.scatter_net.add_scatter(images, self.camera)
             photon_prob *= 1 + noise / images
             images += noise
@@ -222,9 +225,13 @@ class Projector(object):
         if self.collected_energy:
             images = images * (self.photon_count / (self.camera.pixel_size[0] * self.camera.pixel_size[1]))
 
+        print("adding noise")
         images = analytic_generators.add_noise(images, photon_prob, self.photon_count)
 
-        return images
+        if images.shape[0] == 1:
+            return images[0]
+        else:
+            return images
 
     def from_view(
             self,
@@ -241,7 +248,7 @@ class Projector(object):
         phi_range: Tuple[float, float, float],
         theta_range: Tuple[float, float, float],        
     ) -> np.ndarray:
-        projections = self.camera.make_projections_from_range(phi_range=phi_range, theta_range=theta_range)
+        projections = self.camera.make_projections_over_range(phi_range=phi_range, theta_range=theta_range)
         return self.project(*projections)
 
     @property

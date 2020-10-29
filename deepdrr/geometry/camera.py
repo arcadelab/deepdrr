@@ -11,16 +11,20 @@ from .projection import Projection
 def generate_uniform_angles(
     phi_range: Tuple[float, float, float],
     theta_range: Tuple[float, float, float],
+    degrees: bool = True,
 ) -> Tuple[np.ndarray, np.ndarray]:
     """Generate a uniform sampling of angles over the given ranges
 
     Args:
-        phi_range (Tuple[float, float, float]): range of angles phi in (min, max, step) form.
-        theta_range (Tuple[float, float, float]): range of angles theta in (min, max, step) form.
+        phi_range (Tuple[float, float, float]): range of angles phi in (min, max, step) form, in degrees.
+        theta_range (Tuple[float, float, float]): range of angles theta in (min, max, step) form, in degrees.
 
     Returns:
-        Tuple[np.ndarray, np.ndarray]: phis, thetas
+        Tuple[np.ndarray, np.ndarray]: phis, thetas over uniform angles, in radians.
     """
+    if not degrees:
+        raise NotImplementedError
+    
     min_theta, max_theta, spacing_theta = theta_range
     min_phi, max_phi, spacing_phi = phi_range
     thetas = np.array(np.arange(min_theta, max_theta + spacing_theta / 2, step=spacing_theta)) / 180 * np.pi
@@ -39,20 +43,21 @@ class Camera(object):
         self,
         intrinsic_matrix: np.ndarray,
         pixel_size: Union[int, Tuple[int, int]],
-        isocenter_distance: float,
+        isocenter_distance: float = 1000,
     ) -> None:
         """Generate the camera object.
 
         Args:
             intrinsic_matrix (np.ndarray): the camera intrinsic matrix K.
             pixel_size (Union[float, Tuple[float, float]]): (width, height) of a pixel, or a single value for both.
-            isocenter_distance (float): the isocenter is the point through which the central ray of the radiation beams passes.
+            isocenter_distance (float): distance to the isocenter in mm. Usually about 1000.
+                The isocenter is the point through which the central ray of the radiation beams passes.
         """
         self.K = intrinsic_matrix
         self.pixel_size = pixel_size
         self.isocenter_distance = isocenter_distance
 
-        self.sensor_size = (int(2 * self.K[0, 2]), int(2 * self.K[1, 2]))
+        self.sensor_size = (int(np.ceil(2 * self.K[0, 2])), int(np.ceil(2 * self.K[1, 2])))
         self.source_to_detector_distance = int(self.K[0, 0] * self.pixel_size[0])
 
     def __str__(self):
@@ -83,10 +88,10 @@ class Camera(object):
         Returns:
             Camera: camera object
         """
-        if not isinstance(sensor_size, tuple):
+        if isinstance(sensor_size, (int, float)):
             sensor_size = (sensor_size, sensor_size)
         
-        if not isinstance(pixel_size, tuple):
+        if isinstance(pixel_size, (int, float)):
             pixel_size = (pixel_size, pixel_size)
         
         K = np.zeros((3, 3))
@@ -172,14 +177,16 @@ class Camera(object):
         thetas: List[float],
         rhos: Optional[List[float]] = None,
         offsets: Optional[List[List[float]]] = None,
+        degrees: bool = False,
     ) -> List[Projection]:
         """Generate projection matrices for the given phis and thetas, with optional rhos and offsets.
 
         Args:
-            phis (List[float]): list of angles phi in radians.
-            thetas (List[float]): list of angles theta in radians.
+            phis (List[float]): list of angles phi in radians (unless degrees is true).
+            thetas (List[float]): list of angles theta in radians (unless degrees is True).
             rhos (Optional[List[float]], optional): list of angles rho in radians. Defaults to None.
             offsets (Optional[List[ArrayLike]], optional): list of 3D offsets. Defaults to None.
+            degrees (bool): args are in degrees
 
         Returns:
             List[Projection]: list of Projection objects onto these views.
@@ -193,9 +200,14 @@ class Camera(object):
         if rhos is None:
             rhos = [0 for _ in range(num_projections)]
 
+        if degrees:
+            phis = np.radians(phis)
+            thetas = np.radians(thetas)
+            rhos = np.radians(rhos)
+
         if offsets is None:
             offsets = [np.zeros(3) for _ in range(num_projections)]
-            
+
         projections = []
         for phi, theta, rho, offset in zip(phis, thetas, rhos, offsets):
             R = self.make_rotation(phi, theta, rho)
@@ -203,10 +215,11 @@ class Camera(object):
             projections.append(Projection(R, self.K, t))
         return projections
 
-    def make_projections_from_range(
+    def make_projections_over_range(
         self,
         phi_range: Tuple[float, float, float],
         theta_range: Tuple[float, float, float],
+        degrees: bool = True,
     ) -> List[Projection]:
         """Generate projection matrices from a uniform set of angles.
 
@@ -217,5 +230,10 @@ class Camera(object):
         Returns:
             List[Projection]: [description]
         """
+ <<<<<<< HEAD
         phis, thetas = generate_uniform_angles(phi_range, theta_range)
         return self.make_projections(phis=phis, thetas=thetas)
+=======
+        phis, thetas = generate_uniform_angles(phi_range, theta_range, degrees=degrees)
+        return self.make_projections(phis=phis, thetas=thetas)
+>>>>>>> 5f4aa3fd56cb5b9643d9cfcaab5cecc36b811ba6

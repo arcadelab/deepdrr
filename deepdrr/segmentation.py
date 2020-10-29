@@ -1,22 +1,39 @@
 import numpy as np
 import matplotlib.pyplot as plt
+from pathlib import Path
 import torch
 from torch.autograd import Variable
+from torchvision.datasets.utils import download_url
 
 from .network_segmentation import VNet
 
 
 class SegmentationNet():
-    def __init__(self):
+    url = "https://www.dropbox.com/s/pn4aw4z2i01eoo4/model_segmentation.pth.tar?dl=0"
+    md5 = "73201847d381131f7e6753e40252dfbc"
+
+    filename = "model_segmentation.pth.tar"
+    model_path = Path(__file__).resolve().parent / filename
+
+    def __init__(self, download=True):
         torch.cuda.set_device(0)
-        self.model_path = "./model_segmentation.pth.tar"
+
+        if download: 
+            self.download()
+
         self.model = VNet()
         self.model = self.model.cuda()
         self.model.load_state_dict(torch.load(self.model_path)['state_dict'])
         self.model.eval()
         print("loaded segmentation network")
+    
+    def download(self):
+        if self.model_path.exists():
+            return
+        
+        download_url(self.url, self.model_path.parent, self.filename, self.md5)
 
-    def segment(self, input_volume, show_results=True):
+    def segment(self, input_volume, show_results=False):
         segmentation_prior_air = 1
         segmentation_prior_soft = 1
         segmentation_prior_bone = 1
@@ -55,7 +72,7 @@ class SegmentationNet():
                     presegmentation[3, :, :, :] = curren_block < (-500 - mean) / std
                     curren_block_tensor = torch.from_numpy(presegmentation).cuda()
                     curren_block_tensor = torch.unsqueeze(curren_block_tensor, 0)
-                    output_tensor = np.array(self.model.forward(Variable(curren_block_tensor, requires_grad=False)).data)
+                    output_tensor = self.model.forward(Variable(curren_block_tensor, requires_grad=False)).cpu().detach().numpy()
                     segmented_volume[:, i * blocksize:(i + 1) * blocksize, j * blocksize:(j + 1) * blocksize, k * blocksize:(k + 1) * blocksize] = output_tensor[0, :, :, :, :]
         segmented_volume = segmented_volume[:, offset_before[0]:input_volume.shape[0] + offset_before[0], offset_before[1]:input_volume.shape[1] + offset_before[1], offset_before[2]:input_volume.shape[2] + offset_before[2]]
 
