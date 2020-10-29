@@ -230,10 +230,5 @@ class Camera(object):
         Returns:
             List[Projection]: [description]
         """
- <<<<<<< HEAD
-        phis, thetas = generate_uniform_angles(phi_range, theta_range)
-        return self.make_projections(phis=phis, thetas=thetas)
-=======
         phis, thetas = generate_uniform_angles(phi_range, theta_range, degrees=degrees)
         return self.make_projections(phis=phis, thetas=thetas)
->>>>>>> 5f4aa3fd56cb5b9643d9cfcaab5cecc36b811ba6
