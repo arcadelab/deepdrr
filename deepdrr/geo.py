@@ -10,7 +10,17 @@ from scipy.spatial.transform import Rotation
 import numpy as np
 
 
+
 def _to_homogeneous(x: np.ndarray, is_point: bool = True) -> np.ndarray:
+    """Convert an array to homogeneous points or vectors.
+
+    Args:
+        x (np.ndarray): array with objects on the last axis.
+        is_point (bool, optional): if True, the array represents a point, otherwise it represents a vector. Defaults to True.
+
+    Returns:
+        np.ndarray: array containing the homogeneous point/vector(s).
+    """
     if is_point:
         return np.concatenate([x, np.ones_like(x[..., -1:])], axis=-1)
     else:
@@ -18,6 +28,15 @@ def _to_homogeneous(x: np.ndarray, is_point: bool = True) -> np.ndarray:
 
 
 def _from_homogeneous(x: np.ndarray, is_point: bool = True) -> np.ndarray:
+    """Convert array containing homogeneous data to raw form.
+
+    Args:
+        x (np.ndarray): array containing homogenous
+        is_point (bool, optional): whether the objects are points (true) or vectors (False). Defaults to True.
+
+    Returns:
+        np.ndarray: the raw data representing the point/vector(s).
+    """
     if is_point:
         return (x / x[..., -1:])[..., :-1]
     else:
@@ -37,7 +56,7 @@ class HomogeneousObject(ABC):
             self,
             data: np.ndarray,
     ) -> None:
-        self.data = np.array(data)
+        self.data = np.array(data, dtype=self.dtype)
 
     @classmethod
     @abstractmethod
@@ -45,17 +64,22 @@ class HomogeneousObject(ABC):
             cls: Type[T],
             x: np.ndarray,
     ) -> T:
+        """Create a homogeneous object from its non-homogeous representation as an array."""
         pass
 
     @property
     @abstractmethod
     def dim(self) -> int:
+        """Get the dimension of the space the object lives in."""
         pass
 
     @abstractmethod
-    def __array__(self):
+    def to_array(self):
         """Get the non-homogeneous representation of the object."""
         pass
+
+    def __array__(self):
+        return self.to_array()
             
     def __str__(self):
         return np.array_str(np.array(self), suppress_small=True)
@@ -66,17 +90,18 @@ class HomogeneousObject(ABC):
 
 
 class Homogeneous(HomogeneousObject):
-    """A Homogeneous vector or point in any dimension."""
+    """A Homogeneous point or vector in any dimension."""
     def __init__(
             self,
             data: np.ndarray,
     ) -> None:
+        """Instantiate the homogeneous point or vector and check its dimension."""
         super().__init__(data)
         
         if self.data.shape != (self.dim + 1,):
             raise ValueError(f'invalid shape for {self.dim}D object in homogeneous coordinates: {self.data.shape}')
 
-    def __array__(self):
+    def to_array(self):
         return _from_homogeneous(self.data, vector=(self.data[-1] == 0))
 
     
@@ -97,14 +122,16 @@ class Point(Homogeneous):
     @classmethod
     def from_any(
             cls: Type[T],
-            other: Union[np.ndarray, Vector],
+            other: Union[np.ndarray, Point],
     ):
+        """ If other is not a point, make it one. """
         return other if issubclass(type(other), Point) else cls.from_array(other)
 
     def __sub__(
             self: Point,
             other: Point,
     ) -> Vector:
+        """ Subtract two points, obtaining a vector. """
         other = self.from_any(other)
         return vector(self.data - other.data)
 
@@ -128,16 +155,20 @@ class Vector(Homogeneous):
             cls: Type[T],
             other: Union[np.ndarray, Vector],
     ):
+        """ If other is not a Vector, make it one. """
         return other if issubclass(type(other), Vector) else cls.from_array(other)
     
     def __mul__(self, other: Union[int, float]):
+        """ Vectors can be multiplied by scalars. """
         return type(self)(other * self.data)
 
     def __matmul__(self, other: Vector):
+        """ Inner product between two Vectors. """
         other = self.from_any(other)
         return type(self)(self.data @ other.data)
 
-    def __add__(self, other: Vector):
+    def __add__(self, other: Vector) -> Vector:
+        """ Two vectors can be added to make another vector. """
         other = self.from_any(other)
         return type(self)(self.data + other.data)
 
@@ -166,19 +197,19 @@ class Homogeneous3D(Homogeneous):
 
 
 class Point2D(Point, Homogeneous2D):
-    pass
+    """ Homogeneous point in 2D, represented as an array with [x, y, 1] """
 
 
 class Vector2D(Vector, Homogeneous2D):
-    pass
+    """ Homogeneous vector in 2D, represented as an array with [x, y, 0] """
     
 
 class Point3D(Point, Homogeneous3D):
-    pass
+    """ Homogeneous point in 3D, represented as an array with [x, y, z, 1] """
 
 
 class Vector3D(Vector, Homogeneous3D):
-    pass
+    """ Homogeneous vector in 3D, represented as an array with [x, y, z, 0] """
 
 
 PointOrVector = TypeVar('PointOrVector', Point2D, Point3D, Vector2D, Vector3D)
@@ -248,7 +279,7 @@ class Frame(HomogeneousObject):            # TODO: make a subclass of Homogeneou
     def dim(self):
         return self.data.shape[0] - 1
 
-    def __array__(self):
+    def to_array(self):
         return self.data
 
     @classmethod
@@ -321,3 +352,4 @@ class Frame(HomogeneousObject):            # TODO: make a subclass of Homogeneou
     def inv(self):
         return Frame.from_matrices(self.R.T, -(self.R.T @ self.p))
     
+

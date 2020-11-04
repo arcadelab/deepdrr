@@ -3,8 +3,9 @@ import glob
 import copy
 import numpy as np
 from skimage.transform import resize
-import segmentation
 import math
+
+from . import segmentation
 
 def downsample_tool(ori_CT_volume, CT_volume, CT_voxel_size, tool_volume, tool_voxel_size, CT_materials, tool_materials, origin, tool_origin):
 	tool_size = np.shape(tool_volume)

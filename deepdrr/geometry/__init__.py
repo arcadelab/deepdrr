@@ -1,4 +1,5 @@
-from .camera import Camera
+"""Deprecated"""
+
 from .projection import Projection
 
-__all__ = [Camera, Projection]
+__all__ = [Projection]

@@ -10,7 +10,7 @@ from deepdrr.load_dicom import load_dicom, conv_hu_to_materials_thresholding, co
 
 # new deepdrr imports
 from deepdrr import utils
-from deepdrr.geometry import Camera, Projection
+from deepdrr.cam import Camera
 from deepdrr.projector import Projector
 
 

@@ -1,5 +1,4 @@
-from .geometry.camera import Camera
-from .geometry.projection import Projection
-from .projector.projector import Projector
+from .cam import Camera, CamProjection
+from .projector import Projector
 
-__all__ = [Camera, Projection, Projector]
+__all__ = [Camera, CamProjection, Projector]

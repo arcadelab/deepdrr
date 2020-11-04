@@ -12,7 +12,7 @@ from . import spectral_data
 from . import mass_attenuation
 from . import scatter
 from . import analytic_generators
-from ..geometry.camera import Camera
+from ..cam import Camera
 from ..geometry.projection import Projection
 from .. import utils
 

@@ -4,10 +4,12 @@
 import numpy as np
 from pathlib import Path
 
+from .geo import Frame
+
 
 # TODO: create a VolumeData class containing the volume, materials, and
 # relationship with the world coordinates.
-class VolumeData(object):
+class Volume(object):
     def __init__(
         self, 
         volume: np.ndarray,
@@ -16,3 +18,4 @@ class VolumeData(object):
         origin: np.ndarray,
     ):
         pass
+
