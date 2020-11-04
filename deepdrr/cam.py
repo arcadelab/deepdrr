@@ -205,7 +205,7 @@ class Camera(object):
         return f"Camera(intrinsic_matrix = {np.array_str(self.K)}, isocenter_distance = {self.isocenter_distance})"
 
     @classmethod
-    def from_intrinsic_matrix(cls, intrinsic_matrix: ArrayLike) -> Camera:
+    def from_intrinsic_matrix(cls, intrinsic_matrix: np.ndarray) -> Camera:
         return cls(intrinsic_matrix)
 
     @classmethod
