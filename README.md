@@ -25,7 +25,7 @@ More detailed use-cases are pending.
 
 ## Documentation
 
-Documentation efforts are pending. Much of the code has been 
+Documentation effort}{{s are pending. Much of the code has been 
 
 
 ## Reference

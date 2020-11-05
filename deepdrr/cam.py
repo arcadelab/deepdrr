@@ -1,4 +1,5 @@
 from __future__ import annotations
+from operator import truediv
 
 from typing import Union, Tuple, Iterable, List, Optional, Any
 
@@ -75,20 +76,32 @@ class CamProjection(HomogeneousObject):
             K (np.ndarray): camera intrinsic matrix
             t (np.ndarray): translation matrix of extrinsic parameters
         """
-        self.R = np.array(R, dtype=np.float32)
-        self.t = np.array(t, dtype=np.float32)
-        self.K = np.array(K, dtype=np.float32)
-        data = np.matmul(self.K, np.concatenate((self.R, np.expand_dims(self.t, 1)), axis=1))
+        self.R = np.array(R, dtype=self.dtype)
+        self.t = np.array(t, dtype=self.dtype)
+        self.K = np.array(K, dtype=self.dtype)
+
+        # projection matrix in homogeneous coordinates
+        I = np.concatenate([np.eye(3), np.zeros((3, 1))], axis=1)
+        Rt = np.array(Frame.from_matrices(R, t))
+        data = self.K @ I @ Rt
+        print(data)
 
         super().__init__(data)
 
-        self.inv = self.R.T @ np.linalg.inv(self.K)
+        self.rtk_inv = self.R.T @ np.linalg.inv(self.K)
+
+    def __str__(self):
+        return f"""\
+[{self.K[0, 0]:10.3g} {self.K[0, 1]:10.03g} {self.K[0, 2]:10.03g}]  [{self.R[0, 0]:10.03g} {self.R[0, 1]:10.03g} {self.R[0, 2]:10.03g} | {self.t[0]:10.3g}]
+[{self.K[1, 0]:10.3g} {self.K[1, 1]:10.03g} {self.K[1, 2]:10.03g}]  [{self.R[1, 0]:10.03g} {self.R[1, 1]:10.03g} {self.R[1, 2]:10.03g} | {self.t[1]:10.3g}]
+[{self.K[2, 0]:10.3g} {self.K[2, 1]:10.03g} {self.K[2, 2]:10.03g}]  [{self.R[2, 0]:10.03g} {self.R[2, 1]:10.03g} {self.R[2, 2]:10.03g} | {self.t[2]:10.3g}]
+"""
 
     @classmethod
-    def from_camera_matrices(
+    def from_matrices(
         cls,
         intrinsic: np.ndarray,
-        extrinsic: Union[Tuple[np.ndarray, np.ndarray], np.ndarray],
+        extrinsic: Union[Tuple[np.ndarray, np.ndarray], np.ndarray, Frame],
     ) -> CamProjection:
         """Alternative to the init function, more readable.
 
@@ -102,6 +115,7 @@ class CamProjection(HomogeneousObject):
         if isinstance(extrinsic, tuple):
             R, t = extrinsic
         else:
+            extrinsic = np.array(extrinsic)
             R = extrinsic[0:3, 0:3]
             t = extrinsic[0:3, 3]
 
@@ -113,14 +127,23 @@ class CamProjection(HomogeneousObject):
 
     @classmethod
     def from_array(cls, data: np.ndarray) -> CamProjection:
-        return cls(data)
+        raise NotImplementedError('instantiate a cam projection from calibrated intrinsic and extrinsic parameters')
 
+    def __matmul__(
+        self,
+        other: Point3D,
+    ) -> Point2D:
+        return Point2D(self.data @ other.data)
+
+    def __call__(
+        self,
+        p: Union[Point3D, np.ndarray],
+    ) -> Point2D:
+        p = Point3D.from_any(p)
+        return Point2D(self.data @ p.data)
 
     def get_rtk_inv(self):
-        return self.inv
-
-    def get_projection(self):
-        return self.P
+        return self.rtk_inv
 
     def get_camera_center(self):
         return np.matmul(np.transpose(self.R), self.t)
@@ -150,7 +173,7 @@ class CamProjection(HomogeneousObject):
         volume_size = np.array(volume_size)
         origin = np.array(origin)
 
-        inv_proj = np.diag(1 / voxel_size) @ self.inv
+        inv_proj = np.diag(1 / voxel_size) @ self.rtk_inv
         camera_center = self.get_camera_center() # why is this negated if the function is too?
         source_point = (volume_size - 1) / 2 - origin / voxel_size - camera_center / voxel_size
         return inv_proj.astype(dtype), source_point.astype(dtype)

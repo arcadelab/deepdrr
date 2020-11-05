@@ -305,20 +305,37 @@ class Frame(HomogeneousObject):            # TODO: make a subclass of Homogeneou
             axis=0
         )
         return cls(data)
-    
+
     @classmethod
     def from_origin(
             cls: Type[Frame],
-            origin: Point,    # the origin of the frame in world-coordinates
+            origin: Union[Point2D, Point3D],    # the origin of the frame in world-coordinates
     ) -> Frame:
         return Frame.from_matrices(np.identity(origin.dim), -np.array(origin))
 
     @classmethod
     def from_scaling(
             cls: Type[Frame],
-            sizes: np.ndarray,  # 
+            scaling: Union[int, float, np.ndarray],
     ) -> Frame:
-        return Frame.from_matrices(np.identity(len(sizes)), Point)
+        """Create a frame based on scaling dimensions.
+
+        Args:
+            cls (Type[Frame]): the class.
+            scaling (Union[int, float, np.ndarray]): coefficient to scale by, or one for each dimension.
+
+        Returns:
+            Frame: 
+        """
+        scaling = np.array(scaling) * np.ones(3)
+        return Frame.from_matrices(np.diag(scaling), np.zeros(3))
+
+    @classmethod
+    def from_translation(
+        cls,
+        t: np.ndarray,
+    ) -> Frame:
+        return Frame.from_matrices(np.eye(t.shape[0]), t)
 
     @classmethod
     def identity(
@@ -350,6 +367,6 @@ class Frame(HomogeneousObject):            # TODO: make a subclass of Homogeneou
         
     @property
     def inv(self):
-        return Frame.from_matrices(self.R.T, -(self.R.T @ self.p))
+        return Frame.from_matrices(self.R.T, -(self.R.T @ self.t))
     
 

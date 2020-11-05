@@ -13,7 +13,7 @@ from . import mass_attenuation
 from . import scatter
 from . import analytic_generators
 from ..cam import Camera
-from ..geometry.projection import Projection
+from ..cam import CamProjection
 from .. import utils
 
 
@@ -80,6 +80,7 @@ class Projector(object):
         mode: Literal['linear'] = 'linear',
         spectrum: Union[np.ndarray, Literal['60KV_AL35', '90KV_AL40', '120KV_AL43']] = '90KV_AL40',
         add_scatter: bool = True, # add scatter noise
+        add_noise: bool = True, # add poisson noise
         photon_count: int = 100000,
         threads: int = 8,
         max_block_index: int = 1024,
@@ -99,6 +100,7 @@ class Projector(object):
         self.mode = mode
         self.spectrum = self._get_spectrum(spectrum)
         self.add_scatter = add_scatter
+        self.add_noise = add_noise
         self.photon_count = photon_count
         self.threads = threads
         self.max_block_index = max_block_index
@@ -124,7 +126,7 @@ class Projector(object):
 
     def _project(
         self,
-        projection: Projection,
+        projection: CamProjection,
     ) -> np.ndarray:
         if not self.initialized:
             raise RuntimeError("Projector has not been initialized.")
@@ -195,7 +197,7 @@ class Projector(object):
 
     def project(
         self,
-        *projections: Projection,
+        *projections: CamProjection,
     ) -> np.ndarray:
         outputs = []
 
@@ -225,8 +227,9 @@ class Projector(object):
         if self.collected_energy:
             images = images * (self.photon_count / (self.camera.pixel_size[0] * self.camera.pixel_size[1]))
 
-        print("adding noise")
-        images = analytic_generators.add_noise(images, photon_prob, self.photon_count)
+        if self.add_noise:
+            print("adding Poisson noise")
+            images = analytic_generators.add_noise(images, photon_prob, self.photon_count)
 
         if images.shape[0] == 1:
             return images[0]

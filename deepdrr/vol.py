@@ -1,6 +1,8 @@
 """Volume class for CT volume.
 """
 
+from typing import Union
+
 import numpy as np
 from pathlib import Path
 
@@ -13,9 +15,10 @@ class Volume(object):
     def __init__(
         self, 
         volume: np.ndarray,
-        materials: Union[Dict[str, np.ndarray], np.ndarray],
+        materials: Union[dict[str, np.ndarray], np.ndarray],
         voxel_size: np.ndarray,
         origin: np.ndarray,
     ):
-        pass
+        self.volume = volume
+        
 
