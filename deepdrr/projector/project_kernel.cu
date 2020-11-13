@@ -54,23 +54,23 @@ texture<float, 3, cudaReadModeElementType> seg(13);
 #endif
 
 #define UPDATE(multiplier, n) ({\
-    output[idx + n] += (multiplier) * tex3D(volume, px, py, pz) * round(cubicTex3D(seg(n), px, py, pz));\
+    output[idx + (n)] += (multiplier) * tex3D(volume, px, py, pz) * round(cubicTex3D(seg(n), px, py, pz));\
 })
 
 #if NUM_MATERIALS == 1
 #define INTERPOLATE(multiplier) ({\
-    UPDATE(multiplier, 0);\
+    UPDATE(multiplier, 0)\
 })
 #elif NUM_MATERIALS == 2
 #define INTERPOLATE(multiplier) ({\
-    UPDATE(multiplier, 0);\
-    UPDATE(multiplier, 1);\
+    UPDATE(multiplier, 0)\
+    UPDATE(multiplier, 1)\
 })
 #elif NUM_MATERIALS == 3
 #define INTERPOLATE(multiplier) ({\
-    UPDATE(multiplier, 0);\
-    UPDATE(multiplier, 1);\
-    UPDATE(multiplier, 2);\
+    UPDATE(multiplier, 0)\
+    UPDATE(multiplier, 1)\
+    UPDATE(multiplier, 2)\
 })
 #elif NUM_MATERIALS == 4
 #define INTERPOLATE(multiplier) ({\
@@ -198,7 +198,6 @@ texture<float, 3, cudaReadModeElementType> seg(13);
 #else
 #define INTERPOLATE(multiplier) (fprintf("NUM_MATERIALS not in [1, 14]"))
 #endif
-
 
 // the CT volume (used to be tex_density)
 texture<float, 3, cudaReadModeElementType> volume;
