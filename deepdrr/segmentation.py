@@ -9,8 +9,8 @@ from .network_segmentation import VNet
 
 
 class SegmentationNet():
-    url = "https://www.dropbox.com/s/pn4aw4z2i01eoo4/model_segmentation.pth.tar?dl=0"
-    md5 = "73201847d381131f7e6753e40252dfbc"
+    url = "https://www.dropbox.com/s/pn4aw4z2i01eoo4/model_segmentation.pth.tar?dl=1"
+    # md5 = "73201847d381131f7e6753e40252dfbc"
 
     filename = "model_segmentation.pth.tar"
     model_path = Path(__file__).resolve().parent / filename
@@ -31,7 +31,7 @@ class SegmentationNet():
         if self.model_path.exists():
             return
         
-        download_url(self.url, self.model_path.parent, self.filename, self.md5)
+        download_url(self.url, self.model_path.parent, self.filename)
 
     def segment(self, input_volume, show_results=False):
         segmentation_prior_air = 1

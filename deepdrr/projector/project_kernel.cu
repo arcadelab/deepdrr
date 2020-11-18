@@ -3,7 +3,7 @@
 #include <cubicTex3D.cu>
 
 #ifndef NUM_MATERIALS
-#define NUM_MATERIALS 14
+    #define NUM_MATERIALS 14
 #endif
 
 #define _seg(n) seg_##n
@@ -54,23 +54,23 @@ texture<float, 3, cudaReadModeElementType> seg(13);
 #endif
 
 #define UPDATE(multiplier, n) ({\
-    output[idx + (n)] += (multiplier) * tex3D(volume, px, py, pz) * round(cubicTex3D(seg(n), px, py, pz));\
+   output[idx + (n)] += (multiplier) * tex3D(volume, px, py, pz) * round(cubicTex3D(seg(n), px, py, pz));\
 })
 
 #if NUM_MATERIALS == 1
 #define INTERPOLATE(multiplier) ({\
-    UPDATE(multiplier, 0)\
+    UPDATE(multiplier, 0);\
 })
 #elif NUM_MATERIALS == 2
 #define INTERPOLATE(multiplier) ({\
-    UPDATE(multiplier, 0)\
-    UPDATE(multiplier, 1)\
+    UPDATE(multiplier, 0);\
+    UPDATE(multiplier, 1);\
 })
 #elif NUM_MATERIALS == 3
 #define INTERPOLATE(multiplier) ({\
-    UPDATE(multiplier, 0)\
-    UPDATE(multiplier, 1)\
-    UPDATE(multiplier, 2)\
+    UPDATE(multiplier, 0);\
+    UPDATE(multiplier, 1);\
+    UPDATE(multiplier, 2);\
 })
 #elif NUM_MATERIALS == 4
 #define INTERPOLATE(multiplier) ({\
@@ -196,7 +196,7 @@ texture<float, 3, cudaReadModeElementType> seg(13);
     UPDATE(multiplier, 13);\
 })
 #else
-#define INTERPOLATE(multiplier) (fprintf("NUM_MATERIALS not in [1, 14]"))
+#define INTERPOLATE(multiplier) fprintf("NUM_MATERIALS not in [1, 14]")
 #endif
 
 // the CT volume (used to be tex_density)
@@ -339,7 +339,7 @@ extern "C" {
         output[idx] *= step;
 
         // Last segment of the line
-        if (output[idx] > 0.0f ) {
+        if (output[idx] > 0.0f) {
             alpha -= step;
             float lastStepsize = maxAlpha - alpha;
 

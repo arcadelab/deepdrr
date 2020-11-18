@@ -1,9 +1,11 @@
 from typing import Optional
 
+import os
 import numpy as np
 import PIL.Image as Image
 from datetime import datetime
 from pathlib import Path
+from scipy.optimize import curve_fit
 import pickle
 
 
@@ -47,3 +49,5 @@ def one_hot(
         x = np.moveaxis(x, -1, axis).copy()
         
     return x
+
+

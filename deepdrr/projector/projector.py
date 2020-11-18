@@ -1,11 +1,13 @@
 from typing import Literal, List, Union, Tuple, Optional, Dict
 
+import matplotlib.pyplot as plt
 import pycuda.driver as cuda
 import pycuda.autoinit
 from pycuda.autoinit import context
 from pycuda.compiler import SourceModule
 import numpy as np
 import os
+from scipy.optimize import curve_fit
 from pathlib import Path 
 
 from . import spectral_data
@@ -81,7 +83,7 @@ class Projector(object):
         spectrum: Union[np.ndarray, Literal['60KV_AL35', '90KV_AL40', '120KV_AL43']] = '90KV_AL40',
         add_scatter: bool = True, # add scatter noise
         add_noise: bool = True, # add poisson noise
-        photon_count: int = 100000,
+        photon_count: int = 10000,
         threads: int = 8,
         max_block_index: int = 1024,
         centimeters: bool = True,       # convert to centimeters

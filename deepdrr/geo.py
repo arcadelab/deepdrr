@@ -130,7 +130,7 @@ class Point(Homogeneous):
     def __sub__(
             self: Point,
             other: Point,
-    ) -> Vector:
+    ) -> Union[Vector2D, Vector3D]:
         """ Subtract two points, obtaining a vector. """
         other = self.from_any(other)
         return vector(self.data - other.data)
@@ -227,7 +227,10 @@ def _array(x: Union[List[np.ndarray], List[float]]) -> np.ndarray:
         raise ValueError(f'could not parse args: {x}')
 
 
-def point(*x: Union[np.ndarray, float]) -> Union[Point2D, Point3D]:
+def point(*x: Union[np.ndarray, float, Point2D, Point3D]) -> Union[Point2D, Point3D]:
+    if len(x) == 1 and isinstance(x[0], (Point2D, Point3D)):
+        return x[0]
+
     x = _array(x)
     if x.shape == (2,):
         return Point2D.from_array(x)
@@ -237,7 +240,10 @@ def point(*x: Union[np.ndarray, float]) -> Union[Point2D, Point3D]:
         raise ValueError(f'invalid data for point: {x}')
     
 
-def vector(*v: Union[np.ndarray, float]) -> Union[Vector2D, Vector3D]:
+def vector(*v: Union[np.ndarray, float, Vector2D, Vector3D]) -> Union[Vector2D, Vector3D]:
+    if len(v) == 1 and isinstance(v[0], (Vector2D, Vector3D)):
+        return v[0]
+
     v = _array(v)
     if v.shape == (2,):
         return Vector2D.from_array(v)
