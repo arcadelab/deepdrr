@@ -83,7 +83,7 @@ class Projector(object):
         spectrum: Union[np.ndarray, Literal['60KV_AL35', '90KV_AL40', '120KV_AL43']] = '90KV_AL40',
         add_scatter: bool = True, # add scatter noise
         add_noise: bool = True, # add poisson noise
-        photon_count: int = 10000,
+        photon_count: int = 100000,
         threads: int = 8,
         max_block_index: int = 1024,
         centimeters: bool = True,       # convert to centimeters
@@ -281,7 +281,7 @@ class Projector(object):
         """
         if isinstance(segmentation, dict):
             assert len(segmentation) == num_materials
-            segmentation = np.stack([seg == i for i, seg in enumerate(segmentation.values())], axis=0)
+            segmentation = np.stack([seg.astype(np.float32) for i, seg in enumerate(segmentation.values())], axis=0)
         elif segmentation.ndim == 3:
             assert np.all(segmentation < num_materials) # TODO: more flexibility?
             segmentation = utils.one_hot(segmentation, num_materials, axis=0)
@@ -313,7 +313,7 @@ class Projector(object):
             self.volume_texref.set_filter_mode(cuda.filter_mode.LINEAR)
 
         # allocate and transfer segmentation texture to GPU
-        segmentation = np.moveaxis(self.segmentation, [1, 2, 3], [3, 2, 1]).copy()
+        segmentation = np.moveaxis(self.segmentation, [0, 1, 2, 3], [0, 3, 2, 1]).copy()
         self.segmentation_gpu = [cuda.np_to_array(segmentation[m], order='C') for m in range(self.num_materials)]
         self.segmentation_texref = [self.mod.get_texref(f"seg_{m}") for m in range(self.num_materials)]
         for seg, tex in zip(self.segmentation_gpu, self.segmentation_texref):

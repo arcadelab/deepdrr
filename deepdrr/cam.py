@@ -7,7 +7,7 @@ import numpy as np
 from pathlib import Path
 import logging
 
-from .geo import HomogeneousObject, Frame, Point2D, Point3D, Vector2D, Vector3D
+from .geo import HomogeneousObject, FrameTransform, Point2D, Point3D, Vector2D, Vector3D
 
 
 def generate_uniform_angles(
@@ -82,7 +82,7 @@ class CamProjection(HomogeneousObject):
 
         # projection matrix in homogeneous coordinates
         I = np.concatenate([np.eye(3), np.zeros((3, 1))], axis=1)
-        Rt = np.array(Frame.from_matrices(R, t))
+        Rt = np.array(FrameTransform.from_matrices(R, t))
         data = self.K @ I @ Rt
         print(data)
 
@@ -236,7 +236,7 @@ class Camera(object):
         cls, 
         sensor_size: Union[int, Tuple[int, int]],
         pixel_size: Union[int, Tuple[int, int]],
-        source_to_detector_distance: float,
+        source_to_detector_distance: int,
         isocenter_distance: float,
     ) -> Camera:
         """Generate the camera from human-readable parameters.
@@ -246,7 +246,7 @@ class Camera(object):
         Args:
             sensor_size (Union[float, Tuple[float, float]]): (width, height) of the sensor, or a single value for both.
             pixel_size (Union[float, Tuple[float, float]]): (width, height) of a pixel, or a single value for both.
-            source_to_detector_distance (float): distance from source to detector
+            source_to_detector_distance (int): distance from source to detector
             isocenter_distance (float): isocenter distance
 
         Returns:

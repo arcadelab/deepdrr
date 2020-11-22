@@ -88,6 +88,14 @@ class HomogeneousObject(ABC):
         s = '  ' + str(np.array_str(self.data)).replace('\n', '\n  ')
         return f"{self.__class__.__name__}(\n{s}\n)"
 
+    def __getitem__(self, key):
+        return self.data.__getitem__(key)
+
+    def __setitem__(self, key, value):
+        return self.data.__setitem__(key, value)
+
+
+
 
 class Homogeneous(HomogeneousObject):
     """A Homogeneous point or vector in any dimension."""
@@ -253,13 +261,13 @@ def vector(*v: Union[np.ndarray, float, Vector2D, Vector3D]) -> Union[Vector2D, 
         raise ValueError(f'invalid data for vector: {v}')
 
 
-class Frame(HomogeneousObject):            # TODO: make a subclass of Homogeneous?
-    """Defines a transformation from one frame to another.
+class FrameTransform(HomogeneousObject):            # TODO: make a subclass of Homogeneous?
+    """Defines a rigid (affine) transformation from one frame to another.
 
     So that, for a point `x` in world-coordinates `F(x)` (or `F @ x`) is the same point in `F`'s
     coordinates. Note that if `x` is a numpy array, it is assumed to be a point.
 
-    Frames can also be composed using `@`. If frame 1 `F_W1` is a frame transform from world to frame
+    FrameTransforms can also be composed using `@`. If frame 1 `F_W1` is a frame transform from world to frame
     1, `F_12` is a frame transform from frame 1 to frame 2, `F_W1` to and y is a point in frame 2 coordinates, then
     ```
     F_W1 @ F_12 @ y
@@ -270,7 +278,26 @@ class Frame(HomogeneousObject):            # TODO: make a subclass of Homogeneou
     ```
     is the point's representation in frame 2.
 
-    Note that a Frame is dimension-independent, but its dimension must match the objects it transforms.
+    In order to maximize readability, the suggested naming convention for frames should be as above. 
+    As an example, if there is a volume with an index frame (indices into the volume), an anatomical frame (e.g. LPS), 
+    both of which are situated somewhere in world-space, `F_world_lps` should be the LPS frame, `F_lps_ijk` 
+    should be the index frame in the LPS system. In this setup, then, given an index-space point [i,j,k], the corresponding world-space representation is
+    `[x,y,z] = F_world_lps @ F_lps_ijk @ [i,j,k]`. 
+    
+    In this setup, an inverse simply flips the two subscripted frames, so one would denote `F_lps_world = F_world_lps.inv`. 
+    Thus, if `[x,y,z]` is a world-space representation of a point, `F_lps_ijk.inv @ F_world_lps.inv @ [x,y,z]` 
+    is the point's representation in index-space.
+
+    The idea here is that the frame being transformed to comes first, so that (if no inverses are present) one can glance
+    at the outermost frame to see what frame the point is in. This also allows one to easily verify that frametransforms rightly 
+    go next to one another by checking whether the inner frames match.
+
+    The "F2_to_F1" convention for naming frames is confusing and should be avoided. Instead, this would be `F_F1_F2` (hence the confusion).
+
+    Alternatively, use the convention `F1_from_F2`. This maintains the handy ordering properties as above but is a little more readable, as the "from" 
+    separates frame names.
+
+    Note that a FrameTransform is dimension-independent, but its dimension must match the objects it transforms.
 
     """
     def __init__(
@@ -289,15 +316,15 @@ class Frame(HomogeneousObject):            # TODO: make a subclass of Homogeneou
         return self.data
 
     @classmethod
-    def from_array(cls: Type[Frame], data: np.ndarray) -> Frame:
+    def from_array(cls: Type[FrameTransform], data: np.ndarray) -> FrameTransform:
         return cls(data)
     
     @classmethod
     def from_matrices(
-            cls: Type[Frame],
+            cls: Type[FrameTransform],
             R: np.ndarray,
             t: np.ndarray,
-    ) -> Frame:
+    ) -> FrameTransform:
         R = np.array(R)
         t = np.array(t)
         assert R.shape[0] == R.shape[1] == t.shape[0], 'unmatched dimensions'
@@ -311,44 +338,55 @@ class Frame(HomogeneousObject):            # TODO: make a subclass of Homogeneou
             axis=0
         )
         return cls(data)
-
+    
     @classmethod
-    def from_origin(
-            cls: Type[Frame],
-            origin: Union[Point2D, Point3D],    # the origin of the frame in world-coordinates
-    ) -> Frame:
-        return Frame.from_matrices(np.identity(origin.dim), -np.array(origin))
+    def from_rt(
+        cls,
+        rotation: Union[Rotation, np.ndarray],
+        translation: Point3D,
+    ) -> FrameTransform:
+        rotation = rotation.as_matrix() if isinstance(rotation, Rotation) else rotation
+        translation = np.array(translation)
+        
+    # @classmethod
+    # def from_origin(
+    #         cls: Type[FrameTransform],
+    #         origin: Union[Point2D, Point3D],    # the origin of the frame in world-coordinates
+    # ) -> FrameTransform:
+    #     return FrameTransform.from_matrices(np.identity(origin.dim), -np.array(origin))
 
     @classmethod
     def from_scaling(
-            cls: Type[Frame],
+            cls: Type[FrameTransform],
             scaling: Union[int, float, np.ndarray],
-    ) -> Frame:
-        """Create a frame based on scaling dimensions.
+            translation: Optional[np.ndarray] = None,
+    ) -> FrameTransform:
+        """Create a frame based on scaling dimensions. Assumes dim = 3.
 
         Args:
-            cls (Type[Frame]): the class.
+            cls (Type[FrameTransform]): the class.
             scaling (Union[int, float, np.ndarray]): coefficient to scale by, or one for each dimension.
 
         Returns:
-            Frame: 
+            FrameTransform: 
         """
         scaling = np.array(scaling) * np.ones(3)
-        return Frame.from_matrices(np.diag(scaling), np.zeros(3))
+        translation = np.zeros(3) if translation is None else translation
+        return FrameTransform.from_matrices(np.diag(scaling), translation)
 
     @classmethod
     def from_translation(
         cls,
         t: np.ndarray,
-    ) -> Frame:
-        return Frame.from_matrices(np.eye(t.shape[0]), t)
+    ) -> FrameTransform:
+        return FrameTransform.from_matrices(np.eye(t.shape[0]), t)
 
     @classmethod
     def identity(
-            cls: Type[Frame],
+            cls: Type[FrameTransform],
             dim: int = 3
     ):
-        return Frame.from_matrices(np.identity(dim), np.zeros(dim))
+        return FrameTransform.from_matrices(np.identity(dim), np.zeros(dim))
 
     @property
     def R(self):
@@ -360,8 +398,8 @@ class Frame(HomogeneousObject):            # TODO: make a subclass of Homogeneou
 
     def __matmul__(
             self,
-            other: Union[Frame, PointOrVector],
-    ) -> Union[Frame, PointOrVector]:  # TODO: output type will match input type
+            other: Union[FrameTransform, PointOrVector],
+    ) -> Union[FrameTransform, PointOrVector]:  # TODO: output type will match input type
         assert other.dim == self.dim, 'dimensions must match between other ({other.dim}) and self ({self.dim})'
         return type(other)(self.data @ other.data)
 
@@ -373,6 +411,6 @@ class Frame(HomogeneousObject):            # TODO: make a subclass of Homogeneou
         
     @property
     def inv(self):
-        return Frame.from_matrices(self.R.T, -(self.R.T @ self.t))
+        return FrameTransform.from_matrices(self.R.T, -(self.R.T @ self.t))
     
 
