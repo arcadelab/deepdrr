@@ -38,147 +38,6 @@ def generate_uniform_angles(
     return phis, thetas
 
 
-class CamProjection(HomogeneousObject):
-    """A projection from a 3D frame to a 2D frame.
-
-    See also:
-    - https://www.wikipedia.org/en/Camera_matrix
-    - https://www.wikipedia.org/en/Camera_resectioning
-    
-    """
-    
-    # refers to input dim
-    dim = 3 
-
-    # def __init__(
-    #     self,
-    #     data: np.ndarray,
-    # ) -> None:
-    #     """Instantiate a cam projection.
-
-    #     Args:
-    #         data (np.ndarray): the 3x4 projection matrix from 3D homogeneous points to 2D homogeneous points.
-    #     """
-    #     super().__init__(data)
-        
-    #     assert self.data.shape == (3, 4), f'invalid projection matrix with shape {self.data.shape}'
-
-    def __init__(
-        self,
-        R: np.ndarray,
-        K: np.ndarray,
-        t: np.ndarray,
-    ) -> None:
-        """Make a 3D to 2D projection matrix from camera parameters.
-
-        Args:
-            R (np.ndarray): rotation matrix of extrinsic parameters
-            K (np.ndarray): camera intrinsic matrix
-            t (np.ndarray): translation matrix of extrinsic parameters
-        """
-        self.R = np.array(R, dtype=self.dtype)
-        self.t = np.array(t, dtype=self.dtype)
-        self.K = np.array(K, dtype=self.dtype)
-
-        # projection matrix in homogeneous coordinates
-        I = np.concatenate([np.eye(3), np.zeros((3, 1))], axis=1)
-        Rt = np.array(FrameTransform.from_matrices(R, t))
-        data = self.K @ I @ Rt
-        print(data)
-
-        super().__init__(data)
-
-        self.rtk_inv = self.R.T @ np.linalg.inv(self.K)
-
-    def __str__(self):
-        return f"""\
-[{self.K[0, 0]:10.3g} {self.K[0, 1]:10.03g} {self.K[0, 2]:10.03g}]  [{self.R[0, 0]:10.03g} {self.R[0, 1]:10.03g} {self.R[0, 2]:10.03g} | {self.t[0]:10.3g}]
-[{self.K[1, 0]:10.3g} {self.K[1, 1]:10.03g} {self.K[1, 2]:10.03g}]  [{self.R[1, 0]:10.03g} {self.R[1, 1]:10.03g} {self.R[1, 2]:10.03g} | {self.t[1]:10.3g}]
-[{self.K[2, 0]:10.3g} {self.K[2, 1]:10.03g} {self.K[2, 2]:10.03g}]  [{self.R[2, 0]:10.03g} {self.R[2, 1]:10.03g} {self.R[2, 2]:10.03g} | {self.t[2]:10.3g}]
-"""
-
-    @classmethod
-    def from_matrices(
-        cls,
-        intrinsic: np.ndarray,
-        extrinsic: Union[Tuple[np.ndarray, np.ndarray], np.ndarray, Frame],
-    ) -> CamProjection:
-        """Alternative to the init function, more readable.
-
-        Args:
-            intrinsic (np.ndarray): intrinsic camera matrix
-            extrinsic (Union[Tuple[np.ndarray, np.ndarray], np.ndarray]): the extrinsic parameters [R, T], either as a tuple or a single matrix.
-
-        Returns:
-            CamProjection: a projection matrix object
-        """
-        if isinstance(extrinsic, tuple):
-            R, t = extrinsic
-        else:
-            extrinsic = np.array(extrinsic)
-            R = extrinsic[0:3, 0:3]
-            t = extrinsic[0:3, 3]
-
-        K = intrinsic
-        return cls(R, K, t)
-
-    def to_array(self):
-        return self.data
-
-    @classmethod
-    def from_array(cls, data: np.ndarray) -> CamProjection:
-        raise NotImplementedError('instantiate a cam projection from calibrated intrinsic and extrinsic parameters')
-
-    def __matmul__(
-        self,
-        other: Point3D,
-    ) -> Point2D:
-        return Point2D(self.data @ other.data)
-
-    def __call__(
-        self,
-        p: Union[Point3D, np.ndarray],
-    ) -> Point2D:
-        p = Point3D.from_any(p)
-        return Point2D(self.data @ p.data)
-
-    def get_rtk_inv(self):
-        return self.rtk_inv
-
-    def get_camera_center(self):
-        return np.matmul(np.transpose(self.R), self.t)
-
-    def get_principle_axis(self):
-        axis = self.R[2, :] / self.K[2, 2]
-        return axis
-
-    def get_ray_transform(
-        self, 
-        voxel_size: np.ndarray, 
-        volume_size: np.ndarray, 
-        origin: np.ndarray,
-        dtype: Any = np.float64,
-    ) -> Tuple[np.ndarray, np.ndarray]:
-        """Get the inverse transformation matrix and the source point for the projection ray.
-
-        Args:
-            voxel_size (np.ndarray): size of a voxel of the volume in [x, y, z]
-            volume_size (np.ndarray): size of the volume in [x, y, z] (i.e. the shape of the 3D array)
-            origin (np.ndarray): the origin in world space.
-
-        Returns:
-            Tuple[np.ndarray, np.ndarray]: [description]
-        """
-        voxel_size = np.array(voxel_size)
-        volume_size = np.array(volume_size)
-        origin = np.array(origin)
-
-        inv_proj = np.diag(1 / voxel_size) @ self.rtk_inv
-        camera_center = self.get_camera_center() # why is this negated if the function is too?
-        source_point = (volume_size - 1) / 2 - origin / voxel_size - camera_center / voxel_size
-        return inv_proj.astype(dtype), source_point.astype(dtype)
-
-
 def load_projections(
     path: str,
     lim: int = 100000000,
@@ -292,7 +151,7 @@ class Camera(object):
         theta: float,
         rho: float = 0,
     ):
-        """Make the rotation matrix given (phi, theta, rho).
+        """Make the rotation matrix given (phi, theta, rho), the angles of the detector.
 
         Args:
             phi (float): [description]
@@ -306,9 +165,22 @@ class Camera(object):
         sin_t = np.sin(theta)
         cos_t = np.cos(theta)
         omc = 1 - cos_t
-        R = np.array([[sin_p * sin_p * omc + cos_t, sin_p * neg_cos_p * omc - z * sin_t, sin_p * z * omc + neg_cos_p * sin_t],
-                      [sin_p * neg_cos_p * omc + z * sin_t, neg_cos_p * neg_cos_p * omc + cos_t, neg_cos_p * z * omc - sin_p * sin_t],
-                      [sin_p * z * omc - neg_cos_p * sin_t, neg_cos_p * z * omc + sin_p * sin_t, z * z * omc + cos_t]])
+        R = np.array([
+            [
+                sin_p * sin_p * omc + cos_t,
+                sin_p * neg_cos_p * omc - z * sin_t, 
+                sin_p * z * omc + neg_cos_p * sin_t,
+            ],
+            [
+                sin_p * neg_cos_p * omc + z * sin_t,
+                neg_cos_p * neg_cos_p * omc + cos_t,
+                neg_cos_p * z * omc - sin_p * sin_t,
+            ],
+            [
+                sin_p * z * omc - neg_cos_p * sin_t,
+                neg_cos_p * z * omc + sin_p * sin_t,
+                z * z * omc + cos_t,
+            ]])
         # rotation around detector priniciple axis
         rho = -phi + np.pi * 0.5 + rho
         R_principle = np.array([[np.cos(rho), -np.sin(rho), 0],
