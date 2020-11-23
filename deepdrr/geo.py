@@ -10,6 +10,8 @@ from scipy.spatial.transform import Rotation
 import numpy as np
 
 
+from . import utils
+
 
 def _to_homogeneous(x: np.ndarray, is_point: bool = True) -> np.ndarray:
     """Convert an array to homogeneous points or vectors.
@@ -143,6 +145,16 @@ class Point(Homogeneous):
         other = self.from_any(other)
         return vector(self.data - other.data)
 
+    def __add__(self, other):
+        """ Can add a vector to a point, but cannot add two points. """
+        if issubclass(type(other), Vector):
+            return type(self)(other.data + self.data)
+        else:
+            return NotImplemented
+
+    def __radd__(self, other):
+        return self + other
+
 
 class Vector(Homogeneous):
     def __init__(self, data: np.ndarray) -> None:
@@ -168,7 +180,10 @@ class Vector(Homogeneous):
     
     def __mul__(self, other: Union[int, float]):
         """ Vectors can be multiplied by scalars. """
-        return type(self)(other * self.data)
+        if isinstance(other, (int, float)):
+            return type(self)(other * self.data)
+        else:
+            return NotImplemented
 
     def __matmul__(self, other: Vector):
         """ Inner product between two Vectors. """
@@ -261,7 +276,33 @@ def vector(*v: Union[np.ndarray, float, Vector2D, Vector3D]) -> Union[Vector2D, 
         raise ValueError(f'invalid data for vector: {v}')
 
 
-class FrameTransform(HomogeneousObject):            # TODO: make a subclass of Homogeneous?
+class Transform(HomogeneousObject):
+    def to_array(self):
+        return self.data
+
+    @classmethod
+    def from_array(cls, data: np.ndarray) -> FrameTransform:
+        return cls(data)
+
+    def __matmul__(
+            self,
+            other: Union[FrameTransform, PointOrVector],
+    ) -> Union[FrameTransform, PointOrVector]:  # TODO: output type will match input type
+        assert other.dim == self.dim, 'dimensions must match between other ({other.dim}) and self ({self.dim})'
+        return type(other)(self.data @ other.data)
+
+    def __call__(
+            self,
+            other: PointOrVector,
+    ) -> PointOrVector:
+        return self @ other
+    
+    @property
+    def inv(self):
+        raise NotImplementedError("inverse operation not necessarily well-defined for all transforms")
+
+
+class FrameTransform(Transform):
     """Defines a rigid (affine) transformation from one frame to another.
 
     So that, for a point `x` in world-coordinates `F(x)` (or `F @ x`) is the same point in `F`'s
@@ -311,13 +352,6 @@ class FrameTransform(HomogeneousObject):            # TODO: make a subclass of H
     @property
     def dim(self):
         return self.data.shape[0] - 1
-
-    def to_array(self):
-        return self.data
-
-    @classmethod
-    def from_array(cls: Type[FrameTransform], data: np.ndarray) -> FrameTransform:
-        return cls(data)
     
     @classmethod
     def from_rt(
@@ -328,10 +362,13 @@ class FrameTransform(HomogeneousObject):            # TODO: make a subclass of H
         R = rotation.as_matrix() if isinstance(rotation, Rotation) else rotation
         t = np.array(translation)
 
+        dim = t.shape[0]
+        assert R.shape == (dim, dim)
+
         data = np.concatenate(
             [
                 np.concatenate([R, t[:, np.newaxis]], axis=1),
-                np.concatenate([np.zeros((1, 3)), [[1]]], axis=1)
+                np.concatenate([np.zeros((1, dim)), [[1]]], axis=1)
             ],
             axis=0
         )
@@ -355,21 +392,21 @@ class FrameTransform(HomogeneousObject):            # TODO: make a subclass of H
         """
         scaling = np.array(scaling) * np.ones(3)
         translation = np.zeros(3) if translation is None else translation
-        return FrameTransform.from_matrices(np.diag(scaling), translation)
+        return cls.from_matrices(np.diag(scaling), translation)
 
     @classmethod
     def from_translation(
         cls,
         t: np.ndarray,
     ) -> FrameTransform:
-        return FrameTransform.from_matrices(np.eye(t.shape[0]), t)
+        return cls.from_matrices(np.eye(t.shape[0]), t)
 
     @classmethod
     def identity(
             cls: Type[FrameTransform],
             dim: int = 3
     ):
-        return FrameTransform.from_matrices(np.identity(dim), np.zeros(dim))
+        return cls.from_matrices(np.identity(dim), np.zeros(dim))
 
     @property
     def R(self):
@@ -379,165 +416,130 @@ class FrameTransform(HomogeneousObject):            # TODO: make a subclass of H
     def t(self):
         return self.data[0:3, 3]
 
-    def __matmul__(
-            self,
-            other: Union[FrameTransform, PointOrVector],
-    ) -> Union[FrameTransform, PointOrVector]:  # TODO: output type will match input type
-        assert other.dim == self.dim, 'dimensions must match between other ({other.dim}) and self ({self.dim})'
-        return type(other)(self.data @ other.data)
-
-    def __call__(
-            self,
-            other: PointOrVector,
-    ) -> PointOrVector:
-        return self @ other
-        
     @property
     def inv(self):
         return FrameTransform.from_matrices(self.R.T, -(self.R.T @ self.t))
+
+
+
+class CameraIntrinsicTransform(FrameTransform):
+    dim = 2
+    """The camera intrinsic matrix, which is fundamentally a FrameTransform in 2D, namely `index_from_camera`.
+
+    The intrinsic matrix transfroms to the index-space of the image (as mapped on the sensor) from the 
+
+    Note that focal lengths are often measured in world units (e.g. millimeters.) The conversion can be taken
+    from the size of a pixel.
     
-
-class CameraIntrinsicTransform(HomogeneousObject):
-    # TODO: make the camera intrinsic matrix, somehow.
-    pass
-
-
-class Camera(HomogeneousObject):
-    """A positioned, oriented projection from a 3D world to a 2D frame.
-
-    A camera projection is well defined by intrinsic and extrinsic parameters. Within the naming convention given above, if 
-    `cam` is the coordinate system centered on the source point and `img` is the 2D image index–space, then 
-    * intrinsic is analogous to `cam_from_world`
-    * extrinsic is analogous to `img_from_cam`.
-    
-    The intrinsic parameters are a 3x4 matrix that map from a coordinate frame centered on the camera to the 2D index space of the image. 
-    The extrinsic parameters are a FrameTransform 
-    give
-    the camera pose namely a FrameTransform which gives the camera pose, 
-
-    
-
     References:
-    - https://www.wikiwand.com/en/Camera_matrix
-    - https://www.wikiwand.com/en/Camera_resectioning
-    - https://homepages.inf.ed.ac.uk/rbf/CVonline/LOCAL_COPIES/EPSRC_SSAZ/node3.html
-
-
-    """
+    - Szeliski's "Computer Vision."
+    - https://ksimek.github.io/2013/08/13/intrinsic/
     
-    # refers to input dim
-    dim = 3 
+    """
 
+    def __init__(self, data: np.ndarray) -> None:
+        super().__init__(data)
+        assert self.data.shape == (3,3), 'unrecognized shape'
+
+    @classmethod
+    def from_parameters(
+        cls,
+        optical_center: Point2D,
+        focal_length: Union[float, Tuple[float, float]] = 1,
+        shear: float = 0,
+        aspect_ratio: Optional[float] = None,
+    ) -> CameraIntrinsicTransform:
+        """Creates a camera intrinsic matrix.
+
+        Args:
+            optical_center (Point2D): the index-space point where the isocenter (or pinhole) is centered.
+            focal_length (Union[float, Tuple[float, float]]): the focal length in index units. Can be a tubple (f_x, f_y), 
+                or a scalar used for both, or a scalar modified by aspect_ratio, in index units.
+            shear (float): the shear `s` of the camera.
+            aspect_ratio (Optional[float], optional): the aspect ratio `a` (for use with one focal length). If not provided, aspect 
+                ratio is 1. Defaults to None.
+
+        Returns:
+            CameraIntrinsicTransform: The camera intrinsic matrix as
+                [[f_x, s, c_x],
+                 [0, f_y, c_y],
+                 [0,   0,   1]]
+                or
+                [[f, s, c_x],
+                 [0, a f, c_y],
+                 [0,   0,   1]]
+
+        """
+        optical_center = point(optical_center)
+        assert optical_center.dim == 2, 'center point not in 2D'
+
+        cx, cy = np.array(optical_center)
+
+        if aspect_ratio is None:
+            fx, fy = utils.tuplify(focal_length, 2)
+        else:
+            assert isinstance(focal_length, (float, int)), 'cannot use aspect ratio if both focal lengths provided'
+            fx, fy = (focal_length, aspect_ratio * focal_length)
+        
+        data = np.ndarray(
+            [[fx, shear, cx],
+             [0, fy, cy],
+             [0, 0, 1]], 
+            np.float32)
+
+        return cls(data)
+
+    @classmethod
+    def from_sizes(
+        cls, 
+        sensor_size: Union[int, Tuple[int, int]],
+        pixel_size: Union[float, Tuple[float, float]],
+        source_to_detector_distance: int,
+    ) -> CameraIntrinsicTransform:
+        """Generate the camera from human-readable parameters.
+
+        This is the recommended way to create the camera.
+
+        Args:
+            sensor_size (Union[float, Tuple[float, float]]): (width, height) of the sensor, or a single value for both, in pixels.
+            pixel_size (Union[float, Tuple[float, float]]): (width, height) of a pixel, or a single value for both, in world units (e.g. mm).
+            source_to_detector_distance (int): distance from source to detector in world units.
+
+        Returns:
+            
+        """
+        sensor_size = utils.tuplify(sensor_size, 2)
+        pixel_size = utils.tuplify(pixel_size, 2)
+        fx = source_to_detector_distance / pixel_size[0]
+        fy = source_to_detector_distance / pixel_size[1]
+        optical_center = point(sensor_size[0] / 2, sensor_size[1] / 2)
+        return cls.from_parameters(
+            optical_center=optical_center,
+            focal_length=(fx, fy))
+
+
+class CameraProjection(HomogeneousObject):
     def __init__(
         self,
-        R: np.ndarray,
-        K: np.ndarray,
-        t: np.ndarray,
+        intrinsic: Union[CameraIntrinsicTransform, np.ndarray],
+        extrinsic: Union[FrameTransform, np.ndarray],
     ) -> None:
-        """Make a 3D to 2D projection matrix from camera parameters.
+        """Create a camera in 3D space.
 
         Args:
-            R (np.ndarray): rotation matrix of extrinsic parameters
-            K (np.ndarray): camera intrinsic matrix
-            t (np.ndarray): translation matrix of extrinsic parameters
+            intrinsic (CameraIntrinsicTransform): the camera intrinsic matrix, or a mapping to 2D image index coordinates 
+                from camera coordinates, i.e. index_from_camera2d.
+            extrinsic (FrameTransform): the camera extrinsic matrix, or simply a FrameTransform to camera coordinates
+                 from world coordinates, i.e. camera3d_from_world.
+
         """
-        self.R = np.array(R, dtype=self.dtype)
-        self.t = np.array(t, dtype=self.dtype)
-        self.K = np.array(K, dtype=self.dtype)
+        self.intrinsic = intrinsic if isinstance(intrinsic, CameraIntrinsicTransform) else CameraIntrinsicTransform(intrinsic)
+        self.extrinsic = extrinsic if isinstance(extrinsic, FrameTransform) else FrameTransform(extrinsic)
+        
+        index_from_camera2d = self.intrinsic
+        camera2d_from_camera3d = Transform(np.concatenate([np.eye(3), np.zeros((3, 1))], axis=1))
+        camera3d_from_world = self.extrinsic
 
-        # projection matrix in homogeneous coordinates
-        I = np.concatenate([np.eye(3), np.zeros((3, 1))], axis=1)
-        Rt = np.array(FrameTransform.from_matrices(R, t))
-        data = self.K @ I @ Rt
+        self.index_from_world = index_from_camera2d @ camera2d_from_camera3d @ camera3d_from_world
 
-        super().__init__(data)
-
-        self.rtk_inv = self.R.T @ np.linalg.inv(self.K)
-
-    def __str__(self):
-        return f"""\
-[{self.K[0, 0]:10.3g} {self.K[0, 1]:10.03g} {self.K[0, 2]:10.03g}]  [{self.R[0, 0]:10.03g} {self.R[0, 1]:10.03g} {self.R[0, 2]:10.03g} | {self.t[0]:10.3g}]
-[{self.K[1, 0]:10.3g} {self.K[1, 1]:10.03g} {self.K[1, 2]:10.03g}]  [{self.R[1, 0]:10.03g} {self.R[1, 1]:10.03g} {self.R[1, 2]:10.03g} | {self.t[1]:10.3g}]
-[{self.K[2, 0]:10.3g} {self.K[2, 1]:10.03g} {self.K[2, 2]:10.03g}]  [{self.R[2, 0]:10.03g} {self.R[2, 1]:10.03g} {self.R[2, 2]:10.03g} | {self.t[2]:10.3g}]
-"""
-
-    @classmethod
-    def from_matrices(
-        cls,
-        intrinsic: np.ndarray,
-        extrinsic: Union[Tuple[np.ndarray, np.ndarray], np.ndarray, FrameTransform],
-    ) -> CamProjection:
-        """Alternative to the init function, more readable.
-
-        Args:
-            intrinsic (np.ndarray): intrinsic camera matrix
-            extrinsic (Union[Tuple[np.ndarray, np.ndarray], np.ndarray]): the extrinsic parameters [R, T], either as a tuple or a single matrix.
-
-        Returns:
-            CamProjection: a projection matrix object
-        """
-        if isinstance(extrinsic, tuple):
-            R, t = extrinsic
-        else:
-            extrinsic = np.array(extrinsic)
-            R = extrinsic[0:3, 0:3]
-            t = extrinsic[0:3, 3]
-
-        K = intrinsic
-        return cls(R, K, t)
-
-    def to_array(self):
-        return self.data
-
-    @classmethod
-    def from_array(cls, data: np.ndarray) -> CamProjection:
-        raise NotImplementedError('instantiate a cam projection from calibrated intrinsic and extrinsic parameters')
-
-    def __matmul__(
-        self,
-        other: Point3D,
-    ) -> Point2D:
-        return Point2D(self.data @ other.data)
-
-    def __call__(
-        self,
-        p: Union[Point3D, np.ndarray],
-    ) -> Point2D:
-        p = Point3D.from_any(p)
-        return Point2D(self.data @ p.data)
-
-    def get_rtk_inv(self):
-        return self.rtk_inv
-
-    def get_camera_center(self):
-        return np.matmul(np.transpose(self.R), self.t)
-
-    def get_principle_axis(self):
-        axis = self.R[2, :] / self.K[2, 2]
-        return axis
-
-    def get_ray_transform(
-        self, 
-        voxel_size: np.ndarray, 
-        volume_size: np.ndarray, 
-        origin: np.ndarray,
-        dtype: Any = np.float64,
-    ) -> Tuple[np.ndarray, np.ndarray]:
-        """Get the inverse transformation matrix and the source point for the projection ray.
-
-        Args:
-            voxel_size (np.ndarray): size of a voxel of the volume in [x, y, z]
-            volume_size (np.ndarray): size of the volume in [x, y, z] (i.e. the shape of the 3D array)
-            origin (np.ndarray): the origin in world space.
-
-        Returns:
-            Tuple[np.ndarray, np.ndarray]: [description]
-        """
-        voxel_size = np.array(voxel_size)
-        volume_size = np.array(volume_size)
-        origin = np.array(origin)
-
-        inv_proj = np.diag(1 / voxel_size) @ self.rtk_inv
-        camera_center = self.get_camera_center() # why is this negated if the function is too?
-        source_point = (volume_size - 1) / 2 - origin / voxel_size - camera_center / voxel_size
-        return inv_proj.astype(dtype), source_point.astype(dtype)
+        

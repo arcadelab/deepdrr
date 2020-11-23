@@ -1,20 +1,20 @@
 """Volume class for CT volume.
 """
 
-from typing import Union, Tuple, Literal, List, Optional
+from typing import Union, Tuple, Literal, List, Optional, Dict
 
 import numpy as np
 from pathlib import Path
 
 from .load_dicom import conv_hu_to_density, conv_hu_to_materials, conv_hu_to_materials_thresholding
-from .geo import FrameTransform, Point3D, Vector3D, point, vector
+from .geo import FrameTransform, Point3D, PointOrVector3D, Vector3D, point, vector
 
 
 class Volume(object):
     def __init__(
         self, 
         data: np.ndarray,
-        materials: dict[str, np.ndarray],
+        materials: Dict[str, np.ndarray],
         origin: Optional[Point3D] = None,
         spacing: Optional[Vector3D] = (1, 1, 1),
         anatomical_coordinate_system: Literal['LPS', 'RAS'] = 'LPS',
@@ -78,3 +78,26 @@ class Volume(object):
 
         return cls(data, materials, **kwargs)
     
+    def itow(self, other: Union[Point3D, Vector3D]) -> Union[Point3D, Vector3D]:
+        """Index-to-world. Take an index-space representation and return the world-space representation of the point or vector.
+
+        Args:
+            other (Point3D): the point or vector representation in the volume's index space.
+
+        Returns:
+            Point3D: 
+        """
+        return self.world_from_index @ other
+
+    def wtoi(self, other: Union[Point3D, Vector3D]) -> Union[Point3D, Vector3D]:
+        """World-to-index. Take a world-space representation of a point or vector and return the index- (or image-) space representation.
+
+        Note the preferred format would be to just use self.index_from_world as a function, since it is a callable.
+
+        Args:
+            other (PointOrVector3D): the point or vector.
+
+        Returns:
+            PointOrVector3D: [description]
+        """
+        return self.index_from_world @ other

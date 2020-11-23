@@ -1,10 +1,11 @@
-from typing import Optional
+from typing import Optional, TypeVar, Any, Tuple, Union
 
 import os
 import numpy as np
 import PIL.Image as Image
 from datetime import datetime
 from pathlib import Path
+from numpy.lib.function_base import interp
 from scipy.optimize import curve_fit
 import pickle
 
@@ -51,3 +52,13 @@ def one_hot(
     return x
 
 
+T = TypeVar('T')
+
+
+def tuplify(t: Union[Tuple[T,...], T], n: int) -> Tuple[T,...]:
+    """ Create a tuple with `n` copies of `t`,  if `t` is not already a tuple of length `n`."""
+    if isinstance(t, Tuple):
+        assert len(t) == n
+        return t
+    else:
+        return tuple(t for _ in range(n))
