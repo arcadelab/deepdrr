@@ -58,6 +58,15 @@ class HomogeneousObject(ABC):
             self,
             data: np.ndarray,
     ) -> None:
+        """Create a HomogeneousObject.
+
+        If data is already a Homogeneous object, just uses the data inside it. This ensures that 
+        calling Point3D(x), for example, where x is already a Point object, doesn't cause an error.
+
+        Args:
+            data (np.ndarray): the numpy array with the data.
+        """
+        data = data.data if issubclass(type(data, HomogeneousObject)) else data
         self.data = np.array(data, dtype=self.dtype)
 
     @classmethod
@@ -211,28 +220,24 @@ class Vector(Homogeneous):
         return self + other
 
 
-class Homogeneous2D(Homogeneous):
+class Point2D(Point):
+    """ Homogeneous point in 2D, represented as an array with [x, y, 1] """
     dim = 2
 
 
-class Homogeneous3D(Homogeneous):
+class Vector2D(Vector):
+    """ Homogeneous vector in 2D, represented as an array with [x, y, 0] """
+    dim = 2
+    
+
+class Point3D(Point):
+    """ Homogeneous point in 3D, represented as an array with [x, y, z, 1] """
     dim = 3
 
 
-class Point2D(Point, Homogeneous2D):
-    """ Homogeneous point in 2D, represented as an array with [x, y, 1] """
-
-
-class Vector2D(Vector, Homogeneous2D):
-    """ Homogeneous vector in 2D, represented as an array with [x, y, 0] """
-    
-
-class Point3D(Point, Homogeneous3D):
-    """ Homogeneous point in 3D, represented as an array with [x, y, z, 1] """
-
-
-class Vector3D(Vector, Homogeneous3D):
+class Vector3D(Vector):
     """ Homogeneous vector in 3D, represented as an array with [x, y, z, 0] """
+    dim = 3
 
 
 PointOrVector = TypeVar('PointOrVector', Point2D, Point3D, Vector2D, Vector3D)
@@ -517,6 +522,9 @@ class CameraIntrinsicTransform(FrameTransform):
             optical_center=optical_center,
             focal_length=(fx, fy))
 
+"""     @property
+    def sensor_width()
+ """
 
 class CameraProjection(HomogeneousObject):
     def __init__(
@@ -535,11 +543,24 @@ class CameraProjection(HomogeneousObject):
         """
         self.intrinsic = intrinsic if isinstance(intrinsic, CameraIntrinsicTransform) else CameraIntrinsicTransform(intrinsic)
         self.extrinsic = extrinsic if isinstance(extrinsic, FrameTransform) else FrameTransform(extrinsic)
+
+    @classmethod
+    def from_rtk(
+        cls,
+        R: Union[Rotation, np.ndarray],
+        t: Point3D,
+        K: Union[CameraIntrinsicTransform, np.ndarray],
+    ):
+        return cls(intrinsic=K, extrinsic=FrameTransform.from_rt(R, t))
         
+    @property
+    def index_from_world(self):
         index_from_camera2d = self.intrinsic
         camera2d_from_camera3d = Transform(np.concatenate([np.eye(3), np.zeros((3, 1))], axis=1))
         camera3d_from_world = self.extrinsic
 
-        self.index_from_world = index_from_camera2d @ camera2d_from_camera3d @ camera3d_from_world
+        return index_from_camera2d @ camera2d_from_camera3d @ camera3d_from_world
+
+
 
         

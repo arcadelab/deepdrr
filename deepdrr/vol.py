@@ -2,6 +2,7 @@
 """
 
 from typing import Union, Tuple, Literal, List, Optional, Dict
+from __future__ import annotations
 
 import numpy as np
 from pathlib import Path
@@ -59,9 +60,6 @@ class Volume(object):
         else:
             raise NotImplementedError("conversion from RAS (not hard, look at LPS example)")
 
-        self.world_from_index = self.world_from_anatomical @ self.anatomical_from_index
-        self.index_from_world = self.world_from_index.inv
-
     @classmethod
     def from_hu(
         cls,
@@ -77,6 +75,15 @@ class Volume(object):
             materials = conv_hu_to_materials(hu_values)
 
         return cls(data, materials, **kwargs)
+
+    @property
+    def world_from_index(self):
+        return self.world_from_anatomical @ self.anatomical_from_index
+
+    @property
+    def index_from_world(self):
+        return self.world_from_index.inv
+
     
     def itow(self, other: Union[Point3D, Vector3D]) -> Union[Point3D, Vector3D]:
         """Index-to-world. Take an index-space representation and return the world-space representation of the point or vector.
@@ -101,3 +108,25 @@ class Volume(object):
             PointOrVector3D: [description]
         """
         return self.index_from_world @ other
+
+
+    @classmethod
+    def from_dicom(
+        cls,
+        path: Union[str, Path],
+    ) -> Volume:
+        """Create the volume from a DICOM file."""
+        raise NotImplementedError('load a volume from a dicom file')
+
+    def to_dicom(self, path: Union[str, Path]):
+        """Write the volume to a DICOM file.
+
+        Args:
+            path (str): the path to the file.
+        """
+        path = Path(path)
+
+        raise NotImplementedError()
+
+
+
