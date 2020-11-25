@@ -199,6 +199,22 @@ texture<float, 3, cudaReadModeElementType> seg(13);
 #define INTERPOLATE(multiplier) fprintf("NUM_MATERIALS not in [1, 14]")
 #endif
 
+
+/* The output image has the following coordinate system, with cell-centered sampling.
+ * y is along the slow axis, x along the fast.
+ * Each point has NUM_MATERIALS elements at it.
+ *
+ *     x -->
+ *   y *---------------------------*
+ *   | |                           |
+ *   V |                           |
+ *     |        output image       |
+ *     |                           |
+ *     |                           |
+ *     *---------------------------*
+ * 
+ */
+
 // the CT volume (used to be tex_density)
 texture<float, 3, cudaReadModeElementType> volume;
 
@@ -219,32 +235,32 @@ extern "C" {
         float sx, // x-coordinate of source point for rays in world-space
         float sy,
         float sz,
-        float* gInvARmatrix, // (3, 3) array giving the image-to-world-ray transform.
+        float* RT_Kinv, // (3, 3) array giving the image-to-world-ray transform.
         float* output, // flat array, with shape (out_height, out_width, NUM_MATERIALS).
         int offsetW,
         int offsetH)
     {
-        int widx = threadIdx.x + (blockIdx.x + offsetW) * blockDim.x; // index into output width
-        int hidx = threadIdx.y + (blockIdx.y + offsetH) * blockDim.y; // index into output height
+        int j = threadIdx.x + (blockIdx.x + offsetW) * blockDim.x; // index into output width
+        int i = threadIdx.y + (blockIdx.y + offsetH) * blockDim.y; // index into output height
 
         // if the current point is outside the output image, no computation needed
-        if (widx >= out_width || hidx >= out_height)
+        if (j >= out_width || i >= out_height)
             return;
 
         // flat index to first material in output "channel". 
         // So (idx + m) gets you the pixel for material index m in [0, NUM_MATERIALS)
-        int idx = widx * (out_height * NUM_MATERIALS) + hidx * NUM_MATERIALS; 
+        int idx = i * (out_width * NUM_MATERIALS) + j * NUM_MATERIALS; 
 
-        // image-space point corresponding to pixel
-        float u = (float) widx + 0.5;
-        float v = (float) hidx + 0.5;
+        // cell-centered sampling point corresponding to pixel index
+        float u = (float) j + 0.5;
+        float v = (float) i + 0.5;
 
-        // vector along world-space ray from source-point to pixel on the image plane
-        float rx = u * gInvARmatrix[0] + v * gInvARmatrix[1] + gInvARmatrix[2];
-        float ry = u * gInvARmatrix[3] + v * gInvARmatrix[4] + gInvARmatrix[5];
-        float rz = u * gInvARmatrix[6] + v * gInvARmatrix[7] + gInvARmatrix[8];
+        // Vector from . vector along ray from source-point to pixel on the image plane
+        float rx = u * RT_Kinv[0] + v * RT_Kinv[1] + RT_Kinv[2];
+        float ry = u * RT_Kinv[3] + v * RT_Kinv[4] + RT_Kinv[5];
+        float rz = u * RT_Kinv[6] + v * RT_Kinv[7] + RT_Kinv[8];
 
-        // make the ray a unit-vector
+        // make the ray a unit vector
         float normFactor = 1.0f / (sqrt((rx * rx) + (ry * ry) + (rz * rz)));
         rx *= normFactor;
         ry *= normFactor;

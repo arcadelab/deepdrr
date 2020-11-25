@@ -88,6 +88,7 @@ class CamProjection(HomogeneousObject):
 
         super().__init__(data)
 
+        # R^T @ K^-1
         self.rtk_inv = self.R.T @ np.linalg.inv(self.K)
 
     def __str__(self):
@@ -146,7 +147,7 @@ class CamProjection(HomogeneousObject):
         return self.rtk_inv
 
     def get_camera_center(self):
-        return np.matmul(np.transpose(self.R), self.t)
+        return -np.matmul(np.transpose(self.R), self.t)
 
     def get_principle_axis(self):
         axis = self.R[2, :] / self.K[2, 2]
@@ -161,10 +162,12 @@ class CamProjection(HomogeneousObject):
     ) -> Tuple[np.ndarray, np.ndarray]:
         """Get the inverse transformation matrix and the source point for the projection ray.
 
+        The source point is the center of the volume in camera coordinates.
+
         Args:
             voxel_size (np.ndarray): size of a voxel of the volume in [x, y, z]
             volume_size (np.ndarray): size of the volume in [x, y, z] (i.e. the shape of the 3D array)
-            origin (np.ndarray): the origin in world space.
+            origin (np.ndarray): the point in world-space being imaged, i.e. the origin of the camera, where all the rays should pass through.
 
         Returns:
             Tuple[np.ndarray, np.ndarray]: [description]
@@ -175,7 +178,10 @@ class CamProjection(HomogeneousObject):
 
         inv_proj = np.diag(1 / voxel_size) @ self.rtk_inv
         camera_center = self.get_camera_center()
-        source_point = (volume_size - 1) / 2 - origin / voxel_size - camera_center / voxel_size
+        # source_point = (center of volume) - (camera center offset) + (camera center in world)
+        # the source point is the source of the ray,
+        # It is the center of the camera in volume-center frame.
+        source_point = (volume_size - 1) / 2 - origin / voxel_size + camera_center / voxel_size
         return inv_proj.astype(dtype), source_point.astype(dtype)
 
 

@@ -161,7 +161,7 @@ class Projector(object):
             source_point[0],                        # sx
             source_point[1],                        # sy
             source_point[2],                        # sz
-            self.inv_proj_gpu,                      # gInvARmatrix
+            self.inv_proj_gpu,                      # RT_Kinv
             self.output_gpu,                        # output
         ]
 
@@ -321,7 +321,7 @@ class Projector(object):
             if self.mode == 'linear':
                 tex.set_filter_mode(cuda.filter_mode.LINEAR)
 
-        # allocate output array on GPU
+        # allocate output array on GPU (4 bytes to a float32)
         self.output_gpu = cuda.mem_alloc(self.output_size * 4)
 
         # allocate inverse projection matrix array on GPU (3x3 array x 4 bytes)

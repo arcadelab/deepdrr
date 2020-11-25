@@ -66,7 +66,7 @@ class HomogeneousObject(ABC):
         Args:
             data (np.ndarray): the numpy array with the data.
         """
-        data = data.data if issubclass(type(data, HomogeneousObject)) else data
+        data = data.data if issubclass(type(data), HomogeneousObject) else data
         self.data = np.array(data, dtype=self.dtype)
 
     @classmethod
@@ -361,7 +361,7 @@ class FrameTransform(Transform):
     @classmethod
     def from_rt(
         cls,
-        rotation: Union[Rotation, np.ndarray],
+        rotation: Union[Rotation, np.ndarray], # TODO: scipy rotations are true rotations and have no scaling.
         translation: Union[Point3D, np.ndarray],
     ) -> FrameTransform:
         R = rotation.as_matrix() if isinstance(rotation, Rotation) else rotation
@@ -485,7 +485,7 @@ class CameraIntrinsicTransform(FrameTransform):
         else:
             assert isinstance(focal_length, (float, int)), 'cannot use aspect ratio if both focal lengths provided'
             fx, fy = (focal_length, aspect_ratio * focal_length)
-        
+
         data = np.ndarray(
             [[fx, shear, cx],
              [0, fy, cy],
@@ -503,7 +503,8 @@ class CameraIntrinsicTransform(FrameTransform):
     ) -> CameraIntrinsicTransform:
         """Generate the camera from human-readable parameters.
 
-        This is the recommended way to create the camera.
+        This is the recommended way to create the camera. Note that although pixel_size and source_to_detector distance are measured in world units, 
+        the camera intrinsic matrix contains no information about the world, as these are merely used to compute the focal length in pixels.
 
         Args:
             sensor_size (Union[float, Tuple[float, float]]): (width, height) of the sensor, or a single value for both, in pixels.
@@ -522,9 +523,40 @@ class CameraIntrinsicTransform(FrameTransform):
             optical_center=optical_center,
             focal_length=(fx, fy))
 
-"""     @property
-    def sensor_width()
- """
+    @property
+    def optical_center(self) -> Point2D:
+        return Point2D(self.data[:, 2])
+
+    @property
+    def fx(self) -> float:
+        return self.data[0, 0]
+
+    @property
+    def fy(self) -> float:
+        return self.data[1, 1]
+
+    @property 
+    def aspect_ratio(self) -> float:
+        return self.fy / self.fx
+
+    @property
+    def focal_length(self) -> float:
+        return self.fx
+
+    @property
+    def sensor_width(self) -> int:
+        """Get the sensor width in pixels.
+        
+        Based on the convention of origin in top left, with x pointing to the right and y pointing down."""
+        return int(np.ceil(2 * self.data[1, 2]))
+
+    @property
+    def sensor_height(self) -> int:
+        """Get the sensor height in pixels.
+        
+        Based on the convention of origin in top left, with x pointing to the right and y pointing down."""
+        return int(np.ceil(2 * self.data[0, 2]))
+
 
 class CameraProjection(HomogeneousObject):
     def __init__(
@@ -541,8 +573,16 @@ class CameraProjection(HomogeneousObject):
                  from world coordinates, i.e. camera3d_from_world.
 
         """
-        self.intrinsic = intrinsic if isinstance(intrinsic, CameraIntrinsicTransform) else CameraIntrinsicTransform(intrinsic)
-        self.extrinsic = extrinsic if isinstance(extrinsic, FrameTransform) else FrameTransform(extrinsic)
+        self.index_from_camera2d = intrinsic if isinstance(intrinsic, CameraIntrinsicTransform) else CameraIntrinsicTransform(intrinsic)
+        self.camera3d_from_world = extrinsic if isinstance(extrinsic, FrameTransform) else FrameTransform(extrinsic)
+
+    @property
+    def intrinsic(self) -> CameraIntrinsicTransform:
+        return self.index_from_camera2d
+
+    @property
+    def extrinsic(self) -> FrameTransform:
+        return self.camera3d_from_world
 
     @classmethod
     def from_rtk(
@@ -554,13 +594,41 @@ class CameraProjection(HomogeneousObject):
         return cls(intrinsic=K, extrinsic=FrameTransform.from_rt(R, t))
         
     @property
-    def index_from_world(self):
-        index_from_camera2d = self.intrinsic
+    def index_from_world(self) -> FrameTransform:
         camera2d_from_camera3d = Transform(np.concatenate([np.eye(3), np.zeros((3, 1))], axis=1))
-        camera3d_from_world = self.extrinsic
+        return self.index_from_camera2d @ camera2d_from_camera3d @ self.camera3d_from_world
 
-        return index_from_camera2d @ camera2d_from_camera3d @ camera3d_from_world
+    @property 
+    def world_from_index(self) -> FrameTransform:
+        return self.index_from_world.inv
 
+    @property
+    def sensor_width(self) -> int:
+        return self.intrinsic.sensor_width
+
+    @property
+    def sensor_height(self) -> int:
+        return self.intrinsic.sensor_height
+
+    @property
+    def origin_in_world(self) -> Point3D:
+        """Get the origin of the camera3d frame in world coordinates.
+
+        That is, get the translation vector of the world_from_camera3d FrameTransform
+        
+        This is comparable to the function get_camera_center() in DeepDRR.
+
+        Returns:
+            Point3D: the origin of the camera frame in world-space.
+        """
+        
+        world_from_camera3d = self.camera3d_from_world.inv
+        return world_from_camera3d(point(0, 0, 0))
+
+    @property
+    def source_point_in_camera3d(self) -> Point3D:
+        """The center of the volume in camera coordinates. This is the point at the beginning of the ray """
+        
 
 
         

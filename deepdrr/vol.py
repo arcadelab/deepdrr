@@ -1,8 +1,8 @@
 """Volume class for CT volume.
 """
 
-from typing import Union, Tuple, Literal, List, Optional, Dict
 from __future__ import annotations
+from typing import Union, Tuple, Literal, List, Optional, Dict
 
 import numpy as np
 from pathlib import Path
