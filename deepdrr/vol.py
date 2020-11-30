@@ -33,7 +33,7 @@ class Volume(object):
             materials (dict[str, np.ndarray]): mapping from material names to binary segmentation of that material.
             origin (Point3D, optional): Location of the volume's origin in the anatomical coordinate system.
             spacing (Tuple[float, float, float], optional): Spacing of the volume in the anatomical coordinate system. Defaults to (1, 1, 1).
-            anatomical_coordinate_system (Literal['LPS', 'RAS', 'none']): anatomical coordinate system convention. Defaults to 'LPS'.
+            anatomical_coordinate_system (Literal['LPS', 'RAS', 'none']): anatomical coordinate system convention. Defaults to 'none'.
             world_from_anatomical (FrameTransform, optional): Optional transformation from anatomical to world coordinates. 
                 If None, then identity is used. Defaults to None.
         """
@@ -50,7 +50,7 @@ class Volume(object):
 
         # define anatomical_from_indices FrameTransform
         if self.anatomical_coordinate_system == 'none':
-            raise NotImplementedError('not sure what this would mean')
+            self.anatomical_from_voxel = FrameTransform.from_scaling(scaling=self.spacing, translation=self.origin)
         elif self.anatomical_coordinate_system == 'LPS':
             # IJKtoLPS = LPS_from_IJK
             rotation = [

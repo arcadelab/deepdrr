@@ -1,3 +1,4 @@
+from deepdrr.geo import CameraIntrinsicTransform
 from typing import Literal, List, Union, Tuple, Optional, Dict
 
 import matplotlib.pyplot as plt
@@ -5,17 +6,19 @@ import pycuda.driver as cuda
 import pycuda.autoinit
 from pycuda.autoinit import context
 from pycuda.compiler import SourceModule
+from multiprocessing import cpu_count
 import numpy as np
 import os
-from scipy.optimize import curve_fit
 from pathlib import Path 
 
 from . import spectral_data
 from . import mass_attenuation
 from . import scatter
 from . import analytic_generators
-from ..cam import Camera
-from ..cam import CamProjection
+# from ..cam import Camera
+# from ..cam import CamProjection
+from ..geo import CameraProjection, FrameTransform, CameraIntrinsicTransform
+from ..vol import Volume
 from .. import utils
 
 
@@ -72,17 +75,13 @@ class Projector(object):
 
     def __init__(
         self,
-        volume: np.ndarray, # TODO: make volume class containing voxel_size, origin, materials, and other params, so that projector can just take in a Volume and a Camera.
-        segmentation: Union[Dict[str, np.ndarray], np.ndarray],
-        voxel_size: np.ndarray,
-        camera: Camera,
-        materials: List[str] = ['air', 'soft tissue', 'bone'], # list of materials in order corresponding to zero-indexed integer labels
-        origin: np.ndarray = [0, 0, 0], # origin of the volume?
+        volume: Volume,
+        camera_intrinsics: CameraIntrinsicTransform,
         step: float = 0.1, # step size along ray
         mode: Literal['linear'] = 'linear',
         spectrum: Union[np.ndarray, Literal['60KV_AL35', '90KV_AL40', '120KV_AL43']] = '90KV_AL40',
-        add_scatter: bool = True, # add scatter noise
-        add_noise: bool = True, # add poisson noise
+        add_scatter: bool = False, # add scatter noise
+        add_noise: bool = False, # add poisson noise
         photon_count: int = 100000,
         threads: int = 8,
         max_block_index: int = 1024,
@@ -91,13 +90,8 @@ class Projector(object):
     ):
                     
         # set variables
-        self.volume = np.array(volume).astype(np.float32)
-        self.segmentation = self._format_segmentation(segmentation, num_materials=len(materials))
-        self.materials = materials
-        self.voxel_size = np.array(voxel_size)
-        self.camera = camera
-        self.sensor_size = camera.sensor_size
-        self.origin = np.array(origin)
+        self.volume = volume
+        self.camera_intrinsics = camera_intrinsics
         self.step = step
         self.mode = mode
         self.spectrum = self._get_spectrum(spectrum)
@@ -110,7 +104,8 @@ class Projector(object):
         self.collected_energy = collected_energy
 
         # other parameters
-        self.num_materials = len(materials)
+        self.sensor_size = self.camera_intrinsics.sensor_size
+        self.num_materials = len(self.volume.materials)
         self.scatter_net = scatter.ScatterNet() if self.add_scatter else None
 
         # compile the module
@@ -120,29 +115,25 @@ class Projector(object):
         # assertions
         for mat in self.materials:
             assert mat in self.material_names, f'unrecognized material: {mat}'
-        assert self.segmentation.shape[0] == self.num_materials
-        assert self.segmentation.shape[1:] == self.volume.shape, f'bad materials segmentation shape: {self.segmentation.shape}, volume: {self.volume.shape}'
+        # assert self.segmentation.shape[0] == self.num_materials
+        # assert self.segmentation.shape[1:] == self.volume.shape, f'bad materials segmentation shape: {self.segmentation.shape}, volume: {self.volume.shape}'
 
         # Has the cuda memory been allocated.
         self.initialized = False
 
     def _project(
         self,
-        projection: CamProjection,
+        camera_projection: CameraProjection,
     ) -> np.ndarray:
         if not self.initialized:
             raise RuntimeError("Projector has not been initialized.")
 
         # initialize projection-specific arguments
-        inv_proj, source_point = projection.get_ray_transform(
-            voxel_size=self.voxel_size,
-            volume_size=self.volume.shape,
-            origin=self.origin,
-            dtype=np.float32,
-        )
+        source_point = np.array(camera_projection.get_center_in_volume(self.volume), dtype=np.float32)
+        rt_kinv = camera_projection.get_ray_transform(self.volume)
 
         # copy the projection matrix to CUDA (output array initialized to zero by the kernel)
-        cuda.memcpy_htod(self.inv_proj_gpu, inv_proj)
+        cuda.memcpy_htod(self.rt_kinv_gpu, rt_kinv)
 
         # Make the arguments to the CUDA "projectKernel".
         args = [
@@ -161,7 +152,7 @@ class Projector(object):
             source_point[0],                        # sx
             source_point[1],                        # sy
             source_point[2],                        # sz
-            self.inv_proj_gpu,                      # RT_Kinv
+            self.rt_kinv_gpu,                       # RT_Kinv
             self.output_gpu,                        # output
         ]
 
@@ -325,7 +316,7 @@ class Projector(object):
         self.output_gpu = cuda.mem_alloc(self.output_size * 4)
 
         # allocate inverse projection matrix array on GPU (3x3 array x 4 bytes)
-        self.inv_proj_gpu = cuda.mem_alloc(3 * 3 * 4)
+        self.rt_kinv_gpu = cuda.mem_alloc(3 * 3 * 4)
         
         # Mark self as initialized.
         self.initialized = True
@@ -338,7 +329,7 @@ class Projector(object):
                 seg.free()
 
             self.output_gpu.free()
-            self.inv_proj_gpu.free()
+            self.rt_kinv_gpu.free()
         self.initialized = False
 
     def __enter__(self):

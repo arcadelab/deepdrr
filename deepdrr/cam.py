@@ -1,3 +1,5 @@
+""" This file to be deprecated. """
+
 from __future__ import annotations
 from operator import truediv
 
@@ -300,6 +302,8 @@ class Camera(object):
     ):
         """Make the rotation matrix given (phi, theta, rho), the angles of the detector.
 
+        See eq. 20 in http://scipp.ucsc.edu/~haber/ph216/rotation_12.pdf
+
         Args:
             phi (float): [description]
             theta (float): [description]
@@ -312,6 +316,8 @@ class Camera(object):
         sin_t = np.sin(theta)
         cos_t = np.cos(theta)
         omc = 1 - cos_t
+
+        # Rotation by theta about vector [sin(phi), -cos(phi), z].
         R = np.array([
             [
                 sin_p * sin_p * omc + cos_t,

@@ -6,6 +6,7 @@ from __future__ import annotations
 from typing import Union, Tuple, Optional, Type, List, Generic, TypeVar
 
 from abc import ABC, abstractmethod
+from numpy.lib.type_check import iscomplex
 from scipy.spatial.transform import Rotation
 import numpy as np
 
@@ -86,8 +87,12 @@ class HomogeneousObject(ABC):
         pass
 
     @abstractmethod
-    def to_array(self):
-        """Get the non-homogeneous representation of the object."""
+    def to_array(self, is_point):
+        """Get the non-homogeneous representation of the object. 
+
+        For points, this removes the is_point indicator at the bottom (added 1 or 0). 
+        For transforms, this simply returns the data without modifying it.
+        """
         pass
 
     def __array__(self):
@@ -294,8 +299,14 @@ class Transform(HomogeneousObject):
             self,
             other: Union[FrameTransform, PointOrVector],
     ) -> Union[FrameTransform, PointOrVector]:  # TODO: output type will match input type
-        assert other.dim == self.dim, 'dimensions must match between other ({other.dim}) and self ({self.dim})'
-        return type(other)(self.data @ other.data)
+        # assert other.dim == self.dim, 'dimensions must match between other ({other.dim}) and self ({self.dim})'
+        if issubclass(other, Homogeneous):
+            # if other is a point or vector, return a point or vector
+            return type(other)(self.data @ other.data)            
+        elif issubclass(other, Transform):
+            return type(self)(self.data @ other.data)
+        else:
+            return NotImplemented
 
     def __call__(
             self,
@@ -362,13 +373,34 @@ class FrameTransform(Transform):
     @classmethod
     def from_rt(
         cls,
-        rotation: Union[Rotation, np.ndarray], # TODO: scipy rotations are true rotations and have no scaling.
-        translation: Union[Point3D, np.ndarray],
+        rotation: Optional[np.ndarray] = None,
+        translation: Optional[Union[Point3D, np.ndarray]] = None,
+        dim: Optional[int] = None,
     ) -> FrameTransform:
-        R = rotation.as_matrix() if isinstance(rotation, Rotation) else rotation
-        t = np.array(translation)
+        """Make a frame translation from a rotation and translation, as [R,t], where x' = Rx + t.
 
-        dim = t.shape[0]
+        Args:
+            rotation (Optional[np.ndarray], optional): Rotation matrix. If None, uses the identity. Defaults to None.
+            translation: Optional[Union[Point3D, np.ndarray]]: Translation of the transformation. If None, no translation. Defaults to None.
+            dim (Optional[int], optional): Must be provided if both  Defaults to None.
+
+        If both args are None, 
+
+        Returns:
+            FrameTransform: [description]
+        """
+
+        if rotation is not None:
+            dim = rotation.shape[0]
+        elif translation is not None:
+            dim = translation.shape[0]
+        else:
+            return cls.identity(dim)
+
+        R = np.eye(dim) if rotation is None else np.array(rotation)
+        t = np.zeros(dim) if translation is None else np.array(translation)
+
+        assert t.shape[0] == dim
         assert R.shape == (dim, dim)
 
         data = np.concatenate(
@@ -385,7 +417,7 @@ class FrameTransform(Transform):
     def from_scaling(
             cls: Type[FrameTransform],
             scaling: Union[int, float, np.ndarray],
-            translation: Optional[np.ndarray] = None,
+            translation: Optional[Union[Point3D, np.ndarray]] = None,
     ) -> FrameTransform:
         """Create a frame based on scaling dimensions. Assumes dim = 3.
 
@@ -398,21 +430,98 @@ class FrameTransform(Transform):
         """
         scaling = np.array(scaling) * np.ones(3)
         translation = np.zeros(3) if translation is None else translation
-        return cls.from_matrices(np.diag(scaling), translation)
+        return cls.from_rt(np.diag(scaling), translation)
 
     @classmethod
     def from_translation(
         cls,
-        t: np.ndarray,
+        translation: np.ndarray,
     ) -> FrameTransform:
-        return cls.from_matrices(np.eye(t.shape[0]), t)
+        return cls.from_matrices(translation)
 
     @classmethod
     def identity(
             cls: Type[FrameTransform],
-            dim: int = 3
-    ):
-        return cls.from_matrices(np.identity(dim), np.zeros(dim))
+            dim: int = 3,
+    ) -> FrameTransform:
+        return cls.from_rt(np.identity(dim), np.zeros(dim))
+
+    @classmethod
+    def from_origin(
+        cls,
+        origin: Point,
+    ) -> FrameTransform:
+        """Suppose `origin` is point where frame B has its origin, as a point in frame A. Get the B_from_A transform.
+
+        Just negates the origin, but this is often counterintuitive.
+
+        For example:
+
+        ```
+            ^
+            |     ^
+            |     |
+            |    B --- >
+            |    ^
+            |   /  
+            |  / `origin`
+            | /
+            |/
+          A  ----------------------- >
+        ```
+
+        Args:
+            origin (Point): origin of the target frame in the world frame
+
+        Returns:
+            FrameTransform: the B_from_A transform.
+        """
+        origin = point(origin)
+        return cls.from_rt(np.eye(origin.dim), -origin)
+
+    @classmethod
+    def from_detector_pose(
+        cls,
+        phi: float,
+        theta: float, 
+        isocenter: Point3D, 
+        isocenter_distance: float, 
+        rho: float = 0, 
+        degrees: bool = True,
+    ) -> FrameTransform:
+        stuff = """Get the frame transform for the extrinsic matrix of the C-arm camera model.
+
+        # 
+        # Left/Right angulation of C arm (rotation at the base)
+        # world-space point with the isocenter of the C-arm (around which it rotates)
+        # 
+        # 
+
+        Args:
+            phi (float): CRAN/CAUD angle of C arm (along the actual arc of the arm)
+            theta (float): Left/Right angulation of C arm (rotation at the base)
+            isocenter (Point3D): isocenter of the C-arm in world-space.
+            isocenter_distance (float): distance in world-units from isocenter to camera center (x-ray source point)
+            rho (float, optional): rotation about principle axis, after main rotation. Defaults to 0
+            degrees (bool, optional): whether the angles are given in degrees. Defaults to True.
+
+        Returns:
+            FrameTransform: the "camera3d_from_world" frame transformation for the oriented C-arm camera.
+        """
+        if degrees:
+            phi = np.radians(phi)
+            theta = np.radians(theta)
+            rho = np.radians(rho)
+
+        # translate points to the frame at the center of the c-arm's rotation
+        isocenter_from_world = FrameTransform.from_origin(isocenter)
+        
+        # get the rotation corresponding to the c-arm, then translate to the camera-center frame, along z-axis.
+        R = utils.make_detector_rotation(phi, theta, rho)
+        t = np.array([0, 0, isocenter_distance])
+        camera3d_from_isocenter = FrameTransform.from_rt(R, t)
+
+        return camera3d_from_isocenter @ isocenter_from_world
 
     @property
     def R(self):
@@ -584,7 +693,6 @@ class CameraIntrinsicTransform(FrameTransform):
         return int(np.ceil(2 * self.data[0, 2]))
 
 
-
 class CameraProjection(HomogeneousObject):
     """A generic camera projection.
 
@@ -611,14 +719,6 @@ class CameraProjection(HomogeneousObject):
         self.index_from_camera2d = intrinsic if isinstance(intrinsic, CameraIntrinsicTransform) else CameraIntrinsicTransform(intrinsic)
         self.camera3d_from_world = extrinsic if isinstance(extrinsic, FrameTransform) else FrameTransform(extrinsic)
 
-    @property
-    def intrinsic(self) -> CameraIntrinsicTransform:
-        return self.index_from_camera2d
-
-    @property
-    def extrinsic(self) -> FrameTransform:
-        return self.camera3d_from_world
-
     @classmethod
     def from_rtk(
         cls,
@@ -627,6 +727,14 @@ class CameraProjection(HomogeneousObject):
         K: Union[CameraIntrinsicTransform, np.ndarray],
     ):
         return cls(intrinsic=K, extrinsic=FrameTransform.from_rt(R, t))
+        
+    @property
+    def intrinsic(self) -> CameraIntrinsicTransform:
+        return self.index_from_camera2d
+
+    @property
+    def extrinsic(self) -> FrameTransform:
+        return self.camera3d_from_world
         
     @property
     def index_from_world(self) -> FrameTransform:
@@ -660,35 +768,34 @@ class CameraProjection(HomogeneousObject):
         world_from_camera3d = self.camera3d_from_world.inv
         return world_from_camera3d(point(0, 0, 0))
 
-    def get_center_in_volume(self, vol: Volume) -> Point3D:
+    def get_center_in_volume(self, volume: Volume) -> Point3D:
         """Get the camera center in voxel-space.
 
         In original deepdrr, this is the `source_point` of `get_canonical_proj_matrix()`
 
         Args:
-            vol (Volume): the volume to get the camera center in.
+            volume (Volume): the volume to get the camera center in.
 
         Returns:
-            Point3D: [description]
+            Point3D: the camera center in the volume's voxel-space.
         """
-        spacing = np.array(vol.spacing)
-        return vol.voxel_from_world @ self.center_in_world
+        return volume.voxel_from_world @ self.center_in_world
  
-    def get_ray_transform(self, vol: Volume) -> Tuple[Point3D, RayTransform]:
+    def get_ray_transform(self, volume: Volume) -> RayTransform:
         """Get the ray transform for the camera, in voxel-space
 
         The ray transform takes a Point2D and converts it to a Vector3D. This is simply 
 
-        Analogous to get_canonical_projection_matris
+        Analogous to get_canonical_projection_matris. Gets RT_Kinv for CUDA kernel.
 
         """
         # transformation from image-space to a vector in world coorindates
-        rt_kinv = np.transpose(self.extrinsic.R) @ self.intrinsic.inv
+        # rt_kinv = np.transpose(self.extrinsic.R) @ self.intrinsic.inv
+        return volume.voxel_from_world @ self.world_from_index
 
-        # TODO: the DeepDRR "world" coordinates are the same as the volume coordinates,
         # just with an origin shift, so the vector transformation here is fine.
 
         # re-scale to voxel-units.
-        spacing = np.array(vol.spacing)
-        return np.diag(1 / spacing) @ rt_kinv
+        # spacing = np.array(volume.spacing)
+        # return np.diag(1 / spacing) @ rt_kinv
 

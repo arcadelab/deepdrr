@@ -62,3 +62,39 @@ def tuplify(t: Union[Tuple[T,...], T], n: int) -> Tuple[T,...]:
         return t
     else:
         return tuple(t for _ in range(n))
+
+
+def make_detector_rotation(phi, theta, rho):
+    # rotation around phi and theta
+    sin_p = np.sin(phi)
+    neg_cos_p = -np.cos(phi)
+    z = 0
+    sin_t = np.sin(theta)
+    cos_t = np.cos(theta)
+    omc = 1 - cos_t
+
+    # Rotation by theta about vector [sin(phi), -cos(phi), z].
+    R = np.array([
+        [
+            sin_p * sin_p * omc + cos_t,
+            sin_p * neg_cos_p * omc - z * sin_t, 
+            sin_p * z * omc + neg_cos_p * sin_t,
+        ],
+        [
+            sin_p * neg_cos_p * omc + z * sin_t,
+            neg_cos_p * neg_cos_p * omc + cos_t,
+            neg_cos_p * z * omc - sin_p * sin_t,
+        ],
+        [
+            sin_p * z * omc - neg_cos_p * sin_t,
+            neg_cos_p * z * omc + sin_p * sin_t,
+            z * z * omc + cos_t,
+        ]])
+    # rotation around detector priniciple axis
+    rho = -phi + np.pi * 0.5 + rho
+    R_principle = np.array([[np.cos(rho), -np.sin(rho), 0],
+                            [np.sin(rho), np.cos(rho), 0],
+                            [0, 0, 1]])
+    R = np.matmul(R_principle, R)
+
+    return R
