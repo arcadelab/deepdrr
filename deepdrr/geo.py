@@ -10,6 +10,7 @@ from scipy.spatial.transform import Rotation
 import numpy as np
 
 
+from .vol import Volume
 from . import utils
 
 
@@ -426,6 +427,31 @@ class FrameTransform(Transform):
         return FrameTransform.from_matrices(self.R.T, -(self.R.T @ self.t))
 
 
+class RayTransform(Transform):
+    def __init__(self, data: np.ndarray) -> None:
+        super().__init__(data)
+        assert self.data.shape == (4,3), 'unrecognized shape for ray transform'
+        assert np.all(self.data[3, :] == 0), 'bottom row nonzero'
+
+    def to_array(self):
+        return self.data[:3, :3]
+
+    def from_array(cls: Type[T], x: np.ndarray) -> T:
+        data = np.concatenate([x, np.zeros(1, 3)], axis=0)
+        return cls(data)
+
+    def __matmul__(
+        self,
+        other: Point2D,
+    ) -> Vector3D:
+        """
+        [ _ _ _ ][u] = [rx]
+        [ _ _ _ ][v]   [ry]
+        [ _ _ _ ][1]   [rz]
+        [ 0 0 0 ]      [0 ]
+        """
+        return Vector3D(self.data @ other.data)
+
 
 class CameraIntrinsicTransform(FrameTransform):
     dim = 2
@@ -558,7 +584,16 @@ class CameraIntrinsicTransform(FrameTransform):
         return int(np.ceil(2 * self.data[0, 2]))
 
 
+
 class CameraProjection(HomogeneousObject):
+    """A generic camera projection.
+
+    A helpful resource for this is:
+    - http://wwwmayr.in.tum.de/konferenzen/MB-Jass2006/courses/1/slides/h-1-5.pdf
+    which specifically taylors the descussion toward C arms.
+
+    """
+
     def __init__(
         self,
         intrinsic: Union[CameraIntrinsicTransform, np.ndarray],
@@ -611,24 +646,49 @@ class CameraProjection(HomogeneousObject):
         return self.intrinsic.sensor_height
 
     @property
-    def origin_in_world(self) -> Point3D:
-        """Get the origin of the camera3d frame in world coordinates.
+    def center_in_world(self) -> Point3D:
+        """Get the center of the camera (origin of camera3d frame) in world coordinates.
 
         That is, get the translation vector of the world_from_camera3d FrameTransform
         
         This is comparable to the function get_camera_center() in DeepDRR.
 
         Returns:
-            Point3D: the origin of the camera frame in world-space.
+            Point3D: the center of the camera in center.
         """
         
         world_from_camera3d = self.camera3d_from_world.inv
         return world_from_camera3d(point(0, 0, 0))
 
-    @property
-    def source_point_in_camera3d(self) -> Point3D:
-        """The center of the volume in camera coordinates. This is the point at the beginning of the ray """
-        
+    def get_center_in_volume(self, vol: Volume) -> Point3D:
+        """Get the camera center in voxel-space.
 
+        In original deepdrr, this is the `source_point` of `get_canonical_proj_matrix()`
 
-        
+        Args:
+            vol (Volume): the volume to get the camera center in.
+
+        Returns:
+            Point3D: [description]
+        """
+        spacing = np.array(vol.spacing)
+        return vol.voxel_from_world @ self.center_in_world
+ 
+    def get_ray_transform(self, vol: Volume) -> Tuple[Point3D, RayTransform]:
+        """Get the ray transform for the camera, in voxel-space
+
+        The ray transform takes a Point2D and converts it to a Vector3D. This is simply 
+
+        Analogous to get_canonical_projection_matris
+
+        """
+        # transformation from image-space to a vector in world coorindates
+        rt_kinv = np.transpose(self.extrinsic.R) @ self.intrinsic.inv
+
+        # TODO: the DeepDRR "world" coordinates are the same as the volume coordinates,
+        # just with an origin shift, so the vector transformation here is fine.
+
+        # re-scale to voxel-units.
+        spacing = np.array(vol.spacing)
+        return np.diag(1 / spacing) @ rt_kinv
+

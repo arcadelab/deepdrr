@@ -240,8 +240,8 @@ extern "C" {
         int offsetW,
         int offsetH)
     {
-        int j = threadIdx.x + (blockIdx.x + offsetW) * blockDim.x; // index into output width
-        int i = threadIdx.y + (blockIdx.y + offsetH) * blockDim.y; // index into output height
+        int j = threadIdx.x + (blockIdx.x + offsetW) * blockDim.x; // index into output image width
+        int i = threadIdx.y + (blockIdx.y + offsetH) * blockDim.y; // index into output image height
 
         // if the current point is outside the output image, no computation needed
         if (j >= out_width || i >= out_height)
@@ -251,11 +251,11 @@ extern "C" {
         // So (idx + m) gets you the pixel for material index m in [0, NUM_MATERIALS)
         int idx = i * (out_width * NUM_MATERIALS) + j * NUM_MATERIALS; 
 
-        // cell-centered sampling point corresponding to pixel index
+        // cell-centered sampling point corresponding to pixel index, in index-space.
         float u = (float) j + 0.5;
         float v = (float) i + 0.5;
 
-        // Vector from . vector along ray from source-point to pixel on the image plane
+        // Vector in voxel-space along ray from source-point to pixel at [u,v] on the detector plane.
         float rx = u * RT_Kinv[0] + v * RT_Kinv[1] + RT_Kinv[2];
         float ry = u * RT_Kinv[3] + v * RT_Kinv[4] + RT_Kinv[5];
         float rz = u * RT_Kinv[6] + v * RT_Kinv[7] + RT_Kinv[8];
@@ -321,7 +321,7 @@ extern "C" {
         // Part 2: Cast ray if it intersects the volume
 
         // Trapezoidal rule (interpolating function = piecewise linear func)
-        float px, py, pz; // world-space point
+        float px, py, pz; // voxel-space point
         int t; // number of steps along ray
         float alpha; // distance along ray (alpha = minAlpha + step * t)
         float boundary_factor; // factor to multiply at the boundary.
@@ -334,7 +334,7 @@ extern "C" {
         // Sample the points along the ray at the entrance boundary of the volume and the mid segments.
         for (t = 0, alpha = minAlpha; alpha < maxAlpha; t++, alpha += step)
         {
-            // Get the current sample point in the volume world-space.
+            // Get the current sample point in the volume voxel-space.
             // In CUDA, voxel centeras are located at (xx.5, xx.5, xx.5), whereas SwVolume has voxel centers at integers.
             px = sx + alpha * rx + 0.5;
             py = sy + alpha * ry + 0.5;

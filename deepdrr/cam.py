@@ -180,7 +180,7 @@ class CamProjection(HomogeneousObject):
         camera_center = self.get_camera_center()
         # source_point = (center of volume) - (camera center offset) + (camera center in world)
         # the source point is the source of the ray,
-        # It is the center of the camera in volume-center frame.
+        # It is the center of the camera in volume-center (DeepDRR world?) frame, but in pixel units.
         source_point = (volume_size - 1) / 2 - origin / voxel_size + camera_center / voxel_size
         return inv_proj.astype(dtype), source_point.astype(dtype)
 

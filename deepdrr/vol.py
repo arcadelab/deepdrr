@@ -8,7 +8,7 @@ import numpy as np
 from pathlib import Path
 
 from .load_dicom import conv_hu_to_density, conv_hu_to_materials, conv_hu_to_materials_thresholding
-from .geo import FrameTransform, Point3D, PointOrVector3D, Vector3D, point, vector
+from .geo import FrameTransform, Point3D, Vector3D, point, vector
 
 
 class Volume(object):
@@ -18,7 +18,7 @@ class Volume(object):
         materials: Dict[str, np.ndarray],
         origin: Optional[Point3D] = None,
         spacing: Optional[Vector3D] = (1, 1, 1),
-        anatomical_coordinate_system: Literal['LPS', 'RAS'] = 'LPS',
+        anatomical_coordinate_system: Literal['LPS', 'RAS', 'none'] = 'none',
         world_from_anatomical: Optional[FrameTransform] = None,
     ):
         """Create a volume object with a segmentation of the materials, with its own anatomical coordinate space.
@@ -33,7 +33,7 @@ class Volume(object):
             materials (dict[str, np.ndarray]): mapping from material names to binary segmentation of that material.
             origin (Point3D, optional): Location of the volume's origin in the anatomical coordinate system.
             spacing (Tuple[float, float, float], optional): Spacing of the volume in the anatomical coordinate system. Defaults to (1, 1, 1).
-            anatomical_coordinate_system (Literal['LPS', 'RAS']): anatomical coordinate system convention.
+            anatomical_coordinate_system (Literal['LPS', 'RAS', 'none']): anatomical coordinate system convention. Defaults to 'LPS'.
             world_from_anatomical (FrameTransform, optional): Optional transformation from anatomical to world coordinates. 
                 If None, then identity is used. Defaults to None.
         """
@@ -49,14 +49,16 @@ class Volume(object):
         self.volume_shape = vector(self.data.shape)
 
         # define anatomical_from_indices FrameTransform
-        if self.anatomical_coordinate_system == 'LPS':
+        if self.anatomical_coordinate_system == 'none':
+            raise NotImplementedError('not sure what this would mean')
+        elif self.anatomical_coordinate_system == 'LPS':
             # IJKtoLPS = LPS_from_IJK
             rotation = [
                 [self.spacing[0], 0, 0],
                 [0, 0, self.spacing[2]],
                 [0, -self.spacing[1], 0],
             ]
-            self.anatomical_from_index = FrameTransform.from_rt(R=rotation, t=self.origin)
+            self.anatomical_from_voxel = FrameTransform.from_rt(R=rotation, t=self.origin)
         else:
             raise NotImplementedError("conversion from RAS (not hard, look at LPS example)")
 
@@ -77,29 +79,28 @@ class Volume(object):
         return cls(data, materials, **kwargs)
 
     @property
-    def world_from_index(self):
-        return self.world_from_anatomical @ self.anatomical_from_index
+    def world_from_voxel(self):
+        return self.world_from_anatomical @ self.anatomical_from_voxel
 
     @property
-    def index_from_world(self):
-        return self.world_from_index.inv
-
+    def voxel_from_world(self):
+        return self.world_from_voxel.inv
     
     def itow(self, other: Union[Point3D, Vector3D]) -> Union[Point3D, Vector3D]:
-        """Index-to-world. Take an index-space representation and return the world-space representation of the point or vector.
+        """voxel-to-world. Take an voxel-space representation and return the world-space representation of the point or vector.
 
         Args:
-            other (Point3D): the point or vector representation in the volume's index space.
+            other (Point3D): the point or vector representation in the volume's voxel space.
 
         Returns:
             Point3D: 
         """
-        return self.world_from_index @ other
+        return self.world_from_voxel @ other
 
     def wtoi(self, other: Union[Point3D, Vector3D]) -> Union[Point3D, Vector3D]:
-        """World-to-index. Take a world-space representation of a point or vector and return the index- (or image-) space representation.
+        """World-to-voxel. Take a world-space representation of a point or vector and return the voxel-space representation.
 
-        Note the preferred format would be to just use self.index_from_world as a function, since it is a callable.
+        Note the preferred format would be to just use self.voxel_from_world as a function, since it is a callable.
 
         Args:
             other (PointOrVector3D): the point or vector.
@@ -107,8 +108,7 @@ class Volume(object):
         Returns:
             PointOrVector3D: [description]
         """
-        return self.index_from_world @ other
-
+        return self.voxel_from_world @ other
 
     @classmethod
     def from_dicom(
@@ -126,7 +126,7 @@ class Volume(object):
         """
         path = Path(path)
 
-        raise NotImplementedError()
+        raise NotImplementedError('save volume to dicom file')
 
 
 
