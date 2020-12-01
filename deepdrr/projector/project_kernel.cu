@@ -44,7 +44,7 @@ texture<float, 3, cudaReadModeElementType> seg(9);
 texture<float, 3, cudaReadModeElementType> seg(10);
 #endif
 #if NUM_MATERIALS > 11
-texture<float, 3, cudaReadModeElementType> seg(11)
+texture<float, 3, cudaReadModeElementType> seg(11);
 #endif
 #if NUM_MATERIALS > 12
 texture<float, 3, cudaReadModeElementType> seg(12);
@@ -199,20 +199,20 @@ texture<float, 3, cudaReadModeElementType> seg(13);
 #define INTERPOLATE(multiplier) fprintf("NUM_MATERIALS not in [1, 14]")
 #endif
 
-/* The output image has the following coordinate system, with cell-centered sampling.
- * y is along the slow axis, x along the fast.
- * Each point has NUM_MATERIALS elements at it.
- *
- *     x -->
- *   y *---------------------------*
- *   | |                           |
- *   V |                           |
- *     |        output image       |
- *     |                           |
- *     |                           |
- *     *---------------------------*
- * 
- */
+// /* The output image has the following coordinate system, with cell-centered sampling.
+//  * y is along the slow axis, x along the fast.
+//  * Each point has NUM_MATERIALS elements at it.
+//  *
+//  *     x -->
+//  *   y *---------------------------*
+//  *   | |                           |
+//  *   V |                           |
+//  *     |        output image       |
+//  *     |                           |
+//  *     |                           |
+//  *     *---------------------------*
+//  * 
+//  */
 
 // the CT volume (used to be tex_density)
 texture<float, 3, cudaReadModeElementType> volume;
@@ -234,7 +234,7 @@ extern "C" {
         float sx, // x-coordinate of source point for rays in world-space
         float sy,
         float sz,
-        float* RT_Kinv, // (3, 3) array giving the image-to-world-ray transform.
+        float* rt_kinv, // (3, 3) array giving the image-to-world-ray transform.
         float* output, // flat array, with shape (out_height, out_width, NUM_MATERIALS).
         int offsetW,
         int offsetH)
@@ -255,9 +255,9 @@ extern "C" {
         float v = (float) i + 0.5;
 
         // Vector in voxel-space along ray from source-point to pixel at [u,v] on the detector plane.
-        float rx = u * RT_Kinv[0] + v * RT_Kinv[1] + RT_Kinv[2];
-        float ry = u * RT_Kinv[3] + v * RT_Kinv[4] + RT_Kinv[5];
-        float rz = u * RT_Kinv[6] + v * RT_Kinv[7] + RT_Kinv[8];
+        float rx = u * rt_kinv[0] + v * rt_kinv[1] + rt_kinv[2];
+        float ry = u * rt_kinv[3] + v * rt_kinv[4] + rt_kinv[5];
+        float rz = u * rt_kinv[6] + v * rt_kinv[7] + rt_kinv[8];
 
         // make the ray a unit vector
         float normFactor = 1.0f / (sqrt((rx * rx) + (ry * ry) + (rz * rz)));

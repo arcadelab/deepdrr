@@ -48,8 +48,6 @@ class Volume(object):
 
         assert self.spacing.dim == 3
 
-        self.volume_shape = geo.vector(self.data.shape)
-
         # define anatomical_from_indices FrameTransform
         if self.anatomical_coordinate_system is None or self.anatomical_coordinate_system == 'none':
             self.anatomical_from_voxel = geo.FrameTransform.from_scaling(scaling=self.spacing, translation=self.origin)
@@ -63,6 +61,10 @@ class Volume(object):
             self.anatomical_from_voxel = geo.FrameTransform.from_rt(R=rotation, t=self.origin)
         else:
             raise NotImplementedError("conversion from RAS (not hard, look at LPS example)")
+
+    @property
+    def shape(self):
+        return self.data.shape
 
     @classmethod
     def from_hu(

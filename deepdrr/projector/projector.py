@@ -160,8 +160,8 @@ class Projector(object):
 
         # Make the arguments to the CUDA "projectKernel".
         args = [
-            np.int32(self.sensor_size[0]),          # out_width
-            np.int32(self.sensor_size[1]),          # out_height
+            np.int32(self.camera_intrinsics.sensor_width),          # out_width
+            np.int32(self.camera_intrinsics.sensor_height),          # out_height
             np.float32(self.step),                  # step
             np.float32(-0.5),                       # gVolumeEdgeMinPointX
             np.float32(-0.5),                       # gVolumeEdgeMinPointY
@@ -169,9 +169,9 @@ class Projector(object):
             np.float32(self.volume.shape[0] - 0.5), # gVolumeEdgeMaxPointX
             np.float32(self.volume.shape[1] - 0.5), # gVolumeEdgeMaxPointY
             np.float32(self.volume.shape[2] - 0.5), # gVolumeEdgeMaxPointZ
-            np.float32(self.voxel_size[0]),         # gVoxelElementSizeX
-            np.float32(self.voxel_size[1]),         # gVoxelElementSizeY
-            np.float32(self.voxel_size[2]),         # gVoxelElementSizeZ
+            np.float32(self.volume.spacing[0]),         # gVoxelElementSizeX
+            np.float32(self.volume.spacing[1]),         # gVoxelElementSizeY
+            np.float32(self.volume.spacing[2]),         # gVoxelElementSizeZ
             camera_center_in_volume[0],                        # sx
             camera_center_in_volume[1],                        # sy
             camera_center_in_volume[2],                        # sz
