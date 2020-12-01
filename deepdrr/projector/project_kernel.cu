@@ -199,7 +199,6 @@ texture<float, 3, cudaReadModeElementType> seg(13);
 #define INTERPOLATE(multiplier) fprintf("NUM_MATERIALS not in [1, 14]")
 #endif
 
-
 /* The output image has the following coordinate system, with cell-centered sampling.
  * y is along the slow axis, x along the fast.
  * Each point has NUM_MATERIALS elements at it.

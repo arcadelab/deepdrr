@@ -8,7 +8,9 @@ import numpy as np
 from pathlib import Path
 
 from .load_dicom import conv_hu_to_density, conv_hu_to_materials, conv_hu_to_materials_thresholding
-from .geo import FrameTransform, Point3D, Vector3D, point, vector
+from . import geo
+
+#  FrameTransform, Point3D, Vector3D, point, vector
 
 
 class Volume(object):
@@ -16,10 +18,10 @@ class Volume(object):
         self, 
         data: np.ndarray,
         materials: Dict[str, np.ndarray],
-        origin: Optional[Point3D] = None,
-        spacing: Optional[Vector3D] = (1, 1, 1),
-        anatomical_coordinate_system: Literal['LPS', 'RAS', 'none'] = 'none',
-        world_from_anatomical: Optional[FrameTransform] = None,
+        origin: Optional[geo.Point3D],
+        spacing: Optional[geo.Vector3D] = (1, 1, 1),
+        anatomical_coordinate_system: Optional[Literal['LPS', 'RAS', 'none']] = None,
+        world_from_anatomical: Optional[geo.FrameTransform] = None,
     ):
         """Create a volume object with a segmentation of the materials, with its own anatomical coordinate space.
 
@@ -39,18 +41,18 @@ class Volume(object):
         """
         self.data = np.array(data, dtype=np.float32)
         self.materials = materials
-        self.origin = point(origin)
-        self.spacing = vector(spacing)
+        self.origin = geo.point(origin)
+        self.spacing = geo.vector(spacing)
         self.anatomical_coordinate_system = anatomical_coordinate_system
-        self.world_from_anatomical = FrameTransform.identity(3) if world_from_anatomical is None else world_from_anatomical
+        self.world_from_anatomical = geo.FrameTransform.identity(3) if world_from_anatomical is None else world_from_anatomical
 
-        assert self.spacing.shape == (3,)
+        assert self.spacing.dim == 3
 
-        self.volume_shape = vector(self.data.shape)
+        self.volume_shape = geo.vector(self.data.shape)
 
         # define anatomical_from_indices FrameTransform
-        if self.anatomical_coordinate_system == 'none':
-            self.anatomical_from_voxel = FrameTransform.from_scaling(scaling=self.spacing, translation=self.origin)
+        if self.anatomical_coordinate_system is None or self.anatomical_coordinate_system == 'none':
+            self.anatomical_from_voxel = geo.FrameTransform.from_scaling(scaling=self.spacing, translation=self.origin)
         elif self.anatomical_coordinate_system == 'LPS':
             # IJKtoLPS = LPS_from_IJK
             rotation = [
@@ -58,7 +60,7 @@ class Volume(object):
                 [0, 0, self.spacing[2]],
                 [0, -self.spacing[1], 0],
             ]
-            self.anatomical_from_voxel = FrameTransform.from_rt(R=rotation, t=self.origin)
+            self.anatomical_from_voxel = geo.FrameTransform.from_rt(R=rotation, t=self.origin)
         else:
             raise NotImplementedError("conversion from RAS (not hard, look at LPS example)")
 
@@ -86,7 +88,7 @@ class Volume(object):
     def voxel_from_world(self):
         return self.world_from_voxel.inv
     
-    def itow(self, other: Union[Point3D, Vector3D]) -> Union[Point3D, Vector3D]:
+    def itow(self, other: Union[geo.Point3D, geo.Vector3D]) -> Union[geo.Point3D, geo.Vector3D]:
         """voxel-to-world. Take an voxel-space representation and return the world-space representation of the point or vector.
 
         Args:
@@ -97,7 +99,7 @@ class Volume(object):
         """
         return self.world_from_voxel @ other
 
-    def wtoi(self, other: Union[Point3D, Vector3D]) -> Union[Point3D, Vector3D]:
+    def wtoi(self, other: Union[geo.Point3D, geo.Vector3D]) -> Union[geo.Point3D, geo.Vector3D]:
         """World-to-voxel. Take a world-space representation of a point or vector and return the voxel-space representation.
 
         Note the preferred format would be to just use self.voxel_from_world as a function, since it is a callable.

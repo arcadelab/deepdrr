@@ -99,7 +99,7 @@ class Projector(object):
         Args:
             volume (Volume): a volume object with materials segmented.
             camera_intrinsics (CameraIntrinsicTransform): intrinsics of the projector's camera. (used for sensor size)
-            carm (Optional[CArm], optional): Optional C-arm device, which can be used to get projections from C-Arm pose. Defaults to None.
+            carm (Optional[CArm], optional): Optional C-arm device, for convenience which can be used to get projections from C-Arm pose. Only used for `carm` projection methods. Defaults to None.
             step (float, optional): size of the step along projection ray in voxels. Defaults to 0.1.
             spectrum (Union[np.ndarray, Literal[, optional): spectrum or name of spectrum to use for projection. Defaults to '90KV_AL40'.
             add_scatter (bool, optional): whether to add scatter noise. Defaults to False.
@@ -150,7 +150,10 @@ class Projector(object):
 
         # initialize projection-specific arguments
         camera_center_in_volume = np.array(camera_projection.get_center_in_volume(self.volume), dtype=np.float32)
-        voxel_from_index = camera_projection.get_ray_transform(self.volume)
+        voxel_from_index = np.array(camera_projection.get_ray_transform(self.volume), dtype=np.float32)
+
+        print("camera center in volume:", camera_center_in_volume)
+        print("voxel from index transform:", voxel_from_index)
 
         # copy the projection matrix to CUDA (output array initialized to zero by the kernel)
         cuda.memcpy_htod(self.rt_kinv_gpu, voxel_from_index)
@@ -351,26 +354,34 @@ class Projector(object):
             raise RuntimeError("Close projector before initializing again.")
 
         # allocate and transfer volume texture to GPU
-        volume = np.moveaxis(self.volume.data, [0, 1, 2], [2, 1, 0]).copy() # TODO: is this axis swap necessary?
+        # volume = np.moveaxis(self.volume.data, [0, 1, 2], [2, 1, 0]).copy() # TODO: is this axis swap necessary?
+        volume = self.volume.data
         self.volume_gpu = cuda.np_to_array(volume, order='C')
         self.volume_texref = self.mod.get_texref("volume")
         cuda.bind_array_to_texref(self.volume_gpu, self.volume_texref)
+        
+        # set the (interpolation?) mode
         if self.mode == 'linear':
             self.volume_texref.set_filter_mode(cuda.filter_mode.LINEAR)
+        else:
+            raise RuntimeError
 
         # allocate and transfer segmentation texture to GPU
-        segmentation = np.moveaxis(self.segmentation, [0, 1, 2, 3], [0, 3, 2, 1]).copy()
-        self.segmentation_gpu = [cuda.np_to_array(segmentation[m], order='C') for m in range(self.num_materials)]
-        self.segmentation_texref = [self.mod.get_texref(f"seg_{m}") for m in range(self.num_materials)]
-        for seg, tex in zip(self.segmentation_gpu, self.segmentation_texref):
-            cuda.bind_array_to_texref(seg, tex)
-            if self.mode == 'linear':
-                tex.set_filter_mode(cuda.filter_mode.LINEAR)
+        # segmentation = np.moveaxis(self.segmentation, [0, 1, 2, 3], [0, 3, 2, 1]).copy() # TODO: is this swap necessary? (same as materials)
 
-        # allocate output array on GPU (4 bytes to a float32)
+        self.segmentations_gpu = [cuda.np_to_array(seg, order='C') for seg in self.volume.materials.values()]
+        self.segmentations_texref = [self.mod.get_texref(f"seg_{m}") for m, _ in enumerate(self.volume.materials)]
+        for seg, texref in zip(self.segmentations_gpu, self.segmentation_texref):
+            cuda.bind_array_to_texref(seg, texref)
+            if self.mode == 'linear':
+                texref.set_filter_mode(cuda.filter_mode.LINEAR)
+            else:
+                raise RuntimeError
+
+        # allocate output image array on GPU (4 bytes to a float32)
         self.output_gpu = cuda.mem_alloc(self.output_size * 4)
 
-        # allocate inverse projection matrix array on GPU (3x3 array x 4 bytes)
+        # allocate voxel_from_index matrix array on GPU (3x3 array x 4 bytes per float32)
         self.rt_kinv_gpu = cuda.mem_alloc(3 * 3 * 4)
         
         # Mark self as initialized.
@@ -380,7 +391,7 @@ class Projector(object):
         """Free the allocated GPU memory."""
         if self.initialized:
             self.volume_gpu.free()
-            for seg in self.segmentation_gpu:
+            for seg in self.segmentations_gpu:
                 seg.free()
 
             self.output_gpu.free()

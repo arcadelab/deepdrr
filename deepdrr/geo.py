@@ -11,7 +11,7 @@ from scipy.spatial.transform import Rotation
 import numpy as np
 
 
-from .vol import Volume
+from . import vol
 from . import utils
 
 
@@ -44,7 +44,7 @@ def _from_homogeneous(x: np.ndarray, is_point: bool = True) -> np.ndarray:
     if is_point:
         return (x / x[..., -1:])[..., :-1]
     else:
-        assert np.all(np.isclose(x[..., :-1], 0)), 'not a homogeneous vector: {x}'
+        assert np.all(np.isclose(x[..., -1], 0)), f'not a homogeneous vector: {x}'
         return x[..., :-1]
 
 
@@ -69,7 +69,8 @@ class HomogeneousObject(ABC):
             data (np.ndarray): the numpy array with the data.
         """
         data = data.data if issubclass(type(data), HomogeneousObject) else data
-        self.data = np.array(data, dtype=self.dtype)
+        assert isinstance(data, np.ndarray)
+        self.data = data.astype(self.dtype)
 
     @classmethod
     @abstractmethod
@@ -127,7 +128,7 @@ class Homogeneous(HomogeneousObject):
             raise ValueError(f'invalid shape for {self.dim}D object in homogeneous coordinates: {self.data.shape}')
 
     def to_array(self):
-        return _from_homogeneous(self.data, vector=(self.data[-1] == 0))
+        return _from_homogeneous(self.data, is_point=bool(self.data[-1]))
 
     
 class Point(Homogeneous):
@@ -577,11 +578,11 @@ class CameraIntrinsicTransform(FrameTransform):
             assert isinstance(focal_length, (float, int)), 'cannot use aspect ratio if both focal lengths provided'
             fx, fy = (focal_length, aspect_ratio * focal_length)
 
-        data = np.ndarray(
+        data = np.array(
             [[fx, shear, cx],
              [0, fy, cy],
              [0, 0, 1]], 
-            np.float32)
+            dtype=np.float32)
 
         return cls(data)
 
@@ -590,7 +591,7 @@ class CameraIntrinsicTransform(FrameTransform):
         cls, 
         sensor_size: Union[int, Tuple[int, int]],
         pixel_size: Union[float, Tuple[float, float]],
-        source_to_detector_distance: int,
+        source_to_detector_distance: float,
     ) -> CameraIntrinsicTransform:
         """Generate the camera from human-readable parameters.
 
@@ -647,6 +648,10 @@ class CameraIntrinsicTransform(FrameTransform):
         
         Based on the convention of origin in top left, with x pointing to the right and y pointing down."""
         return int(np.ceil(2 * self.data[0, 2]))
+
+    @property
+    def sensor_size(self) -> Tuple[int, int]:
+        return (self.sensor_width, self.sensor_height)
 
 
 class CameraProjection(HomogeneousObject):
@@ -724,7 +729,7 @@ class CameraProjection(HomogeneousObject):
         world_from_camera3d = self.camera3d_from_world.inv
         return world_from_camera3d(point(0, 0, 0))
 
-    def get_center_in_volume(self, volume: Volume) -> Point3D:
+    def get_center_in_volume(self, volume: vol.Volume) -> Point3D:
         """Get the camera center in voxel-space.
 
         In original deepdrr, this is the `source_point` of `get_canonical_proj_matrix()`
@@ -737,7 +742,7 @@ class CameraProjection(HomogeneousObject):
         """
         return volume.voxel_from_world @ self.center_in_world
  
-    def get_ray_transform(self, volume: Volume) -> RayTransform:
+    def get_ray_transform(self, volume: vol.Volume) -> Transform:
         """Get the ray transform for the camera, in voxel-space.
 
         voxel_from_index transformation that goes from Point2D to Vector3D, with the vector in the Point2D frame.

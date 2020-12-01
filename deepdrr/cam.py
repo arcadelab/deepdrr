@@ -12,32 +12,7 @@ import logging
 from .geo import HomogeneousObject, FrameTransform, Point2D, Point3D, Vector2D, Vector3D
 
 
-def generate_uniform_angles(
-    phi_range: Tuple[float, float, float],
-    theta_range: Tuple[float, float, float],
-    degrees: bool = True,
-) -> Tuple[np.ndarray, np.ndarray]:
-    """Generate a uniform sampling of angles over the given ranges
 
-    Args:
-        phi_range (Tuple[float, float, float]): range of angles phi in (min, max, step) form, in degrees.
-        theta_range (Tuple[float, float, float]): range of angles theta in (min, max, step) form, in degrees.
-
-    Returns:
-        Tuple[np.ndarray, np.ndarray]: phis, thetas over uniform angles, in radians.
-    """
-    if not degrees:
-        raise NotImplementedError
-    
-    min_theta, max_theta, spacing_theta = theta_range
-    min_phi, max_phi, spacing_phi = phi_range
-    thetas = np.array(np.arange(min_theta, max_theta + spacing_theta / 2, step=spacing_theta)) / 180 * np.pi
-    num_thetas = len(thetas)
-    phis = np.array(np.arange(min_phi, max_phi, step=spacing_phi)) / 180 * np.pi
-    num_phis = len(phis)
-    thetas = np.tile(thetas, num_phis)
-    phis = phis.repeat(num_thetas, 0)
-    return phis, thetas
 
 
 class CamProjection(HomogeneousObject):
