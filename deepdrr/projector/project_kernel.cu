@@ -234,30 +234,30 @@ extern "C" {
         float sx, // x-coordinate of source point for rays in world-space
         float sy,
         float sz,
-        float* rt_kinv, // (3, 3) array giving the image-to-world-ray transform.
+        float* gInvARmatrix, // (3, 3) array giving the image-to-world-ray transform.
         float* output, // flat array, with shape (out_height, out_width, NUM_MATERIALS).
         int offsetW,
         int offsetH)
     {
-        int j = threadIdx.x + (blockIdx.x + offsetW) * blockDim.x; // index into output image width
-        int i = threadIdx.y + (blockIdx.y + offsetH) * blockDim.y; // index into output image height
+        int widx = threadIdx.x + (blockIdx.x + offsetW) * blockDim.x; // index into output image width
+        int hidx = threadIdx.y + (blockIdx.y + offsetH) * blockDim.y; // index into output image height
 
         // if the current point is outside the output image, no computation needed
-        if (j >= out_width || i >= out_height)
+        if (widx >= out_width || hidx >= out_height)
             return;
 
         // flat index to first material in output "channel". 
         // So (idx + m) gets you the pixel for material index m in [0, NUM_MATERIALS)
-        int idx = i * (out_width * NUM_MATERIALS) + j * NUM_MATERIALS; 
+        int idx = hidx * (out_width * NUM_MATERIALS) + widx * NUM_MATERIALS; 
 
         // cell-centered sampling point corresponding to pixel index, in index-space.
-        float u = (float) j + 0.5;
-        float v = (float) i + 0.5;
+        float u = (float) widx + 0.5;
+        float v = (float) hidx + 0.5;
 
         // Vector in voxel-space along ray from source-point to pixel at [u,v] on the detector plane.
-        float rx = u * rt_kinv[0] + v * rt_kinv[1] + rt_kinv[2];
-        float ry = u * rt_kinv[3] + v * rt_kinv[4] + rt_kinv[5];
-        float rz = u * rt_kinv[6] + v * rt_kinv[7] + rt_kinv[8];
+        float rx = u * gInvARmatrix[0] + v * gInvARmatrix[1] + gInvARmatrix[2];
+        float ry = u * gInvARmatrix[3] + v * gInvARmatrix[4] + gInvARmatrix[5];
+        float rz = u * gInvARmatrix[6] + v * gInvARmatrix[7] + gInvARmatrix[8];
 
         // make the ray a unit vector
         float normFactor = 1.0f / (sqrt((rx * rx) + (ry * ry) + (rz * rz)));
@@ -339,7 +339,7 @@ extern "C" {
             py = sy + alpha * ry + 0.5;
             pz = sz + alpha * rz - gVolumeEdgeMinPointZ;
 
-            /* For the entry boundary, multiply by 0.5 (this is the i == 0 check). That is, for the initial interpolated value, 
+            /* For the entry boundary, multiply by 0.5 (this is the hidx == 0 check). That is, for the initial interpolated value, 
              * only a half step-size is considered in the computation.
              * For the second-to-last interpolation point, also multiply by 0.5, since there will be a final step at the maxAlpha boundary.
              */ 
