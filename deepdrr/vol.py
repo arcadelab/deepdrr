@@ -14,6 +14,9 @@ from . import geo
 
 
 class Volume(object):
+
+
+
     def __init__(
         self, 
         data: np.ndarray,
@@ -40,7 +43,7 @@ class Volume(object):
                 If None, then identity is used. Defaults to None.
         """
         self.data = np.array(data, dtype=np.float32)
-        self.materials = materials
+        self.materials = self._format_materials(materials)
         self.origin = geo.point(origin)
         self.spacing = geo.vector(spacing)
         self.anatomical_coordinate_system = anatomical_coordinate_system
@@ -61,6 +64,24 @@ class Volume(object):
             self.anatomical_from_voxel = geo.FrameTransform.from_rt(R=rotation, t=self.origin)
         else:
             raise NotImplementedError("conversion from RAS (not hard, look at LPS example)")
+
+    def _format_materials(
+        self, 
+        materials: Dict[str, np.ndarray],
+    ) -> np.ndarray:
+        """Standardize the input segmentation to a one-hot array.
+
+        Args:
+            materials (Dict[str, np.ndarray]): Either a mapping of material name to segmentation, 
+                a segmentation with the same shape as the volume, or a one-hot segmentation.
+
+        Returns:
+            np.ndarray: dict from material names to np.float32 segmentations.
+        """
+        for mat in materials:
+            materials[mat] = np.array(materials[mat]).astype(np.float32)
+
+        return materials
 
     @property
     def shape(self):

@@ -84,7 +84,7 @@ class HomogeneousObject(ABC):
     @property
     @abstractmethod
     def dim(self) -> int:
-        """Get the dimension of the space the object lives in."""
+        """Get the dimension of the space the object lives in. For transforms, this is the OUTPUT dim."""
         pass
 
     @abstractmethod
@@ -141,7 +141,7 @@ class Point(Homogeneous):
             cls: Type[T],
             x: np.ndarray,
     ) -> T:
-        x = np.array(x, dtype=cls.dtype)
+        x = np.array(x).astype(cls.dtype)
         data = _to_homogeneous(x, is_point=True)
         return cls(data)
 
@@ -171,6 +171,15 @@ class Point(Homogeneous):
     def __radd__(self, other):
         return self + other
 
+    def __mul__(self, other):
+        if isinstance(other, (int, float)):
+            return point(other * np.array(self))
+        else:
+            return NotImplemented
+
+    def __neg__(self):
+        return self * (-1)
+
 
 class Vector(Homogeneous):
     def __init__(self, data: np.ndarray) -> None:
@@ -182,7 +191,7 @@ class Vector(Homogeneous):
             cls: Type[T],
             v: np.ndarray,
     ) -> T:
-        v = np.array(v, dtype=cls.dtype)
+        v = np.array(v).astype(cls.dtype)
         data = _to_homogeneous(v, is_point=False)
         return cls(data)
 
@@ -288,26 +297,76 @@ def vector(*v: Union[np.ndarray, float, Vector2D, Vector3D]) -> Union[Vector2D, 
         raise ValueError(f'invalid data for vector: {v}')
 
 
+""" 
+Transforms
+"""
+
+
 class Transform(HomogeneousObject):
-    def to_array(self):
-        return self.data
+    def __init__(
+        self, 
+        data: np.ndarray, 
+        _inv: Optional[np.ndarray] = None
+    ) -> None:
+        super().__init__(data)
+        self._inv = _inv
+
+    def to_array(self) -> np.ndarray:
+        """Output the transform as a non-homogeneous matrix.
+        
+        The convention here is that "nonhomegenous" transforms would still have the last column, 
+        so it would take in homogeneous objects, but it doesn't have the last row, so it outputs non-homogeneous objects.
+
+        If someone wants the data array, they can access it directly.
+
+        Returns:
+            np.ndarray: the non-homogeneous array
+        """
+
+        return self.data[:-1, :]
 
     @classmethod
-    def from_array(cls, data: np.ndarray) -> FrameTransform:
+    def from_array(cls, array: np.ndarray) -> Transform:
+        """Convert non-homogeneous matrix to homogeneous transform.
+
+        Usually, one would instantiate Transforms directly from the homogeneous matrix `data` or using one of the other classmethods.
+
+        Args:
+            array (np.ndarray): transformation matrix.
+
+        Returns:
+            Transform: the transform.
+        """
+        data = np.concatenate([
+            array, 
+            np.array([0 for _ in range(array.shape[1] - 1)] + [1])],
+            axis=0
+        )
         return cls(data)
 
     def __matmul__(
             self,
-            other: Union[FrameTransform, PointOrVector],
-    ) -> Union[FrameTransform, PointOrVector]:  # TODO: output type will match input type
-        # assert other.dim == self.dim, 'dimensions must match between other ({other.dim}) and self ({self.dim})'
-        if issubclass(other, Homogeneous):
+            other: Union[Transform, PointOrVector],
+    ) -> Union[Transform, PointOrVector]:
+        assert self.input_dim == other.dim, f'dimensions must match between other ({other.dim}) and self ({self.input_dim})'
+
+        if issubclass(type(other), Homogeneous):
             # if other is a point or vector, return a point or vector
             return type(other)(self.data @ other.data)            
-        elif issubclass(other, Transform):
-            return type(self)(self.data @ other.data)
+        elif issubclass(type(other), Transform):
+            # if other is a Transform, then compose their inverses as well to store that.
+            _inv = other.inv.data @ self.inv.data
+            return Transform(self.data @ other.data, _inv=_inv)
         else:
             return NotImplemented
+
+    @property
+    def dim(self):
+        return self.data.shape[0] - 1
+
+    @property
+    def input_dim(self):
+        return self.data.shape[1] - 1
 
     def __call__(
             self,
@@ -316,8 +375,19 @@ class Transform(HomogeneousObject):
         return self @ other
     
     @property
-    def inv(self):
-        raise NotImplementedError("inverse operation not necessarily well-defined for all transforms")
+    def inv(self) -> Transform:
+        """Get the inverse of the Transform.
+
+        Returns:
+            (Transform): a Transform (or subclass) that is well-defined as the inverse of this transform.
+
+        Raises:
+            NotImplementedError: if _inv is None and method is not overriden.
+        """
+        if self._inv is None:
+            raise NotImplementedError("inverse operation not well-defined except when overridden by subclasses")
+
+        return Transform(self._inv, _inv=self.data)
 
 
 class FrameTransform(Transform):
@@ -365,7 +435,7 @@ class FrameTransform(Transform):
     ) -> None:
         super().__init__(data)
         
-        assert np.all(self.data[-1, :-1] == 0) and self.data[-1, -1] == 1, f'not a rigid transformation:\n{self.data}'
+        # assert np.all(self.data[-1, :-1] == 0) and self.data[-1, -1] == 1, f'not a rigid transformation:\n{self.data}'
 
     @property
     def dim(self):
@@ -392,9 +462,9 @@ class FrameTransform(Transform):
         """
 
         if rotation is not None:
-            dim = rotation.shape[0]
+            dim = np.array(rotation).shape[0]
         elif translation is not None:
-            dim = translation.shape[0]
+            dim = np.array(translation).shape[0]
         else:
             return cls.identity(dim)
 
@@ -438,7 +508,7 @@ class FrameTransform(Transform):
         cls,
         translation: np.ndarray,
     ) -> FrameTransform:
-        return cls.from_matrices(translation)
+        return cls.from_rt(translation)
 
     @classmethod
     def identity(
@@ -482,17 +552,20 @@ class FrameTransform(Transform):
 
     @property
     def R(self):
-        return self.data[0:3, 0:3]
+        return self.data[0:self.dim, 0:self.dim]
 
     @property
     def t(self):
-        return self.data[0:3, 3]
+        return self.data[0:self.dim, self.dim]
 
     @property
     def inv(self):
-        return FrameTransform.from_matrices(self.R.T, -(self.R.T @ self.t))
+        return FrameTransform.from_rt(self.R.T, -(self.R.T @ self.t))
 
 
+class ProjectiveTransform(Transform):
+    pass
+    
 class RayTransform(Transform):
     def __init__(self, data: np.ndarray) -> None:
         super().__init__(data)
@@ -521,7 +594,8 @@ class RayTransform(Transform):
 
 class CameraIntrinsicTransform(FrameTransform):
     dim = 2
-    """The camera intrinsic matrix, which is fundamentally a FrameTransform in 2D, namely `index_from_camera`.
+    input_dim = 2
+    """The camera intrinsic matrix, which is fundamentally a FrameTransform in 2D, namely `index_from_camera2d`.
 
     The intrinsic matrix transfroms to the index-space of the image (as mapped on the sensor) from the 
 
@@ -536,7 +610,7 @@ class CameraIntrinsicTransform(FrameTransform):
 
     def __init__(self, data: np.ndarray) -> None:
         super().__init__(data)
-        assert self.data.shape == (3,3), 'unrecognized shape'
+        assert self.data.shape == (3,3), f'unrecognized shape: {self.data.shape}'
 
     @classmethod
     def from_parameters(
@@ -581,8 +655,7 @@ class CameraIntrinsicTransform(FrameTransform):
         data = np.array(
             [[fx, shear, cx],
              [0, fy, cy],
-             [0, 0, 1]], 
-            dtype=np.float32)
+             [0, 0, 1]]).astype(np.float32)
 
         return cls(data)
 
@@ -640,28 +713,31 @@ class CameraIntrinsicTransform(FrameTransform):
         """Get the sensor width in pixels.
         
         Based on the convention of origin in top left, with x pointing to the right and y pointing down."""
-        return int(np.ceil(2 * self.data[1, 2]))
+        return int(np.ceil(2 * self.data[0, 2]))
 
     @property
     def sensor_height(self) -> int:
         """Get the sensor height in pixels.
         
         Based on the convention of origin in top left, with x pointing to the right and y pointing down."""
-        return int(np.ceil(2 * self.data[0, 2]))
+        return int(np.ceil(2 * self.data[1, 2]))
 
     @property
     def sensor_size(self) -> Tuple[int, int]:
         return (self.sensor_width, self.sensor_height)
 
 
-class CameraProjection(HomogeneousObject):
+class CameraProjection(Transform):
     """A generic camera projection.
 
     A helpful resource for this is:
     - http://wwwmayr.in.tum.de/konferenzen/MB-Jass2006/courses/1/slides/h-1-5.pdf
     which specifically taylors the descussion toward C arms.
 
+    TODO: change voxel to IJK, index to UV.
+
     """
+    dim = 3
 
     def __init__(
         self,
@@ -699,10 +775,11 @@ class CameraProjection(HomogeneousObject):
         
     @property
     def index_from_world(self) -> FrameTransform:
-        camera2d_from_camera3d = Transform(np.concatenate([np.eye(3), np.zeros((3, 1))], axis=1))
+        proj = np.concatenate([np.eye(3), np.zeros((3, 1))], axis=1)
+        camera2d_from_camera3d = Transform(proj, _inv=proj.T)
         return self.index_from_camera2d @ camera2d_from_camera3d @ self.camera3d_from_world
 
-    @property 
+    @property
     def world_from_index(self) -> FrameTransform:
         return self.index_from_world.inv
 

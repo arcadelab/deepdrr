@@ -1,15 +1,14 @@
-
 #include <stdio.h>
 #include <cubicTex3D.cu>
 
 #ifndef NUM_MATERIALS
-    #define NUM_MATERIALS 14
+#define NUM_MATERIALS 14
 #endif
 
 #define _seg(n) seg_##n
 #define seg(n) _seg(n)
 
-//  channel of the materials array, same size as the volume.
+// channel of the materials array, same size as the volume.
 #if NUM_MATERIALS > 0
 texture<float, 3, cudaReadModeElementType> seg(0);
 #endif
@@ -54,7 +53,7 @@ texture<float, 3, cudaReadModeElementType> seg(13);
 #endif
 
 #define UPDATE(multiplier, n) ({\
-   output[idx + (n)] += (multiplier) * tex3D(volume, px, py, pz) * round(cubicTex3D(seg(n), px, py, pz));\
+    output[idx + (n)] += (multiplier) * tex3D(volume, px, py, pz) * round(cubicTex3D(seg(n), px, py, pz));\
 })
 
 #if NUM_MATERIALS == 1
@@ -196,23 +195,10 @@ texture<float, 3, cudaReadModeElementType> seg(13);
     UPDATE(multiplier, 13);\
 })
 #else
-#define INTERPOLATE(multiplier) fprintf("NUM_MATERIALS not in [1, 14]")
+#define INTERPOLATE(multiplier) {\
+    fprintf(stderr, "NUM_MATERIALS not in [1, 14]");\
+)
 #endif
-
-// /* The output image has the following coordinate system, with cell-centered sampling.
-//  * y is along the slow axis, x along the fast.
-//  * Each point has NUM_MATERIALS elements at it.
-//  *
-//  *     x -->
-//  *   y *---------------------------*
-//  *   | |                           |
-//  *   V |                           |
-//  *     |        output image       |
-//  *     |                           |
-//  *     |                           |
-//  *     *---------------------------*
-//  * 
-//  */
 
 // the CT volume (used to be tex_density)
 texture<float, 3, cudaReadModeElementType> volume;
@@ -234,11 +220,26 @@ extern "C" {
         float sx, // x-coordinate of source point for rays in world-space
         float sy,
         float sz,
-        float* gInvARmatrix, // (3, 3) array giving the image-to-world-ray transform.
+        float* rt_kinv, // (3, 3) array giving the image-to-world-ray transform.
         float* output, // flat array, with shape (out_height, out_width, NUM_MATERIALS).
         int offsetW,
         int offsetH)
     {
+
+        // The output image has the following coordinate system, with cell-centered sampling.
+        // y is along the slow axis, x along the fast.
+        // Each point has NUM_MATERIALS elements at it.
+        // 
+        //      x -->
+        //    y *---------------------------*
+        //    | |                           |
+        //    V |                           |
+        //      |        output image       |
+        //      |                           |
+        //      |                           |
+        //      *---------------------------*
+        // 
+        //
         int widx = threadIdx.x + (blockIdx.x + offsetW) * blockDim.x; // index into output image width
         int hidx = threadIdx.y + (blockIdx.y + offsetH) * blockDim.y; // index into output image height
 
@@ -255,9 +256,9 @@ extern "C" {
         float v = (float) hidx + 0.5;
 
         // Vector in voxel-space along ray from source-point to pixel at [u,v] on the detector plane.
-        float rx = u * gInvARmatrix[0] + v * gInvARmatrix[1] + gInvARmatrix[2];
-        float ry = u * gInvARmatrix[3] + v * gInvARmatrix[4] + gInvARmatrix[5];
-        float rz = u * gInvARmatrix[6] + v * gInvARmatrix[7] + gInvARmatrix[8];
+        float rx = u * rt_kinv[0] + v * rt_kinv[1] + rt_kinv[2];
+        float ry = u * rt_kinv[3] + v * rt_kinv[4] + rt_kinv[5];
+        float rz = u * rt_kinv[6] + v * rt_kinv[7] + rt_kinv[8];
 
         // make the ray a unit vector
         float normFactor = 1.0f / (sqrt((rx * rx) + (ry * ry) + (rz * rz)));
@@ -339,7 +340,7 @@ extern "C" {
             py = sy + alpha * ry + 0.5;
             pz = sz + alpha * rz - gVolumeEdgeMinPointZ;
 
-            /* For the entry boundary, multiply by 0.5 (this is the hidx == 0 check). That is, for the initial interpolated value, 
+            /* For the entry boundary, multiply by 0.5 (this is the t == 0 check). That is, for the initial interpolated value, 
              * only a half step-size is considered in the computation.
              * For the second-to-last interpolation point, also multiply by 0.5, since there will be a final step at the maxAlpha boundary.
              */ 

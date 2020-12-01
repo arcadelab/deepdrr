@@ -21,7 +21,7 @@ class CArm(object):
         self.isocenter = isocenter
         self.isocenter_distance = isocenter_distance
 
-
+    @property
     def isocenter_from_world(self) -> FrameTransform:
         # translate points to the frame at the center of the c-arm's rotation
         return FrameTransform.from_origin(self.isocenter)

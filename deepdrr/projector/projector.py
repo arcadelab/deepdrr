@@ -131,12 +131,10 @@ class Projector(object):
         # compile the module
         self.mod = _get_kernel_projector_module(self.num_materials) # TODO: make this not a compile-time option.
         self.project_kernel = self.mod.get_function("projectKernel")
-
+        
         # assertions
-        for mat in self.materials:
+        for mat in self.volume.materials:
             assert mat in self.material_names, f'unrecognized material: {mat}'
-        # assert self.segmentation.shape[0] == self.num_materials
-        # assert self.segmentation.shape[1:] == self.volume.shape, f'bad materials segmentation shape: {self.segmentation.shape}, volume: {self.volume.shape}'
 
         # Has the cuda memory been allocated.
         self.initialized = False
@@ -149,11 +147,11 @@ class Projector(object):
             raise RuntimeError("Projector has not been initialized.")
 
         # initialize projection-specific arguments
-        camera_center_in_volume = np.array(camera_projection.get_center_in_volume(self.volume), dtype=np.float32)
-        voxel_from_index = np.array(camera_projection.get_ray_transform(self.volume), dtype=np.float32)
+        camera_center_in_volume = np.array(camera_projection.get_center_in_volume(self.volume)).astype(np.float32)
+        voxel_from_index = np.array(camera_projection.get_ray_transform(self.volume)).astype(np.float32)
 
         print("camera center in volume:", camera_center_in_volume)
-        print("voxel from index transform:", voxel_from_index)
+        print("voxel from index transform:", voxel_from_index, sep='\n')
 
         # copy the projection matrix to CUDA (output array initialized to zero by the kernel)
         cuda.memcpy_htod(self.rt_kinv_gpu, voxel_from_index)
@@ -225,7 +223,7 @@ class Projector(object):
 
         # convert forward_projections to dict over materials
         # (TODO: fix mass_attenuation so it doesn't require this conversion)
-        forward_projections = dict((k, forward_projections[:, :, :, i]) for i, k in enumerate(self.materials))
+        forward_projections = dict((k, forward_projections[:, :, :, i]) for i, k in enumerate(self.volume.materials))
         
         # calculate intensity at detector (images: mean energy one photon emitted from the source
         # deposits at the detector element, photon_prob: probability of a photon emitted from the
@@ -369,9 +367,9 @@ class Projector(object):
         # allocate and transfer segmentation texture to GPU
         # segmentation = np.moveaxis(self.segmentation, [0, 1, 2, 3], [0, 3, 2, 1]).copy() # TODO: is this swap necessary? (same as materials)
 
-        self.segmentations_gpu = [cuda.np_to_array(seg, order='C') for seg in self.volume.materials.values()]
+        self.segmentations_gpu = [cuda.np_to_array(seg, order='C') for mat, seg in self.volume.materials.items()]
         self.segmentations_texref = [self.mod.get_texref(f"seg_{m}") for m, _ in enumerate(self.volume.materials)]
-        for seg, texref in zip(self.segmentations_gpu, self.segmentation_texref):
+        for seg, texref in zip(self.segmentations_gpu, self.segmentations_texref):
             cuda.bind_array_to_texref(seg, texref)
             if self.mode == 'linear':
                 texref.set_filter_mode(cuda.filter_mode.LINEAR)
