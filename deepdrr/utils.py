@@ -98,3 +98,29 @@ def make_detector_rotation(phi, theta, rho):
     R = np.matmul(R_principle, R)
 
     return R
+
+
+def generate_uniform_angles(
+    phi_range: Tuple[float, float, float],
+    theta_range: Tuple[float, float, float],
+) -> Tuple[np.ndarray, np.ndarray]:
+    """Generate a uniform sampling of angles over the given ranges.
+
+    If inputs are in degrees, so will the outputs be.
+
+    Args:
+        phi_range (Tuple[float, float, float]): range of angles phi in (min, max, step) form, in degrees.
+        theta_range (Tuple[float, float, float]): range of angles theta in (min, max, step) form, in degrees.
+
+    Returns:
+        Tuple[np.ndarray, np.ndarray]: phis, thetas over uniform angles, in radians.
+    """    
+    min_theta, max_theta, spacing_theta = theta_range
+    min_phi, max_phi, spacing_phi = phi_range
+    thetas = np.array(np.arange(min_theta, max_theta + spacing_theta / 2, step=spacing_theta))
+    num_thetas = len(thetas)
+    phis = np.array(np.arange(min_phi, max_phi, step=spacing_phi))
+    num_phis = len(phis)
+    thetas = np.tile(thetas, num_phis)
+    phis = phis.repeat(num_thetas, 0)
+    return phis, thetas

@@ -477,51 +477,7 @@ class FrameTransform(Transform):
             FrameTransform: the B_from_A transform.
         """
         origin = point(origin)
-        return cls.from_rt(np.eye(origin.dim), -origin)
-
-    @classmethod
-    def from_detector_pose(
-        cls,
-        phi: float,
-        theta: float, 
-        isocenter: Point3D, 
-        isocenter_distance: float, 
-        rho: float = 0, 
-        degrees: bool = True,
-    ) -> FrameTransform:
-        stuff = """Get the frame transform for the extrinsic matrix of the C-arm camera model.
-
-        # 
-        # Left/Right angulation of C arm (rotation at the base)
-        # world-space point with the isocenter of the C-arm (around which it rotates)
-        # 
-        # 
-
-        Args:
-            phi (float): CRAN/CAUD angle of C arm (along the actual arc of the arm)
-            theta (float): Left/Right angulation of C arm (rotation at the base)
-            isocenter (Point3D): isocenter of the C-arm in world-space.
-            isocenter_distance (float): distance in world-units from isocenter to camera center (x-ray source point)
-            rho (float, optional): rotation about principle axis, after main rotation. Defaults to 0
-            degrees (bool, optional): whether the angles are given in degrees. Defaults to True.
-
-        Returns:
-            FrameTransform: the "camera3d_from_world" frame transformation for the oriented C-arm camera.
-        """
-        if degrees:
-            phi = np.radians(phi)
-            theta = np.radians(theta)
-            rho = np.radians(rho)
-
-        # translate points to the frame at the center of the c-arm's rotation
-        isocenter_from_world = FrameTransform.from_origin(isocenter)
-        
-        # get the rotation corresponding to the c-arm, then translate to the camera-center frame, along z-axis.
-        R = utils.make_detector_rotation(phi, theta, rho)
-        t = np.array([0, 0, isocenter_distance])
-        camera3d_from_isocenter = FrameTransform.from_rt(R, t)
-
-        return camera3d_from_isocenter @ isocenter_from_world
+        return cls.from_rt(translation=-origin)
 
     @property
     def R(self):
@@ -782,11 +738,13 @@ class CameraProjection(HomogeneousObject):
         return volume.voxel_from_world @ self.center_in_world
  
     def get_ray_transform(self, volume: Volume) -> RayTransform:
-        """Get the ray transform for the camera, in voxel-space
+        """Get the ray transform for the camera, in voxel-space.
 
-        The ray transform takes a Point2D and converts it to a Vector3D. This is simply 
+        voxel_from_index transformation that goes from Point2D to Vector3D, with the vector in the Point2D frame.
 
-        Analogous to get_canonical_projection_matris. Gets RT_Kinv for CUDA kernel.
+        The ray transform takes a Point2D and converts it to a Vector3D. 
+
+        Analogous to get_canonical_projection_matrix. Gets "RT_Kinv" for CUDA kernel.
 
         """
         # transformation from image-space to a vector in world coorindates

@@ -1,3 +1,4 @@
+from deepdrr.utils import generate_uniform_angles
 from deepdrr.geo import CameraIntrinsicTransform
 from typing import Literal, List, Union, Tuple, Optional, Dict
 
@@ -17,8 +18,9 @@ from . import scatter
 from . import analytic_generators
 # from ..cam import Camera
 # from ..cam import CamProjection
-from ..geo import CameraProjection, FrameTransform, CameraIntrinsicTransform
+from ..geo import Point3D, Point2D, Vector3D, CameraProjection, FrameTransform, CameraIntrinsicTransform
 from ..vol import Volume
+from ..device import CArm
 from .. import utils
 
 
@@ -43,7 +45,9 @@ def _get_kernel_projector_module(num_materials) -> SourceModule:
 
 
 class Projector(object):
-    """Forward projector object.
+    """Forward projector object. Represents the C-arm imaging device.
+
+    TODO: rename to Detector?
 
     The goal is to get to a point where reloads are done only when a new volume is needed.
 
@@ -75,8 +79,10 @@ class Projector(object):
 
     def __init__(
         self,
+        
         volume: Volume,
         camera_intrinsics: CameraIntrinsicTransform,
+        carm: Optional[CArm] = None,
         step: float = 0.1, # step size along ray
         mode: Literal['linear'] = 'linear',
         spectrum: Union[np.ndarray, Literal['60KV_AL35', '90KV_AL40', '120KV_AL43']] = '90KV_AL40',
@@ -87,11 +93,25 @@ class Projector(object):
         max_block_index: int = 1024,
         centimeters: bool = True,       # convert to centimeters
         collected_energy: bool = False, # convert to keV / cm^2 or keV / mm^2
-    ):
+    ) -> None:
+        """Create the projector, which has info for simulating the DRR.
+
+        Args:
+            volume (Volume): a volume object with materials segmented.
+            camera_intrinsics (CameraIntrinsicTransform): intrinsics of the projector's camera. (used for sensor size)
+            carm (Optional[CArm], optional): Optional C-arm device, which can be used to get projections from C-Arm pose. Defaults to None.
+            step (float, optional): size of the step along projection ray in voxels. Defaults to 0.1.
+            spectrum (Union[np.ndarray, Literal[, optional): spectrum or name of spectrum to use for projection. Defaults to '90KV_AL40'.
+            add_scatter (bool, optional): whether to add scatter noise. Defaults to False.
+            threads (int, optional): number of threads to use. Defaults to 8.
+            max_block_index (int, optional): maximum GPU block. Defaults to 1024.
+            centimeters (bool, optional): whether to use centimeters (deprecated?). Defaults to True.
+        """
                     
         # set variables
         self.volume = volume
         self.camera_intrinsics = camera_intrinsics
+        self.carm = carm
         self.step = step
         self.mode = mode
         self.spectrum = self._get_spectrum(spectrum)
@@ -129,11 +149,11 @@ class Projector(object):
             raise RuntimeError("Projector has not been initialized.")
 
         # initialize projection-specific arguments
-        source_point = np.array(camera_projection.get_center_in_volume(self.volume), dtype=np.float32)
-        rt_kinv = camera_projection.get_ray_transform(self.volume)
+        camera_center_in_volume = np.array(camera_projection.get_center_in_volume(self.volume), dtype=np.float32)
+        voxel_from_index = camera_projection.get_ray_transform(self.volume)
 
         # copy the projection matrix to CUDA (output array initialized to zero by the kernel)
-        cuda.memcpy_htod(self.rt_kinv_gpu, rt_kinv)
+        cuda.memcpy_htod(self.rt_kinv_gpu, voxel_from_index)
 
         # Make the arguments to the CUDA "projectKernel".
         args = [
@@ -149,9 +169,9 @@ class Projector(object):
             np.float32(self.voxel_size[0]),         # gVoxelElementSizeX
             np.float32(self.voxel_size[1]),         # gVoxelElementSizeY
             np.float32(self.voxel_size[2]),         # gVoxelElementSizeZ
-            source_point[0],                        # sx
-            source_point[1],                        # sy
-            source_point[2],                        # sz
+            camera_center_in_volume[0],                        # sx
+            camera_center_in_volume[1],                        # sy
+            camera_center_in_volume[2],                        # sz
             self.rt_kinv_gpu,                       # RT_Kinv
             self.output_gpu,                        # output
         ]
@@ -190,12 +210,12 @@ class Projector(object):
 
     def project(
         self,
-        *projections: CamProjection,
+        *camera_projections: CameraProjection,
     ) -> np.ndarray:
         outputs = []
 
         print('projecting views')
-        for proj in projections:
+        for proj in camera_projections:
             outputs.append(self._project(proj))
 
         forward_projections = np.stack(outputs)
@@ -229,23 +249,58 @@ class Projector(object):
         else:
             return images
 
-    def from_view(
-            self,
-            phi: float,
-            theta: float,
-            rho: float = 0,
-            offset: List[float] = [0., 0., 0.],
-    ):
-        projection = self.camera.make_projections([phi], [theta], [rho], [offset])[0]
-        return self.project(projection)
+    def project_at_carm_pose(
+        self,
+        phi: float,
+        theta: float,
+        rho: Optional[float] = 0,
+        degrees: bool = True,
+        offset: Optional[Vector3D] = None,        
+    ) -> np.ndarray:
+        """Project over the volume(s), given the pose of the C-arm detector.
+
+        Convenience function that passes all args onto the FrameTransform.from_detector_pose() to make 
+        the extrinsic camera3d_from_world transformation.
+
+        Returns:
+            np.ndarray: images that result from projection.
+        """
+        if self.carm is None:
+            raise RuntimeError("must provide carm device to projector")
+
+        extrinsic = self.carm.at(
+            phi=phi,
+            theta=theta,
+            rho=rho,
+            degrees=degrees,
+        )
+
+        camera_projection = CameraProjection(self.camera_intrinsics, extrinsic)
+        return self.project(camera_projection)
         
-    def over_range(
+    def project_over_carm_range(
         self,
         phi_range: Tuple[float, float, float],
-        theta_range: Tuple[float, float, float],        
+        theta_range: Tuple[float, float, float],
+        degrees: bool = True,
     ) -> np.ndarray:
-        projections = self.camera.make_projections_over_range(phi_range=phi_range, theta_range=theta_range)
-        return self.project(*projections)
+        if self.carm is None:
+            raise RuntimeError("must provide carm device to projector")
+
+        camera_projections = []
+        phis, thetas = utils.generate_uniform_angles(phi_range, theta_range)
+        for phi, theta in zip(phis, thetas):
+            extrinsic = self.carm.at(
+                phi=phi,
+                theta=theta,
+                degrees=degrees,
+            )
+
+            camera_projections.append(
+                CameraProjection(self.camera_intrinsics, extrinsic)
+            )
+
+        return self.project(*camera_projections)
 
     @property
     def output_shape(self):
@@ -296,7 +351,7 @@ class Projector(object):
             raise RuntimeError("Close projector before initializing again.")
 
         # allocate and transfer volume texture to GPU
-        volume = np.moveaxis(self.volume, [0, 1, 2], [2, 1, 0]).copy()
+        volume = np.moveaxis(self.volume.data, [0, 1, 2], [2, 1, 0]).copy() # TODO: is this axis swap necessary?
         self.volume_gpu = cuda.np_to_array(volume, order='C')
         self.volume_texref = self.mod.get_texref("volume")
         cuda.bind_array_to_texref(self.volume_gpu, self.volume_texref)
