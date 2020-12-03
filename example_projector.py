@@ -5,6 +5,7 @@ from typing import Callable
 import matplotlib.pyplot as plt
 import numpy as np
 from pathlib import Path
+from time import time
 
 # old deepdrr imports
 from deepdrr.load_dicom import load_dicom, conv_hu_to_materials_thresholding, conv_hu_to_density
@@ -18,18 +19,30 @@ from deepdrr.geo import point, vector, CameraIntrinsicTransform
 def main():
     
     # Define a simple phantom for test.
-    volume = np.zeros((100, 100, 100), dtype=np.float32)
-    volume[20:40, 20:40, 20:40] = 1
-    volume[60:80, 60:80, 60:80] = 2
+    volume = np.zeros((120, 100, 80), dtype=np.float32)
+    # volume[20:40, 20:40, 20:40] = 1
+    # volume[60:80, 60:80, 60:80] = 2
+    volume[0, 0, :] = 1
+    volume[0, -1, :] = 1
+    volume[-1, 0, :] = 1
+    volume[-1,-1, :] = 1
+    volume[:, 0, 0] = 1
+    volume[:, -1, 0] = 1
+    volume[0, :, 0] = 1
+    volume[-1,:, 0] = 1
+
+    volume[40:60, 40:60, 40:60] = 1
     materials = {}
     materials["air"] = volume == 0
     materials["soft tissue"] = volume == 1
     materials["bone"] = volume == 2
     voxel_size = np.array([1, 1, 1], dtype=np.float32)
 
-    # Use the center of the volume as the "world" coordinates. The origin is the (0, 0, 0) point of the volume in the world frame.
-    vol_center = (np.array(volume.shape) - 1) / 2
+    # Use the center of the volume as the "world" coordinates. The origin is the (0, 0, 0) index of the volume in the world frame.
+    vol_center = (np.array(volume.shape) - 1) / 2 * voxel_size
     origin = point(-vol_center[0], -vol_center[1], -vol_center[2])
+
+    # Create the volume
     volume = Volume(
         data=volume,
         materials=materials, 
@@ -53,7 +66,7 @@ def main():
     )
 
     # Angles to take projections over
-    min_theta = 60
+    min_theta = 0
     max_theta = 120
     min_phi = 0
     max_phi = 91
@@ -61,6 +74,7 @@ def main():
     spacing_phi = 90
 
 
+    t = time()
     with Projector(
         volume=volume,
         camera_intrinsics=camera_intrinsics,
@@ -78,6 +92,8 @@ def main():
             (min_phi, max_phi, spacing_phi),
             (min_theta, max_theta, spacing_theta)
         )
+    dt = time() - t
+    print(f"projected {images.shape[0]} views in {dt:.03f}s")
 
     # for debugging
     phis, thetas = utils.generate_uniform_angles(
@@ -85,12 +101,16 @@ def main():
         (min_theta, max_theta, spacing_theta))
 
     # show result
-    output_dir = Path('examples')
+
+    # save results
+    output_dir = Path(f'examples_{images.shape[0]}')
     output_dir.mkdir(exist_ok=True)
     for i, image in enumerate(images):
         plt.imshow(image, cmap="gray")
         plt.title(f'phi, theta = {phis[i], thetas[i]}')
-        plt.savefig(output_dir / f'image_phi={int(phis[i])}_theta={int(thetas)[i]}.png')
+        output_path = output_dir / f'image_phi={int(phis[i])}_theta={int(thetas[i])}.png'
+        print(f'writing image {output_path}')
+        plt.savefig(output_path)
 
 
 if __name__ == "__main__":

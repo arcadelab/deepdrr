@@ -61,7 +61,7 @@ class Volume(object):
                 [0, 0, self.spacing[2]],
                 [0, -self.spacing[1], 0],
             ]
-            self.anatomical_from_voxel = geo.FrameTransform.from_rt(R=rotation, t=self.origin)
+            self.anatomical_from_voxel = geo.FrameTransform.from_rt(rotation=rotation, translation=self.origin)
         else:
             raise NotImplementedError("conversion from RAS (not hard, look at LPS example)")
 

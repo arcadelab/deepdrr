@@ -16,9 +16,10 @@ from . import spectral_data
 from . import mass_attenuation
 from . import scatter
 from . import analytic_generators
+from .material_coefficients import material_coefficients
 # from ..cam import Camera
 # from ..cam import CamProjection
-from ..geo import Point3D, Point2D, Vector3D, CameraProjection, FrameTransform, CameraIntrinsicTransform
+from ..geo import Point3D, Point2D, Vector3D, CameraProjection, FrameTransform, CameraIntrinsicTransform, point, vector
 from ..vol import Volume
 from ..device import CArm
 from .. import utils
@@ -60,22 +61,22 @@ class Projector(object):
 
     """
 
-    material_names = [
-        "air",
-        "soft tissue",
-        "bone",
-        "iron",
-        "lung",
-        "titanium",
-        "teflon",
-        "bone external",
-        "soft tissue external",
-        "air external",
-        "iron external",
-        "lung external",
-        "titanium external",
-        "teflon external",
-    ]
+    # material_names = [
+    #     "air",
+    #     "soft tissue",
+    #     "bone",
+    #     "iron",
+    #     "lung",
+    #     "titanium",
+    #     "teflon",
+    #     "bone external",
+    #     "soft tissue external",
+    #     "air external",
+    #     "iron external",
+    #     "lung external",
+    #     "titanium external",
+    #     "teflon external",
+    # ]
 
     def __init__(
         self,
@@ -134,7 +135,7 @@ class Projector(object):
         
         # assertions
         for mat in self.volume.materials:
-            assert mat in self.material_names, f'unrecognized material: {mat}'
+            assert mat in material_coefficients, f'unrecognized material: {mat}'
 
         # Has the cuda memory been allocated.
         self.initialized = False
@@ -150,8 +151,7 @@ class Projector(object):
         camera_center_in_volume = np.array(camera_projection.get_center_in_volume(self.volume)).astype(np.float32)
         voxel_from_index = np.array(camera_projection.get_ray_transform(self.volume)).astype(np.float32)
 
-        print("camera center in volume:", camera_center_in_volume)
-        print("voxel from index transform:", voxel_from_index, sep='\n')
+        _voxel_from_index = camera_projection.get_ray_transform(self.volume)
 
         # copy the projection matrix to CUDA (output array initialized to zero by the kernel)
         cuda.memcpy_htod(self.rt_kinv_gpu, voxel_from_index)
@@ -181,14 +181,14 @@ class Projector(object):
         blocks_w = np.int(np.ceil(self.sensor_size[0] / self.threads))
         blocks_h = np.int(np.ceil(self.sensor_size[1] / self.threads))
         block = (8, 8, 1)
-        print("running:", blocks_w, "x", blocks_h, "blocks with ", self.threads, "x", self.threads, "threads")
+        # print("running:", blocks_w, "x", blocks_h, "blocks with ", self.threads, "x", self.threads, "threads")
 
         if blocks_w <= self.max_block_index and blocks_h <= self.max_block_index:
             offset_w = np.int32(0)
             offset_h = np.int32(0)
             self.project_kernel(*args, offset_w, offset_h, block=block, grid=(blocks_w, blocks_h))
         else:
-            print("running kernel patchwise")
+            # print("running kernel patchwise")
             for w in range((blocks_w - 1) // (self.max_block_index + 1)):
                 for h in range((blocks_h - 1) // (self.max_block_index + 1)):
                     offset_w = np.int32(w * self.max_block_index)
@@ -200,7 +200,7 @@ class Projector(object):
         output = np.empty(self.output_shape, np.float32)
         cuda.memcpy_dtoh(output, self.output_gpu)
 
-        # transpose the axes
+        # transpose the axes, which previously have width on the slow dimension
         output = np.swapaxes(output, 0, 1).copy()
 
         # convert to centimeters
@@ -215,7 +215,6 @@ class Projector(object):
     ) -> np.ndarray:
         outputs = []
 
-        print('projecting views')
         for proj in camera_projections:
             outputs.append(self._project(proj))
 
@@ -223,16 +222,15 @@ class Projector(object):
 
         # convert forward_projections to dict over materials
         # (TODO: fix mass_attenuation so it doesn't require this conversion)
-        forward_projections = dict((k, forward_projections[:, :, :, i]) for i, k in enumerate(self.volume.materials))
+        forward_projections = dict((mat, forward_projections[:, :, :, m]) for m, mat in enumerate(self.volume.materials))
         
         # calculate intensity at detector (images: mean energy one photon emitted from the source
         # deposits at the detector element, photon_prob: probability of a photon emitted from the
         # source to arrive at the detector)
-        print("mass attenuation")
         images, photon_prob = mass_attenuation.calculate_intensity_from_spectrum(forward_projections, self.spectrum)
 
         if self.add_scatter:
-            print('adding scatter (may cause Nan errors)')
+            # print('adding scatter (may cause Nan errors)')
             noise = self.scatter_net.add_scatter(images, self.camera)
             photon_prob *= 1 + noise / images
             images += noise
@@ -242,7 +240,7 @@ class Projector(object):
             images = images * (self.photon_count / (self.camera.pixel_size[0] * self.camera.pixel_size[1]))
 
         if self.add_noise:
-            print("adding Poisson noise")
+            # print("adding Poisson noise")
             images = analytic_generators.add_noise(images, photon_prob, self.photon_count)
 
         if images.shape[0] == 1:
@@ -352,8 +350,9 @@ class Projector(object):
             raise RuntimeError("Close projector before initializing again.")
 
         # allocate and transfer volume texture to GPU
-        # volume = np.moveaxis(self.volume.data, [0, 1, 2], [2, 1, 0]).copy() # TODO: is this axis swap necessary?
+        # TODO: this axis-swap is messy and actually may be messing things up. Maybe use a FrameTransform in the Volume class instead?
         volume = self.volume.data
+        volume = np.moveaxis(volume, [0, 1, 2], [2, 1, 0]).copy() # TODO: is this axis swap necessary?
         self.volume_gpu = cuda.np_to_array(volume, order='C')
         self.volume_texref = self.mod.get_texref("volume")
         cuda.bind_array_to_texref(self.volume_gpu, self.volume_texref)
@@ -365,9 +364,9 @@ class Projector(object):
             raise RuntimeError
 
         # allocate and transfer segmentation texture to GPU
-        # segmentation = np.moveaxis(self.segmentation, [0, 1, 2, 3], [0, 3, 2, 1]).copy() # TODO: is this swap necessary? (same as materials)
-
-        self.segmentations_gpu = [cuda.np_to_array(seg, order='C') for mat, seg in self.volume.materials.items()]
+        # TODO: remove axis swap?
+        # self.segmentations_gpu = [cuda.np_to_array(seg, order='C') for mat, seg in self.volume.materials.items()]
+        self.segmentations_gpu = [cuda.np_to_array(np.moveaxis(seg, [0, 1, 2], [2, 1, 0]).copy(), order='C') for mat, seg in self.volume.materials.items()]
         self.segmentations_texref = [self.mod.get_texref(f"seg_{m}") for m, _ in enumerate(self.volume.materials)]
         for seg, texref in zip(self.segmentations_gpu, self.segmentations_texref):
             cuda.bind_array_to_texref(seg, texref)

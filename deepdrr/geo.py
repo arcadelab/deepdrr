@@ -100,7 +100,7 @@ class HomogeneousObject(ABC):
         return self.to_array()
             
     def __str__(self):
-        return np.array_str(np.array(self), suppress_small=True)
+        return np.array_str(self.data, suppress_small=True)
 
     def __repr__(self):
         s = '  ' + str(np.array_str(self.data)).replace('\n', '\n  ')
@@ -111,7 +111,6 @@ class HomogeneousObject(ABC):
 
     def __setitem__(self, key, value):
         return self.data.__setitem__(key, value)
-
 
 
 
@@ -297,6 +296,14 @@ def vector(*v: Union[np.ndarray, float, Vector2D, Vector3D]) -> Union[Vector2D, 
         raise ValueError(f'invalid data for vector: {v}')
 
 
+def _point_or_vector(data: np.ndarray):
+    assert data.ndim == 1 and data[-1] in [0, 1], f'{data} must be a point or vector'
+
+    if bool(data[-1]):
+        return point(data[:-1])
+    else:
+        return vector(data[:-1])
+
 """ 
 Transforms
 """
@@ -352,7 +359,7 @@ class Transform(HomogeneousObject):
 
         if issubclass(type(other), Homogeneous):
             # if other is a point or vector, return a point or vector
-            return type(other)(self.data @ other.data)            
+            return _point_or_vector(self.data @ other.data)
         elif issubclass(type(other), Transform):
             # if other is a Transform, then compose their inverses as well to store that.
             _inv = other.inv.data @ self.inv.data
@@ -560,7 +567,8 @@ class FrameTransform(Transform):
 
     @property
     def inv(self):
-        return FrameTransform.from_rt(self.R.T, -(self.R.T @ self.t))
+        R_inv = np.linalg.inv(self.R)
+        return FrameTransform.from_rt(R_inv, -(R_inv @ self.t))
 
 
 class ProjectiveTransform(Transform):
@@ -829,10 +837,10 @@ class CameraProjection(Transform):
         Analogous to get_canonical_projection_matrix. Gets "RT_Kinv" for CUDA kernel.
 
         """
-        # transformation from image-space to a vector in world coorindates
-        # rt_kinv = np.transpose(self.extrinsic.R) @ self.intrinsic.inv
         return volume.voxel_from_world @ self.world_from_index
 
+        # transformation from image-space to a vector in world coorindates
+        # rt_kinv = np.transpose(self.extrinsic.R) @ self.intrinsic.inv
         # just with an origin shift, so the vector transformation here is fine.
 
         # re-scale to voxel-units.

@@ -227,7 +227,7 @@ extern "C" {
     {
 
         // The output image has the following coordinate system, with cell-centered sampling.
-        // y is along the slow axis, x along the fast.
+        // y is along the fast axis, x along the slow (note this is opposite usual convention).
         // Each point has NUM_MATERIALS elements at it.
         // 
         //      x -->
@@ -240,20 +240,20 @@ extern "C" {
         //      *---------------------------*
         // 
         //
-        int widx = threadIdx.x + (blockIdx.x + offsetW) * blockDim.x; // index into output image width
-        int hidx = threadIdx.y + (blockIdx.y + offsetH) * blockDim.y; // index into output image height
+        int udx = threadIdx.x + (blockIdx.x + offsetW) * blockDim.x; // index into output image width
+        int vdx = threadIdx.y + (blockIdx.y + offsetH) * blockDim.y; // index into output image height
 
         // if the current point is outside the output image, no computation needed
-        if (widx >= out_width || hidx >= out_height)
+        if (udx >= out_width || vdx >= out_height)
             return;
 
         // flat index to first material in output "channel". 
         // So (idx + m) gets you the pixel for material index m in [0, NUM_MATERIALS)
-        int idx = hidx * (out_width * NUM_MATERIALS) + widx * NUM_MATERIALS; 
+        int idx = udx * (out_height * NUM_MATERIALS) + vdx * NUM_MATERIALS; 
 
         // cell-centered sampling point corresponding to pixel index, in index-space.
-        float u = (float) widx + 0.5;
-        float v = (float) hidx + 0.5;
+        float u = (float) udx + 0.5;
+        float v = (float) vdx + 0.5;
 
         // Vector in voxel-space along ray from source-point to pixel at [u,v] on the detector plane.
         float rx = u * rt_kinv[0] + v * rt_kinv[1] + rt_kinv[2];
