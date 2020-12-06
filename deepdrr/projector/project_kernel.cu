@@ -227,7 +227,7 @@ extern "C" {
     {
 
         // The output image has the following coordinate system, with cell-centered sampling.
-        // y is along the fast axis, x along the slow (note this is opposite usual convention).
+        // y is along the fast axis (columns), x along the slow (rows).
         // Each point has NUM_MATERIALS elements at it.
         // 
         //      x -->

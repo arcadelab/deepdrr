@@ -21,8 +21,8 @@ class Volume(object):
         self, 
         data: np.ndarray,
         materials: Dict[str, np.ndarray],
-        origin: Optional[geo.Point3D],
-        spacing: Optional[geo.Vector3D] = (1, 1, 1),
+        origin: geo.Point3D,
+        spacing: Optional[geo.Vector3D] = [1, 1, 1],
         anatomical_coordinate_system: Optional[Literal['LPS', 'RAS', 'none']] = None,
         world_from_anatomical: Optional[geo.FrameTransform] = None,
     ):
@@ -36,7 +36,7 @@ class Volume(object):
         Args:
             volume (np.ndarray): the volume density data.
             materials (dict[str, np.ndarray]): mapping from material names to binary segmentation of that material.
-            origin (Point3D, optional): Location of the volume's origin in the anatomical coordinate system.
+            origin (Point3D): Location of the volume's origin in the anatomical coordinate system.
             spacing (Tuple[float, float, float], optional): Spacing of the volume in the anatomical coordinate system. Defaults to (1, 1, 1).
             anatomical_coordinate_system (Literal['LPS', 'RAS', 'none']): anatomical coordinate system convention. Defaults to 'none'.
             world_from_anatomical (FrameTransform, optional): Optional transformation from anatomical to world coordinates. 
@@ -91,8 +91,11 @@ class Volume(object):
     def from_hu(
         cls,
         hu_values: np.ndarray,
+        origin: geo.Point3D,
         use_thresholding: bool = True,
-        **kwargs,
+        spacing: Optional[geo.Vector3D] = (1, 1, 1),
+        anatomical_coordinate_system: Optional[Literal['LPS', 'RAS', 'none']] = None,
+        world_from_anatomical: Optional[geo.FrameTransform] = None,
     ) -> None:
         data = conv_hu_to_density(hu_values)
 
@@ -101,7 +104,14 @@ class Volume(object):
         else:
             materials = conv_hu_to_materials(hu_values)
 
-        return cls(data, materials, **kwargs)
+        return cls(
+            data,
+            materials, 
+            origin=origin, 
+            spacing=spacing, 
+            anatomical_coordinate_system=anatomical_coordinate_system, 
+            world_from_anatomical=world_from_anatomical,
+        )
 
     @property
     def world_from_voxel(self):

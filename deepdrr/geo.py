@@ -742,7 +742,7 @@ class CameraProjection(Transform):
     - http://wwwmayr.in.tum.de/konferenzen/MB-Jass2006/courses/1/slides/h-1-5.pdf
     which specifically taylors the descussion toward C arms.
 
-    TODO: change voxel to IJK, index to UV.
+    TODO: change `voxel` to IJK, `index` to UV.
 
     """
     dim = 3

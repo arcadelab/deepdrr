@@ -213,6 +213,9 @@ class Projector(object):
         self,
         *camera_projections: CameraProjection,
     ) -> np.ndarray:
+        if len(camera_projections) == 0:
+            raise ValueError()
+        
         outputs = []
 
         for proj in camera_projections:
