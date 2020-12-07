@@ -1,5 +1,8 @@
 """Define the 3D geometry primitives that the rest of DeepDRR would use, in homogeneous coordinates.
+
 """
+
+__author__ = "Benjamin D. Killeen"
 
 from __future__ import annotations
 
