@@ -19,8 +19,9 @@ Currently, DeepDRR is in the process of being upgraded with new features and an 
 
 #### `pip`
 
+This project is available on [https://pypi.org/project/deepdrr/](PyPI):
 ```
-pip install deepdrr==1.0.0a1
+pip install deepdrr
 ```
 
 #### From source
