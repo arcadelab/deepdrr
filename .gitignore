@@ -3,3 +3,5 @@
 **.egg-info
 deepdrr/model_segmentation.pth.tar
 examples
+dist
+build

@@ -2,8 +2,6 @@
 
 """
 
-__author__ = "Benjamin D. Killeen"
-
 from __future__ import annotations
 
 from typing import Union, Tuple, Optional, Type, List, Generic, TypeVar

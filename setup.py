@@ -5,10 +5,10 @@ with open("README.md", "r") as fh:
 
 setuptools.setup(
     name='deepdrr',
-    version='0.1.dev0',
-    author='Mathias Unberath',
-    author_email='unberath@jhu.edu',
-    description='Forked from mathiasunberath/DeepDRR to be more pythonic.',
+    version='1.0.0-alpha.0.1',
+    author='Benjamin D. Killeen',
+    author_email='killeen@jhu.edu',
+    description='A Catalyst for Machine Learning in Fluoroscopy-guided Procedures.',
     long_description=long_description,
     long_description_content_type="text/markdown",
     packages=setuptools.find_packages(),
