@@ -15,15 +15,17 @@ Currently, DeepDRR is in the process of being upgraded with new features and an 
 
 1. Install CUDA 8.0 or higher.
 2. Ensure that a C compiler is on your `PATH`.
-3. Install from source below.
+3. Install with one of the following options.
 
 #### `pip`
 
-Direct `pip` installation is forthcoming. Currently, `pip` can be used to install version 1.0 from source.
+```
+pip install deepdrr==1.0.0a1
+```
 
 #### From source
 
-Download the latest release at https://github.com/arcadelab/DeepDRR/releases/ and install an editable copy from pip. It is probably preferable to use a virtual environment for this.
+Clone this branch or download the latest pre-release at https://github.com/arcadelab/DeepDRR/releases/ and install an editable copy from pip. It is probably preferable to use a virtual environment for this.
 ```bash
 pip install -e /path/to/DeepDRR
 ```
