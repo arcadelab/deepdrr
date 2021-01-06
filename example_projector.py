@@ -7,10 +7,7 @@ import numpy as np
 from pathlib import Path
 from time import time
 
-# old deepdrr imports
 from deepdrr.load_dicom import load_dicom, conv_hu_to_materials_thresholding, conv_hu_to_density
-
-# new deepdrr imports
 from deepdrr import utils
 from deepdrr import Volume, CArm, Projector
 from deepdrr.geo import point, vector, CameraIntrinsicTransform
@@ -18,7 +15,7 @@ from deepdrr.geo import point, vector, CameraIntrinsicTransform
 
 def main():
     
-    # Define a simple phantom for test.
+    # Define a simple phantom for test: a wire box around a cube.
     volume = np.zeros((120, 100, 80), dtype=np.float32)
     # volume[20:40, 20:40, 20:40] = 1
     # volume[60:80, 60:80, 60:80] = 2
@@ -42,7 +39,7 @@ def main():
     vol_center = (np.array(volume.shape) - 1) / 2 * voxel_size
     origin = point(-vol_center[0], -vol_center[1], -vol_center[2])
 
-    # Create the volume
+    # Create the volume object with segmentation
     volume = Volume(
         data=volume,
         materials=materials, 
@@ -73,7 +70,6 @@ def main():
     spacing_theta = 30
     spacing_phi = 90
 
-
     t = time()
     with Projector(
         volume=volume,
@@ -95,15 +91,16 @@ def main():
     dt = time() - t
     print(f"projected {images.shape[0]} views in {dt:.03f}s")
 
-    # for debugging
+    # apply neglog transforms if desired:
+    # images = utils.neglog(images)
+
+    # get the thetas an phis for file names
     phis, thetas = utils.generate_uniform_angles(
         (min_phi, max_phi, spacing_phi),
         (min_theta, max_theta, spacing_theta))
 
-    # show result
-
-    # save results
-    output_dir = Path(f'examples_{images.shape[0]}')
+    # save results as matplotlib plots
+    output_dir = Path(f'examples')
     output_dir.mkdir(exist_ok=True)
     for i, image in enumerate(images):
         plt.imshow(image, cmap="gray")

@@ -124,3 +124,17 @@ def generate_uniform_angles(
     thetas = np.tile(thetas, num_phis)
     phis = phis.repeat(num_thetas, 0)
     return phis, thetas
+
+
+def neglog(image, I_0=1):
+    """Negative log transform.
+
+    Args:
+        image (np.ndarray): the image, as output by projector. Assumes last two dimensions are height and width.
+        I_0 (int, optional): I_0. Defaults to 1.
+
+    Returns:
+        np.ndarray: Image with neg_log transform applied.
+    """
+    min_nonzero_value = image[image > 0].min(axis=(-1, -2), keepdims=True)
+    return np.where(image == 0, min_nonzero_value, -np.log(image / I_0))
