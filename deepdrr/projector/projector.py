@@ -80,7 +80,6 @@ class Projector(object):
 
     def __init__(
         self,
-        
         volume: Volume,
         camera_intrinsics: CameraIntrinsicTransform,
         carm: Optional[CArm] = None,
@@ -149,12 +148,12 @@ class Projector(object):
 
         # initialize projection-specific arguments
         camera_center_in_volume = np.array(camera_projection.get_center_in_volume(self.volume)).astype(np.float32)
-        voxel_from_index = np.array(camera_projection.get_ray_transform(self.volume)).astype(np.float32)
+        ijk_from_index = np.array(camera_projection.get_ray_transform(self.volume)).astype(np.float32)
 
-        _voxel_from_index = camera_projection.get_ray_transform(self.volume)
+        _ijk_from_index = camera_projection.get_ray_transform(self.volume)
 
         # copy the projection matrix to CUDA (output array initialized to zero by the kernel)
-        cuda.memcpy_htod(self.rt_kinv_gpu, voxel_from_index)
+        cuda.memcpy_htod(self.rt_kinv_gpu, ijk_from_index)
 
         # Make the arguments to the CUDA "projectKernel".
         args = [
@@ -381,7 +380,7 @@ class Projector(object):
         # allocate output image array on GPU (4 bytes to a float32)
         self.output_gpu = cuda.mem_alloc(self.output_size * 4)
 
-        # allocate voxel_from_index matrix array on GPU (3x3 array x 4 bytes per float32)
+        # allocate ijk_from_index matrix array on GPU (3x3 array x 4 bytes per float32)
         self.rt_kinv_gpu = cuda.mem_alloc(3 * 3 * 4)
         
         # Mark self as initialized.

@@ -743,8 +743,6 @@ class CameraProjection(Transform):
     - http://wwwmayr.in.tum.de/konferenzen/MB-Jass2006/courses/1/slides/h-1-5.pdf
     which specifically taylors the descussion toward C arms.
 
-    TODO: change `voxel` to IJK, `index` to UV.
-
     """
     dim = 3
 
@@ -816,7 +814,7 @@ class CameraProjection(Transform):
         return world_from_camera3d(point(0, 0, 0))
 
     def get_center_in_volume(self, volume: vol.Volume) -> Point3D:
-        """Get the camera center in voxel-space.
+        """Get the camera center in IJK-space.
 
         In original deepdrr, this is the `source_point` of `get_canonical_proj_matrix()`
 
@@ -824,27 +822,18 @@ class CameraProjection(Transform):
             volume (Volume): the volume to get the camera center in.
 
         Returns:
-            Point3D: the camera center in the volume's voxel-space.
+            Point3D: the camera center in the volume's IJK-space.
         """
-        return volume.voxel_from_world @ self.center_in_world
+        return volume.ijk_from_world @ self.center_in_world
  
     def get_ray_transform(self, volume: vol.Volume) -> Transform:
-        """Get the ray transform for the camera, in voxel-space.
+        """Get the ray transform for the camera, in IJK-space.
 
-        voxel_from_index transformation that goes from Point2D to Vector3D, with the vector in the Point2D frame.
+        ijk_from_index transformation that goes from Point2D to Vector3D, with the vector in the Point2D frame.
 
         The ray transform takes a Point2D and converts it to a Vector3D. 
 
         Analogous to get_canonical_projection_matrix. Gets "RT_Kinv" for CUDA kernel.
 
         """
-        return volume.voxel_from_world @ self.world_from_index
-
-        # transformation from image-space to a vector in world coorindates
-        # rt_kinv = np.transpose(self.extrinsic.R) @ self.intrinsic.inv
-        # just with an origin shift, so the vector transformation here is fine.
-
-        # re-scale to voxel-units.
-        # spacing = np.array(volume.spacing)
-        # return np.diag(1 / spacing) @ rt_kinv
-
+        return volume.ijk_from_world @ self.world_from_index
