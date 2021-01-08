@@ -40,7 +40,7 @@ def main():
     origin = point(-vol_center[0], -vol_center[1], -vol_center[2])
 
     # Create the volume object with segmentation
-    volume = Volume(
+    volume = Volume.from_parameters(
         data=volume,
         materials=materials, 
         origin=origin, 
