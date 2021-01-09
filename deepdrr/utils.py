@@ -100,6 +100,12 @@ def make_detector_rotation(phi, theta, rho):
     return R
 
 
+def radians(*ts, degrees: bool = True):
+    if degrees:
+        ts = [np.radians(t) for t in ts]
+    return ts
+
+
 def generate_uniform_angles(
     phi_range: Tuple[float, float, float],
     theta_range: Tuple[float, float, float],

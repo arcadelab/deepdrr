@@ -4,6 +4,7 @@
 from __future__ import annotations
 from typing import Union, Tuple, Literal, List, Optional, Dict
 
+import logging
 import numpy as np
 from pathlib import Path
 import nibabel as nib
@@ -11,7 +12,8 @@ import nibabel as nib
 from .load_dicom import conv_hu_to_density, conv_hu_to_materials, conv_hu_to_materials_thresholding
 from . import geo
 
-#  FrameTransform, Point3D, Vector3D, point, vector
+
+logger = logging.getLogger(__name__)
 
 
 class Volume(object):
@@ -135,15 +137,19 @@ class Volume(object):
         if use_thresholding:
             materials_path = path.parent / f'{stem}_materials_thresholding.npz'
             if materials_path.exists():
+                logger.info(f'found materials segmentation at {materials_path}.')
                 materials = dict(np.load(materials_path))
             else:
+                logger.info(f'segmenting materials in volume')
                 materials = conv_hu_to_materials_thresholding(hu_values)
                 np.savez(materials_path, **materials)
         else:
             materials_path = path.parent / f'{stem}_materials.npz'
             if materials_path.exists():
+                logger.info(f'found materials segmentation at {materials_path}.')
                 materials = dict(np.load(materials_path))
             else:
+                logger.info(f'segmenting materials in volume')
                 materials = conv_hu_to_materials(hu_values)
                 np.savez(materials_path, **materials)
 
@@ -234,5 +240,6 @@ class Volume(object):
         """
         return self.ijk_from_world @ other
 
-
+    def __array__(self):
+        return self.data
 

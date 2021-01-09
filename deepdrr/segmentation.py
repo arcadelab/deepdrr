@@ -1,3 +1,4 @@
+import logging
 import numpy as np
 import matplotlib.pyplot as plt
 from pathlib import Path
@@ -6,6 +7,8 @@ from torch.autograd import Variable
 from torchvision.datasets.utils import download_url
 
 from .network_segmentation import VNet
+
+logger = logging.getLogger(__name__)
 
 
 class SegmentationNet():
@@ -25,7 +28,7 @@ class SegmentationNet():
         self.model = self.model.cuda()
         self.model.load_state_dict(torch.load(self.model_path)['state_dict'])
         self.model.eval()
-        print("loaded segmentation network")
+        logger.info("loaded segmentation network")
     
     def download(self):
         if self.model_path.exists():
@@ -57,12 +60,12 @@ class SegmentationNet():
         padded_volume /= std
 
         segmented_volume = np.zeros([3, padded_volume.shape[0], padded_volume.shape[1], padded_volume.shape[2]], dtype=np.float32)
-        print(segmented_volume.shape)
+        logger.debug(segmented_volume.shape)
         counter = 1
         for i in range(0, blocks[0]):
             for j in range(0, blocks[1]):
                 for k in range(0, blocks[2]):
-                    print(counter)
+                    logger.debug(counter)
                     counter += 1
                     curren_block = padded_volume[i * blocksize:(i + 1) * blocksize, j * blocksize:(j + 1) * blocksize, k * blocksize:(k + 1) * blocksize]
                     presegmentation = np.zeros((4, blocksize, blocksize, blocksize), dtype=np.float32)
