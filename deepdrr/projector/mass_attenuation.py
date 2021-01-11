@@ -1,8 +1,12 @@
+import logging
 import numpy as np
 from pycuda import gpuarray, cumath
 from pycuda.tools import DeviceMemoryPool
 
 from .material_coefficients import material_coefficients
+
+
+logger = logging.getLogger(__name__)
 
 
 def calculate_intensity_from_spectrum(projections, spectrum, blocksize=50):
@@ -13,8 +17,10 @@ def calculate_intensity_from_spectrum(projections, spectrum, blocksize=50):
     num_blocks = np.ceil(projection_shape[0] / blocksize).astype(int)
     intensity = np.zeros(projection_shape, dtype=np.float32)
     photon_prob = np.zeros(projections[next(iter(projections))].shape, dtype=np.float32)
+    
+    logger.info('running mass attenuation...')
     for i in range(0, num_blocks):
-        print("running block:", i + 1, "of", num_blocks)
+        logger.info(f"running block: {i + 1} / {num_blocks}")
         lower_i = i * blocksize
         upper_i = min([(i + 1) * blocksize, projection_shape[0]])
         intensity_gpu = gpuarray.zeros((upper_i - lower_i, projection_shape[1], projection_shape[2]), dtype=np.float32, allocator=pool.allocate)
@@ -25,7 +31,7 @@ def calculate_intensity_from_spectrum(projections, spectrum, blocksize=50):
             projections_gpu[mat] = gpuarray.to_gpu(projections[mat][lower_i:upper_i, :, :], allocator=pool.allocate)
 
         for i, _ in enumerate(pdf):
-            print("evaluating:", i + 1, "/", pdf.__len__(), "spectral bins")
+            logger.debug(f"evaluating: {i + 1} / {len(pdf)} spectral bins")
             intensity_tmp = calculate_attenuation_gpu(projections_gpu, energies[i], pdf[i], pool)
             intensity_gpu = intensity_gpu.mul_add(1, intensity_tmp, 1)
             photon_prob_gpu = photon_prob_gpu.mul_add(1, intensity_tmp, 1 / energies[i])

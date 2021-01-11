@@ -17,7 +17,11 @@ logger = logging.getLogger(__name__)
 
 
 class Volume(object):
-
+    data: np.float32
+    materials: Dict[str, np.ndarray]
+    anatomical_from_ijk: geo.FrameTransform
+    world_from_anatomical: geo.FrameTransform
+    
     def __init__(
         self,
         data: np.ndarray,
@@ -183,8 +187,9 @@ class Volume(object):
         return geo.point(self.anatomical_from_ijk.t)
 
     @property
-    def spacing(self):
-        raise NotImplementedError
+    def spacing(self) -> geo.Vector3D:
+        # TODO: verify
+        return geo.vector(np.abs(np.array(self.anatomical_from_ijk.R)).max(axis=0))
 
     def _format_materials(
         self, 

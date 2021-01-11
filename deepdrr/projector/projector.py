@@ -1,7 +1,6 @@
-from deepdrr.utils import generate_uniform_angles
-from deepdrr.geo import CameraIntrinsicTransform
 from typing import Literal, List, Union, Tuple, Optional, Dict
 
+import logging
 import matplotlib.pyplot as plt
 import pycuda.driver as cuda
 import pycuda.autoinit
@@ -23,6 +22,9 @@ from ..geo import Point3D, Point2D, Vector3D, CameraProjection, FrameTransform, 
 from ..vol import Volume
 from ..device import CArm
 from .. import utils
+
+
+logger = logging.getLogger(__name__)
 
 
 def _get_kernel_projector_module(num_materials) -> SourceModule:
@@ -148,9 +150,13 @@ class Projector(object):
 
         # initialize projection-specific arguments
         camera_center_in_volume = np.array(camera_projection.get_center_in_volume(self.volume)).astype(np.float32)
-        ijk_from_index = np.array(camera_projection.get_ray_transform(self.volume)).astype(np.float32)
+        logger.debug(f'camera_center_ijk: {camera_center_in_volume}')
 
-        _ijk_from_index = camera_projection.get_ray_transform(self.volume)
+        ijk_from_index = np.array(camera_projection.get_ray_transform(self.volume)).astype(np.float32)
+        logger.debug(f'ijk_from_index:\n{ijk_from_index}')
+        exit()
+
+        # _ijk_from_index = camera_projection.get_ray_transform(self.volume)
 
         # copy the projection matrix to CUDA (output array initialized to zero by the kernel)
         cuda.memcpy_htod(self.rt_kinv_gpu, ijk_from_index)
@@ -212,8 +218,11 @@ class Projector(object):
         self,
         *camera_projections: CameraProjection,
     ) -> np.ndarray:
-        if len(camera_projections) == 0:
-            raise ValueError()
+        logger.debug(f'carm isocenter: {self.carm.isocenter}')
+        if not camera_projections and self.carm is None:
+            raise ValueError('must provide a camera projection object to the projector, unless imaging device (e.g. CArm) is provided')
+        elif not camera_projections and self.carm is not None:
+            camera_projections = [CameraProjection(self.camera_intrinsics, self.carm.camera3d_from_world)]
         
         outputs = []
 
@@ -269,14 +278,14 @@ class Projector(object):
         if self.carm is None:
             raise RuntimeError("must provide carm device to projector")
 
-        extrinsic = self.carm.at(
+        camera3d_from_world = self.carm.at(
             phi=phi,
             theta=theta,
             rho=rho,
             degrees=degrees,
         )
 
-        camera_projection = CameraProjection(self.camera_intrinsics, extrinsic)
+        camera_projection = CameraProjection(self.camera_intrinsics, camera3d_from_world)
         return self.project(camera_projection)
         
     def project_over_carm_range(

@@ -1,3 +1,4 @@
+import logging
 import torch
 import numpy as np
 from skimage.transform import resize
@@ -5,6 +6,9 @@ import torchvision.transforms as transforms
 from pathlib import Path
 
 from .network_scatter import SimpleNetGenerator
+
+
+logger = logging.getLogger(__name__)
 
 
 class ScatterNet():
@@ -16,7 +20,7 @@ class ScatterNet():
         self.model.load_state_dict(torch.load(self.model_path))
         self.model = self.model.cuda()
         self.transform = transforms.Compose([transforms.ToTensor()])
-        print("loaded scatter net")
+        logger.info("loaded scatter net.")
 
     def add_scatter(self, input_image, camera):
         scale_factor = 0.1334 * camera.pixel_size[0] / 0.31

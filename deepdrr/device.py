@@ -1,9 +1,13 @@
 from typing import Optional
 
+import logging
 import numpy as np
 
 from . import geo
 from . import utils
+
+
+logger = logging.getLogger(__name__)
 
 
 class CArm(object):
@@ -24,7 +28,7 @@ class CArm(object):
         """Make a CArm device.
 
         Args:
-            isocenter_distance (float): the distance from the isocenter to the camera center, that is the source point of the rays.
+            isocenter_distance (float): the distance from the isocenter to the camera center, i.e. radius of c arm.
             isocenter (Point3D): isocenter of the C-arm in world-space. This is the center about which rotations are performed.
             phi (float): CRAN/CAUD angle of the C-Arm (along the actual arc of the arm)
             theta (float): Lect/Right angulation of C-arm (rotation at the base)
@@ -92,8 +96,9 @@ class CArm(object):
         if delta_rho is not None:
             self.rho += utils.radians(delta_rho, degrees=degrees)
 
-    # TODO: function getting FrameTransform at stored pose.
-
+    @property
+    def camera3d_from_world(self) -> geo.FrameTransform:
+        return self.at(self.phi, self.theta, self.rho, degrees=False)
 
     def at(
         self,
@@ -119,7 +124,7 @@ class CArm(object):
 
         # get the rotation corresponding to the c-arm, then translate to the camera-center frame, along z-axis.
         R = utils.make_detector_rotation(phi, theta, rho)
-        t = np.array([0, 0, self.isocenter_distance])
+        t = np.array([0, 0, self.isocenter_distance]) # TODO: divide by 2?
         camera3d_from_isocenter = geo.FrameTransform.from_rt(R, t)
 
         if offset is None:
