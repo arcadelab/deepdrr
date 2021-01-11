@@ -16,9 +16,7 @@ from . import mass_attenuation
 from . import scatter
 from . import analytic_generators
 from .material_coefficients import material_coefficients
-# from ..cam import Camera
-# from ..cam import CamProjection
-from ..geo import Point3D, Point2D, Vector3D, CameraProjection, FrameTransform, CameraIntrinsicTransform, point, vector
+from .. import geo
 from ..vol import Volume
 from ..device import CArm
 from .. import utils
@@ -83,7 +81,7 @@ class Projector(object):
     def __init__(
         self,
         volume: Volume,
-        camera_intrinsics: CameraIntrinsicTransform,
+        camera_intrinsics: geo.CameraIntrinsicTransform,
         carm: Optional[CArm] = None,
         step: float = 0.1, # step size along ray
         mode: Literal['linear'] = 'linear',
@@ -95,6 +93,7 @@ class Projector(object):
         max_block_index: int = 1024,
         centimeters: bool = True,       # convert to centimeters
         collected_energy: bool = False, # convert to keV / cm^2 or keV / mm^2
+        neglog: bool = False,
     ) -> None:
         """Create the projector, which has info for simulating the DRR.
 
@@ -108,6 +107,7 @@ class Projector(object):
             threads (int, optional): number of threads to use. Defaults to 8.
             max_block_index (int, optional): maximum GPU block. Defaults to 1024.
             centimeters (bool, optional): whether to use centimeters (deprecated?). Defaults to True.
+            neglog (bool, optional): whether to apply negative log transform to output images. Defaults to False.
         """
                     
         # set variables
@@ -124,6 +124,7 @@ class Projector(object):
         self.max_block_index = max_block_index
         self.centimeters = centimeters
         self.collected_energy = collected_energy
+        self.neglog = neglog
 
         # other parameters
         self.sensor_size = self.camera_intrinsics.sensor_size
@@ -143,20 +144,26 @@ class Projector(object):
 
     def _project(
         self,
-        camera_projection: CameraProjection,
+        camera_projection: geo.CameraProjection,
     ) -> np.ndarray:
         if not self.initialized:
             raise RuntimeError("Projector has not been initialized.")
 
         # initialize projection-specific arguments
         camera_center_in_volume = np.array(camera_projection.get_center_in_volume(self.volume)).astype(np.float32)
-        logger.debug(f'camera_center_ijk: {camera_center_in_volume}')
+        logger.debug(f'camera_center_ijk (source point): {camera_center_in_volume}')
 
-        ijk_from_index = np.array(camera_projection.get_ray_transform(self.volume)).astype(np.float32)
+        ijk_from_index = camera_projection.get_ray_transform(self.volume)
         logger.debug(f'ijk_from_index:\n{ijk_from_index}')
-        exit()
+        logger.debug(f'image center ray:\n{ijk_from_index @ geo.point(self.sensor_size[0] / 2, self.sensor_size[1] / 2)}')
+        logger.debug(f'volume: {self.volume.shape}')
+        logger.debug(f'intrinsic matrix: {camera_projection.intrinsic}')
+        logger.debug(f'focal length: {camera_projection.intrinsic.focal_length}')
 
-        # _ijk_from_index = camera_projection.get_ray_transform(self.volume)
+        ijk_from_index = np.array(ijk_from_index).astype(np.float32)
+
+        spacing = self.volume.spacing
+        logger.debug(f'spacing: {spacing}')
 
         # copy the projection matrix to CUDA (output array initialized to zero by the kernel)
         cuda.memcpy_htod(self.rt_kinv_gpu, ijk_from_index)
@@ -172,9 +179,9 @@ class Projector(object):
             np.float32(self.volume.shape[0] - 0.5), # gVolumeEdgeMaxPointX
             np.float32(self.volume.shape[1] - 0.5), # gVolumeEdgeMaxPointY
             np.float32(self.volume.shape[2] - 0.5), # gVolumeEdgeMaxPointZ
-            np.float32(self.volume.spacing[0]),         # gVoxelElementSizeX
-            np.float32(self.volume.spacing[1]),         # gVoxelElementSizeY
-            np.float32(self.volume.spacing[2]),         # gVoxelElementSizeZ
+            np.float32(spacing[0]),         # gVoxelElementSizeX
+            np.float32(spacing[1]),         # gVoxelElementSizeY
+            np.float32(spacing[2]),         # gVoxelElementSizeZ
             camera_center_in_volume[0],                        # sx
             camera_center_in_volume[1],                        # sy
             camera_center_in_volume[2],                        # sz
@@ -186,14 +193,14 @@ class Projector(object):
         blocks_w = np.int(np.ceil(self.sensor_size[0] / self.threads))
         blocks_h = np.int(np.ceil(self.sensor_size[1] / self.threads))
         block = (8, 8, 1)
-        # print("running:", blocks_w, "x", blocks_h, "blocks with ", self.threads, "x", self.threads, "threads")
+        # lfkj("running:", blocks_w, "x", blocks_h, "blocks with ", self.threads, "x", self.threads, "threads")
 
         if blocks_w <= self.max_block_index and blocks_h <= self.max_block_index:
             offset_w = np.int32(0)
             offset_h = np.int32(0)
             self.project_kernel(*args, offset_w, offset_h, block=block, grid=(blocks_w, blocks_h))
         else:
-            # print("running kernel patchwise")
+            # lfkj("running kernel patchwise")
             for w in range((blocks_w - 1) // (self.max_block_index + 1)):
                 for h in range((blocks_h - 1) // (self.max_block_index + 1)):
                     offset_w = np.int32(w * self.max_block_index)
@@ -216,13 +223,13 @@ class Projector(object):
 
     def project(
         self,
-        *camera_projections: CameraProjection,
+        *camera_projections: geo.CameraProjection,
     ) -> np.ndarray:
         logger.debug(f'carm isocenter: {self.carm.isocenter}')
         if not camera_projections and self.carm is None:
             raise ValueError('must provide a camera projection object to the projector, unless imaging device (e.g. CArm) is provided')
         elif not camera_projections and self.carm is not None:
-            camera_projections = [CameraProjection(self.camera_intrinsics, self.carm.camera3d_from_world)]
+            camera_projections = [geo.CameraProjection(self.camera_intrinsics, self.carm.camera3d_from_world)]
         
         outputs = []
 
@@ -241,7 +248,7 @@ class Projector(object):
         images, photon_prob = mass_attenuation.calculate_intensity_from_spectrum(forward_projections, self.spectrum)
 
         if self.add_scatter:
-            # print('adding scatter (may cause Nan errors)')
+            # lfkj('adding scatter (may cause Nan errors)')
             noise = self.scatter_net.add_scatter(images, self.camera)
             photon_prob *= 1 + noise / images
             images += noise
@@ -251,8 +258,11 @@ class Projector(object):
             images = images * (self.photon_count / (self.camera.pixel_size[0] * self.camera.pixel_size[1]))
 
         if self.add_noise:
-            # print("adding Poisson noise")
+            # lfkj("adding Poisson noise")
             images = analytic_generators.add_noise(images, photon_prob, self.photon_count)
+
+        if self.neglog:
+            images = utils.neglog(images)
 
         if images.shape[0] == 1:
             return images[0]
@@ -265,7 +275,7 @@ class Projector(object):
         theta: float,
         rho: Optional[float] = 0,
         degrees: bool = True,
-        offset: Optional[Vector3D] = None,        
+        offset: Optional[geo.Vector3D] = None,        
     ) -> np.ndarray:
         """Project over the volume(s), given the pose of the C-arm detector.
 
@@ -285,7 +295,7 @@ class Projector(object):
             degrees=degrees,
         )
 
-        camera_projection = CameraProjection(self.camera_intrinsics, camera3d_from_world)
+        camera_projection = geo.CameraProjection(self.camera_intrinsics, camera3d_from_world)
         return self.project(camera_projection)
         
     def project_over_carm_range(
@@ -307,7 +317,7 @@ class Projector(object):
             )
 
             camera_projections.append(
-                CameraProjection(self.camera_intrinsics, extrinsic)
+                geo.CameraProjection(self.camera_intrinsics, extrinsic)
             )
 
         return self.project(*camera_projections)
@@ -415,4 +425,3 @@ class Projector(object):
         
     def __call__(self, *args, **kwargs):
         return self.project(*args, **kwargs)
-

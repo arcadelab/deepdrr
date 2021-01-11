@@ -21,7 +21,7 @@ class Volume(object):
     materials: Dict[str, np.ndarray]
     anatomical_from_ijk: geo.FrameTransform
     world_from_anatomical: geo.FrameTransform
-    
+
     def __init__(
         self,
         data: np.ndarray,
@@ -126,10 +126,21 @@ class Volume(object):
         path: Path,
         use_thresholding: bool = True,
         world_from_anatomical: Optional[geo.FrameTransform] = None,
+        use_cached: bool = True,
     ):
+        """Load a volume from NiFti file.
+
+        Args:
+            path (Path): path to the .nii.gz file.
+            use_thresholding (bool, optional): segment the materials using thresholding (faster but less accurate). Defaults to True.
+            world_from_anatomical (Optional[geo.FrameTransform], optional): position the volume in world space. If None, uses identity. Defaults to None.
+            use_cached (bool, optional): [description]. Use a cached segmentation if available. Defaults to True.
+
+        Returns:
+            [type]: [description]
+        """
         path = Path(path)
         stem = path.name.split('.')[0]
-
 
         img = nib.load(path)
         assert img.header.get_xyzt_units() == ('mm', 'sec'), 'TODO: NiFti image != (mm, sec)'
@@ -140,7 +151,7 @@ class Volume(object):
 
         if use_thresholding:
             materials_path = path.parent / f'{stem}_materials_thresholding.npz'
-            if materials_path.exists():
+            if use_cached and materials_path.exists():
                 logger.info(f'found materials segmentation at {materials_path}.')
                 materials = dict(np.load(materials_path))
             else:
@@ -149,7 +160,7 @@ class Volume(object):
                 np.savez(materials_path, **materials)
         else:
             materials_path = path.parent / f'{stem}_materials.npz'
-            if materials_path.exists():
+            if use_cached and materials_path.exists():
                 logger.info(f'found materials segmentation at {materials_path}.')
                 materials = dict(np.load(materials_path))
             else:
@@ -189,7 +200,7 @@ class Volume(object):
     @property
     def spacing(self) -> geo.Vector3D:
         # TODO: verify
-        return geo.vector(np.abs(np.array(self.anatomical_from_ijk.R)).max(axis=0))
+        return geo.vector(1 / np.abs(np.array(self.anatomical_from_ijk.R)).max(axis=0))
 
     def _format_materials(
         self, 

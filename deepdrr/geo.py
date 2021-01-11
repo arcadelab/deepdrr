@@ -436,6 +436,9 @@ class FrameTransform(Transform):
 
     Note that a FrameTransform is dimension-independent, but its dimension must match the objects it transforms.
 
+    Helpful resources:
+    - https://nipy.org/nibabel/coordinate_systems.html
+
     """
     def __init__(
             self,
@@ -602,8 +605,6 @@ class RayTransform(Transform):
 
 
 class CameraIntrinsicTransform(FrameTransform):
-    dim = 2
-    input_dim = 2
     """The camera intrinsic matrix, which is fundamentally a FrameTransform in 2D, namely `index_from_camera2d`.
 
     The intrinsic matrix transfroms to the index-space of the image (as mapped on the sensor) from the 
@@ -616,6 +617,8 @@ class CameraIntrinsicTransform(FrameTransform):
     - https://ksimek.github.io/2013/08/13/intrinsic/
     
     """
+    dim: int = 2
+    input_dim: int = 2
 
     def __init__(self, data: np.ndarray) -> None:
         super().__init__(data)
@@ -745,6 +748,8 @@ class CameraProjection(Transform):
 
     """
     dim = 3
+    index_from_camera2d: CameraIntrinsicTransform
+    camera3d_from_world: FrameTransform
 
     def __init__(
         self,

@@ -1,5 +1,6 @@
-from typing import Optional, TypeVar, Any, Tuple, Union
+from typing import Optional, TypeVar, Any, Tuple, Union, List
 
+import logging
 import os
 import numpy as np
 import PIL.Image as Image
@@ -8,6 +9,9 @@ from pathlib import Path
 from numpy.lib.function_base import interp
 from scipy.optimize import curve_fit
 import pickle
+
+
+logger = logging.getLogger(__name__)
 
 
 def image_saver(images, prefix, path):
@@ -100,11 +104,10 @@ def make_detector_rotation(phi, theta, rho):
     return R
 
 
-def radians(*ts, degrees: bool = True):
+def radians(*ts: float, degrees: bool = True) -> Union[float, List[float]]:
     if degrees:
         ts = [np.radians(t) for t in ts]
-    return ts
-
+    return ts[0] if len(ts) == 1 else ts
 
 def generate_uniform_angles(
     phi_range: Tuple[float, float, float],
@@ -142,5 +145,5 @@ def neglog(image, I_0=1):
     Returns:
         np.ndarray: Image with neg_log transform applied.
     """
-    min_nonzero_value = image[image > 0].min(axis=(-1, -2), keepdims=True)
+    min_nonzero_value = image[image > 0].min()
     return np.where(image == 0, min_nonzero_value, -np.log(image / I_0))

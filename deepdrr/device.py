@@ -124,7 +124,7 @@ class CArm(object):
 
         # get the rotation corresponding to the c-arm, then translate to the camera-center frame, along z-axis.
         R = utils.make_detector_rotation(phi, theta, rho)
-        t = np.array([0, 0, self.isocenter_distance]) # TODO: divide by 2?
+        t = np.array([0, 0, self.isocenter_distance]) # TODO: negate?
         camera3d_from_isocenter = geo.FrameTransform.from_rt(R, t)
 
         if offset is None:
