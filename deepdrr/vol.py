@@ -184,7 +184,8 @@ class Volume(object):
 
     @property
     def spacing(self):
-        raise NotImplementedError
+        return geo.vector([1,1,1]) # placeholder to get things to run.  Uses the default value for the from_params method
+        #raise NotImplementedError
 
     def _format_materials(
         self, 

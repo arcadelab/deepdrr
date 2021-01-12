@@ -24,9 +24,13 @@ def main():
     volume[-1, 0, :] = 1
     volume[-1,-1, :] = 1
     volume[:, 0, 0] = 1
+    volume[:, 0, -1] = 1
     volume[:, -1, 0] = 1
+    volume[:, -1, -1] = 1
     volume[0, :, 0] = 1
+    volume[0, :, -1] = 1
     volume[-1,:, 0] = 1
+    volume[-1, :, -1] = 1
 
     volume[40:60, 40:60, 40:60] = 1
     materials = {}

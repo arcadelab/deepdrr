@@ -28,7 +28,7 @@ from .. import utils
 def _get_kernel_projector_module(num_materials) -> SourceModule:
     """Compile the cuda code for the kernel projector.
 
-    Assumes `kernel_projector.cu` and `cubic` interpolation library is in the same directory as THIS file.
+    Assumes `project_kernel.cu` and `cubic` interpolation library is in the same directory as THIS file.
 
     Returns:
         SourceModule: pycuda SourceModule object.
