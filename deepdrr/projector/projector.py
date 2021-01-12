@@ -179,7 +179,7 @@ class Projector(object):
         # Calculate required blocks
         blocks_w = np.int(np.ceil(self.sensor_size[0] / self.threads))
         blocks_h = np.int(np.ceil(self.sensor_size[1] / self.threads))
-        block = (8, 8, 1)
+        block = (self.threads, self.threads, 1)
         # print("running:", blocks_w, "x", blocks_h, "blocks with ", self.threads, "x", self.threads, "threads")
 
         if blocks_w <= self.max_block_index and blocks_h <= self.max_block_index:
@@ -196,11 +196,15 @@ class Projector(object):
                     context.synchronize()
                 
         # copy the output to CPU
-        output = np.empty(self.output_shape, np.float32)
+        output = np.empty(self.output_shape, np.float32) # shape: (self.sensor_size[0], self.sensor_size[1], self.num_materials)
         cuda.memcpy_dtoh(output, self.output_gpu)
 
         # transpose the axes, which previously have width on the slow dimension
-        output = np.swapaxes(output, 0, 1).copy()
+        output = np.swapaxes(output, 0, 1).copy() # shape: (self.sensor_size[1], self.sensor_size[0], self.num_materials)
+        #
+        # TODO: ask about this np.swapaxes(...) call.  It's not clear to me why it's necessary or desirable, given that
+        #   we were working off of self.output_shape, which basically goes off of self.sensor_shape
+        #
 
         # convert to centimeters
         if self.centimeters:
@@ -219,16 +223,31 @@ class Projector(object):
 
         for proj in camera_projections:
             outputs.append(self._project(proj))
+            # each output is shape: (self.sensor_size[1], self.sensor_size[0], self.num_materials)
 
-        forward_projections = np.stack(outputs)
+        forward_projections = np.stack(outputs) # default "stack axis" is axis=0
+        # forward_projections has shape: (num_projections, self.sensor_size[1], self.sensor_size[0], self.num_materials)
 
         # convert forward_projections to dict over materials
         # (TODO: fix mass_attenuation so it doesn't require this conversion)
+        #   - Since, in the projectKernel function, each pixel outputs all of its NUM_MATERIALS materials values
+        #       together, I should be able to bypass the grouping-by-material that this dictionary-ization is doing,
+        #       simply by not returning from the CUDA kernel until after I do the mass_attenuation computations IN the 
+        #       CUDA kernel.
         forward_projections = dict((mat, forward_projections[:, :, :, m]) for m, mat in enumerate(self.volume.materials))
+        # there are self.num_materials (key,value) pairs in the dictionary.
+        # Each value has shape (num_projections, self.sensor_size[1], self.sensor_size[0])
         
         # calculate intensity at detector (images: mean energy one photon emitted from the source
         # deposits at the detector element, photon_prob: probability of a photon emitted from the
         # source to arrive at the detector)
+        # NOTE: the way that the mass_attenuation module currently works is slow due to a lot of copying to-and-fro.
+        #   The goal is to convert the contents of the mass_attenuation module to CUDA and unify that CUDA code with
+        #   the project_kernel.cu code so that the steps:
+        #       1. outputs.append(self._project(proj))
+        #       2. forward_projections dictionary-ization
+        #       3. mass_attenuation.calculate_intensity_from_spectrum(...) call
+        #   are all within a single CUDA kernel (and thus as parallel as possible)
         images, photon_prob = mass_attenuation.calculate_intensity_from_spectrum(forward_projections, self.spectrum)
 
         if self.add_scatter:

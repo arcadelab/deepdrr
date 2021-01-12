@@ -338,7 +338,7 @@ extern "C" {
             // In CUDA, voxel centeras are located at (xx.5, xx.5, xx.5), whereas SwVolume has voxel centers at integers.
             px = sx + alpha * rx + 0.5;
             py = sy + alpha * ry + 0.5;
-            pz = sz + alpha * rz - gVolumeEdgeMinPointZ;
+            pz = sz + alpha * rz - gVolumeEdgeMinPointZ; // gVolumeEdgeMinPointZ == -0.5, per projector.py:Projector._project(...)
 
             /* For the entry boundary, multiply by 0.5 (this is the t == 0 check). That is, for the initial interpolated value, 
              * only a half step-size is considered in the computation.
@@ -375,6 +375,11 @@ extern "C" {
         for (int m = 0; m < NUM_MATERIALS; m++) {
             output[idx + m] *= sqrt((rx * gVoxelElementSizeX)*(rx * gVoxelElementSizeX) + (ry * gVoxelElementSizeY)*(ry * gVoxelElementSizeY) + (rz * gVoxelElementSizeZ)*(rz * gVoxelElementSizeZ));
         }
+
+        /* Up to this point, we have accomplished the original projectKernel functionality.
+         * The next steps to do are combining the forward_projections dictionary-ization and 
+         * the mass_attenuation computation
+         */
     
         return;
     }
