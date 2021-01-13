@@ -19,6 +19,7 @@ pip install deepdrr
 ## Usage
 
 DeepDRR is designed to be simple to use. The following minimal example loads a CT volume from a NifTi `.nii.gz` file and simulates X-ray projection of the IJK point [100, 100, 100]:
+
 ```python
 import deepdrr
 

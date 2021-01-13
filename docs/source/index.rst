@@ -14,6 +14,8 @@ DeepDRR provides state-of-the-art tools to generate realistic
 radiographs and fluoroscopy from 3D CTs on a training set scale.
 It is straightforward and user-friendly.
 
+.. code-block:: python
+   :linenos:
    import deepdrr
    
    volume = deepdrr.Volume.from_nifti('/path/to/ct_image.nii.gz')
