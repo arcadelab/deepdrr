@@ -1,5 +1,6 @@
 #! python3
 
+import logging
 import os
 from typing import Callable
 import matplotlib.pyplot as plt
@@ -10,15 +11,15 @@ from time import time
 from deepdrr.load_dicom import load_dicom, conv_hu_to_materials_thresholding, conv_hu_to_density
 from deepdrr import utils
 from deepdrr import Volume, CArm, Projector
-from deepdrr.geo import point, vector, CameraIntrinsicTransform
+from deepdrr import geo
+
+
+logger = logging.getLogger(__name__)
 
 
 def main():
-    
     # Define a simple phantom for test: a wire box around a cube.
     volume = np.zeros((120, 100, 80), dtype=np.float32)
-    # volume[20:40, 20:40, 20:40] = 1
-    # volume[60:80, 60:80, 60:80] = 2
     volume[0, 0, :] = 1
     volume[0, -1, :] = 1
     volume[-1, 0, :] = 1
@@ -41,7 +42,7 @@ def main():
 
     # Use the center of the volume as the "world" coordinates. The origin is the (0, 0, 0) index of the volume in the world frame.
     vol_center = (np.array(volume.shape) - 1) / 2 * voxel_size
-    origin = point(-vol_center[0], -vol_center[1], -vol_center[2])
+    origin = geo.point(-vol_center[0], -vol_center[1], -vol_center[2])
 
     # Create the volume object with segmentation
     volume = Volume.from_parameters(
@@ -55,12 +56,12 @@ def main():
 
     # defines the C-Arm device, which is a convenience class for positioning the Camera.
     carm = CArm(
-        isocenter=point(0, 0, 0),
+        isocenter=geo.point(0, 0, 0),
         isocenter_distance=800,
     )
 
     # camera intrinsics of the projection, this uses 2x2 binning
-    camera_intrinsics = CameraIntrinsicTransform.from_sizes(
+    camera_intrinsics = geo.CameraIntrinsicTransform.from_sizes(
         sensor_size=(1240, 960),
         pixel_size=0.31,
         source_to_detector_distance=1200,
@@ -87,13 +88,14 @@ def main():
         add_scatter=False,
         threads=8,
         centimeters=True,
+        neglog=True,
     ) as projector:
         images = projector.project_over_carm_range(
             (min_phi, max_phi, spacing_phi),
             (min_theta, max_theta, spacing_theta)
         )
     dt = time() - t
-    print(f"projected {images.shape[0]} views in {dt:.03f}s")
+    logger.info(f"projected {images.shape[0]} views in {dt:.03f}s")
 
     # apply neglog transforms if desired:
     # images = utils.neglog(images)
@@ -110,9 +112,10 @@ def main():
         plt.imshow(image, cmap="gray")
         plt.title(f'phi, theta = {phis[i], thetas[i]}')
         output_path = output_dir / f'image_phi={int(phis[i])}_theta={int(thetas[i])}.png'
-        print(f'writing image {output_path}')
+        logger.info(f'writing image {output_path}')
         plt.savefig(output_path)
 
 
 if __name__ == "__main__":
+    logger.basicConfig(level=logging.INFO)
     main()

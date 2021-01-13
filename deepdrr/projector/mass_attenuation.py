@@ -1,8 +1,12 @@
+import logging
 import numpy as np
 from pycuda import gpuarray, cumath
 from pycuda.tools import DeviceMemoryPool
 
 from .material_coefficients import material_coefficients
+
+
+logger = logging.getLogger(__name__)
 
 
 def calculate_intensity_from_spectrum(projections, spectrum, blocksize=50):
@@ -17,9 +21,10 @@ def calculate_intensity_from_spectrum(projections, spectrum, blocksize=50):
     num_blocks = np.ceil(projection_shape[0] / blocksize).astype(int)
     intensity = np.zeros(projection_shape, dtype=np.float32)
     photon_prob = np.zeros(projection_shape, dtype=np.float32)
-
+    
+    logger.info('running mass attenuation...')
     for i in range(0, num_blocks):
-        print("running block:", i + 1, "of", num_blocks)
+        logger.debug(f"running block: {i + 1} / {num_blocks}")
         lower_i = i * blocksize
         upper_i = min([(i + 1) * blocksize, projection_shape[0]]) # logic to avoid overflowing bounds when in the GPU
         intensity_gpu = gpuarray.zeros((upper_i - lower_i, projection_shape[1], projection_shape[2]), dtype=np.float32, allocator=pool.allocate)
@@ -31,7 +36,7 @@ def calculate_intensity_from_spectrum(projections, spectrum, blocksize=50):
             # copies the appropriate slive of projections[mat] to the GPU
 
         for i, _ in enumerate(pdf):
-            print("evaluating:", i + 1, "/", pdf.__len__(), "spectral bins")
+            logger.debug(f"evaluating: {i + 1} / {len(pdf)} spectral bins")
             intensity_tmp = calculate_attenuation_gpu(projections_gpu, energies[i], pdf[i], pool)
             # mul_add(self, selffac, other, otherfac) is equivlent to:
             #   return (self * selffac) + (other * otherfac) <-- SUPER easily parallelizable in a CUDA kernel function
@@ -63,7 +68,7 @@ def calculate_attenuation_gpu(projections_gpu, energy, p, pool):
     # NOTE: absorb_coeffs_E does not depend on the pixel. Accordingly, it will be best if the get_absorbtion_coefs(...)
     #   function (or macro?) is a separate function than the projectKernel function
     for mat in projections_gpu:
-        #print(get_absorbtion_coefs(energy,mat), mat)
+        # logger.debug(f'attenuating {mat}')
         attenuation_gpu = attenuation_gpu.mul_add(1.0, projections_gpu[mat], -get_absorbtion_coefs(energy, mat))
         # projections_gpu is shape: (some_number_of_projections, self.sensor_size[1], self.sensor_size[0])
 

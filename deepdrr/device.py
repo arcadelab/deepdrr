@@ -1,16 +1,64 @@
 from typing import Optional
 
+import logging
 import numpy as np
 
 from . import geo
 from . import utils
 
 
+logger = logging.getLogger(__name__)
+
+
+def make_detector_rotation(phi, theta, rho):
+    """Make the rotation matrix for a CArm detector at the given angles.
+
+    Args:
+        phi (float): phi.
+        theta (float): theta.
+        rho (float): rho
+
+    Returns:
+        np.ndarray: Rotation matrix.
+    """
+    # rotation around phi and theta
+    sin_p = np.sin(phi)
+    neg_cos_p = -np.cos(phi)
+    z = 0
+    sin_t = np.sin(theta)
+    cos_t = np.cos(theta)
+    omc = 1 - cos_t
+
+    # Rotation by theta about vector [sin(phi), -cos(phi), z].
+    R = np.array([
+        [
+            sin_p * sin_p * omc + cos_t,
+            sin_p * neg_cos_p * omc - z * sin_t, 
+            sin_p * z * omc + neg_cos_p * sin_t,
+        ],
+        [
+            sin_p * neg_cos_p * omc + z * sin_t,
+            neg_cos_p * neg_cos_p * omc + cos_t,
+            neg_cos_p * z * omc - sin_p * sin_t,
+        ],
+        [
+            sin_p * z * omc - neg_cos_p * sin_t,
+            neg_cos_p * z * omc + sin_p * sin_t,
+            z * z * omc + cos_t,
+        ]])
+    # rotation around detector priniciple axis
+    rho = -phi + np.pi * 0.5 + rho
+    R_principle = np.array([[np.cos(rho), -np.sin(rho), 0],
+                            [np.sin(rho), np.cos(rho), 0],
+                            [0, 0, 1]])
+    R = np.matmul(R_principle, R)
+
+    return R
+
+
 class CArm(object):
     """C-arm device for positioning a camera in space.
 
-    TODO: maintain position as internal state.
-    
     """
     def __init__(
         self,
@@ -24,7 +72,7 @@ class CArm(object):
         """Make a CArm device.
 
         Args:
-            isocenter_distance (float): the distance from the isocenter to the camera center, that is the source point of the rays.
+            isocenter_distance (float): the distance from the X-ray source to the isocenter of the CAarm. (The center of rotation).
             isocenter (Point3D): isocenter of the C-arm in world-space. This is the center about which rotations are performed.
             phi (float): CRAN/CAUD angle of the C-Arm (along the actual arc of the arm)
             theta (float): Lect/Right angulation of C-arm (rotation at the base)
@@ -34,11 +82,6 @@ class CArm(object):
         self.isocenter_distance = isocenter_distance
         self.isocenter = geo.point(0, 0, 0) if isocenter is None else isocenter
         self.phi, self.theta, self.rho = utils.radians(phi, theta, rho, degrees=degrees)
-
-    @property
-    def isocenter_from_world(self) -> geo.FrameTransform:
-        # translate points to the frame at the center of the c-arm's rotation
-        return geo.FrameTransform.from_origin(self.isocenter)
 
     def move_to(
         self, 
@@ -92,20 +135,24 @@ class CArm(object):
         if delta_rho is not None:
             self.rho += utils.radians(delta_rho, degrees=degrees)
 
-    # TODO: function getting FrameTransform at stored pose.
+    @property
+    def camera3d_from_world(self) -> geo.FrameTransform:
+        return self.get_camera3d_from_world(self.isocenter, self.phi, self.theta, self.rho, degrees=False)
 
-
-    def at(
+    def get_camera3d_from_world(
         self,
+        isocenter: geo.Point3D,
         phi: float,
         theta: float,
         rho: Optional[float] = 0,
         degrees: bool = True,
-        offset: Optional[geo.Vector3D] = None,
     ) -> geo.FrameTransform:
         """Get the FrameTransform for the C-Arm device at the given pose.
 
+        This ignores the internal state except for the isocenter_distance.
+        
         Args:
+            isocenter (geo.Point3D): isocenter of the device.
             phi (float): CRAN/CAUD angle of the C-Arm (along the actual arc of the arm)
             theta (float): Lect/Right angulation of C-arm (rotation at the base)
             rho (Optional[float], optional): rotation about principle axis, after main rotation. Defaults to 0.
@@ -115,16 +162,13 @@ class CArm(object):
         Returns:
             FrameTransform: the extrinsic matrix or "camera3d_from_world" frame transformation for the oriented C-Arm camera.
         """
+        #  TODO: A staticmethod function may be more appropriate.
         phi, theta, rho = utils.radians(phi, theta, rho, degrees=degrees)
 
         # get the rotation corresponding to the c-arm, then translate to the camera-center frame, along z-axis.
-        R = utils.make_detector_rotation(phi, theta, rho)
+        R = make_detector_rotation(phi, theta, rho)
         t = np.array([0, 0, self.isocenter_distance])
         camera3d_from_isocenter = geo.FrameTransform.from_rt(R, t)
+        isocenter_from_world = geo.FrameTransform.from_origin(isocenter)
 
-        if offset is None:
-            offset = geo.FrameTransform.identity()
-        else:
-            offset = geo.FrameTransform.from_translation(offset)
-
-        return camera3d_from_isocenter @ offset @ self.isocenter_from_world
+        return camera3d_from_isocenter @ isocenter_from_world

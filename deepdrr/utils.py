@@ -1,5 +1,6 @@
-from typing import Optional, TypeVar, Any, Tuple, Union
+from typing import Optional, TypeVar, Any, Tuple, Union, List
 
+import logging
 import os
 import numpy as np
 import PIL.Image as Image
@@ -10,7 +11,25 @@ from scipy.optimize import curve_fit
 import pickle
 
 
-def image_saver(images, prefix, path):
+logger = logging.getLogger(__name__)
+
+
+def image_saver(
+    images: np.ndarray,
+    prefix: str,
+    path: str
+) -> bool:
+    """Save the images as tiff
+
+    Args:
+        images (np.ndarray): array of images
+        prefix (str): prefix for each file name
+        path (str): path to directory to save the files in
+
+    Returns:
+        bool: return code.
+    """
+
     for i in range(0, images.shape[0]):
         image_pil = Image.fromarray(images[i, :, :])
         image_pil.save(Path(path) / f"{prefix}{str(i).zfill(5)}.tiff")
@@ -18,6 +37,24 @@ def image_saver(images, prefix, path):
 
 
 def param_saver(thetas, phis, proj_mats, camera, origin, photons, spectrum, prefix, save_path):
+    """Save the paramaters.
+
+    This function may be deprecated.
+
+    Args:
+        thetas ([type]): [description]
+        phis ([type]): [description]
+        proj_mats ([type]): [description]
+        camera ([type]): [description]
+        origin ([type]): [description]
+        photons ([type]): [description]
+        spectrum ([type]): [description]
+        prefix ([type]): [description]
+        save_path ([type]): [description]
+
+    Returns:
+        [type]: [description]
+    """
     i0 = np.sum(spectrum[:, 0] * (spectrum[:, 1] / np.sum(spectrum[:, 1]))) / 1000
     data = {"date": datetime.now(), "thetas": thetas, "phis": phis, "proj_mats": proj_mats, "camera": camera, "origin": origin, "photons": photons, "spectrum": spectrum, "I0": i0}
     with open(Path(save_path) / f"{prefix}.pickle", 'wb') as f:
@@ -64,46 +101,19 @@ def tuplify(t: Union[Tuple[T,...], T], n: int) -> Tuple[T,...]:
         return tuple(t for _ in range(n))
 
 
-def make_detector_rotation(phi, theta, rho):
-    # rotation around phi and theta
-    sin_p = np.sin(phi)
-    neg_cos_p = -np.cos(phi)
-    z = 0
-    sin_t = np.sin(theta)
-    cos_t = np.cos(theta)
-    omc = 1 - cos_t
+def radians(*ts: Union[float, np.ndarray], degrees: bool = True) -> Union[float, List[float]]:
+    """Convert to radians.
 
-    # Rotation by theta about vector [sin(phi), -cos(phi), z].
-    R = np.array([
-        [
-            sin_p * sin_p * omc + cos_t,
-            sin_p * neg_cos_p * omc - z * sin_t, 
-            sin_p * z * omc + neg_cos_p * sin_t,
-        ],
-        [
-            sin_p * neg_cos_p * omc + z * sin_t,
-            neg_cos_p * neg_cos_p * omc + cos_t,
-            neg_cos_p * z * omc - sin_p * sin_t,
-        ],
-        [
-            sin_p * z * omc - neg_cos_p * sin_t,
-            neg_cos_p * z * omc + sin_p * sin_t,
-            z * z * omc + cos_t,
-        ]])
-    # rotation around detector priniciple axis
-    rho = -phi + np.pi * 0.5 + rho
-    R_principle = np.array([[np.cos(rho), -np.sin(rho), 0],
-                            [np.sin(rho), np.cos(rho), 0],
-                            [0, 0, 1]])
-    R = np.matmul(R_principle, R)
+    Args:
+        ts: the angle or array of angles.
+        degrees (bool, optional): whether the inputs are in degrees. If False, this is a no-op. Defaults to True.
 
-    return R
-
-
-def radians(*ts, degrees: bool = True):
+    Returns:
+        Union[float, List[float]]: each argument, converted to radians.
+    """
     if degrees:
         ts = [np.radians(t) for t in ts]
-    return ts
+    return ts[0] if len(ts) == 1 else ts
 
 
 def generate_uniform_angles(
@@ -142,5 +152,9 @@ def neglog(image, I_0=1):
     Returns:
         np.ndarray: Image with neg_log transform applied.
     """
-    min_nonzero_value = image[image > 0].min(axis=(-1, -2), keepdims=True)
+    if np.all(image == 0):
+        logger.warning(f'image is all 0')
+        return image
+        
+    min_nonzero_value = image[image > 0].min()
     return np.where(image == 0, min_nonzero_value, -np.log(image / I_0))
