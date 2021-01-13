@@ -47,7 +47,8 @@ def calculate_intensity_from_spectrum(projections, spectrum, blocksize=50):
 def calculate_attenuation_gpu(projections_gpu, energy, p, pool):
     attenuation_gpu = gpuarray.zeros(projections_gpu[next(iter(projections_gpu))].shape, dtype=np.float32, allocator=pool.allocate)
     # attenuation_gpu is the same shape as intensity_gpu and photon_prob_gpu from calculate_intensity_from_spectrum(...).
-    # This makes sense--it HAS to be the same hape, else the calls to mul_add(...) wouldn't work
+    # This makes sense--it HAS to be the same shape, else the calls to mul_add(...) wouldn't work
+    # That shape is: (some_number_of_projections, self.sensor_size[1], self.sensor_size[0])
 
     # for each material:
     #   perform a mul_add(1, projections_gpu[mat], -get_absorbtion_coefs(energy, mat))
@@ -64,6 +65,7 @@ def calculate_attenuation_gpu(projections_gpu, energy, p, pool):
     for mat in projections_gpu:
         #print(get_absorbtion_coefs(energy,mat), mat)
         attenuation_gpu = attenuation_gpu.mul_add(1.0, projections_gpu[mat], -get_absorbtion_coefs(energy, mat))
+        # projections_gpu is shape: (some_number_of_projections, self.sensor_size[1], self.sensor_size[0])
 
     # Element-wise update of attenuation_gpu <-- EASILY parallelizes pixel-by-pixel
     attenuation_gpu = cumath.exp(attenuation_gpu) * energy * p
@@ -83,5 +85,5 @@ def log_interp(xInterp, x, y):
     xInterp = np.log10(xInterp.copy())
     x = np.log10(x.copy())
     y = np.log10(y.copy())
-    yInterp = np.power(10, np.interp(xInterp, x, y))
+    yInterp = np.power(10, np.interp(xInterp, x, y)) # np.interp is 1-D linear interpolation
     return yInterp
