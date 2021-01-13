@@ -98,7 +98,6 @@ extern "C" {
         float sy,
         float sz,
         float *rt_kinv, // (3, 3) array giving the image-to-world-ray transform.
-        //XYZ float *output, // flat array, with shape (out_height, out_width, NUM_MATERIALS).
         float *intensity, // flat array, with shape (out_height, out_width).
         float *photon_prob, // flat array, with shape (out_height, out_width).
         int n_bins, // the number of spectral bins
