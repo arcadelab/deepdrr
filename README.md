@@ -1,51 +1,62 @@
 # DeepDRR
 
-Implementation of our early-accepted MICCAI'18 paper "DeepDRR: A Catalyst for Machine Learning in Fluoroscopy-guided Procedures" and the subsequent Invited Journal Article in the IJCARS Special Issue of MICCAI "Enabling Machine Learning in X-ray-based Procedures via Realistic Simulation of Image Formation". 
-The conference preprint can be accessed on arXiv here:  https://arxiv.org/abs/1803.08606.
+DeepDRR provides state-of-the-art tools to generate realistic 
+radiographs and fluoroscopy from 3D CTs on a training set scale.
+It is straightforward and user-friendly.
 
-DeepDRR aims at providing medical image computing and computer assisted intervention researchers state-of-the-art tools to generate realistic radiographs and fluoroscopy from 3D CTs on a training set scale.
+## Installation
 
-Implemented in Python, PyCuda, and PyTorch.
+DeepDRR requires an NVIDIA GPU, preferably with >11 GB of memory.
 
-Currently, DeepDRR is in the process of being upgraded with new features and an improved focus on usability. See [Releases](https://github.com/arcadelab/DeepDRR/releases/) for the latest alpha.
+1. Install CUDA. Version 11 is recommended, but DeepDRR has been used with 8.0
+2. Make sure your C compiler is on the path. DeepDRR has been used with `gcc 9.3.0`.
+3. Install from `PyPI`
 
-## Getting Started (Version 1.0)
-
-### Installation
-
-1. Install CUDA 8.0 or higher.
-2. Ensure that a C compiler is on your `PATH`.
-3. Install with one of the following options.
-
-#### `pip`
-
-This project is available on [https://pypi.org/project/deepdrr/](PyPI):
-```
+```bash
 pip install deepdrr
 ```
 
-#### From source
+## Usage
 
-Clone this branch or download the latest pre-release at https://github.com/arcadelab/DeepDRR/releases/ and install an editable copy from pip. It is probably preferable to use a virtual environment for this.
-```bash
-pip install -e /path/to/DeepDRR
+DeepDRR is designed to be simple to use. The following minimal example loads a CT volume from a NifTi `.nii.gz` file and simulates X-ray projection of the IJK point [100, 100, 100]:
+```python
+import deepdrr
+
+volume = deepdrr.Volume.from_nifti('/path/to/ct_image.nii.gz')
+camera_intrinsics = deepdrr.geo.CameraIntrinsicTransform.from_sizes(
+  sensor_size=512,
+  pixel_size=0.33,
+  source_to_detector_distance=1200,
+)
+
+
+center = volume.world_from_ijk @ deepdrr.geo.point(100, 100, 100)
+carm = deepdrr.CArm(isocenter=center)
+
+with deepdrr.Projector(volume, camera_intrinsics, carm) as projector:
+  projection = projector()
 ```
 
-### Usage
+A more detailed example script is given in `example_projector.py`. This script contains a typical use-case for projecting over a volume.
 
-For example usage, run
-```bash
-python example_projector.py
-```
+## Documentation
 
-This script contains a typical use-case for projecting over a volume. More detailed tutorials for various use-cases are pending.
+Documentation is available at https://deepdrr.readthedocs.io/en/latest.
+
+## Contributing
+
+Contributions are welcome. Please make a pull request.
 
 ## Method Overview
-To this end, DeepDRR combines machine learning models for material decomposition and scatter estimation in 3D and 2D, respectively, with analytic models for projection, attenuation, and noise injection to achieve the required performance. The pipeline is illustrated below. 
+
+DeepDRR combines machine learning models for material decomposition and scatter estimation in 3D and 2D, respectively, with analytic models for projection, attenuation, and noise injection to achieve the required performance. The pipeline is illustrated below. 
 
 ![DeepDRR Pipeline](https://raw.githubusercontent.com/mathiasunberath/DeepDRR/master/readme_images/deepdrr_workflow.png)
 
+Further details can be found in our MICCAI 2018 paper "DeepDRR: A Catalyst for Machine Learning in Fluoroscopy-guided Procedures" and the subsequent Invited Journal Article in the IJCARS Special Issue of MICCAI "Enabling Machine Learning in X-ray-based Procedures via Realistic Simulation of Image Formation". The conference preprint can be accessed on arXiv here: https://arxiv.org/abs/1803.08606.
+
 ### Representative Results
+
 The figure below shows representative radiographs generated using DeepDRR from CT data downloaded from the NIH Cancer Imaging Archive. Please find qualitative results in the **Applications** section.
 
 ![Representative DeepDRRs](https://raw.githubusercontent.com/mathiasunberath/DeepDRR/master/readme_images/examples.PNG)
@@ -79,11 +90,6 @@ This capability has not been tested in version 1.0. We recommend working with [V
 2. The density of the tool needs to be provided via hard coding in the file 'load_dicom_tool.py' (line 127). The pose of the tool/implant with respect to the CT volume requires manual setup. We provide one example origin setting at line 23-24.
 3. The tool/implant will supersede the anatomy defined by the CT volume intensities. To this end, we sample the CT materials and densities at the location of the tool in the tool volume, and subtract them from the anatomy forward projections in detector domain (to enable different resolutions of CT and tool volume). Further information can be found in the IJCARS article.
 
-### Running DeepDRR in Google Colaboratory
-
-The codebase provided here was not developed with Google Colaboratory in mind, but our userbase has found small tweaks to the code to make it work in Colab. Kindly refer to https://github.com/mathiasunberath/DeepDRR/issues/6 and https://github.com/mathiasunberath/DeepDRR/issues/5 for the required changes. More guidance is available in https://github.com/mathiasunberath/DeepDRR/issues/13#issuecomment-614246840.
-
-
 ## Reference
 
 We hope this proves useful for medical imaging research. If you use our work, we would kindly ask you to reference our work. 
@@ -108,35 +114,9 @@ The IJCARS paper describes the integration of tool modeling and provides quantit
 }
 ```
 
-## Version 0.1 Installation Instructions
+## Version 0.1
 
-**Download segmentation network weights**
-* Due to file size limitations, please download the segmentation network weights from https://www.dropbox.com/s/pn4aw4z2i01eoo4/model_segmentation.pth.tar?dl=0.
-* Place the file "model_segmentation.pth.tar" in the DeepDRR source folder.
-
-**Install CUDA 8.0**
-1. ```conda create -n pytorch python=3.6```
-2. ```activate pytorch```
-
-**Install packages**
-1. Numpy+MKL from https://www.lfd.uci.edu/~gohlke/pythonlibs/#numpy
-2. ```conda install matplotlib```
-3. ```conda install -c conda-forge pydicom```
-4. ```conda install -c anaconda scikit-image```
-5. ```pip install pycuda```
-6. ```Pip install tensorboard```
-7. ```Pip install tensorboardX```
-
-**Install pytorch**
-1. Follow [peterjc123's scripts to run PyTorch on Windows](https://github.com/peterjc123/pytorch-scripts "peterjc123 PyTorch").
-2. ```conda install -c peterjc123 pytorch```
-3. ```pip install torchvision```
-
-**Getting started**
-* The script example_projector.py implements a complete pipeline for data generation.
-  
-**PyCuda not working?**
-* Try to add C compiler to path. Most likely the path is: “C:\Program Files (x86)\Microsoft Visual Studio 14.0\VC\bin\”.
+For the original version of DeepDRR, released alongside our 2018 paper, please see the release for version 0.1.
 
 ## Acknowledgments
 CUDA Cubic B-Spline Interpolation (CI) used in the projector:  

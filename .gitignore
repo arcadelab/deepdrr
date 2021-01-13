@@ -6,3 +6,4 @@ examples
 dist
 build
 docs/build
+.vscode
