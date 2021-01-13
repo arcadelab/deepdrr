@@ -78,27 +78,10 @@ texture<float, 3, cudaReadModeElementType> seg(13);
 texture<float, 3, cudaReadModeElementType> volume;
 
 extern "C" {
-    __device__ float dev_1D_linear_log_interp(
-        float xInterp,
-        const int n_pts, // number of reference points
-        const float *x, // reference x-values
-        const float *y, // reference y-values
-    ) {
-        return; // TODO: implement
-    }
-
-    __device__ float dev_get_absorbtion_coefs(
-        float energy, // the energy value on a spectrum
-        int mat // the material 
-    ) {
-        xMev = energy / 1000;
-        
-        return; // TODO: implement
-    }
-
     __global__  void projectKernel(
         int out_width, // width of the output image
         int out_height, // height of the output image
+        int centimeters, // 1 if centimeters switch is set in Projector, 0 otherwise
         float step,
         float gVolumeEdgeMinPointX,
         float gVolumeEdgeMinPointY,
@@ -274,6 +257,9 @@ extern "C" {
         // normalize output value to world coordinate system units
         for (int m = 0; m < NUM_MATERIALS; m++) {
             output[idx + m] *= sqrt((rx * gVoxelElementSizeX)*(rx * gVoxelElementSizeX) + (ry * gVoxelElementSizeY)*(ry * gVoxelElementSizeY) + (rz * gVoxelElementSizeZ)*(rz * gVoxelElementSizeZ));
+            if (centimeters) {
+                output[idx + m] /= 10;
+            }
         }
 
         /* Up to this point, we have accomplished the original projectKernel functionality.
@@ -294,7 +280,8 @@ extern "C" {
 
             float intensity_tmp = 0.0f; // lifting the call to calculate_attenuation_gpu(...) up a level
             for (int m = 0; m < NUM_MATERIALS; m++) {
-                intensity_tmp += output[idx + m] * -1 * dev_get_absorbtion_coefs(energy, m);
+                float absorb_coef = absorb_coef_table[bin * NUM_MATERIALS + m];
+                intensity_tmp += output[idx + m] * -1 * absorb_coef;
             }
             intensity_tmp = exp10f(intensity_tmp) * energy * p; // TODO: check whether this is the proper base for the exponential function
             // done with the "lifted" call to calculate_attenuation_gpu(...)

@@ -146,6 +146,8 @@ class Projector(object):
         if not self.initialized:
             raise RuntimeError("Projector has not been initialized.")
 
+        assert isinstance(self.spectrum, np.ndarray)
+
         # initialize projection-specific arguments
         camera_center_in_volume = np.array(camera_projection.get_center_in_volume(self.volume)).astype(np.float32)
         ijk_from_index = np.array(camera_projection.get_ray_transform(self.volume)).astype(np.float32)
@@ -174,6 +176,12 @@ class Projector(object):
             camera_center_in_volume[2],                        # sz
             self.rt_kinv_gpu,                       # RT_Kinv
             self.output_gpu,                        # output
+            self.intensity_gpu,                     # intensity
+            self.photon_prob_gpu,                   # photon_prob
+            self.spectrum.shape[0],                 # n_bins
+            self.energies_gpu,                      # energies
+            self.pdf_gpu,                           # pdf
+            self.absorb_coef_table_gpu              # absorb_coef_table
         ]
 
         # Calculate required blocks
@@ -196,21 +204,30 @@ class Projector(object):
                     context.synchronize()
                 
         # copy the output to CPU
-        output = np.empty(self.output_shape, np.float32) # shape: (self.sensor_size[0], self.sensor_size[1], self.num_materials)
-        cuda.memcpy_dtoh(output, self.output_gpu)
+        ###output = np.empty(self.output_shape, np.float32) # shape: (self.sensor_size[0], self.sensor_size[1], self.num_materials)
+        ###cuda.memcpy_dtoh(output, self.output_gpu)
+
+        image_shape = (self.sensor_size[0], self.sensor_size[1])
+        intensity = np.empty(image_shape, np.float32)
+        cuda.memcpy_dtoh(intensity, self.intensity_gpu)
+        photon_prob = np.empty(image_shape, np.float32)
+        cuda.memcpy_dtoh(intensity, self.photon_prob_gpu)
 
         # transpose the axes, which previously have width on the slow dimension
-        output = np.swapaxes(output, 0, 1).copy() # shape: (self.sensor_size[1], self.sensor_size[0], self.num_materials)
+        ###output = np.swapaxes(output, 0, 1).copy() # shape: (self.sensor_size[1], self.sensor_size[0], self.num_materials)
+        intensity = np.swapaxes(intensity, 0, 1).copy()
+        photon_prob = np.swapaxes(photon_prob, 0, 1).copy()
         #
         # TODO: ask about this np.swapaxes(...) call.  It's not clear to me why it's necessary or desirable, given that
         #   we were working off of self.output_shape, which basically goes off of self.sensor_shape
         #
 
-        # convert to centimeters
-        if self.centimeters:
-            output /= 10
-            
-        return output
+        # convert to centimeters -- DEPRECATED: this is now accomplished in projectKernel
+        ###if self.centimeters:
+        ###    output /= 10
+        
+        ###return output
+        return intensity, photon_prob
 
     def project(
         self,
@@ -219,36 +236,16 @@ class Projector(object):
         if len(camera_projections) == 0:
             raise ValueError()
         
-        outputs = []
+        intensities_arr = []
+        photon_probs_arr = []
 
         for proj in camera_projections:
-            outputs.append(self._project(proj))
-            # each output is shape: (self.sensor_size[1], self.sensor_size[0], self.num_materials)
+            intensity, photon_prob = self._project(proj)
+            intensities_arr.append(intensity)
+            photon_probs_arr.append(photon_prob)
 
-        forward_projections = np.stack(outputs) # default "stack axis" is axis=0
-        # forward_projections has shape: (num_projections, self.sensor_size[1], self.sensor_size[0], self.num_materials)
-
-        # convert forward_projections to dict over materials
-        # (TODO: fix mass_attenuation so it doesn't require this conversion)
-        #   - Since, in the projectKernel function, each pixel outputs all of its NUM_MATERIALS materials values
-        #       together, I should be able to bypass the grouping-by-material that this dictionary-ization is doing,
-        #       simply by not returning from the CUDA kernel until after I do the mass_attenuation computations IN the 
-        #       CUDA kernel.
-        forward_projections = dict((mat, forward_projections[:, :, :, m]) for m, mat in enumerate(self.volume.materials))
-        # there are self.num_materials (key,value) pairs in the dictionary.
-        # Each value has shape (num_projections, self.sensor_size[1], self.sensor_size[0])
-        
-        # calculate intensity at detector (images: mean energy one photon emitted from the source
-        # deposits at the detector element, photon_prob: probability of a photon emitted from the
-        # source to arrive at the detector)
-        # NOTE: the way that the mass_attenuation module currently works is slow due to a lot of copying to-and-fro.
-        #   The goal is to convert the contents of the mass_attenuation module to CUDA and unify that CUDA code with
-        #   the project_kernel.cu code so that the steps:
-        #       1. outputs.append(self._project(proj))
-        #       2. forward_projections dictionary-ization
-        #       3. mass_attenuation.calculate_intensity_from_spectrum(...) call
-        #   are all within a single CUDA kernel (and thus as parallel as possible)
-        images, photon_prob = mass_attenuation.calculate_intensity_from_spectrum(forward_projections, self.spectrum)
+        images = np.stack(intensities_arr)
+        photon_prob = np.stack(photon_probs_arr)
 
         if self.add_scatter:
             # print('adding scatter (may cause Nan errors)')
@@ -401,7 +398,35 @@ class Projector(object):
 
         # allocate ijk_from_index matrix array on GPU (3x3 array x 4 bytes per float32)
         self.rt_kinv_gpu = cuda.mem_alloc(3 * 3 * 4)
-        
+
+        # allocate intensity array on GPU (4 bytes to a float32)
+        self.intensity_gpu = cuda.mem_alloc(self.sensor_size[0] * self.sensor_size[1] * 4)
+
+        # allocate photon_prob array on GPU (4 bytes to a float32)
+        self.photon_prob_gpu = cuda.mem_alloc(self.sensor_size[0] * self.sensor_size[1] * 4)
+
+        # allocate and transfer spectrum energies (4 bytes to a float32)
+        assert isinstance(self.spectrum, np.ndarray)
+        energies = self.spectrum[:,0]
+        n_bins = energies.shape[0]
+        self.energies_gpu = cuda.mem_alloc(n_bins * 4)
+        cuda.memcpy_htod(self.energies_gpu, energies)
+
+        # allocate and transfer spectrum pdf (4 bytes to a float32)
+        pdf = self.spectrum[:,1]
+        assert pdf.shape == energies.shape
+        assert pdf.shape[0] == n_bins
+        self.pdf_gpu = cuda.mem_alloc(n_bins * 4)
+        cuda.memcpy_htod(self.pdf_gpu, pdf)
+
+        # precompute, allocate, and transfer the get_absorption_coef(energy, material) table (4 bytes to a float32)
+        absorbtion_coef_table = np.empty((n_bins, self.num_materials)).astype(np.float32)
+        for bin in range(n_bins): #, energy in enumerate(energies):
+            for m, mat_name in enumerate(self.volume.materials):
+                absorbtion_coef_table[bin,m] = mass_attenuation.get_absorbtion_coefs(energies[bin], mat_name)
+        self.absorbtion_coef_table_gpu = cuda.mem_alloc(n_bins * self.num_materials * 4)
+        cuda.memcpy_htod(self.absorbtion_coef_table_gpu, absorbtion_coef_table)
+
         # Mark self as initialized.
         self.initialized = True
 
