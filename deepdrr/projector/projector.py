@@ -91,7 +91,6 @@ class Projector(object):
         photon_count: int = 100000,
         threads: int = 8,
         max_block_index: int = 1024,
-        centimeters: bool = True,       # convert to centimeters
         collected_energy: bool = False, # convert to keV / cm^2 or keV / mm^2
         neglog: bool = False,
     ) -> None:
@@ -122,7 +121,6 @@ class Projector(object):
         self.photon_count = photon_count
         self.threads = threads
         self.max_block_index = max_block_index
-        self.centimeters = centimeters
         self.collected_energy = collected_energy
         self.neglog = neglog
 
@@ -157,7 +155,7 @@ class Projector(object):
         logger.debug(f'ijk_from_index:\n{ijk_from_index}')
         logger.debug(f'image center ray:\n{ijk_from_index @ geo.point(self.sensor_size[0] / 2, self.sensor_size[1] / 2)}')
         logger.debug(f'volume: {self.volume.shape}')
-        logger.debug(f'intrinsic matrix: {camera_projection.intrinsic}')
+        logger.debug(f'intrinsic matrix:\n{camera_projection.intrinsic}')
         logger.debug(f'focal length: {camera_projection.intrinsic.focal_length}')
 
         ijk_from_index = np.array(ijk_from_index).astype(np.float32)
@@ -215,10 +213,9 @@ class Projector(object):
         # transpose the axes, which previously have width on the slow dimension
         output = np.swapaxes(output, 0, 1).copy()
 
-        # convert to centimeters
-        if self.centimeters:
-            output /= 10
-            
+        # normalize to centimeters
+        output /= 10
+
         return output
 
     def project(
@@ -239,13 +236,17 @@ class Projector(object):
         forward_projections = np.stack(outputs)
 
         # convert forward_projections to dict over materials
-        # (TODO: fix mass_attenuation so it doesn't require this conversion)
+        # TODO: fix mass_attenuation so it doesn't require this conversion
         forward_projections = dict((mat, forward_projections[:, :, :, m]) for m, mat in enumerate(self.volume.materials))
-        
-        # calculate intensity at detector (images: mean energy one photon emitted from the source
-        # deposits at the detector element, photon_prob: probability of a photon emitted from the
-        # source to arrive at the detector)
+
+        # logger.debug(f'spectrum: {self.spectrum}')
         images, photon_prob = mass_attenuation.calculate_intensity_from_spectrum(forward_projections, self.spectrum)
+
+        if np.all(images == 0):
+            logger.error('image is all 0; something bad is happening')
+            exit()
+
+        logger.info(f'proceeding with nonzero image!')
 
         if self.add_scatter:
             # lfkj('adding scatter (may cause Nan errors)')
@@ -258,7 +259,7 @@ class Projector(object):
             images = images * (self.photon_count / (self.camera.pixel_size[0] * self.camera.pixel_size[1]))
 
         if self.add_noise:
-            # lfkj("adding Poisson noise")
+            logger.info("adding Poisson noise")
             images = analytic_generators.add_noise(images, photon_prob, self.photon_count)
 
         if self.neglog:
@@ -364,6 +365,8 @@ class Projector(object):
         elif isinstance(spectrum, str):
             assert spectrum in spectral_data.spectrums, f'unrecognized spectrum: {spectrum}'
             return spectral_data.spectrums[spectrum]
+        else:
+            raise TypeError(f'unrecognized spectrum: {type(spectrum)}')
 
     def initialize(self):
         """Allocate GPU memory and transfer the volume, segmentations to GPU."""

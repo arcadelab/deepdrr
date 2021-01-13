@@ -9,7 +9,7 @@ import numpy as np
 from pathlib import Path
 import nibabel as nib
 
-from .load_dicom import conv_hu_to_density, conv_hu_to_materials, conv_hu_to_materials_thresholding
+from . import load_dicom
 from . import geo
 
 
@@ -17,7 +17,13 @@ logger = logging.getLogger(__name__)
 
 
 class Volume(object):
-    data: np.float32
+    """A deepdrr Volume object with materials segmentation and orientation in world-space.
+
+    The recommended way to create a Volume is to load from a NifTi file using the `Volume.from_nifti(path)` class method.
+
+    """
+
+    data: np.ndarray
     materials: Dict[str, np.ndarray]
     anatomical_from_ijk: geo.FrameTransform
     world_from_anatomical: geo.FrameTransform
@@ -29,11 +35,11 @@ class Volume(object):
         anatomical_from_ijk: geo.FrameTransform,
         world_from_anatomical: Optional[geo.FrameTransform] = None,
     ) -> None:
-        """Create a Volume and segmentation
+        """Create a Volume.
 
         Args:
             data (np.ndarray): the density data (a 3D array)
-            materials (Dict[str, np.ndarray]): material segmentation of the volume.
+            materials (Dict[str, np.ndarray]): material segmentation of the volume, mapping material name to binary segmentation.
             anatomical_from_ijk (geo.FrameTransform): transformation from IJK space to anatomical (RAS or LPS).
             world_from_anatomical (Optional[geo.FrameTransform], optional): transformation from the anatomical space to world coordinates. If None, assumes identity. Defaults to None.
         """
@@ -52,7 +58,7 @@ class Volume(object):
         anatomical_coordinate_system: Optional[Literal['LPS', 'RAS', 'none']] = None,
         world_from_anatomical: Optional[geo.FrameTransform] = None,
     ):
-        """Create a volume object with a segmentation of the materials, with its own anatomical coordinate space.
+        """Create a volume object with a segmentation of the materials, with its own anatomical coordinate space, from parameters.
 
         Note that the anatomical coordinate system is not the world coordinate system (which is cartesion). 
         
@@ -92,33 +98,7 @@ class Volume(object):
             materials=materials,
             anatomical_from_ijk=anatomical_from_ijk,
             world_from_anatomical=world_from_anatomical,
-        )     
-
-    @classmethod
-    def from_hu(
-        cls,
-        hu_values: np.ndarray,
-        origin: geo.Point3D,
-        use_thresholding: bool = True,
-        spacing: Optional[geo.Vector3D] = (1, 1, 1),
-        anatomical_coordinate_system: Optional[Literal['LPS', 'RAS', 'none']] = None,
-        world_from_anatomical: Optional[geo.FrameTransform] = None,
-    ) -> None:
-        data = conv_hu_to_density(hu_values)
-
-        if use_thresholding:
-            materials = conv_hu_to_materials_thresholding(hu_values)
-        else:
-            materials = conv_hu_to_materials(hu_values)
-
-        return cls(
-            data,
-            materials, 
-            origin=origin, 
-            spacing=spacing, 
-            anatomical_coordinate_system=anatomical_coordinate_system, 
-            world_from_anatomical=world_from_anatomical,
-        )       
+        )
 
     @classmethod
     def from_nifti(
@@ -127,6 +107,7 @@ class Volume(object):
         use_thresholding: bool = True,
         world_from_anatomical: Optional[geo.FrameTransform] = None,
         use_cached: bool = True,
+        cache_dir: Optional[Path] = None,
     ):
         """Load a volume from NiFti file.
 
@@ -135,6 +116,7 @@ class Volume(object):
             use_thresholding (bool, optional): segment the materials using thresholding (faster but less accurate). Defaults to True.
             world_from_anatomical (Optional[geo.FrameTransform], optional): position the volume in world space. If None, uses identity. Defaults to None.
             use_cached (bool, optional): [description]. Use a cached segmentation if available. Defaults to True.
+            cache_dir ()
 
         Returns:
             [type]: [description]
@@ -142,12 +124,13 @@ class Volume(object):
         path = Path(path)
         stem = path.name.split('.')[0]
 
+        logger.info(f'loading NiFti volume from {path}')
         img = nib.load(path)
         assert img.header.get_xyzt_units() == ('mm', 'sec'), 'TODO: NiFti image != (mm, sec)'
 
         anatomical_from_ijk = geo.FrameTransform(img.affine)
         hu_values = img.get_fdata()
-        data = conv_hu_to_density(hu_values)
+        data = load_dicom.conv_hu_to_density(hu_values)
 
         if use_thresholding:
             materials_path = path.parent / f'{stem}_materials_thresholding.npz'
@@ -156,7 +139,7 @@ class Volume(object):
                 materials = dict(np.load(materials_path))
             else:
                 logger.info(f'segmenting materials in volume')
-                materials = conv_hu_to_materials_thresholding(hu_values)
+                materials = load_dicom.conv_hu_to_materials_thresholding(hu_values)
                 np.savez(materials_path, **materials)
         else:
             materials_path = path.parent / f'{stem}_materials.npz'
@@ -165,7 +148,7 @@ class Volume(object):
                 materials = dict(np.load(materials_path))
             else:
                 logger.info(f'segmenting materials in volume')
-                materials = conv_hu_to_materials(hu_values)
+                materials = load_dicom.conv_hu_to_materials(hu_values)
                 np.savez(materials_path, **materials)
 
         return cls(
@@ -199,8 +182,7 @@ class Volume(object):
 
     @property
     def spacing(self) -> geo.Vector3D:
-        # TODO: verify
-        return geo.vector(1 / np.abs(np.array(self.anatomical_from_ijk.R)).max(axis=0))
+        return geo.vector(np.abs(np.array(self.anatomical_from_ijk.R)).max(axis=0))
 
     def _format_materials(
         self, 
@@ -231,30 +213,6 @@ class Volume(object):
     @property
     def ijk_from_world(self):
         return self.world_from_ijk.inv
-    
-    def itow(self, other: Union[geo.Point3D, geo.Vector3D]) -> Union[geo.Point3D, geo.Vector3D]:
-        """ijk-to-world. Take an ijk-space representation and return the world-space representation of the point or vector.
-
-        Args:
-            other (Point3D): the point or vector representation in the volume's IJK space.
-
-        Returns:
-            Point3D: 
-        """
-        return self.world_from_ijk @ other
-
-    def wtoi(self, other: Union[geo.Point3D, geo.Vector3D]) -> Union[geo.Point3D, geo.Vector3D]:
-        """World-to-ijk. Take a world-space representation of a point or vector and return the IJK-space representation.
-
-        Note the preferred format would be to just use self.ijk_from_world as a function, since it is a callable.
-
-        Args:
-            other (PointOrVector3D): the point or vector.
-
-        Returns:
-            PointOrVector3D: [description]
-        """
-        return self.ijk_from_world @ other
 
     def __array__(self):
         return self.data

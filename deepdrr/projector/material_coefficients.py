@@ -319,4 +319,5 @@ material_coefficients = {
     "iron external": iron, 
     "lung external": lung, 
     "titanium external": titanium, 
-    "teflon external": teflon}
+    "teflon external": teflon,
+}

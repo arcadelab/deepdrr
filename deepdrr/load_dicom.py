@@ -1,10 +1,14 @@
 import glob
 
+import logging
 import numpy as np
 from skimage.transform import resize
 import pydicom as dicom
 
 from . import segmentation
+
+
+logger = logging.getLogger(__name__)
 
 
 materials = {1: "air", 2: "soft tissue", 3: "cortical bone"}
@@ -94,7 +98,7 @@ def conv_hu_to_density(hu_values, smoothAir=False):
 
 
 def conv_hu_to_materials_thresholding(hu_values):
-    print("segmenting volume with thresholding")
+    logger.info("segmenting volume with thresholding...")
     materials = {}
     # Air
     materials["air"] = hu_values <= -800
@@ -102,6 +106,7 @@ def conv_hu_to_materials_thresholding(hu_values):
     materials["soft tissue"] = (-800 < hu_values) * (hu_values <= 350)
     # Bone
     materials["bone"] = (350 < hu_values)
+    logger.info("done.")
 
     return materials
 
@@ -110,5 +115,6 @@ def conv_hu_to_materials(hu_values):
     print("segmenting volume with Vnet")
     segmentation_network = segmentation.SegmentationNet()
     materials = segmentation_network.segment(hu_values)
+    segmentation_network = None
 
     return materials

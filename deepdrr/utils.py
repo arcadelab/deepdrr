@@ -145,5 +145,9 @@ def neglog(image, I_0=1):
     Returns:
         np.ndarray: Image with neg_log transform applied.
     """
+    if np.all(image == 0):
+        logger.warning(f'image is all 0')
+        return image
+        
     min_nonzero_value = image[image > 0].min()
     return np.where(image == 0, min_nonzero_value, -np.log(image / I_0))
