@@ -53,7 +53,7 @@ texture<float, 3, cudaReadModeElementType> seg(13);
 #endif
 
 #define UPDATE(multiplier, n) do {\
-    output[idx + (n)] += (multiplier) * tex3D(volume, px, py, pz) * round(cubicTex3D(seg(n), px, py, pz));\
+    output[(n)] += (multiplier) * tex3D(volume, px, py, pz) * round(cubicTex3D(seg(n), px, py, pz));\
 } while (0)
 
 /*
@@ -84,7 +84,6 @@ extern "C" {
     __global__  void projectKernel(
         int out_width, // width of the output image
         int out_height, // height of the output image
-        int centimeters, // 1 if centimeters switch is set in Projector, 0 otherwise
         float step,
         float gVolumeEdgeMinPointX,
         float gVolumeEdgeMinPointY,
@@ -99,7 +98,7 @@ extern "C" {
         float sy,
         float sz,
         float *rt_kinv, // (3, 3) array giving the image-to-world-ray transform.
-        float *output, // flat array, with shape (out_height, out_width, NUM_MATERIALS).
+        //XYZ float *output, // flat array, with shape (out_height, out_width, NUM_MATERIALS).
         float *intensity, // flat array, with shape (out_height, out_width).
         float *photon_prob, // flat array, with shape (out_height, out_width).
         int n_bins, // the number of spectral bins
@@ -132,10 +131,6 @@ extern "C" {
         // if the current point is outside the output image, no computation needed
         if (udx >= out_width || vdx >= out_height)
             return;
-
-        // flat index to first material in output "channel". 
-        // So (idx + m) gets you the pixel for material index m in [0, NUM_MATERIALS)
-        int idx = udx * (out_height * NUM_MATERIALS) + vdx * NUM_MATERIALS; 
 
         // cell-centered sampling point corresponding to pixel index, in index-space.
         float u = (float) udx + 0.5;
@@ -212,9 +207,12 @@ extern "C" {
         float alpha; // distance along ray (alpha = minAlpha + step * t)
         float boundary_factor; // factor to multiply at the boundary.
 
-        // initialize the output to 0.
+        // material projection-output channels
+        float output[NUM_MATERIALS];
+
+        // initialize the projection-output to 0.
         for (int m = 0; m < NUM_MATERIALS; m++) {
-            output[idx + m] = 0;
+            output[m] = 0;
         }
 
         // Sample the points along the ray at the entrance boundary of the volume and the mid segments.
@@ -227,7 +225,7 @@ extern "C" {
             pz = sz + alpha * rz - gVolumeEdgeMinPointZ; // gVolumeEdgeMinPointZ == -0.5, per projector.py:Projector._project(...)
             
             if (t == 0 && udx == 0 && vdx == 0) {
-                printf("initial point: %f %f %f; value: %f\n", px, py, pz, output[idx]);
+                printf("initial point: %f %f %f; value: %f\n", px, py, pz, output[0]);
             }
 
             /* For the entry boundary, multiply by 0.5 (this is the t == 0 check). That is, for the initial interpolated value, 
@@ -242,10 +240,10 @@ extern "C" {
         }
 
         // Scaling by step;
-        output[idx] *= step;
+        output[0] *= step;
 
         // Last segment of the line
-        if (output[idx] > 0.0f) {
+        if (output[0] > 0.0f) {
             alpha -= step;
             float lastStepsize = maxAlpha - alpha;
 
@@ -262,15 +260,15 @@ extern "C" {
         }
 
         if (udx == 0 && vdx == 0) {
-            printf("final point: %f %f %f; output: %f\n", px, py, pz, output[idx]);
+            printf("final point: %f %f %f; output: %f\n", px, py, pz, output[0]);
         }
 
         // normalize output value to world coordinate system units
         for (int m = 0; m < NUM_MATERIALS; m++) {
-            output[idx + m] *= sqrt((rx * gVoxelElementSizeX)*(rx * gVoxelElementSizeX) + (ry * gVoxelElementSizeY)*(ry * gVoxelElementSizeY) + (rz * gVoxelElementSizeZ)*(rz * gVoxelElementSizeZ));
-            if (centimeters) {
-                output[idx + m] /= 10;
-            }
+            output[m] *= sqrt((rx * gVoxelElementSizeX)*(rx * gVoxelElementSizeX) + (ry * gVoxelElementSizeY)*(ry * gVoxelElementSizeY) + (rz * gVoxelElementSizeZ)*(rz * gVoxelElementSizeZ));
+            
+            // convert to centimeters
+            output[m] /= 10;
         }
 
         /* Up to this point, we have accomplished the original projectKernel functionality.
@@ -295,7 +293,7 @@ extern "C" {
             float intensity_tmp = 0.0f; // lifting the call to calculate_attenuation_gpu(...) up a level
             for (int m = 0; m < NUM_MATERIALS; m++) {
                 float absorb_coef = absorb_coef_table[bin * NUM_MATERIALS + m];
-                intensity_tmp += output[idx + m] * -1 * absorb_coef;
+                intensity_tmp += output[m] * -1 * absorb_coef;
             }
             intensity_tmp = exp10f(intensity_tmp) * energy * p; // TODO: check whether this is the proper base for the exponential function
             // done with the "lifted" call to calculate_attenuation_gpu(...)

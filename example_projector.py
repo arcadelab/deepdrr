@@ -87,8 +87,7 @@ def main():
         photon_count=100000,
         add_scatter=False,
         threads=8,
-        centimeters=True,
-        neglog=True,
+        neglog=False,
     ) as projector:
         images = projector.project_over_carm_range(
             (min_phi, max_phi, spacing_phi),
@@ -96,9 +95,6 @@ def main():
         )
     dt = time() - t
     logger.info(f"projected {images.shape[0]} views in {dt:.03f}s")
-
-    # apply neglog transforms if desired:
-    # images = utils.neglog(images)
 
     # get the thetas an phis for file names
     phis, thetas = utils.generate_uniform_angles(
@@ -117,5 +113,5 @@ def main():
 
 
 if __name__ == "__main__":
-    logger.basicConfig(level=logging.INFO)
+    logging.basicConfig(level=logging.INFO)
     main()
