@@ -1,8 +1,6 @@
 #include <stdio.h>
 #include <cubicTex3D.cu>
 
-#include "mat_coefs_for_kernel.cu"
-
 #ifndef NUM_MATERIALS
 #define NUM_MATERIALS 14
 #endif
@@ -69,10 +67,15 @@ texture<float, 3, cudaReadModeElementType> seg(13);
 } while (0)
 #else
 #define INTERPOLATE(multiplier) do {\
+    /* \
     for (int __mat = 0; __mat < NUM_MATERIALS; __mat++) {\
         UPDATE(multiplier, __mat);\
-    }\
+    }*/\
+    UPDATE(multiplier, 0);\
+    UPDATE(multiplier, 1);\
+    UPDATE(multiplier, 2);\
 } while (0)
+#endif
 
 // the CT volume (used to be tex_density)
 texture<float, 3, cudaReadModeElementType> volume;
@@ -99,10 +102,10 @@ extern "C" {
         float *output, // flat array, with shape (out_height, out_width, NUM_MATERIALS).
         float *intensity, // flat array, with shape (out_height, out_width).
         float *photon_prob, // flat array, with shape (out_height, out_width).
-        const int n_bins, // the number of spectral bins
-        const float *energies, // 1-D array -- size is the n_bins
-        const float *pdf, // 1-D array -- probability density function over the energies
-        const float *absorb_coef_table, // flat [n_bins x NUM_MATERIALS] table that represents
+        int n_bins, // the number of spectral bins
+        float *energies, // 1-D array -- size is the n_bins
+        float *pdf, // 1-D array -- probability density function over the energies
+        float *absorb_coef_table, // flat [n_bins x NUM_MATERIALS] table that represents
                         // the precomputed get_absorbtion_coef values.
                         // index into the table as: table[bin * NUM_MATERIALS + mat]
         int offsetW,
@@ -269,9 +272,12 @@ extern "C" {
 
         // forward_projections dictionary-ization is implicit.
 
+        // flat index to pixel in *intensity and *photon_prob
+        int img_dx = (udx * out_height) + vdx; 
+
         // zero-out intensity and photon_prob
-        intensity[idx] = 0;
-        photon_prob[idx] = 0;
+        intensity[img_dx] = 0;
+        photon_prob[img_dx] = 0;
 
         // MASS ATTENUATION COMPUTATION
         for (int bin = 0; bin < n_bins; bin++) {
@@ -286,8 +292,8 @@ extern "C" {
             intensity_tmp = exp10f(intensity_tmp) * energy * p; // TODO: check whether this is the proper base for the exponential function
             // done with the "lifted" call to calculate_attenuation_gpu(...)
 
-            intensity[idx] += intensity_tmp;
-            photon_prob[idx] += intensity_tmp / energies[bin];
+            intensity[img_dx] += intensity_tmp;
+            photon_prob[img_dx] += intensity_tmp / energies[bin];
         }
 
         return;

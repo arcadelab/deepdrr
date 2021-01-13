@@ -24,6 +24,10 @@ from ..vol import Volume
 from ..device import CArm
 from .. import utils
 
+### FOR DEBUG PRINTING
+from sys import getsizeof
+###
+
 
 def _get_kernel_projector_module(num_materials) -> SourceModule:
     """Compile the cuda code for the kernel projector.
@@ -139,6 +143,10 @@ class Projector(object):
         # Has the cuda memory been allocated.
         self.initialized = False
 
+        print("volume byte size:", getsizeof(self.volume))
+        print("sensor_size:", self.sensor_size)
+        print("output_size:", self.output_size)
+
     def _project(
         self,
         camera_projection: CameraProjection,
@@ -161,6 +169,7 @@ class Projector(object):
         args = [
             np.int32(self.camera_intrinsics.sensor_width),          # out_width
             np.int32(self.camera_intrinsics.sensor_height),          # out_height
+            np.int32(self.centimeters),             # centimeters
             np.float32(self.step),                  # step
             np.float32(-0.5),                       # gVolumeEdgeMinPointX
             np.float32(-0.5),                       # gVolumeEdgeMinPointY
@@ -178,11 +187,20 @@ class Projector(object):
             self.output_gpu,                        # output
             self.intensity_gpu,                     # intensity
             self.photon_prob_gpu,                   # photon_prob
-            self.spectrum.shape[0],                 # n_bins
+            np.int32(self.spectrum.shape[0]),       # n_bins
             self.energies_gpu,                      # energies
             self.pdf_gpu,                           # pdf
-            self.absorb_coef_table_gpu              # absorb_coef_table
+            self.absorbtion_coef_table_gpu          # absorb_coef_table
         ]
+
+        print("RT_Kinv size:", getsizeof(self.rt_kinv_gpu))
+        print("output_gpu size:", getsizeof(self.output_gpu))
+        print("intensity_gpu size:", getsizeof(self.intensity_gpu))
+        print("photon_prob_gpu size:", getsizeof(self.photon_prob_gpu))
+        print("num energy bins:", np.int32(self.spectrum.shape[0]))
+        print("energies_gpu size:", getsizeof(self.energies_gpu))
+        print("pdf_gpu size:", getsizeof(self.pdf_gpu))
+        print("a_coef_table_gpu size:", getsizeof(self.absorbtion_coef_table_gpu))
 
         # Calculate required blocks
         blocks_w = np.int(np.ceil(self.sensor_size[0] / self.threads))
@@ -236,16 +254,21 @@ class Projector(object):
         if len(camera_projections) == 0:
             raise ValueError()
         
+        print("Initiating projection and attenuation")
+
         intensities_arr = []
         photon_probs_arr = []
 
-        for proj in camera_projections:
+        for i, proj in enumerate(camera_projections):
+            print("Projecting and attenuating camera position", i+1, "/", camera_projections.__len__())
             intensity, photon_prob = self._project(proj)
             intensities_arr.append(intensity)
             photon_probs_arr.append(photon_prob)
 
         images = np.stack(intensities_arr)
         photon_prob = np.stack(photon_probs_arr)
+
+        print("Completed projection and attenuation")
 
         if self.add_scatter:
             # print('adding scatter (may cause Nan errors)')
@@ -395,37 +418,43 @@ class Projector(object):
 
         # allocate output image array on GPU (4 bytes to a float32)
         self.output_gpu = cuda.mem_alloc(self.output_size * 4)
+        print("bytes alloc'd for self.output_gpu", self.output_size * 4)
 
         # allocate ijk_from_index matrix array on GPU (3x3 array x 4 bytes per float32)
         self.rt_kinv_gpu = cuda.mem_alloc(3 * 3 * 4)
 
         # allocate intensity array on GPU (4 bytes to a float32)
         self.intensity_gpu = cuda.mem_alloc(self.sensor_size[0] * self.sensor_size[1] * 4)
+        print("bytes alloc'd for self.intensity_gpu", self.sensor_size[0] * self.sensor_size[1] * 4)
 
         # allocate photon_prob array on GPU (4 bytes to a float32)
         self.photon_prob_gpu = cuda.mem_alloc(self.sensor_size[0] * self.sensor_size[1] * 4)
+        print("bytes alloc'd for self.photon_prob_gpu", self.sensor_size[0] * self.sensor_size[1] * 4)
 
         # allocate and transfer spectrum energies (4 bytes to a float32)
         assert isinstance(self.spectrum, np.ndarray)
-        energies = self.spectrum[:,0]
-        n_bins = energies.shape[0]
+        contiguous_energies = np.ascontiguousarray(self.spectrum[:,0].copy(), dtype=np.float32)
+        n_bins = contiguous_energies.shape[0]
         self.energies_gpu = cuda.mem_alloc(n_bins * 4)
-        cuda.memcpy_htod(self.energies_gpu, energies)
+        cuda.memcpy_htod(self.energies_gpu, contiguous_energies)
+        print("bytes alloc'd for self.energies_gpu", n_bins * 4)
 
         # allocate and transfer spectrum pdf (4 bytes to a float32)
-        pdf = self.spectrum[:,1]
-        assert pdf.shape == energies.shape
-        assert pdf.shape[0] == n_bins
+        contiguous_pdf = np.ascontiguousarray(self.spectrum[:,1], dtype=np.float32)
+        assert contiguous_pdf.shape == contiguous_energies.shape
+        assert contiguous_pdf.shape[0] == n_bins
         self.pdf_gpu = cuda.mem_alloc(n_bins * 4)
-        cuda.memcpy_htod(self.pdf_gpu, pdf)
+        cuda.memcpy_htod(self.pdf_gpu, contiguous_pdf)
+        print("bytes alloc'd for self.pdf_gpu", n_bins * 4)
 
         # precompute, allocate, and transfer the get_absorption_coef(energy, material) table (4 bytes to a float32)
         absorbtion_coef_table = np.empty((n_bins, self.num_materials)).astype(np.float32)
         for bin in range(n_bins): #, energy in enumerate(energies):
             for m, mat_name in enumerate(self.volume.materials):
-                absorbtion_coef_table[bin,m] = mass_attenuation.get_absorbtion_coefs(energies[bin], mat_name)
+                absorbtion_coef_table[bin,m] = mass_attenuation.get_absorbtion_coefs(contiguous_energies[bin], mat_name)
         self.absorbtion_coef_table_gpu = cuda.mem_alloc(n_bins * self.num_materials * 4)
         cuda.memcpy_htod(self.absorbtion_coef_table_gpu, absorbtion_coef_table)
+        print("bytes alloc'd for self.absorbtion_coef_table_gpu", n_bins * self.num_materials * 4)
 
         # Mark self as initialized.
         self.initialized = True
@@ -439,6 +468,11 @@ class Projector(object):
 
             self.output_gpu.free()
             self.rt_kinv_gpu.free()
+            self.intensity_gpu.free()
+            self.photon_prob_gpu.free()
+            self.energies_gpu.free()
+            self.pdf_gpu.free()
+            self.absorbtion_coef_table_gpu.free()
         self.initialized = False
 
     def __enter__(self):
