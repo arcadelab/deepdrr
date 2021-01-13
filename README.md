@@ -42,7 +42,7 @@ A more detailed example script is given in `example_projector.py`. This script c
 
 ## Documentation
 
-Documentation is available at https://deepdrr.readthedocs.io/en/latest.
+Documentation is available at deepdrr.readthedocs.io.
 
 ## Contributing
 
