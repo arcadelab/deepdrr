@@ -17,12 +17,6 @@ logger = logging.getLogger(__name__)
 
 
 class Volume(object):
-    """A deepdrr Volume object with materials segmentation and orientation in world-space.
-
-    The recommended way to create a Volume is to load from a NifTi file using the `Volume.from_nifti(path)` class method.
-
-    """
-
     data: np.ndarray
     materials: Dict[str, np.ndarray]
     anatomical_from_ijk: geo.FrameTransform
@@ -35,7 +29,9 @@ class Volume(object):
         anatomical_from_ijk: geo.FrameTransform,
         world_from_anatomical: Optional[geo.FrameTransform] = None,
     ) -> None:
-        """Create a Volume.
+        """A deepdrr Volume object with materials segmentation and orientation in world-space.
+
+        The recommended way to create a Volume is to load from a NifTi file using the `Volume.from_nifti(path)` class method.
 
         Args:
             data (np.ndarray): the density data (a 3D array)
@@ -116,13 +112,16 @@ class Volume(object):
             use_thresholding (bool, optional): segment the materials using thresholding (faster but less accurate). Defaults to True.
             world_from_anatomical (Optional[geo.FrameTransform], optional): position the volume in world space. If None, uses identity. Defaults to None.
             use_cached (bool, optional): [description]. Use a cached segmentation if available. Defaults to True.
-            cache_dir ()
+            cache_dir (Optional[Path], optional): Where to load/save the cached segmentation. If None, use the parent dir of `path`. Defaults to None.
 
         Returns:
             [type]: [description]
         """
         path = Path(path)
         stem = path.name.split('.')[0]
+
+        if cache_dir is None:
+            cache_dir = path.parent
 
         logger.info(f'loading NiFti volume from {path}')
         img = nib.load(path)
@@ -133,7 +132,7 @@ class Volume(object):
         data = load_dicom.conv_hu_to_density(hu_values)
 
         if use_thresholding:
-            materials_path = path.parent / f'{stem}_materials_thresholding.npz'
+            materials_path = cache_dir / f'{stem}_materials_thresholding.npz'
             if use_cached and materials_path.exists():
                 logger.info(f'found materials segmentation at {materials_path}.')
                 materials = dict(np.load(materials_path))
@@ -142,7 +141,7 @@ class Volume(object):
                 materials = load_dicom.conv_hu_to_materials_thresholding(hu_values)
                 np.savez(materials_path, **materials)
         else:
-            materials_path = path.parent / f'{stem}_materials.npz'
+            materials_path = cache_dir / f'{stem}_materials.npz'
             if use_cached and materials_path.exists():
                 logger.info(f'found materials segmentation at {materials_path}.')
                 materials = dict(np.load(materials_path))
@@ -178,42 +177,36 @@ class Volume(object):
 
     @property
     def origin(self) -> geo.Point3D:
+        """The origin of the volume in anatomical space."""
         return geo.point(self.anatomical_from_ijk.t)
 
     @property
     def spacing(self) -> geo.Vector3D:
+        """The spacing of the voxels."""
         return geo.vector(np.abs(np.array(self.anatomical_from_ijk.R)).max(axis=0))
 
     def _format_materials(
         self, 
         materials: Dict[str, np.ndarray],
     ) -> np.ndarray:
-        """Standardize the input segmentation to a one-hot array.
-
-        Args:
-            materials (Dict[str, np.ndarray]): Either a mapping of material name to segmentation, 
-                a segmentation with the same shape as the volume, or a one-hot segmentation.
-
-        Returns:
-            np.ndarray: dict from material names to np.float32 segmentations.
-        """
+        """Standardize the input material segmentation."""
         for mat in materials:
             materials[mat] = np.array(materials[mat]).astype(np.float32)
 
         return materials
 
     @property
-    def shape(self):
+    def shape(self) -> Tuple[int, int, int]:
         return self.data.shape
 
     @property
-    def world_from_ijk(self):
+    def world_from_ijk(self) -> geo.FrameTransform:
         return self.world_from_anatomical @ self.anatomical_from_ijk
 
     @property
-    def ijk_from_world(self):
+    def ijk_from_world(self) -> geo.FrameTransform:
         return self.world_from_ijk.inv
 
-    def __array__(self):
+    def __array__(self) -> np.ndarray:
         return self.data
 

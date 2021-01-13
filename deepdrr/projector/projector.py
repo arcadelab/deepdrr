@@ -46,44 +46,12 @@ def _get_kernel_projector_module(num_materials) -> SourceModule:
 
 
 class Projector(object):
-    """Forward projector object. Represents the C-arm imaging device.
-
-    TODO: rename to Detector?
-
-    The goal is to get to a point where reloads are done only when a new volume is needed.
-
-    Usage:
-    ```
-    with Projector(volume, materials, ...) as projector:
-        for projection in projections:
-            yield projector(projection)
-    ```
-
-    """
-
-    # material_names = [
-    #     "air",
-    #     "soft tissue",
-    #     "bone",
-    #     "iron",
-    #     "lung",
-    #     "titanium",
-    #     "teflon",
-    #     "bone external",
-    #     "soft tissue external",
-    #     "air external",
-    #     "iron external",
-    #     "lung external",
-    #     "titanium external",
-    #     "teflon external",
-    # ]
-
     def __init__(
         self,
         volume: Volume,
         camera_intrinsics: geo.CameraIntrinsicTransform,
         carm: Optional[CArm] = None,
-        step: float = 0.1, # step size along ray
+        step: float = 0.1,
         mode: Literal['linear'] = 'linear',
         spectrum: Union[np.ndarray, Literal['60KV_AL35', '90KV_AL40', '120KV_AL43']] = '90KV_AL40',
         add_scatter: bool = False, # add scatter noise
@@ -96,17 +64,24 @@ class Projector(object):
     ) -> None:
         """Create the projector, which has info for simulating the DRR.
 
+        Usage:
+        ```
+        with Projector(volume, materials, ...) as projector:
+            for projection in projections:
+                yield projector(projection)
+        ```
+
         Args:
             volume (Volume): a volume object with materials segmented.
-            camera_intrinsics (CameraIntrinsicTransform): intrinsics of the projector's camera. (used for sensor size)
-            carm (Optional[CArm], optional): Optional C-arm device, for convenience which can be used to get projections from C-Arm pose. Only used for `carm` projection methods. Defaults to None.
+            camera_intrinsics (CameraIntrinsicTransform): intrinsics of the projector's camera. (used for sensor size).
+            carm (Optional[CArm], optional): Optional C-arm device, for convenience which can be used to get projections from C-Arm pose. If not provided, camera pose must be defined by user. Defaults to None.
             step (float, optional): size of the step along projection ray in voxels. Defaults to 0.1.
-            spectrum (Union[np.ndarray, Literal[, optional): spectrum or name of spectrum to use for projection. Defaults to '90KV_AL40'.
+            mode (Literal['linear']): [description].
+            spectrum (Union[np.ndarray, Literal['60KV_AL35', '90KV_AL40', '120KV_AL43'], optional): spectrum array or name of spectrum to use for projection. Defaults to '90KV_AL40'.
             add_scatter (bool, optional): whether to add scatter noise. Defaults to False.
             threads (int, optional): number of threads to use. Defaults to 8.
             max_block_index (int, optional): maximum GPU block. Defaults to 1024.
-            centimeters (bool, optional): whether to use centimeters (deprecated?). Defaults to True.
-            neglog (bool, optional): whether to apply negative log transform to output images. Defaults to False.
+            neglog (bool, optional): whether to apply negative log transform to output images. Recommended for easy viewing. Defaults to False.
         """
                     
         # set variables
@@ -137,13 +112,24 @@ class Projector(object):
         for mat in self.volume.materials:
             assert mat in material_coefficients, f'unrecognized material: {mat}'
 
-        # Has the cuda memory been allocated.
+        # Has the cuda memory been allocated?
         self.initialized = False
 
     def _project(
         self,
         camera_projection: geo.CameraProjection,
     ) -> np.ndarray:
+        """Perform the projection over just one image.
+
+        Args:
+            camera_projection (geo.CameraProjection): a camera projection transform.
+
+        Raises:
+            RuntimeError: if the projector has not been initialized.
+
+        Returns:
+            np.ndarray: the output projection for each material.
+        """
         if not self.initialized:
             raise RuntimeError("Projector has not been initialized.")
 
@@ -152,16 +138,10 @@ class Projector(object):
         logger.debug(f'camera_center_ijk (source point): {camera_center_in_volume}')
 
         ijk_from_index = camera_projection.get_ray_transform(self.volume)
-        logger.debug(f'ijk_from_index:\n{ijk_from_index}')
-        logger.debug(f'image center ray:\n{ijk_from_index @ geo.point(self.sensor_size[0] / 2, self.sensor_size[1] / 2)}')
-        logger.debug(f'volume: {self.volume.shape}')
-        logger.debug(f'intrinsic matrix:\n{camera_projection.intrinsic}')
-        logger.debug(f'focal length: {camera_projection.intrinsic.focal_length}')
-
         ijk_from_index = np.array(ijk_from_index).astype(np.float32)
 
+        # spacing
         spacing = self.volume.spacing
-        logger.debug(f'spacing: {spacing}')
 
         # copy the projection matrix to CUDA (output array initialized to zero by the kernel)
         cuda.memcpy_htod(self.rt_kinv_gpu, ijk_from_index)
@@ -222,6 +202,17 @@ class Projector(object):
         self,
         *camera_projections: geo.CameraProjection,
     ) -> np.ndarray:
+        """Perform the projection.
+
+        Args:
+            camera_projection: any number of camera projections. If none are provided, the Projector uses the CArm device to obtain a camera projection.
+
+        Raises:
+            ValueError: if no projections are provided and self.carm is None.
+
+        Returns:
+            np.ndarray: array of DRRs, after mass attenuation, etc.
+        """
         logger.debug(f'carm isocenter: {self.carm.isocenter}')
         if not camera_projections and self.carm is None:
             raise ValueError('must provide a camera projection object to the projector, unless imaging device (e.g. CArm) is provided')
@@ -239,14 +230,9 @@ class Projector(object):
         # TODO: fix mass_attenuation so it doesn't require this conversion
         forward_projections = dict((mat, forward_projections[:, :, :, m]) for m, mat in enumerate(self.volume.materials))
 
-        # logger.debug(f'spectrum: {self.spectrum}')
+        logger.info(f'performing mass attenuation...')
         images, photon_prob = mass_attenuation.calculate_intensity_from_spectrum(forward_projections, self.spectrum)
-
-        if np.all(images == 0):
-            logger.error('image is all 0; something bad is happening')
-            exit()
-
-        logger.info(f'proceeding with nonzero image!')
+        logger.info('done.')
 
         if self.add_scatter:
             # lfkj('adding scatter (may cause Nan errors)')
@@ -256,6 +242,7 @@ class Projector(object):
 
         # transform to collected energy in keV per cm^2 (or keV per mm^2)
         if self.collected_energy:
+            logger.info("converting image to collected energy")
             images = images * (self.photon_count / (self.camera.pixel_size[0] * self.camera.pixel_size[1]))
 
         if self.add_noise:
@@ -263,41 +250,13 @@ class Projector(object):
             images = analytic_generators.add_noise(images, photon_prob, self.photon_count)
 
         if self.neglog:
+            logger.info("applying negative log transform")
             images = utils.neglog(images)
 
         if images.shape[0] == 1:
             return images[0]
         else:
             return images
-
-    def project_at_carm_pose(
-        self,
-        phi: float,
-        theta: float,
-        rho: Optional[float] = 0,
-        degrees: bool = True,
-        offset: Optional[geo.Vector3D] = None,        
-    ) -> np.ndarray:
-        """Project over the volume(s), given the pose of the C-arm detector.
-
-        Convenience function that passes all args onto the FrameTransform.from_detector_pose() to make 
-        the extrinsic camera3d_from_world transformation.
-
-        Returns:
-            np.ndarray: images that result from projection.
-        """
-        if self.carm is None:
-            raise RuntimeError("must provide carm device to projector")
-
-        camera3d_from_world = self.carm.at(
-            phi=phi,
-            theta=theta,
-            rho=rho,
-            degrees=degrees,
-        )
-
-        camera_projection = geo.CameraProjection(self.camera_intrinsics, camera3d_from_world)
-        return self.project(camera_projection)
         
     def project_over_carm_range(
         self,
@@ -305,13 +264,19 @@ class Projector(object):
         theta_range: Tuple[float, float, float],
         degrees: bool = True,
     ) -> np.ndarray:
+        """Project over a range of angles using the included CArm.
+        
+        Ignores the CArm's internal pose, except for its isocenter.
+        
+        """
         if self.carm is None:
             raise RuntimeError("must provide carm device to projector")
 
         camera_projections = []
         phis, thetas = utils.generate_uniform_angles(phi_range, theta_range)
         for phi, theta in zip(phis, thetas):
-            extrinsic = self.carm.at(
+            extrinsic = self.carm.get_camera3d_from_world(
+                self.carm.isocenter,
                 phi=phi,
                 theta=theta,
                 degrees=degrees,
@@ -330,34 +295,6 @@ class Projector(object):
     @property
     def output_size(self):
         return self.sensor_size[0] * self.sensor_size[1] * self.num_materials
-
-    def _format_segmentation(
-        self, 
-        segmentation: Union[Dict[str, np.ndarray], np.ndarray],
-        num_materials: int,
-    ) -> np.ndarray:
-        """Standardize the input segmentation to a one-hot array.
-
-        Args:
-            segmentation (Union[Dict[str, np.ndarray], np.ndarray]): Either a mapping of material name to segmentation, 
-                a segmentation with the same shape as the volume, or a one-hot segmentation.
-            num_materials (int): number of materials in the segmentation
-
-        Returns:
-            np.ndarray: 4D one-hot segmentation of the materials with labels along the 0th axis.
-        """
-        if isinstance(segmentation, dict):
-            assert len(segmentation) == num_materials
-            segmentation = np.stack([seg.astype(np.float32) for i, seg in enumerate(segmentation.values())], axis=0)
-        elif segmentation.ndim == 3:
-            assert np.all(segmentation < num_materials) # TODO: more flexibility?
-            segmentation = utils.one_hot(segmentation, num_materials, axis=0)
-        elif segmentation.ndim == 4:
-            pass
-        else:
-            raise TypeError
-
-        return segmentation.astype(np.float32)
 
     def _get_spectrum(self, spectrum):
         if isinstance(spectrum, np.ndarray):

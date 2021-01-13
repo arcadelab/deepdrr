@@ -20,7 +20,7 @@ def calculate_intensity_from_spectrum(projections, spectrum, blocksize=50):
     
     logger.info('running mass attenuation...')
     for i in range(0, num_blocks):
-        logger.info(f"running block: {i + 1} / {num_blocks}")
+        logger.debug(f"running block: {i + 1} / {num_blocks}")
         lower_i = i * blocksize
         upper_i = min([(i + 1) * blocksize, projection_shape[0]])
         intensity_gpu = gpuarray.zeros((upper_i - lower_i, projection_shape[1], projection_shape[2]), dtype=np.float32, allocator=pool.allocate)
@@ -31,7 +31,7 @@ def calculate_intensity_from_spectrum(projections, spectrum, blocksize=50):
             projections_gpu[mat] = gpuarray.to_gpu(projections[mat][lower_i:upper_i, :, :], allocator=pool.allocate)
 
         for i, _ in enumerate(pdf):
-            # logger.debug(f"evaluating: {i + 1} / {len(pdf)} spectral bins")
+            logger.debug(f"evaluating: {i + 1} / {len(pdf)} spectral bins")
             intensity_tmp = calculate_attenuation_gpu(projections_gpu, energies[i], pdf[i], pool)
             intensity_gpu = intensity_gpu.mul_add(1, intensity_tmp, 1)
             photon_prob_gpu = photon_prob_gpu.mul_add(1, intensity_tmp, 1 / energies[i])
@@ -45,7 +45,6 @@ def calculate_attenuation_gpu(projections_gpu, energy, p, pool):
     attenuation_gpu = gpuarray.zeros(projections_gpu[next(iter(projections_gpu))].shape, dtype=np.float32, allocator=pool.allocate)
     for mat in projections_gpu:
         # logger.debug(f'attenuating {mat}')
-        #print(get_absorbtion_coefs(energy,mat), mat)
         attenuation_gpu = attenuation_gpu.mul_add(1.0, projections_gpu[mat], -get_absorbtion_coefs(energy, mat))
     attenuation_gpu = cumath.exp(attenuation_gpu) * energy * p
     return attenuation_gpu

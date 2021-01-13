@@ -1,7 +1,7 @@
+import numpy as np
 import pydicom as dicom
 import glob
 import copy
-import numpy as np
 from skimage.transform import resize
 import math
 

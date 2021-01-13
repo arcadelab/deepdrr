@@ -2,7 +2,9 @@ import pydicom as dicom
 import glob
 import numpy as np
 from skimage.transform import resize
-import segmentation
+
+from . import segmentation
+
 
 materials = {1: "air", 2: "soft tissue", 3: "cortical bone"}
 def replace_material(metal_volume_m_ori, smooth_air = False, use_thresholding_segmentation=True):
