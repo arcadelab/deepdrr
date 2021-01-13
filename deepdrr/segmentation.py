@@ -1,6 +1,5 @@
 import logging
 import numpy as np
-import matplotlib.pyplot as plt
 from pathlib import Path
 import torch
 from torch.autograd import Variable
@@ -95,14 +94,5 @@ class SegmentationNet():
 
         # Bone
         segmentation["bone"] = segmented_volume == 2
-
-        if show_results:
-            plt.figure()
-            plt.imshow(segmented_volume[:, :, segmented_volume.shape[2] // 2])
-            plt.figure()
-            plt.imshow(segmented_volume[:, segmented_volume.shape[1] // 2, :])
-            plt.figure()
-            plt.imshow(segmented_volume[segmented_volume.shape[0] // 2, :, :])
-            plt.show()
 
         return segmentation

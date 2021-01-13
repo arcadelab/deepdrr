@@ -339,10 +339,6 @@ extern "C" {
             px = sx + alpha * rx + 0.5;
             py = sy + alpha * ry + 0.5;
             pz = sz + alpha * rz - gVolumeEdgeMinPointZ;
-            
-            if (t == 0 && udx == 0 && vdx == 0) {
-                printf("initial point: %f %f %f; value: %f\n", px, py, pz, output[idx]);
-            }
 
             /* For the entry boundary, multiply by 0.5 (this is the t == 0 check). That is, for the initial interpolated value, 
              * only a half step-size is considered in the computation.
@@ -373,10 +369,6 @@ extern "C" {
 
             // interpolation
             INTERPOLATE(0.5 * lastStepsize);
-        }
-
-        if (udx == 0 && vdx == 0) {
-            printf("final point: %f %f %f; output: %f\n", px, py, pz, output[idx]);
         }
 
         // normalize output value to world coordinate system units

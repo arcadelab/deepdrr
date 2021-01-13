@@ -6,8 +6,6 @@ import numpy as np
 import PIL.Image as Image
 from datetime import datetime
 from pathlib import Path
-from numpy.lib.function_base import interp
-from scipy.optimize import curve_fit
 import pickle
 
 
