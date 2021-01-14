@@ -52,7 +52,7 @@ Contributions are welcome. Please make a pull request.
 
 DeepDRR combines machine learning models for material decomposition and scatter estimation in 3D and 2D, respectively, with analytic models for projection, attenuation, and noise injection to achieve the required performance. The pipeline is illustrated below. 
 
-![DeepDRR Pipeline](https://raw.githubusercontent.com/mathiasunberath/DeepDRR/master/readme_images/deepdrr_workflow.png)
+![DeepDRR Pipeline](https://raw.githubusercontent.com/arcadelab/deepdrr/master/readme_images/deepdrr_workflow.png)
 
 Further details can be found in our MICCAI 2018 paper "DeepDRR: A Catalyst for Machine Learning in Fluoroscopy-guided Procedures" and the subsequent Invited Journal Article in the IJCARS Special Issue of MICCAI "Enabling Machine Learning in X-ray-based Procedures via Realistic Simulation of Image Formation". The conference preprint can be accessed on arXiv here: https://arxiv.org/abs/1803.08606.
 
@@ -60,20 +60,20 @@ Further details can be found in our MICCAI 2018 paper "DeepDRR: A Catalyst for M
 
 The figure below shows representative radiographs generated using DeepDRR from CT data downloaded from the NIH Cancer Imaging Archive. Please find qualitative results in the **Applications** section.
 
-![Representative DeepDRRs](https://raw.githubusercontent.com/mathiasunberath/DeepDRR/master/readme_images/examples.PNG)
+![Representative DeepDRRs](https://raw.githubusercontent.com/arcadelab/deepdrr/master/readme_images/examples.PNG)
 
 ### Applications - Pelvis Landmark Detection
 
 We have applied DeepDRR to anatomical landmark detection in pelvic X-ray: "X-ray-transform Invariant Anatomical Landmark Detection for Pelvic Trauma Surgery", also early-accepted at MICCAI'18: https://arxiv.org/abs/1803.08608 and now with quantitative evaluation in the IJCARS Special Issue on MICCAI'18: https://link.springer.com/article/10.1007/s11548-019-01975-5. The ConvNet for prediction was trained on DeepDRRs of 18 CT scans of the NIH Cancer Imaging Archive and then applied to ex vivo data acquired with a Siemens Cios Fusion C-arm machine equipped with a flat panel detector (Siemens Healthineers, Forchheim, Germany). Some representative results on the ex vivo data are shown below.
 
-![Prediction Performance](https://raw.githubusercontent.com/mathiasunberath/DeepDRR/master/readme_images/landmark_performance_real_data.PNG)
+![Prediction Performance](https://raw.githubusercontent.com/arcadelab/deepdrr/master/readme_images/landmark_performance_real_data.PNG)
 
 ### Applications - Metal Tool Insertion
 DeepDRR has also been applied to simulate X-rays of the femur during insertion of dexterous manipulaters in orthopedic surgery: "Localizing dexterous surgical tools in X-ray for image-based navigation", which has been accepted at IPCAI'19: https://arxiv.org/abs/1901.06672. Simulated images are used to train a concurrent segmentation and localization network for tool detection. We found consistent performance on both synthetic and real X-rays of ex vivo specimens. The tool model, simulation image and detection results are shown below.
 
 This capability has not been tested in version 1.0. We recommend working with [Version 0.1](https://github.com/arcadelab/DeepDRR/releases/tag/0.1) for the time being.
 
-![Robot Insertion and Detection](https://raw.githubusercontent.com/mathiasunberath/DeepDRR/master/readme_images/tool_insertion.png)
+![Robot Insertion and Detection](https://raw.githubusercontent.com/arcadelab/deepdrr/master/readme_images/tool_insertion.png)
 
 ### Potential Challenges - General 
 
@@ -83,7 +83,7 @@ This capability has not been tested in version 1.0. We recommend working with [V
 4. We currently provide the X-ray source sprectra from MC-GPU that are fairly standard. Additional spectra can be implemented in spectrum_generator.py. 
 5. The current detector reading is *the average energy deposited by a single photon in a pixel*. If you are interested in modeling photon counting or energy resolving detectors, then you may want to take a look at `mass_attenuation(_gpu).py` to implement your detector.
 6. Currently we do not support import of full projection matrices. But you will need to define K, R, and T seperately or use camera.py to define projection geometry online. 
-7. It is important to check proper import of CT volumes. We have tried to account for many variations (HU scale offsets, slice order, origin, file extensions) but one can never be sure enough, so please double check for your files. 
+7. It is important to check proper import of CT volumes. We have tried to account for many variations (HU scale offsets, slice order, origin, file extensions) but one can never be sure enough, so please double check for your files.
 
 ### Potential Challenges - Tool Modeling
 
