@@ -194,10 +194,9 @@ class Projector(object):
                     self.project_kernel(*args, offset_w, offset_h, block=block, grid=(self.max_block_index, self.max_block_index))
                     context.synchronize()
 
-        image_shape = (self.sensor_size[0], self.sensor_size[1])
-        intensity = np.empty(image_shape, np.float32)
+        intensity = np.empty(self.output_shape, dtype=np.float32)
         cuda.memcpy_dtoh(intensity, self.intensity_gpu)
-        photon_prob = np.empty(image_shape, np.float32)
+        photon_prob = np.empty(self.output_shape, dtype=np.float32)
         cuda.memcpy_dtoh(intensity, self.photon_prob_gpu)
 
         # transpose the axes, which previously have width on the slow dimension

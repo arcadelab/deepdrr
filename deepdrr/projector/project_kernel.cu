@@ -294,7 +294,7 @@ extern "C" {
                 float absorb_coef = absorb_coef_table[bin * NUM_MATERIALS + m];
                 intensity_tmp += output[m] * -1 * absorb_coef;
             }
-            intensity_tmp = exp10f(intensity_tmp) * energy * p; // TODO: check whether this is the proper base for the exponential function
+            intensity_tmp = expf(intensity_tmp) * energy * p;
             // done with the "lifted" call to calculate_attenuation_gpu(...)
 
             intensity[img_dx] += intensity_tmp;
