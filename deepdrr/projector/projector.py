@@ -194,7 +194,7 @@ class Projector(object):
         intensity = np.empty(self.output_shape, dtype=np.float32)
         cuda.memcpy_dtoh(intensity, self.intensity_gpu)
         photon_prob = np.empty(self.output_shape, dtype=np.float32)
-        cuda.memcpy_dtoh(intensity, self.photon_prob_gpu)
+        cuda.memcpy_dtoh(photon_prob, self.photon_prob_gpu)
 
         # transpose the axes, which previously have width on the slow dimension
         intensity = np.swapaxes(intensity, 0, 1).copy()
