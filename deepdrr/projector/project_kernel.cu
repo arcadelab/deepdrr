@@ -56,24 +56,147 @@ texture<float, 3, cudaReadModeElementType> seg(13);
     output[(n)] += (multiplier) * tex3D(volume, px, py, pz) * round(cubicTex3D(seg(n), px, py, pz));\
 } while (0)
 
-/*
- * I know this defintion of INTERPOLATE(...) is slower because of the for-loop operations, 
- * but while I'm working, I value the fact that it's compact in the file.  I can unroll the
- * loop when I have finished the other parts.
- */
-#if (NUM_MATERIALS < 1) || (NUM_MATERIALS > 14)
+#if NUM_MATERIALS == 1
 #define INTERPOLATE(multiplier) do {\
-    fprintf(stderr, "NUM_MATERIALS not in [1, 14]");\
+    UPDATE(multiplier, 0);\
 } while (0)
-#else
+#elif NUM_MATERIALS == 2
 #define INTERPOLATE(multiplier) do {\
-    /* \
-    for (int __mat = 0; __mat < NUM_MATERIALS; __mat++) {\
-        UPDATE(multiplier, __mat);\
-    }*/\
+    UPDATE(multiplier, 0);\
+    UPDATE(multiplier, 1);\
+} while (0)
+#elif NUM_MATERIALS == 3
+#define INTERPOLATE(multiplier) do {\
     UPDATE(multiplier, 0);\
     UPDATE(multiplier, 1);\
     UPDATE(multiplier, 2);\
+} while (0)
+#elif NUM_MATERIALS == 4
+#define INTERPOLATE(multiplier) do {\
+    UPDATE(multiplier, 0);\
+    UPDATE(multiplier, 1);\
+    UPDATE(multiplier, 2);\
+    UPDATE(multiplier, 3);\
+} while (0)
+#elif NUM_MATERIALS == 5
+#define INTERPOLATE(multiplier) do {\
+    UPDATE(multiplier, 0);\
+    UPDATE(multiplier, 1);\
+    UPDATE(multiplier, 2);\
+    UPDATE(multiplier, 3);\
+    UPDATE(multiplier, 4);\
+} while (0)
+#elif NUM_MATERIALS == 6
+#define INTERPOLATE(multiplier) do {\
+    UPDATE(multiplier, 0);\
+    UPDATE(multiplier, 1);\
+    UPDATE(multiplier, 2);\
+    UPDATE(multiplier, 4);\
+    UPDATE(multiplier, 5);\
+} while (0)
+#elif NUM_MATERIALS == 7
+#define INTERPOLATE(multiplier) do {\
+    UPDATE(multiplier, 0);\
+    UPDATE(multiplier, 1);\
+    UPDATE(multiplier, 2);\
+    UPDATE(multiplier, 4);\
+    UPDATE(multiplier, 5);\
+    UPDATE(multiplier, 6);\
+} while (0)
+#elif NUM_MATERIALS == 8
+#define INTERPOLATE(multiplier) do {\
+    UPDATE(multiplier, 0);\
+    UPDATE(multiplier, 1);\
+    UPDATE(multiplier, 2);\
+    UPDATE(multiplier, 4);\
+    UPDATE(multiplier, 5);\
+    UPDATE(multiplier, 6);\
+    UPDATE(multiplier, 7);\
+} while (0)
+#elif NUM_MATERIALS == 9
+#define INTERPOLATE(multiplier) do {\
+    UPDATE(multiplier, 0);\
+    UPDATE(multiplier, 1);\
+    UPDATE(multiplier, 2);\
+    UPDATE(multiplier, 4);\
+    UPDATE(multiplier, 5);\
+    UPDATE(multiplier, 6);\
+    UPDATE(multiplier, 7);\
+    UPDATE(multiplier, 8);\
+} while (0)
+#elif NUM_MATERIALS == 10
+#define INTERPOLATE(multiplier) do {\
+    UPDATE(multiplier, 0);\
+    UPDATE(multiplier, 1);\
+    UPDATE(multiplier, 2);\
+    UPDATE(multiplier, 4);\
+    UPDATE(multiplier, 5);\
+    UPDATE(multiplier, 6);\
+    UPDATE(multiplier, 7);\
+    UPDATE(multiplier, 8);\
+    UPDATE(multiplier, 9);\
+} while (0)
+#elif NUM_MATERIALS == 11
+#define INTERPOLATE(multiplier) do {\
+    UPDATE(multiplier, 0);\
+    UPDATE(multiplier, 1);\
+    UPDATE(multiplier, 2);\
+    UPDATE(multiplier, 4);\
+    UPDATE(multiplier, 5);\
+    UPDATE(multiplier, 6);\
+    UPDATE(multiplier, 7);\
+    UPDATE(multiplier, 8);\
+    UPDATE(multiplier, 9);\
+    UPDATE(multiplierl, 10);\
+} while (0)
+#elif NUM_MATERIALS == 12
+#define INTERPOLATE(multiplier) do {\
+    UPDATE(multiplier, 0);\
+    UPDATE(multiplier, 1);\
+    UPDATE(multiplier, 2);\
+    UPDATE(multiplier, 4);\
+    UPDATE(multiplier, 5);\
+    UPDATE(multiplier, 6);\
+    UPDATE(multiplier, 7);\
+    UPDATE(multiplier, 8);\
+    UPDATE(multiplier, 9);\
+    UPDATE(multiplier, 10);\
+    UPDATE(multiplier, 11);\
+} while (0)
+#elif NUM_MATERIALS == 13
+#define INTERPOLATE(multiplier) do {\
+    UPDATE(multiplier, 0);\
+    UPDATE(multiplier, 1);\
+    UPDATE(multiplier, 2);\
+    UPDATE(multiplier, 4);\
+    UPDATE(multiplier, 5);\
+    UPDATE(multiplier, 6);\
+    UPDATE(multiplier, 7);\
+    UPDATE(multiplier, 8);\
+    UPDATE(multiplier, 9);\
+    UPDATE(multiplier, 10);\
+    UPDATE(multiplier, 11);\
+    UPDATE(multiplier, 12);\
+} while (0)
+#elif NUM_MATERIALS == 14
+#define INTERPOLATE(multiplier) do {\
+    UPDATE(multiplier, 0);\
+    UPDATE(multiplier, 1);\
+    UPDATE(multiplier, 2);\
+    UPDATE(multiplier, 4);\
+    UPDATE(multiplier, 5);\
+    UPDATE(multiplier, 6);\
+    UPDATE(multiplier, 7);\
+    UPDATE(multiplier, 8);\
+    UPDATE(multiplier, 9);\
+    UPDATE(multiplier, 10);\
+    UPDATE(multiplier, 11);\
+    UPDATE(multiplier, 12);\
+    UPDATE(multiplier, 13);\
+} while (0)
+#else
+#define INTERPOLATE(multiplier) do {\
+    fprintf(stderr, "NUM_MATERIALS not in [1, 14]");\
 } while (0)
 #endif
 
@@ -271,25 +394,6 @@ extern "C" {
 
         // flat index to pixel in *intensity and *photon_prob
         int img_dx = (udx * out_height) + vdx; 
-
-/*
-        if (img_dx == 0) {
-            for (int bin = 0; bin < n_bins; bin++) {
-                for (int m = 0; m < NUM_MATERIALS; m++) {
-                    printf("energy=%d, mat=%d: coef=%1.6f\n", 
-                        bin, m, absorb_coef_table[bin * NUM_MATERIALS + m]
-                    );
-                }
-            }
-        }
-*/
-/*
-        if (img_dx == 0) {
-            for (int bin = 0; bin < n_bins; bin++) {
-                printf("energy=%d: pdf=%1.6f\n", bin, pdf[bin]);
-            }
-        }
-*/
 
         // zero-out intensity and photon_prob
         intensity[img_dx] = 0;

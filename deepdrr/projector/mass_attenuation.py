@@ -11,12 +11,8 @@ logger = logging.getLogger(__name__)
 
 def get_absorbtion_coefs(x, material):
     # returns absorbtion coefficient at x in keV
-    ###xMev = x.copy() / 1000
-    ###return log_interp(xMev, material_coefficients[material][:, 0], material_coefficients[material][:, 1])
     xMev = x.copy() / 1000
-    ret = log_interp(xMev, material_coefficients[material][:, 0], material_coefficients[material][:, 1])
-    ###print(f"energy={xMev:}, mat={material}: coef={ret:1.6f}")
-    return ret
+    return log_interp(xMev, material_coefficients[material][:, 0], material_coefficients[material][:, 1])
 
 
 def log_interp(xInterp, x, y):

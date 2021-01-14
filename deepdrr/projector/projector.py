@@ -366,7 +366,7 @@ class Projector(object):
         logger.debug(f"bytes alloc'd for self.energies_gpu: {n_bins * 4}")
 
         # allocate and transfer spectrum pdf (4 bytes to a float32)
-        noncont_pdf = self.spectrum[:, 1] # / np.sum(self.spectrum[:, 1])
+        noncont_pdf = self.spectrum[:, 1]  / np.sum(self.spectrum[:, 1])
         contiguous_pdf = np.ascontiguousarray(noncont_pdf.copy(), dtype=np.float32)
         assert contiguous_pdf.shape == contiguous_energies.shape
         assert contiguous_pdf.shape[0] == n_bins
