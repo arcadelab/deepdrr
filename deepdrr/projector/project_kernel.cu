@@ -272,9 +272,6 @@ extern "C" {
         // flat index to pixel in *intensity and *photon_prob
         int img_dx = (udx * out_height) + vdx; 
 
-        // zero-out intensity and photon_prob
-        intensity[img_dx] = 0;
-        photon_prob[img_dx] = 0;
 /*
         if (img_dx == 0) {
             for (int bin = 0; bin < n_bins; bin++) {
@@ -286,12 +283,17 @@ extern "C" {
             }
         }
 */
-
+/*
         if (img_dx == 0) {
             for (int bin = 0; bin < n_bins; bin++) {
                 printf("energy=%d: pdf=%1.6f\n", bin, pdf[bin]);
             }
         }
+*/
+
+        // zero-out intensity and photon_prob
+        intensity[img_dx] = 0;
+        photon_prob[img_dx] = 0;
 
         // MASS ATTENUATION COMPUTATION
         for (int bin = 0; bin < n_bins; bin++) {
@@ -307,7 +309,7 @@ extern "C" {
             // done with the "lifted" call to calculate_attenuation_gpu(...)
 
             intensity[img_dx] += intensity_tmp;
-            photon_prob[img_dx] += intensity_tmp / energies[bin];
+            photon_prob[img_dx] += intensity_tmp * (1.0 / energy);
         }
 
         return;

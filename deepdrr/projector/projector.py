@@ -375,11 +375,12 @@ class Projector(object):
         logger.debug(f"bytes alloc'd for self.pdf_gpu {n_bins * 4}")
 
         # precompute, allocate, and transfer the get_absorption_coef(energy, material) table (4 bytes to a float32)
-        absorbtion_coef_table = np.empty((n_bins, self.num_materials)).astype(np.float32)
+        ###absorbtion_coef_table = np.empty((n_bins, self.num_materials)).astype(np.float32)
+        absorbtion_coef_table = np.empty(n_bins * self.num_materials).astype(np.float32)
         for bin in range(n_bins): #, energy in enumerate(energies):
             for m, mat_name in enumerate(self.volume.materials):
-                absorbtion_coef_table[bin,m] = mass_attenuation.get_absorbtion_coefs(contiguous_energies[bin], mat_name)
-                ###absorbtion_coef_table[bin,m] = self._get_absorbtion_coefs(contiguous_energies[bin], mat_name)
+                ###absorbtion_coef_table[bin,m] = mass_attenuation.get_absorbtion_coefs(contiguous_energies[bin], mat_name)
+                absorbtion_coef_table[bin * self.num_materials + m] = mass_attenuation.get_absorbtion_coefs(contiguous_energies[bin], mat_name)
         self.absorbtion_coef_table_gpu = cuda.mem_alloc(n_bins * self.num_materials * 4)
         cuda.memcpy_htod(self.absorbtion_coef_table_gpu, absorbtion_coef_table)
         logger.debug(f"bytes alloc'd for self.absorbtion_coef_table_gpu {n_bins * self.num_materials * 4}")
