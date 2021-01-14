@@ -221,11 +221,7 @@ extern "C" {
             // In CUDA, voxel centeras are located at (xx.5, xx.5, xx.5), whereas SwVolume has voxel centers at integers.
             px = sx + alpha * rx + 0.5;
             py = sy + alpha * ry + 0.5;
-            pz = sz + alpha * rz - gVolumeEdgeMinPointZ; // gVolumeEdgeMinPointZ == -0.5, per projector.py:Projector._project(...)
-            
-            if (t == 0 && udx == 0 && vdx == 0) {
-                printf("initial point: %f %f %f; value: %f\n", px, py, pz, output[0]);
-            }
+            pz = sz + alpha * rz - gVolumeEdgeMinPointZ;
 
             /* For the entry boundary, multiply by 0.5 (this is the t == 0 check). That is, for the initial interpolated value, 
              * only a half step-size is considered in the computation.
@@ -256,10 +252,6 @@ extern "C" {
 
             // interpolation
             INTERPOLATE(0.5 * lastStepsize);
-        }
-
-        if (udx == 0 && vdx == 0) {
-            printf("final point: %f %f %f; output: %f\n", px, py, pz, output[0]);
         }
 
         // normalize output value to world coordinate system units
