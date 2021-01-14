@@ -52,7 +52,7 @@ Contributions are welcome. Please make a pull request.
 
 DeepDRR combines machine learning models for material decomposition and scatter estimation in 3D and 2D, respectively, with analytic models for projection, attenuation, and noise injection to achieve the required performance. The pipeline is illustrated below. 
 
-![DeepDRR Pipeline](https://raw.githubusercontent.com/arcadelab/deepdrr/master/readme_images/deepdrr_workflow.png)
+![DeepDRR Pipeline](https://raw.githubusercontent.com/arcadelab/deepdrr/master/images/deepdrr_workflow.png)
 
 Further details can be found in our MICCAI 2018 paper "DeepDRR: A Catalyst for Machine Learning in Fluoroscopy-guided Procedures" and the subsequent Invited Journal Article in the IJCARS Special Issue of MICCAI "Enabling Machine Learning in X-ray-based Procedures via Realistic Simulation of Image Formation". The conference preprint can be accessed on arXiv here: https://arxiv.org/abs/1803.08606.
 
@@ -60,29 +60,29 @@ Further details can be found in our MICCAI 2018 paper "DeepDRR: A Catalyst for M
 
 The figure below shows representative radiographs generated using DeepDRR from CT data downloaded from the NIH Cancer Imaging Archive. Please find qualitative results in the **Applications** section.
 
-![Representative DeepDRRs](https://raw.githubusercontent.com/arcadelab/deepdrr/master/readme_images/examples.PNG)
+![Representative DeepDRRs](https://raw.githubusercontent.com/arcadelab/deepdrr/master/images/examples.PNG)
 
 ### Applications - Pelvis Landmark Detection
 
 We have applied DeepDRR to anatomical landmark detection in pelvic X-ray: "X-ray-transform Invariant Anatomical Landmark Detection for Pelvic Trauma Surgery", also early-accepted at MICCAI'18: https://arxiv.org/abs/1803.08608 and now with quantitative evaluation in the IJCARS Special Issue on MICCAI'18: https://link.springer.com/article/10.1007/s11548-019-01975-5. The ConvNet for prediction was trained on DeepDRRs of 18 CT scans of the NIH Cancer Imaging Archive and then applied to ex vivo data acquired with a Siemens Cios Fusion C-arm machine equipped with a flat panel detector (Siemens Healthineers, Forchheim, Germany). Some representative results on the ex vivo data are shown below.
 
-![Prediction Performance](https://raw.githubusercontent.com/arcadelab/deepdrr/master/readme_images/landmark_performance_real_data.PNG)
+![Prediction Performance](https://raw.githubusercontent.com/arcadelab/deepdrr/master/images/landmark_performance_real_data.PNG)
 
 ### Applications - Metal Tool Insertion
 DeepDRR has also been applied to simulate X-rays of the femur during insertion of dexterous manipulaters in orthopedic surgery: "Localizing dexterous surgical tools in X-ray for image-based navigation", which has been accepted at IPCAI'19: https://arxiv.org/abs/1901.06672. Simulated images are used to train a concurrent segmentation and localization network for tool detection. We found consistent performance on both synthetic and real X-rays of ex vivo specimens. The tool model, simulation image and detection results are shown below.
 
-This capability has not been tested in version 1.0. We recommend working with [Version 0.1](https://github.com/arcadelab/DeepDRR/releases/tag/0.1) for the time being.
+This capability has not been tested in version 1.0. For tool insertion, we recommend working with [Version 0.1](https://github.com/arcadelab/deepdrr/releases/tag/0.1) for the time being.
 
 ![Robot Insertion and Detection](https://raw.githubusercontent.com/arcadelab/deepdrr/master/readme_images/tool_insertion.png)
 
-### Potential Challenges - General 
+### Potential Challenges - General
 
 1. Our material decomposition V-net was trained on NIH Cancer Imagign Archive data. In case it does not generalize perfectly to other acquisitions, the use of intensity thresholds (as is done in conventional Monte Carlo) is still supported. In this case, however, thresholds will likely need to be selected on a per-dataset, or worse, on a per-region basis since bone density can vary considerably.
 2. Scatter estimation is currently limited to Rayleigh scatter and we are working on improving this. Scatter estimation was trained on images with 1240x960 pixels with 0.301 mm. The scatter signal is a composite of Rayleigh, Compton, and multi-path scattering. While all scatter sources produce low frequency signals, Compton and multi-path are more blurred compared to Rayleigh, suggesting that simple scatter reduction techniques may do an acceptable job. In most clinical products, scatter reduction is applied as pre-processing before the image is displayed and accessible. Consequently, the current shortcoming of not providing *full scatter estimation* is likely not critical for many applications, in fact, scatter can even be turned off completely. We would like to refer to the **Applications** section above for some preliminary evidence supporting this reasoning.
 3. Due to the nature of volumetric image processing, DeepDRR consumes a lot of GPU memory. We have successfully tested on 12 GB of GPU memory but cannot tell about 8 GB at the moment. The bottleneck is volumetric segmentation, which can be turned off and replaced by thresholds (see 1.).
 4. We currently provide the X-ray source sprectra from MC-GPU that are fairly standard. Additional spectra can be implemented in spectrum_generator.py. 
 5. The current detector reading is *the average energy deposited by a single photon in a pixel*. If you are interested in modeling photon counting or energy resolving detectors, then you may want to take a look at `mass_attenuation(_gpu).py` to implement your detector.
-6. Currently we do not support import of full projection matrices. But you will need to define K, R, and T seperately or use camera.py to define projection geometry online. 
+6. Currently we do not support import of full projection matrices. But you will need to define K, R, and T seperately or use camera.py to define projection geometry online.
 7. It is important to check proper import of CT volumes. We have tried to account for many variations (HU scale offsets, slice order, origin, file extensions) but one can never be sure enough, so please double check for your files.
 
 ### Potential Challenges - Tool Modeling
@@ -117,9 +117,10 @@ The IJCARS paper describes the integration of tool modeling and provides quantit
 
 ## Version 0.1
 
-For the original version of DeepDRR, released alongside our 2018 paper, please see the release for version 0.1.
+For the original DeepDRR, released alongside our 2018 paper, please see the [Version 0.1](https://github.com/arcadelab/deepdrr/releases/tag/0.1).
 
 ## Acknowledgments
+
 CUDA Cubic B-Spline Interpolation (CI) used in the projector:  
 https://github.com/DannyRuijters/CubicInterpolationCUDA  
 D. Ruijters, B. M. ter Haar Romeny, and P. Suetens. Efficient GPU-Based Texture Interpolation using Uniform B-Splines. Journal of Graphics Tools, vol. 13, no. 4, pp. 61-69, 2008.  
