@@ -9,7 +9,7 @@ import numpy as np
 from pathlib import Path 
 
 from . import spectral_data
-from . import mass_attenuation
+###from . import mass_attenuation
 from . import scatter
 from . import analytic_generators
 from .material_coefficients import material_coefficients
@@ -376,7 +376,8 @@ class Projector(object):
         absorbtion_coef_table = np.empty((n_bins, self.num_materials)).astype(np.float32)
         for bin in range(n_bins): #, energy in enumerate(energies):
             for m, mat_name in enumerate(self.volume.materials):
-                absorbtion_coef_table[bin,m] = mass_attenuation.get_absorbtion_coefs(contiguous_energies[bin], mat_name)
+                ###absorbtion_coef_table[bin,m] = mass_attenuation.get_absorbtion_coefs(contiguous_energies[bin], mat_name)
+                absorbtion_coef_table[bin,m] = self._get_absorbtion_coefs(contiguous_energies[bin], mat_name)
         self.absorbtion_coef_table_gpu = cuda.mem_alloc(n_bins * self.num_materials * 4)
         cuda.memcpy_htod(self.absorbtion_coef_table_gpu, absorbtion_coef_table)
         logger.debug(f"bytes alloc'd for self.absorbtion_coef_table_gpu {n_bins * self.num_materials * 4}")
@@ -408,3 +409,20 @@ class Projector(object):
         
     def __call__(self, *args, **kwargs):
         return self.project(*args, **kwargs)
+
+    def _get_absorbtion_coefs(self, x, material):
+        # returns absorbtion coefficient at x in keV
+        xMev = x.copy() / 1000
+        ret = self._log_interp(xMev, material_coefficients[material][:, 0], material_coefficients[material][:, 1])
+        print(f"energy={x:}, mat={material}: coef={ret:1.6f}")
+        return ret
+
+    def _log_interp(self, xInterp, x, y):
+        # xInterp is the single energy value to interpolate an absorbtion coefficient for, 
+        # interpolating from the data from "x" (energy value array from slicing material_coefficients)
+        # and from "y" (absorbtion coefficient array from slicing material_coefficients)
+        xInterp = np.log10(xInterp.copy())
+        x = np.log10(x.copy())
+        y = np.log10(y.copy())
+        yInterp = np.power(10, np.interp(xInterp, x, y)) # np.interp is 1-D linear interpolation
+        return yInterp
