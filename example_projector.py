@@ -25,9 +25,13 @@ def main():
     volume[-1, 0, :] = 1
     volume[-1,-1, :] = 1
     volume[:, 0, 0] = 1
+    volume[:, 0, -1] = 1
     volume[:, -1, 0] = 1
+    volume[:, -1, -1] = 1
     volume[0, :, 0] = 1
+    volume[0, :, -1] = 1
     volume[-1,:, 0] = 1
+    volume[-1, :, -1] = 1
 
     volume[40:60, 40:60, 40:60] = 1
     materials = {}
@@ -83,7 +87,6 @@ def main():
         photon_count=100000,
         add_scatter=False,
         threads=8,
-        centimeters=True,
         neglog=True,
     ) as projector:
         images = projector.project_over_carm_range(
@@ -113,5 +116,5 @@ def main():
 
 
 if __name__ == "__main__":
-    logger.basicConfig(level=logging.INFO)
+    logging.basicConfig(level=logging.INFO)
     main()
