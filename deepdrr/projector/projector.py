@@ -9,7 +9,7 @@ import numpy as np
 from pathlib import Path 
 
 from . import spectral_data
-###from . import mass_attenuation
+from . import mass_attenuation
 from . import scatter
 from . import analytic_generators
 from .material_coefficients import material_coefficients
@@ -358,14 +358,16 @@ class Projector(object):
 
         # allocate and transfer spectrum energies (4 bytes to a float32)
         assert isinstance(self.spectrum, np.ndarray)
-        contiguous_energies = np.ascontiguousarray(self.spectrum[:,0].copy(), dtype=np.float32)
+        noncont_energies = self.spectrum[:,0].copy() / 1000
+        contiguous_energies = np.ascontiguousarray(noncont_energies, dtype=np.float32)
         n_bins = contiguous_energies.shape[0]
         self.energies_gpu = cuda.mem_alloc(n_bins * 4)
         cuda.memcpy_htod(self.energies_gpu, contiguous_energies)
         logger.debug(f"bytes alloc'd for self.energies_gpu: {n_bins * 4}")
 
         # allocate and transfer spectrum pdf (4 bytes to a float32)
-        contiguous_pdf = np.ascontiguousarray(self.spectrum[:,1], dtype=np.float32)
+        noncont_pdf = self.spectrum[:, 1] / np.sum(self.spectrum[:, 1])
+        contiguous_pdf = np.ascontiguousarray(noncont_pdf.copy(), dtype=np.float32)
         assert contiguous_pdf.shape == contiguous_energies.shape
         assert contiguous_pdf.shape[0] == n_bins
         self.pdf_gpu = cuda.mem_alloc(n_bins * 4)
@@ -376,8 +378,8 @@ class Projector(object):
         absorbtion_coef_table = np.empty((n_bins, self.num_materials)).astype(np.float32)
         for bin in range(n_bins): #, energy in enumerate(energies):
             for m, mat_name in enumerate(self.volume.materials):
-                ###absorbtion_coef_table[bin,m] = mass_attenuation.get_absorbtion_coefs(contiguous_energies[bin], mat_name)
-                absorbtion_coef_table[bin,m] = self._get_absorbtion_coefs(contiguous_energies[bin], mat_name)
+                absorbtion_coef_table[bin,m] = mass_attenuation.get_absorbtion_coefs(contiguous_energies[bin], mat_name)
+                ###absorbtion_coef_table[bin,m] = self._get_absorbtion_coefs(contiguous_energies[bin], mat_name)
         self.absorbtion_coef_table_gpu = cuda.mem_alloc(n_bins * self.num_materials * 4)
         cuda.memcpy_htod(self.absorbtion_coef_table_gpu, absorbtion_coef_table)
         logger.debug(f"bytes alloc'd for self.absorbtion_coef_table_gpu {n_bins * self.num_materials * 4}")
@@ -410,11 +412,12 @@ class Projector(object):
     def __call__(self, *args, **kwargs):
         return self.project(*args, **kwargs)
 
+"""
     def _get_absorbtion_coefs(self, x, material):
         # returns absorbtion coefficient at x in keV
         xMev = x.copy() / 1000
         ret = self._log_interp(xMev, material_coefficients[material][:, 0], material_coefficients[material][:, 1])
-        print(f"energy={x:}, mat={material}: coef={ret:1.6f}")
+        print(f"energy={xMev:}, mat={material}: coef={ret:1.6f}")
         return ret
 
     def _log_interp(self, xInterp, x, y):
@@ -426,3 +429,4 @@ class Projector(object):
         y = np.log10(y.copy())
         yInterp = np.power(10, np.interp(xInterp, x, y)) # np.interp is 1-D linear interpolation
         return yInterp
+"""

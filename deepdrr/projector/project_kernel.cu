@@ -275,6 +275,23 @@ extern "C" {
         // zero-out intensity and photon_prob
         intensity[img_dx] = 0;
         photon_prob[img_dx] = 0;
+/*
+        if (img_dx == 0) {
+            for (int bin = 0; bin < n_bins; bin++) {
+                for (int m = 0; m < NUM_MATERIALS; m++) {
+                    printf("energy=%d, mat=%d: coef=%1.6f\n", 
+                        bin, m, absorb_coef_table[bin * NUM_MATERIALS + m]
+                    );
+                }
+            }
+        }
+*/
+
+        if (img_dx == 0) {
+            for (int bin = 0; bin < n_bins; bin++) {
+                printf("energy=%d: pdf=%1.6f\n", bin, pdf[bin]);
+            }
+        }
 
         // MASS ATTENUATION COMPUTATION
         for (int bin = 0; bin < n_bins; bin++) {
