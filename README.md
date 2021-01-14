@@ -73,7 +73,7 @@ DeepDRR has also been applied to simulate X-rays of the femur during insertion o
 
 This capability has not been tested in version 1.0. For tool insertion, we recommend working with [Version 0.1](https://github.com/arcadelab/deepdrr/releases/tag/0.1) for the time being.
 
-![Robot Insertion and Detection](https://raw.githubusercontent.com/arcadelab/deepdrr/master/readme_images/tool_insertion.png)
+![Robot Insertion and Detection](https://raw.githubusercontent.com/arcadelab/deepdrr/master/images/tool_insertion.png)
 
 ### Potential Challenges - General
 
