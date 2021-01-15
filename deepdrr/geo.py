@@ -108,7 +108,7 @@ class HomogeneousObject(ABC):
         """
         pass
 
-    def __array__(self):
+    def __array__(self, dtype=None):
         return self.to_array()
             
     def __str__(self):
