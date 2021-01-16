@@ -67,7 +67,7 @@ class CArm(object):
         phi: float = 0,
         theta: float = 0,
         rho: float = 0,
-        degrees: bool = True,
+        degrees: bool = False,
     ) -> None:
         """Make a CArm device.
 
@@ -77,7 +77,7 @@ class CArm(object):
             phi (float): CRAN/CAUD angle of the C-Arm (along the actual arc of the arm)
             theta (float): Lect/Right angulation of C-arm (rotation at the base)
             rho (Optional[float], optional): rotation about principle axis, after main rotation. Defaults to 0.
-            degrees (bool, optional): Whether given angles are in degrees. Defaults to True.
+            degrees (bool, optional): Whether given angles are in degrees. Defaults to False.
         """
         self.isocenter_distance = isocenter_distance
         self.isocenter = geo.point(0, 0, 0) if isocenter is None else isocenter
@@ -89,7 +89,7 @@ class CArm(object):
         phi: Optional[float] = None,
         theta: Optional[float] = None,
         rho: Optional[float] = None,
-        degrees: bool = True,
+        degrees: bool = False,
     ) -> None:
         """Move the C-arm to the specified pose.
 
@@ -98,7 +98,7 @@ class CArm(object):
             phi (float): CRAN/CAUD angle of the C-Arm (along the actual arc of the arm)
             theta (float): Lect/Right angulation of C-arm (rotation at the base)
             rho (float, optional): rotation about principle axis, after main rotation. Defaults to 0.
-            degrees (bool, optional): Whether given angles are in degrees. Defaults to True.
+            degrees (bool, optional): Whether given angles are in degrees. Defaults to False.
         """
         if isocenter is not None:
             self.isocenter = geo.point(isocenter)
@@ -111,27 +111,44 @@ class CArm(object):
 
     def move_by(
         self,
-        offset: Optional[geo.Vector3D] = None,
+        delta_isocenter: Optional[geo.Vector3D] = None,
         delta_phi: Optional[float] = None,
         delta_theta: Optional[float] = None,
         delta_rho: Optional[float] = None,
-        degrees: bool = True,
+        degrees: bool = False,
+        min_isocenter: Optional[geo.Point3D] = None,
+        max_isocenter: Optional[geo.Point3D] = None,
+        min_phi: Optional[float] = None,
+        max_phi: Optional[float] = None,
+        min_theta: Optional[float] = None,
+        max_theta: Optional[float] = None,
     ) -> None:
         """Move the C-arm by the specified deltas.
 
+        Clips the internal state by the provided values if not None.
+
         Args:
-            offset (Vector3D): offset for the isocenter of the C-arm in world-space. This is the center about which rotations are performed.
+            delta_isocenter (Vector3D): offset for the isocenter of the C-arm in world-space. This is the center about which rotations are performed.
             phi (float): CRAN/CAUD angle of the C-Arm (along the actual arc of the arm)
             theta (float): Lect/Right angulation of C-arm (rotation at the base)
             rho (float, optional): rotation about principle axis, after main rotation. Defaults to 0.
-            degrees (bool, optional): Whether given angles are in degrees. Defaults to True.
+            degrees (bool, optional): Whether given angles are in degrees. Defaults to False.
         """
-        if offset is not None:
-            self.isocenter += geo.vector(offset)
+        if delta_isocenter is not None:
+            self.isocenter += geo.vector(delta_isocenter)
+        if min_isocenter is not None or max_isocenter is not None:
+            self.isocenter = geo.point(np.clip(min_isocenter, max_isocenter, self.isocenter))
+
         if delta_phi is not None:
             self.phi += utils.radians(delta_phi, degrees=degrees)
+        if min_phi is not None or max_phi is not None:
+            self.phi = np.clip(min_phi, max_phi, self.phi)
+
         if delta_theta is not None:
             self.theta += utils.radians(delta_theta, degrees=degrees)
+        if min_theta is not None or max_theta is not None:
+            self.theta = np.clip(min_theta, max_theta, self.theta)
+
         if delta_rho is not None:
             self.rho += utils.radians(delta_rho, degrees=degrees)
 
@@ -145,7 +162,7 @@ class CArm(object):
         phi: float,
         theta: float,
         rho: Optional[float] = 0,
-        degrees: bool = True,
+        degrees: bool = False,
     ) -> geo.FrameTransform:
         """Get the FrameTransform for the C-Arm device at the given pose.
 
@@ -156,7 +173,7 @@ class CArm(object):
             phi (float): CRAN/CAUD angle of the C-Arm (along the actual arc of the arm)
             theta (float): Lect/Right angulation of C-arm (rotation at the base)
             rho (Optional[float], optional): rotation about principle axis, after main rotation. Defaults to 0.
-            degrees (bool, optional): Whether given angles are in degrees. Defaults to True.
+            degrees (bool, optional): Whether given angles are in degrees. Defaults to False.
             offset (Optional[Vector3D], optional): world-space offset to add to the initial C-arm isocenter. Defaults to None.
 
         Returns:
