@@ -125,7 +125,8 @@ class Volume(object):
 
         logger.info(f'loading NiFti volume from {path}')
         img = nib.load(path)
-        assert img.header.get_xyzt_units() == ('mm', 'sec'), 'TODO: NiFti image != (mm, sec)'
+        if img.header.get_xyzt_units() != ('mm', 'sec'):
+            logger.warning(f'got NifTi units: {img.header.get_xyzt_units()}')
 
         anatomical_from_ijk = geo.FrameTransform(img.affine)
         hu_values = img.get_fdata()
