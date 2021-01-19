@@ -110,7 +110,7 @@ class HomogeneousObject(ABC):
 
     def __array__(self, dtype=None):
         return self.to_array()
-            
+    
     def __str__(self):
         return np.array_str(self.data, suppress_small=True)
 
@@ -141,6 +141,13 @@ class HomogeneousPointOrVector(HomogeneousObject):
     def to_array(self) -> np.ndarray:
         """Return non-homogeneous numpy representation of object."""
         return _from_homogeneous(self.data, is_point=bool(self.data[-1]))
+
+    def norm(self, *args, **kwargs):
+        return np.linalg.norm(self, *args, **kwargs)
+
+    def __len__(self) -> float:
+        """Return the L2 norm of the point or vector."""
+        return self.norm()
 
     
 class Point(HomogeneousPointOrVector):
