@@ -23,5 +23,5 @@ setuptools.setup(
         'scipy',
     ],
     include_package_data=True,
-    python_requires='>=3.9',
+    python_requires='>=3.8',
 )

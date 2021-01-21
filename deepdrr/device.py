@@ -10,7 +10,7 @@ from . import utils
 logger = logging.getLogger(__name__)
 
 
-def make_detector_rotation(phi, theta, rho):
+def make_detector_rotation(phi: float, theta: float, rho: float):
     """Make the rotation matrix for a CArm detector at the given angles.
 
     Args:
@@ -103,11 +103,11 @@ class CArm(object):
         if isocenter is not None:
             self.isocenter = geo.point(isocenter)
         if phi is not None:
-            self.phi = utils.radians(phi, degrees=degrees)
+            self.phi = utils.radians(float(phi), degrees=degrees)
         if theta is not None:
-            self.theta = utils.radians(theta, degrees=degrees)
+            self.theta = utils.radians(float(theta), degrees=degrees)
         if rho is not None:
-            self.rho = utils.radians(rho, degrees=degrees)
+            self.rho = utils.radians(float(rho), degrees=degrees)
 
     def move_by(
         self,
@@ -140,17 +140,17 @@ class CArm(object):
             self.isocenter = geo.point(np.clip(min_isocenter, max_isocenter, self.isocenter))
 
         if delta_phi is not None:
-            self.phi += utils.radians(delta_phi, degrees=degrees)
+            self.phi += utils.radians(float(delta_phi), degrees=degrees)
         if min_phi is not None or max_phi is not None:
             self.phi = np.clip(min_phi, max_phi, self.phi)
 
         if delta_theta is not None:
-            self.theta += utils.radians(delta_theta, degrees=degrees)
+            self.theta += utils.radians(float(delta_theta), degrees=degrees)
         if min_theta is not None or max_theta is not None:
             self.theta = np.clip(min_theta, max_theta, self.theta)
 
         if delta_rho is not None:
-            self.rho += utils.radians(delta_rho, degrees=degrees)
+            self.rho += utils.radians(float(delta_rho), degrees=degrees)
 
     @property
     def camera3d_from_world(self) -> geo.FrameTransform:
