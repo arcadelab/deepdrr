@@ -96,9 +96,6 @@ def main():
     dt = time() - t
     logger.info(f"projected {images.shape[0]} views in {dt:.03f}s")
 
-    # apply neglog transforms if desired:
-    # images = utils.neglog(images)
-
     # get the thetas an phis for file names
     phis, thetas = utils.generate_uniform_angles(
         (min_phi, max_phi, spacing_phi),
