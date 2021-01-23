@@ -137,17 +137,20 @@ class CArm(object):
         if delta_isocenter is not None:
             self.isocenter += geo.vector(delta_isocenter)
         if min_isocenter is not None or max_isocenter is not None:
-            self.isocenter = geo.point(np.clip(min_isocenter, max_isocenter, self.isocenter))
+            # TODO: check min_isocenter < max_isocenter
+            self.isocenter = geo.point(np.clip(self.isocenter, min_isocenter, max_isocenter))
 
         if delta_phi is not None:
+            assert np.isscalar(delta_phi)
             self.phi += utils.radians(float(delta_phi), degrees=degrees)
         if min_phi is not None or max_phi is not None:
-            self.phi = np.clip(min_phi, max_phi, self.phi)
+            self.phi = np.clip(self.phi, min_phi, max_phi)
 
         if delta_theta is not None:
+            assert np.isscalar(delta_theta)
             self.theta += utils.radians(float(delta_theta), degrees=degrees)
         if min_theta is not None or max_theta is not None:
-            self.theta = np.clip(min_theta, max_theta, self.theta)
+            self.theta = np.clip(self.theta, min_theta, max_theta)
 
         if delta_rho is not None:
             self.rho += utils.radians(float(delta_rho), degrees=degrees)
