@@ -2,12 +2,14 @@
 # TODO: cite the papers that form the basis of this code
 #
 
-from typing import Optional
+from typing import Tuple, Optional
 
 import logging
 import numpy as np
-from . import spectral_data
-from .. import geo
+import spectral_data
+from deepdrr import geo
+
+import math
 
 
 logger = logging.getLogger(__name__)
@@ -16,9 +18,10 @@ logger = logging.getLogger(__name__)
 def simulate_scatter_no_vr(
     volume: np.ndarray,
     source: geo.Point3D,
+    output_shape: Tuple[int, int],
     spectrum: Optional[np.ndarray] = spectral_data.spectrums['90KV_AL40'], 
     photon_count: Optional[int] = 10000000, # 10^7
-    Eabs: Optional[float] = 1000
+    E_abs: Optional[np.float32] = 1000 # TODO: check that the spectrum data uses keV as its units -- ask Benjamin about the spectral data source
 ) -> np.ndarray:
     """Produce a grayscale (intensity-based) image representing the photon scatter during an X-Ray, 
     without using VR (variance reduction) techniques.
@@ -28,17 +31,37 @@ def simulate_scatter_no_vr(
         source (Point3D): the source point for rays in the camera's IJK space
         spectrum (Optional[np.ndarray], optional): spectrum array.  Defaults to 90KV_AL40 spectrum.
         photon_count (Optional[int], optional): the number of photons simulated.  Defaults to 10^7 photons.
-        Eabs (Optional[float], optional): the energy (in keV) at or below which photons are assumed to be absorbed by the materials.  Defaults to 1000 (keV).
+        E_abs (Optional[np.float32], optional): the energy (in keV) at or below which photons are assumed to be absorbed by the materials.  Defaults to 1000 (keV).
+        output_shape (Tuple[int, int]): the {height}x{width} dimensions of the output image
 
     Returns:
         np.ndarray: intensity image of the photon scatter
     """
+    count_milestones = [int(math.pow(10, i)) for i in range(int(1 + math.ceil(math.log10(photon_count))))] # [1, 10, 100, ..., 10^7] in case of default
+
+    accumulator = np.zeros(output_shape).astype(np.float32)
+
+    N_vals = None
+    sigma_C_vals = None
+    sigma_R_vals = None
+
+    for i in range(photon_count):
+        if (i+1) in count_milestones:
+            print(f"Simulating photon history {i+1} / {photon_count}")
+        BLAH = 0
+        initial_dir = BLAH # Random sampling is a TODO
+        initial_E = BLAH # uses spectrum -- is a TODO
+        single_scatter = track_single_photon_no_vr(source, initial_dir, initial_E, E_abs, N_vals, sigma_C_vals, sigma_R_vals)
+        accumulator = accumulator + single_scatter
+    
+    print(f"Finished simulating {photon_count} photon histories")
     return NotImplemented
 
 def track_single_photon_no_vr(
     initial_pos: geo.Point3D,
     initial_dir: geo.Vector3D,
     initial_E: np.float32,
+    E_abs: np.float32,
     N_vals: np.ndarray,
     sigma_C_vals: np.ndarray,
     sigma_R_vals: np.ndarray
@@ -50,6 +73,7 @@ def track_single_photon_no_vr(
         initial_pos (geo.Point3D): the initial position of the photon, which is the X-Ray source
         initial_dir (geo.Vector3D): the initial direction of travel of the photon
         initital_E (np.float32): the initial energy of the photon
+        E_abs (np.float32): the energy (in keV) at or below which photons are assumed to be absorbed by the materials.  Defaults to 1000 (keV).
         N_vals (np.ndarray): a field over the volume of 'N', the number of molecules per unit volume.  Each cell in N_vals contains the information for the corresponding voxel.
         sigma_C_vals (np.ndarray): a field over the volume of 'sigma_C', the interactional cross-section for Compton scatter.  Each cell in sigma_C_vals contains the information for the corresponding voxel.
         sigma_R_vals (np.ndarray): a field over the volume of 'sigma_R', the interactional cross-section for Rayleigh scatter.  Each cell in sigma_R_vals contains the information for the corresponding voxel.
@@ -57,6 +81,48 @@ def track_single_photon_no_vr(
     Returns:
         np.ndarray: intensity image of the photon scatter
     """
+    BLAH = 0
+    # find the point on the boundary of the volume that the photon from the source first reaches
+    pos = BLAH
+    dir = initial_dir
+
+    photon_energy = initial_E # tracker variable throughout the duration of the photon history
+
+    while True: # emulate a do-while loop
+        # simulate moving the photon
+        sigma_T = BLAH # function of photon_energy
+        lambda_T = BLAH # function of N_vals[pos] and sigma_T[pos]
+        s = -1 * lambda_T * np.log(sample_U01())
+        
+        pos = pos + (s * dir)
+
+        # Handle crossings of segementation boundary
+        BLAH = 0
+
+        will_exit_volume = BLAH
+        if will_exit_volume:
+            break
+
+        # simulate the photon interaction
+        prob_of_Compton = BLAH 
+        theta, W = None, None
+        if sample_U01() < prob_of_Compton:
+            theta, W = sample_Compton_theta_E_prime(None, None)
+        else:
+            theta, W = sample_Rayleigh_theta(None, None)
+        
+        photon_energy = photon_energy - W
+        if photon_energy <= E_abs:
+            break
+        
+        phi = 2 * np.pi * sample_U01()
+        dir = get_scattered_dir(dir, theta, phi)
+
+        # END WHILE
+    
+    # final processing
+    BLAH = BLAH
+
     return NotImplemented
 
 def get_scattered_dir(
@@ -80,25 +146,36 @@ def sample_U01() -> np.float32:
     """Returns a value uniformly sampled from the interval [0,1]"""
     return NotImplemented
 
-def sample_Rayleigh_theta_W(
+def sample_initial_energy(spectrum: np.ndarray) -> np.float32:
+    """Determine the energy (in keV) of a photon emitted by an X-Ray source with the given spectrum
+
+    Args:
+        spectrum (np.ndarray): the data associated with the spectrum.  Cross-reference spectral_data.py
+    
+    Returns:
+        np.float32: the energy of a photon, in keV
+    """
+    return NotImplemented
+
+def sample_Rayleigh_theta(
     N_val: np.float32, 
     sigma_val: np.float32 # TODO: are these parameters actually the relevant ones?
 ) -> np.float32:
     """Randomly sample values of theta and W for a given Rayleigh scatter interaction
+    Based on page 49 of paper 'PENELOPE-2006: A Code System for Monte Carlo Simulation of Electron and Photon Transport'
 
     Args:
         N_val: the number of molecules per unit volume at the location of the photon interaction
         sigma_val: the interactional cross-sectional area at the location of the photon interation
 
     Returns:
-        np.float32: theta, the polar scattering angle 
-        np.float32: W, the energy loss (will always be zero)
+        np.float32: cos(theta), where theta is the polar scattering angle 
     """
+    # Sample a random value of x^2 from the distribution pi(x^2), restricted to the interval (0, x_max^2)
     theta = NotImplemented
-    W = 0 # by definition of Rayleigh scatter, E_incident = E_outgoing
-    return theta, W
+    return theta
 
-def sample_Compton_theta_W(
+def sample_Compton_theta_E_prime(
     N_val: np.float32, 
     sigma_val: np.float32 # TODO: are these parameters actually the relevant ones?
 ) -> np.float32:
@@ -110,7 +187,7 @@ def sample_Compton_theta_W(
 
     Returns:
         np.float32: theta, the polar scattering angle 
-        np.float32: W, the energy loss (will always be zero)
+        np.float32: E_prime, the energy of the outgoing photon
     """
     theta = NotImplemented
     W = NotImplemented
