@@ -115,7 +115,7 @@ class Projector(object):
     def _project(
         self,
         camera_projection: geo.CameraProjection,
-    ) -> (np.ndarray, np.ndarray):
+    ) -> Tuple[np.ndarray, Union[np.ndarray, None]]:
         """Perform the projection over just one image.
 
         Args:
@@ -165,11 +165,11 @@ class Projector(object):
             camera_center_in_volume[2],                        # sz
             self.rt_kinv_gpu,                       # RT_Kinv
             self.intensity_gpu,                     # intensity
-            self.photon_prob_gpu,                   # photon_prob
+            self.photon_prob_gpu,                   # photon_prob (or NULL)
             np.int32(self.spectrum.shape[0]),       # n_bins
             self.energies_gpu,                      # energies
             self.pdf_gpu,                           # pdf
-            self.absorbtion_coef_table_gpu          # absorb_coef_table
+            self.absorption_coef_table_gpu,          # absorb_coef_table
         ]
 
         # Calculate required blocks
@@ -193,12 +193,15 @@ class Projector(object):
 
         intensity = np.empty(self.output_shape, dtype=np.float32)
         cuda.memcpy_dtoh(intensity, self.intensity_gpu)
-        photon_prob = np.empty(self.output_shape, dtype=np.float32)
-        cuda.memcpy_dtoh(photon_prob, self.photon_prob_gpu)
-
         # transpose the axes, which previously have width on the slow dimension
         intensity = np.swapaxes(intensity, 0, 1).copy()
-        photon_prob = np.swapaxes(photon_prob, 0, 1).copy()
+
+        if self.compute_photon_prob:
+            photon_prob = np.empty(self.output_shape, dtype=np.float32)
+            cuda.memcpy_dtoh(photon_prob, self.photon_prob_gpu)
+            photon_prob = np.swapaxes(photon_prob, 0, 1).copy()
+        else:
+            photon_prob = None
         #
         # TODO: ask about this np.swapaxes(...) call.  It's not clear to me why it's necessary or desirable, given that
         #   we were working off of self.output_shape, which basically goes off of self.sensor_shape
@@ -229,18 +232,16 @@ class Projector(object):
         
         logger.info("Initiating projection and attenuation")
 
-        intensities_arr = []
-        photon_probs_arr = []
-
+        intensities = []
+        photon_probs = []
         for i, proj in enumerate(camera_projections):
-            logger.info(f"Projecting and attenuating camera position {i+1} / {camera_projections.__len__()}")
+            logger.info(f"Projecting and attenuating camera position {i+1} / {len(camera_projections)}")
             intensity, photon_prob = self._project(proj)
-            intensities_arr.append(intensity)
-            photon_probs_arr.append(photon_prob)
+            intensities.append(intensity)
+            photon_probs.append(photon_prob)
 
-        images = np.stack(intensities_arr)
-        photon_prob = np.stack(photon_probs_arr)
-
+        images = np.stack(intensities)
+        photon_prob = np.stack(photon_probs)
         logger.info("Completed projection and attenuation")
 
         if self.add_scatter:
@@ -305,6 +306,10 @@ class Projector(object):
     def output_size(self):
         return self.sensor_size[0] * self.sensor_size[1]
 
+    @property
+    def compute_photon_prob(self):
+        return self.add_scatter or self.add_noise
+
     def _get_spectrum(self, spectrum):
         if isinstance(spectrum, np.ndarray):
             return spectrum
@@ -353,8 +358,11 @@ class Projector(object):
         logger.debug(f"bytes alloc'd for self.intensity_gpu: {self.output_size * 4}")
 
         # allocate photon_prob array on GPU (4 bytes to a float32)
-        self.photon_prob_gpu = cuda.mem_alloc(self.output_size * 4)
-        logger.debug(f"bytes alloc'd for self.photon_prob_gpu: {self.output_size * 4}")
+        if self.compute_photon_prob:
+            self.photon_prob_gpu = cuda.mem_alloc(self.output_size * 4)
+            logger.debug(f"bytes alloc'd for self.photon_prob_gpu: {self.output_size * 4}")
+        else:
+            self.photon_prob_gpu = None
 
         # allocate and transfer spectrum energies (4 bytes to a float32)
         assert isinstance(self.spectrum, np.ndarray)
@@ -375,13 +383,13 @@ class Projector(object):
         logger.debug(f"bytes alloc'd for self.pdf_gpu {n_bins * 4}")
 
         # precompute, allocate, and transfer the get_absorption_coef(energy, material) table (4 bytes to a float32)
-        absorbtion_coef_table = np.empty(n_bins * self.num_materials).astype(np.float32)
+        absorption_coef_table = np.empty(n_bins * self.num_materials).astype(np.float32)
         for bin in range(n_bins): #, energy in enumerate(energies):
             for m, mat_name in enumerate(self.volume.materials):
-                absorbtion_coef_table[bin * self.num_materials + m] = mass_attenuation.get_absorbtion_coefs(contiguous_energies[bin], mat_name)
-        self.absorbtion_coef_table_gpu = cuda.mem_alloc(n_bins * self.num_materials * 4)
-        cuda.memcpy_htod(self.absorbtion_coef_table_gpu, absorbtion_coef_table)
-        logger.debug(f"bytes alloc'd for self.absorbtion_coef_table_gpu {n_bins * self.num_materials * 4}")
+                absorption_coef_table[bin * self.num_materials + m] = mass_attenuation.get_absorption_coefs(contiguous_energies[bin], mat_name)
+        self.absorption_coef_table_gpu = cuda.mem_alloc(n_bins * self.num_materials * 4)
+        cuda.memcpy_htod(self.absorption_coef_table_gpu, absorption_coef_table)
+        logger.debug(f"size alloc'd for self.absorption_coef_table_gpu: {n_bins * self.num_materials * 4}")
 
         # Mark self as initialized.
         self.initialized = True
@@ -395,10 +403,11 @@ class Projector(object):
 
             self.rt_kinv_gpu.free()
             self.intensity_gpu.free()
-            self.photon_prob_gpu.free()
+            if self.photon_prob_gpu is not None:
+                self.photon_prob_gpu.free()
             self.energies_gpu.free()
             self.pdf_gpu.free()
-            self.absorbtion_coef_table_gpu.free()
+            self.absorption_coef_table_gpu.free()
         self.initialized = False
 
     def __enter__(self):
@@ -412,17 +421,17 @@ class Projector(object):
         return self.project(*args, **kwargs)
 
 """
-    def _get_absorbtion_coefs(self, x, material):
-        # returns absorbtion coefficient at x in keV
+    def _get_absorption_coefs(self, x, material):
+        # returns absorption coefficient at x in keV
         xMev = x.copy() / 1000
         ret = self._log_interp(xMev, material_coefficients[material][:, 0], material_coefficients[material][:, 1])
         print(f"energy={xMev:}, mat={material}: coef={ret:1.6f}")
         return ret
 
     def _log_interp(self, xInterp, x, y):
-        # xInterp is the single energy value to interpolate an absorbtion coefficient for, 
+        # xInterp is the single energy value to interpolate an absorption coefficient for, 
         # interpolating from the data from "x" (energy value array from slicing material_coefficients)
-        # and from "y" (absorbtion coefficient array from slicing material_coefficients)
+        # and from "y" (absorption coefficient array from slicing material_coefficients)
         xInterp = np.log10(xInterp.copy())
         x = np.log10(x.copy())
         y = np.log10(y.copy())

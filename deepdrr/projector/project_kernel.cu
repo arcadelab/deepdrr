@@ -227,7 +227,7 @@ extern "C" {
         float *energies, // 1-D array -- size is the n_bins
         float *pdf, // 1-D array -- probability density function over the energies
         float *absorb_coef_table, // flat [n_bins x NUM_MATERIALS] table that represents
-                        // the precomputed get_absorbtion_coef values.
+                        // the precomputed get_absorption_coef values.
                         // index into the table as: table[bin * NUM_MATERIALS + mat]
         int offsetW,
         int offsetH)
@@ -393,11 +393,11 @@ extern "C" {
         // forward_projections dictionary-ization is implicit.
 
         // flat index to pixel in *intensity and *photon_prob
-        int img_dx = (udx * out_height) + vdx; 
+        int img_dx = (udx * out_height) + vdx;
 
         // zero-out intensity and photon_prob
         intensity[img_dx] = 0;
-        photon_prob[img_dx] = 0;
+        if (photon_prob != NULL) photon_prob[img_dx] = 0;
 
         // MASS ATTENUATION COMPUTATION
         for (int bin = 0; bin < n_bins; bin++) {
@@ -413,7 +413,8 @@ extern "C" {
             // done with the "lifted" call to calculate_attenuation_gpu(...)
 
             intensity[img_dx] += intensity_tmp;
-            photon_prob[img_dx] += intensity_tmp * (1.0 / energy);
+            if (photon_prob != NULL)
+                photon_prob[img_dx] += intensity_tmp * (1.0 / energy);
         }
 
         return;
