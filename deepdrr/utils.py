@@ -155,4 +155,4 @@ def neglog(image, I_0=1):
         return image
         
     min_nonzero_value = image[image > 0].min()
-    return np.where(image == 0, min_nonzero_value, -np.log(image / I_0))
+    return np.where(image <= 0, min_nonzero_value, -np.log(image / I_0))
