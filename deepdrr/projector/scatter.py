@@ -8,6 +8,8 @@ import logging
 import numpy as np
 import spectral_data
 from deepdrr import geo
+from deepdrr import vol
+from rayleigh_form_factor_data import build_form_factor_func
 
 import math
 
@@ -16,7 +18,7 @@ logger = logging.getLogger(__name__)
 
 
 def simulate_scatter_no_vr(
-    volume: np.ndarray,
+    volume: vol.Volume,
     source: geo.Point3D,
     output_shape: Tuple[int, int],
     spectrum: Optional[np.ndarray] = spectral_data.spectrums['90KV_AL40'], 
@@ -44,6 +46,10 @@ def simulate_scatter_no_vr(
     N_vals = None
     sigma_C_vals = None
     sigma_R_vals = None
+
+    form_factor_funcs = {}
+    for mat in volume.materials:
+        form_factor_funcs[mat] = build_form_factor_func(mat)
 
     for i in range(photon_count):
         if (i+1) in count_milestones:
@@ -158,22 +164,21 @@ def sample_initial_energy(spectrum: np.ndarray) -> np.float32:
     return NotImplemented
 
 def sample_Rayleigh_theta(
-    N_val: np.float32, 
-    sigma_val: np.float32 # TODO: are these parameters actually the relevant ones?
+    mat: str
 ) -> np.float32:
     """Randomly sample values of theta and W for a given Rayleigh scatter interaction
     Based on page 49 of paper 'PENELOPE-2006: A Code System for Monte Carlo Simulation of Electron and Photon Transport'
 
     Args:
-        N_val: the number of molecules per unit volume at the location of the photon interaction
-        sigma_val: the interactional cross-sectional area at the location of the photon interation
+        mat (str): a string specifying the material at that position in the volume
 
     Returns:
         np.float32: cos(theta), where theta is the polar scattering angle 
     """
     # Sample a random value of x^2 from the distribution pi(x^2), restricted to the interval (0, x_max^2)
-    theta = NotImplemented
-    return theta
+
+    cos_theta = NotImplemented
+    return cos_theta
 
 def sample_Compton_theta_E_prime(
     N_val: np.float32, 

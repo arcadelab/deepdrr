@@ -37,11 +37,11 @@ def make_rita_params(
     # Initial grid setup
     delta_x = (x_max - x_min) / (NUM_INITIAL_GRID_POINTS - 1) # the initial size of the intervals
     x_arr = [(x_min + (k * delta_x)) for k in range(NUM_INITIAL_GRID_POINTS)]
-    y_arr = [cdf_func(x_arr[i]) for i in range(len(x_arr))]
-    pdf_arr = [pdf_func(x_arr[i]) for i in range(len(x_arr))] # not actually something that's returned. Just useful to store these values
+    y_arr = [cdf_func(x_arr[i]) for i in range(NUM_INITIAL_GRID_POINTS)]
+    pdf_arr = [pdf_func(x_arr[i]) for i in range(NUM_INITIAL_GRID_POINTS)] # not actually something that's returned. Just useful to store these values
     a_arr = []
     b_arr = []
-    for i in range(len(x_arr) - 1):
+    for i in range(NUM_INITIAL_GRID_POINTS - 1):
         a, b = _rita_calc_ab_for_idx(x_arr, y_arr, pdf_arr, i)
         a_arr.append(a)
         b_arr.append(b)
@@ -54,7 +54,7 @@ def make_rita_params(
     assert len(b_arr) == len(a_arr)
 
     errors = []
-    for i in range(len(x_arr) - 1):
+    for i in range(NUM_INITIAL_GRID_POINTS - 1):
         epsilon = _rita_calc_interp_error(x_arr, y_arr, a_arr, b_arr, pdf_func, i) # TODO: implement this -- it's a numerically evaluated integral
         errors.append(epsilon)
     errors.append(0)
@@ -124,8 +124,10 @@ def _rita_calc_interp_error(
     x_i = a_arr[idx]
     a_i = a_arr[idx]
     b_i = b_arr[idx]
+
+    interval = x_arr[idx + 1] - x_i # the length of the interval
     def calc_nu(x):
-        tau = (x - x_i) / (x_arr[idx + 1] - x_i)
+        tau = (x - x_i) / interval
         big_term = 1 + a_i + b_i - (a_i * tau)
         inside_sqrt_term = (4 * b_i * tau * tau) / (big_term * big_term)
         right_factor = 1 - np.sqrt(1 - inside_sqrt_term)
@@ -136,11 +138,18 @@ def _rita_calc_interp_error(
         b_nu2 = b_i * nu * nu
         partial_numer = 1 + (a_i * nu) + b_nu2
         numerator = (partial_numer * partial_numer) * (y_arr[idx + 1] - y_arr[idx])
-        denominator = (1 + a_i + b_i) * (1 - b_nu2) * (x_arr[idx + 1] - x_i)
+        denominator = (1 + a_i + b_i) * (1 - b_nu2) * interval
         return numerator / denominator
+    
+    def integrand(x):
+        return np.absolute(pdf_func(x) - p_tilde(x))
 
-    # TODO: decide on a numerical integration methodology
-    return NotImplemented
+    # Using extended Simpson's rule with 51 points
+    h = interval / 50
+    odd_sum = sum([integrand(x_i + k * h) for k in range(1, 50, 2)]) # 1, 3, ..., 49
+    even_sum = sum([integrand(x_i + k * h) for k in range(2, 49, 2)]) # 2, 4, ..., 48
+    # error_term = (h * h * h * h * h) * fourth_derivative(x_star) * 25 / 90 # TODO: figure out how to handle this
+    return (h / 3) * (integrand(x_i) + (4 * odd_sum) + (2 * even_sum) + integrand(x_i + interval)) # - error_term
 
 def _rita_add_gridpoint(
     x_arr,
@@ -197,7 +206,6 @@ def _rita_add_gridpoint(
 
     # Replace the interpolation error for the lower of the two new intervals
     eps_arr[max_idx] = _rita_calc_interp_error(x_arr, y_arr, a_arr, b_arr, pdf_func, max_idx)
-    return
 
 def sample_rita(
     x_arr: np.ndarray,
