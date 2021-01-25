@@ -2,7 +2,7 @@
 # TODO: cite the papers that form the basis of this code
 #
 
-from typing import Tuple, Optional
+from typing import Tuple, Optional, Dict, Callable
 
 import logging
 import numpy as np
@@ -10,11 +10,21 @@ import spectral_data
 from deepdrr import geo
 from deepdrr import vol
 from rayleigh_form_factor_data import build_form_factor_func
+from rita import RITA
 
 import math
 
 
 logger = logging.getLogger(__name__)
+
+
+#
+# USEFUL CONSTANTS
+#
+
+LIGHT_C = 2.99792458e08 # m/s
+ELECTRON_MASS = 9.1093826e-31 # kg
+ELECTRON_REST_ENERGY = 510998.918 # eV
 
 
 def simulate_scatter_no_vr(
@@ -39,7 +49,7 @@ def simulate_scatter_no_vr(
     Returns:
         np.ndarray: intensity image of the photon scatter
     """
-    count_milestones = [int(math.pow(10, i)) for i in range(int(1 + math.ceil(math.log10(photon_count))))] # [1, 10, 100, ..., 10^7] in case of default
+    count_milestones = [int(math.pow(10, i)) for i in range(int(1 + math.ceil(math.log10(photon_count))))] # [1, 10, 100, ..., 10^7] in default case
 
     accumulator = np.zeros(output_shape).astype(np.float32)
 
@@ -47,16 +57,21 @@ def simulate_scatter_no_vr(
     sigma_C_vals = None
     sigma_R_vals = None
 
-    form_factor_funcs = {}
-    for mat in volume.materials:
-        form_factor_funcs[mat] = build_form_factor_func(mat)
+    rayleigh_samplers = {}
+    for mat in volume.segmentation:
+        pdf_func = build_form_factor_func(mat)
+        maximum_spectrum_energy = spectrum[0,-1] # TODO: convert to eV
+        maximum_kappa = maximum_spectrum_energy / ELECTRON_REST_ENERGY
+        x_max = 20.6074 * 2 * maximum_kappa
+        x_max2 = x_max * x_max
+        rayleigh_samplers[mat] = RITA.from_pdf(0, x_max2, pdf_func) # uses default of 128 grid-points
 
     for i in range(photon_count):
         if (i+1) in count_milestones:
             print(f"Simulating photon history {i+1} / {photon_count}")
         BLAH = 0
         initial_dir = BLAH # Random sampling is a TODO
-        initial_E = BLAH # uses spectrum -- is a TODO
+        initial_E = sample_initial_energy(spectrum)
         single_scatter = track_single_photon_no_vr(source, initial_dir, initial_E, E_abs, N_vals, sigma_C_vals, sigma_R_vals)
         accumulator = accumulator + single_scatter
     
@@ -164,20 +179,40 @@ def sample_initial_energy(spectrum: np.ndarray) -> np.float32:
     return NotImplemented
 
 def sample_Rayleigh_theta(
-    mat: str
+    mat: str,
+    photon_energy: np.float32,
+    rayleigh_samplers: Dict[str, RITA]
 ) -> np.float32:
     """Randomly sample values of theta and W for a given Rayleigh scatter interaction
     Based on page 49 of paper 'PENELOPE-2006: A Code System for Monte Carlo Simulation of Electron and Photon Transport'
 
     Args:
         mat (str): a string specifying the material at that position in the volume
+        photon_energy (np.float32): the energy of the incoming photon
 
     Returns:
         np.float32: cos(theta), where theta is the polar scattering angle 
     """
-    # Sample a random value of x^2 from the distribution pi(x^2), restricted to the interval (0, x_max^2)
+    kappa = photon_energy / ELECTRON_REST_ENERGY
+    # Sample a random value of x^2 from the distribution pi(x^2), restricted to the interval (0, x_{max}^2)
+    x_max = 20.6074 * 2 * kappa
+    x_max2 = x_max * x_max
+    sampler = rayleigh_samplers[mat]
+    x2 = sampler.sample_rita()
+    while (x2 > x_max2):
+        # Resample until x^2 is in the interval (0, x_{max}^2)
+        x2 = sampler.sample_rita()
 
-    cos_theta = NotImplemented
+    while True:
+        # Set cos_theta
+        cos_theta = 1 - (2 * x2 / x_max2)
+
+        # Test cost_theta
+        g = (1 + cos_theta * cos_theta) / 2
+
+        if sample_U01() <= g:
+            break
+
     return cos_theta
 
 def sample_Compton_theta_E_prime(
