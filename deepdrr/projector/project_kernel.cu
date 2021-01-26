@@ -387,7 +387,11 @@ extern "C" {
 
         /* Up to this point, we have accomplished the original projectKernel functionality.
          * The next steps to do are combining the forward_projections dictionary-ization and 
-         * the mass_attenuation computation
+         * the mass_attenuation computation.
+         * 
+         * output[m] contains, for material 'm', the length (in centimeters) of the ray's path that passes 
+         * through material 'm', multiplied by the density of the material (in g / cm^3).  Accordingly, the
+         * units of output[m] are (g / cm^2).
          */
 
         // forward_projections dictionary-ization is implicit.
@@ -400,6 +404,38 @@ extern "C" {
         photon_prob[img_dx] = 0;
 
         // MASS ATTENUATION COMPUTATION
+
+        /**
+         * EXPLANATION OF THE PHYSICS/MATHEMATICS
+         * 
+         *      The mass attenuation coefficient (found in absorb_coef_table) is: \mu / \rho, where
+         * \mu is the linear attenuation coefficient, and \rho is the mass density.  \mu has units of
+         * inverse length, and \rho has units of mass/volume, so the mass attenuation coefficient has
+         * units of [cm^2 / g]
+         *      output[m] is the product of [linear distance of the ray through material 'm'] and 
+         * [density of the material].  Accordingly, output[m] has units of [g / cm^2].
+         *
+         * The mass attenuation code uses the Beer-Lambert law:
+         *
+         *      I = I_{0} exp[-(\mu / \rho) * \rho * d]
+         *
+         * where I_{0} is the initial intensity, (\mu / \rho) is the mass attenuation coefficient, 
+         * \rho is the density, and d is the length of the ray passing through the material.  Note 
+         * that the product (\rho * d), also known as the 'area density' is the quantity output[m].
+         *      Because we are attenuating multiple materials, the exponent that we use for the 
+         * Beer-Lambert law is the sum of the (\mu_{mat} / \rho_{mat}) * (\rho_{mat} * d_{mat}) for
+         * each material 'mat'.
+         *
+         *      The above explains the calculation up to and including 
+         *              'intensity_tmp = expf(intensity_tmp)',
+         * but does not yet explain the remaining calculation.  The remaining calculation serves to 
+         * approximate the workings of a pixel in the dectector:
+         *      
+         *      pixelReading = \sum_{E} attenuatedBeamStrength[E] * E * p(E)
+         *
+         * where attenuatedBeamStrength follows the Beer-Lambert law as above, E is the energies of
+         * the spectrum, and p(E) is the PDF of the spectrum.
+         */
         for (int bin = 0; bin < n_bins; bin++) {
             float energy = energies[bin];
             float p = pdf[bin];

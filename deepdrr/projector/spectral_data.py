@@ -2,6 +2,8 @@ import numpy as np
 
 #spectral data taken from McGPU spectra files (Badal A, Badano A. Accelerating Monte Carlo simulations of photon transport in a voxelized geometry using a massively parallel graphics processing unit. Med Phys. 2009 Nov;36(11):4878–80. )
 
+# UNITS: Energy [eV], Photons per (mA * s * mm^2) (at 750 mm)
+
 SPECTRUM60KV_AL35 = np.array([[ 15.0e3,3.69755e1],
 [ 15.5e3,7.60284e1],
 [ 16.0e3,1.44202e2],

@@ -9,7 +9,16 @@ from .material_coefficients import material_coefficients
 logger = logging.getLogger(__name__)
 
 
-def get_absorbtion_coefs(x, material):
+def get_absorbtion_coefs(x, material: str):
+    """Returns the absorbtion coefficient for the specified material at the specified energy level (in keV)
+    
+    Args:
+        x: energy level of photon/ray (keV)
+        material (str): the material
+
+    Returns:
+        the absorbtion coefficient (in [cm^2 / g]), interpolated from the data in material_coefficients.py
+    """
     # returns absorbtion coefficient at x in keV
     xMev = x.copy() / 1000
     return log_interp(xMev, material_coefficients[material][:, 0], material_coefficients[material][:, 1])

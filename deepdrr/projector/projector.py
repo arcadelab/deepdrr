@@ -82,7 +82,7 @@ class Projector(object):
         """
                     
         # set variables
-        self.volume = volume
+        self.volume = volume # spacing units defaults to mm
         self.camera_intrinsics = camera_intrinsics
         self.carm = carm
         self.step = step
@@ -141,7 +141,7 @@ class Projector(object):
         ijk_from_index = np.array(ijk_from_index).astype(np.float32)
 
         # spacing
-        spacing = self.volume.spacing
+        spacing = self.volume.spacing # units: [mm]
 
         # copy the projection matrix to CUDA (output array initialized to zero by the kernel)
         cuda.memcpy_htod(self.rt_kinv_gpu, ijk_from_index)
@@ -299,11 +299,11 @@ class Projector(object):
 
     @property
     def output_shape(self):
-        return (self.sensor_size[0], self.sensor_size[1])
+        return (self.sensor_size[0], self.sensor_size[1]) # pixel counts
     
     @property
     def output_size(self):
-        return self.sensor_size[0] * self.sensor_size[1]
+        return self.sensor_size[0] * self.sensor_size[1] # pixel counts
 
     def _get_spectrum(self, spectrum):
         if isinstance(spectrum, np.ndarray):
@@ -358,7 +358,7 @@ class Projector(object):
 
         # allocate and transfer spectrum energies (4 bytes to a float32)
         assert isinstance(self.spectrum, np.ndarray)
-        noncont_energies = self.spectrum[:,0].copy() / 1000
+        noncont_energies = self.spectrum[:,0].copy() / 1000 # units: keV
         contiguous_energies = np.ascontiguousarray(noncont_energies, dtype=np.float32)
         n_bins = contiguous_energies.shape[0]
         self.energies_gpu = cuda.mem_alloc(n_bins * 4)
@@ -375,7 +375,7 @@ class Projector(object):
         logger.debug(f"bytes alloc'd for self.pdf_gpu {n_bins * 4}")
 
         # precompute, allocate, and transfer the get_absorption_coef(energy, material) table (4 bytes to a float32)
-        absorbtion_coef_table = np.empty(n_bins * self.num_materials).astype(np.float32)
+        absorbtion_coef_table = np.empty(n_bins * self.num_materials).astype(np.float32) # units: [cm^2 / g]
         for bin in range(n_bins): #, energy in enumerate(energies):
             for m, mat_name in enumerate(self.volume.materials):
                 absorbtion_coef_table[bin * self.num_materials + m] = mass_attenuation.get_absorbtion_coefs(contiguous_energies[bin], mat_name)
@@ -410,22 +410,3 @@ class Projector(object):
         
     def __call__(self, *args, **kwargs):
         return self.project(*args, **kwargs)
-
-"""
-    def _get_absorbtion_coefs(self, x, material):
-        # returns absorbtion coefficient at x in keV
-        xMev = x.copy() / 1000
-        ret = self._log_interp(xMev, material_coefficients[material][:, 0], material_coefficients[material][:, 1])
-        print(f"energy={xMev:}, mat={material}: coef={ret:1.6f}")
-        return ret
-
-    def _log_interp(self, xInterp, x, y):
-        # xInterp is the single energy value to interpolate an absorbtion coefficient for, 
-        # interpolating from the data from "x" (energy value array from slicing material_coefficients)
-        # and from "y" (absorbtion coefficient array from slicing material_coefficients)
-        xInterp = np.log10(xInterp.copy())
-        x = np.log10(x.copy())
-        y = np.log10(y.copy())
-        yInterp = np.power(10, np.interp(xInterp, x, y)) # np.interp is 1-D linear interpolation
-        return yInterp
-"""
