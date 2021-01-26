@@ -10,6 +10,7 @@ import spectral_data
 from deepdrr import geo
 from deepdrr import vol
 from rayleigh_form_factor_data import build_form_factor_func
+import compton_data
 from rita import RITA
 
 import math
@@ -189,6 +190,7 @@ def sample_Rayleigh_theta(
     Args:
         mat (str): a string specifying the material at that position in the volume
         photon_energy (np.float32): the energy of the incoming photon
+        rayleigh_samplers (Dict[str, RITA]): a dictionary associating materials to their respective RITA sampler objects 
 
     Returns:
         np.float32: cos(theta), where theta is the polar scattering angle 
@@ -216,8 +218,7 @@ def sample_Rayleigh_theta(
     return cos_theta
 
 def sample_Compton_theta_E_prime(
-    N_val: np.float32, 
-    sigma_val: np.float32 # TODO: are these parameters actually the relevant ones?
+    photon_energy: np.float32,
 ) -> np.float32:
     """Randomly sample values of theta and W for a given Compton scatter interaction
 
@@ -226,9 +227,147 @@ def sample_Compton_theta_E_prime(
         sigma_val: the interactional cross-sectional area at the location of the photon interation
 
     Returns:
-        np.float32: theta, the polar scattering angle 
+        np.float32: cos_theta, the polar scattering angle 
         np.float32: E_prime, the energy of the outgoing photon
     """
-    theta = NotImplemented
-    W = NotImplemented
-    return theta, W
+    kappa = photon_energy / ELECTRON_REST_ENERGY
+
+    a_1 = np.log1p(2 * kappa)
+    one_p2k = 1 + 2 * kappa
+    a_2 = 2 * kappa * (1 + kappa) / (one_p2k * one_p2k)
+
+    tau_min = 1 / one_p2k
+
+    #
+    # ---- Function definitions ----
+    #
+
+    def f_i(i):
+        return compton_data.electron_counts[i]
+
+    def U_i(i):
+        return compton_data.ionization_energies[i]
+
+    def p_i_max(i, E, cos_theta):
+        """Computes p_{i,max}(E,\\theta)
+        
+        Args:
+            i: the number of the electron shell, as per Table 6.2 in 'PENELOPE-2006' specifications
+            E: the energy of the incoming photon
+            cos_theta: the cosine of the scatter angle, theta
+        
+        Returns:
+            the result of applying Eqn 2.45
+        """
+        U_i = compton_data.ionization_energies[i]
+        tmp = E * (E - U_i) * (1 - cos_theta)
+        numerator = tmp - ELECTRON_REST_ENERGY * U_i
+        denom_term = 2 * tmp + U_i * U_i
+        return numerator / (LIGHT_C * np.sqrt(denom_term))
+    
+    def n_i_A(i, p_z):
+        """Implements Eqn 2.54 from 'PENELOPE-2006' specification"""
+        d_1 = np.sqrt(0.5)
+        d_2 = np.sqrt(2)
+        J_i = compton_data.compton_profile[i]
+        if p_z < 0:
+            tmp = d_1 - (d_2 * J_i * p_z)
+            return 0.5 * np.exp((d_1 * d_1) - (tmp * tmp))
+        else:
+            tmp = d_1 + (d_2 * J_i * p_z)
+            return 1 - 0.5 * np.exp((d_1 * d_1) - (tmp * tmp))
+
+    def heaviside(x):
+        return 1 if x > 0 else 0
+    
+    def set_shell_scatter_vals(S_E_theta_vals, E, cos_theta, p_i_max_vals):
+        """computes: f_{i} \\Theta(E - U_{i}) n_{i}(p_{i,max}) and stores the result in S_E_theta_vals"""
+        assert len(S_E_theta_vals) == compton_data.NUM_SHELLS
+        for i in range(compton_data.NUM_SHELLS):
+            S_E_theta_vals[i] = f_i(i) * heaviside(E - U_i(i)) * n_i_A(i, p_i_max_vals[i])
+
+    def S(E, cos_theta):
+        return sum(
+            [
+                f_i(i) * heaviside(E - U_i(i)) * n_i_A(i, p_i_max(i, E, cos_theta))
+                for i in range(compton_data.NUM_SHELLS)
+            ]
+        )
+    
+    def T(tau, cos_theta, p_i_max_vals, S_E_theta_vals):
+        lt_numer = (1 - tau) * ((2 * kappa + 1) * tau - 1)
+        lt_denom = kappa * kappa * tau * (1 + tau * tau)
+        return (1 - lt_numer / lt_denom) * S_E_theta_vals[i] / S(photon_energy, np.pi)
+
+    # Sample cos_theta
+    # want local storage, since p_{i,max} values are reused in the E_prime sampling
+    p_i_max_vals = [0 for i in range(compton_data.NUM_SHELLS)]
+    S_E_theta_vals = [0 for i in range(compton_data.NUM_SHELLS)]
+
+    while True:
+        i = 1 if sample_U01() < (a_1 / (a_1 + a_2)) else 2
+        tau = None
+        if 1 == i:
+            tau = np.power(tau_min, sample_U01())
+        else:
+            assert 2 == i
+            rnd = sample_U01()
+            tau = np.sqrt(rnd + tau_min * tau_min * (1 - rnd))
+        
+        cos_theta = 1 - (1 - tau) / (kappa * tau)
+
+        for i in range(compton_data.NUM_SHELLS):
+            p_i_max_vals[i] = p_i_max(i, photon_energy, cos_theta)
+            set_shell_scatter_vals(S_E_theta_vals, photon_energy, cos_theta, p_i_max_vals)
+
+        if sample_U01() <= T(tau, cos_theta, p_i_max_vals, S_E_theta_vals):
+            break
+
+    # cos_theta is now set
+
+    # Select active electron shell
+    def F(p_z, tau, cos_theta):
+        beta = np.sqrt(1 + (tau * tau) - (2 * tau * cos_theta))
+        tmp = tau * (tau - cos_theta) / (beta * beta)
+        return 1 + beta * (1 + tmp) * p_z / (ELECTRON_MASS * LIGHT_C)
+    
+    F_max = F(0.2 * ELECTRON_MASS * LIGHT_C, tau, cos_theta)
+
+    total_shell_prob = sum(S_E_theta_vals)
+    while True:
+        rnd = sample_U01()
+        active_shell = 0
+        for i in range(len(S_E_theta_vals)):
+            if rnd < (S_E_theta_vals[i] / total_shell_prob):
+                active_shell = i
+                break
+        
+        A = sample_U01() * n_i_A(active_shell, p_i_max_vals[active_shell])
+        d_1 = np.sqrt(0.5)
+        d_2 = np.sqrt(2)
+        J_i = compton_data.compton_profile[i]
+
+        p_z = None
+        if A < 0.5:
+            p_z = (d_1 - np.sqrt(d_1 * d_1 - np.log(2 * A))) / (d_2 * J_i)
+        else:
+            p_z = (np.sqrt(d_1 * d_1 - np.log(2 * (1 - A))) - d_1) / (d_2 * J_i)
+
+        if p_z >= (-1 * ELECTRON_MASS * LIGHT_C):
+            break
+
+        if sample_U01() * F_max < F(p_z, tau, cos_theta):
+            break
+    
+    # p_z is set
+
+    def sign(x):
+        return 1 if x > 0 else (0 if x == 0 else -1)
+    
+    t = (p_z * p_z) / (ELECTRON_MASS * ELECTRON_REST_ENERGY)
+    tmp1 = 1 - t * tau * cos_theta
+    tmp2 = 1 - t * tau * tau
+
+    # E_prime = E_ratio * photon_energy
+    E_ratio = (tmp1 + sign(p_z) * np.sqrt(tmp1 * tmp1 - tmp2 * (1 - tau))) * tau / tmp2
+    return cos_theta, E_ratio * photon_energy
