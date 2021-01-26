@@ -397,7 +397,7 @@ extern "C" {
 
         // zero-out intensity and photon_prob
         intensity[img_dx] = 0;
-        if (photon_prob != NULL) photon_prob[img_dx] = 0;
+        photon_prob[img_dx] = 0;
 
         // MASS ATTENUATION COMPUTATION
         for (int bin = 0; bin < n_bins; bin++) {
@@ -413,8 +413,7 @@ extern "C" {
             // done with the "lifted" call to calculate_attenuation_gpu(...)
 
             intensity[img_dx] += intensity_tmp;
-            if (photon_prob != NULL)
-                photon_prob[img_dx] += intensity_tmp * (1.0 / energy);
+            photon_prob[img_dx] += intensity_tmp * (1.0 / energy);
         }
 
         return;

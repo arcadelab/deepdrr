@@ -2,8 +2,9 @@ from typing import Literal, List, Union, Tuple, Optional, Dict
 
 import logging
 import pycuda.driver as cuda
-import pycuda.autoinit
-from pycuda.autoinit import context
+from pycuda.tools import make_default_context
+# import pycuda.autoinit
+# from pycuda.autoinit import context
 from pycuda.compiler import SourceModule
 import numpy as np
 from pathlib import Path 
@@ -101,6 +102,10 @@ class Projector(object):
         self.num_materials = len(self.volume.materials)
         self.scatter_net = scatter.ScatterNet() if self.add_scatter else None
 
+        # initialize cuda
+        cuda.init()
+        self.context = make_default_context()
+
         # compile the module
         self.mod = _get_kernel_projector_module(self.num_materials) # TODO: make this not a compile-time option.
         self.project_kernel = self.mod.get_function("projectKernel")
@@ -189,19 +194,17 @@ class Projector(object):
                     offset_w = np.int32(w * self.max_block_index)
                     offset_h = np.int32(h * self.max_block_index)
                     self.project_kernel(*args, offset_w, offset_h, block=block, grid=(self.max_block_index, self.max_block_index))
-                    context.synchronize()
+                    self.context.synchronize()
 
         intensity = np.empty(self.output_shape, dtype=np.float32)
         cuda.memcpy_dtoh(intensity, self.intensity_gpu)
         # transpose the axes, which previously have width on the slow dimension
         intensity = np.swapaxes(intensity, 0, 1).copy()
 
-        if self.compute_photon_prob:
-            photon_prob = np.empty(self.output_shape, dtype=np.float32)
-            cuda.memcpy_dtoh(photon_prob, self.photon_prob_gpu)
-            photon_prob = np.swapaxes(photon_prob, 0, 1).copy()
-        else:
-            photon_prob = None
+        photon_prob = np.empty(self.output_shape, dtype=np.float32)
+        cuda.memcpy_dtoh(photon_prob, self.photon_prob_gpu)
+        photon_prob = np.swapaxes(photon_prob, 0, 1).copy()
+
         #
         # TODO: ask about this np.swapaxes(...) call.  It's not clear to me why it's necessary or desirable, given that
         #   we were working off of self.output_shape, which basically goes off of self.sensor_shape
@@ -306,10 +309,6 @@ class Projector(object):
     def output_size(self):
         return self.sensor_size[0] * self.sensor_size[1]
 
-    @property
-    def compute_photon_prob(self):
-        return self.add_scatter or self.add_noise
-
     def _get_spectrum(self, spectrum):
         if isinstance(spectrum, np.ndarray):
             return spectrum
@@ -358,11 +357,8 @@ class Projector(object):
         logger.debug(f"bytes alloc'd for self.intensity_gpu: {self.output_size * 4}")
 
         # allocate photon_prob array on GPU (4 bytes to a float32)
-        if self.compute_photon_prob:
-            self.photon_prob_gpu = cuda.mem_alloc(self.output_size * 4)
-            logger.debug(f"bytes alloc'd for self.photon_prob_gpu: {self.output_size * 4}")
-        else:
-            self.photon_prob_gpu = None
+        self.photon_prob_gpu = cuda.mem_alloc(self.output_size * 4)
+        logger.debug(f"bytes alloc'd for self.photon_prob_gpu: {self.output_size * 4}")
 
         # allocate and transfer spectrum energies (4 bytes to a float32)
         assert isinstance(self.spectrum, np.ndarray)
@@ -403,8 +399,7 @@ class Projector(object):
 
             self.rt_kinv_gpu.free()
             self.intensity_gpu.free()
-            if self.photon_prob_gpu is not None:
-                self.photon_prob_gpu.free()
+            self.photon_prob_gpu.free()
             self.energies_gpu.free()
             self.pdf_gpu.free()
             self.absorption_coef_table_gpu.free()
