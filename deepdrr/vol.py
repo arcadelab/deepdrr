@@ -97,11 +97,105 @@ class Volume(object):
         )
 
     @classmethod
+    def from_hu(
+        cls,
+        hu_values: np.ndarray,
+        origin: geo.Point3D,
+        use_thresholding: bool = True,
+        spacing: Optional[geo.Vector3D] = (1, 1, 1),
+        anatomical_coordinate_system: Optional[Literal['LPS', 'RAS', 'none']] = None,
+        world_from_anatomical: Optional[geo.FrameTransform] = None,
+    ) -> None:
+        data = cls._convert_hounsfield_to_density(hu_values)
+        materials = cls._segment_materials(hu_values, use_thresholding=use_thresholding)
+
+        return cls.from_parameters(
+            data,
+            materials, 
+            origin=origin, 
+            spacing=spacing, 
+            anatomical_coordinate_system=anatomical_coordinate_system, 
+            world_from_anatomical=world_from_anatomical,
+        )
+
+    @staticmethod
+    def _get_cache_path(
+        use_thresholding: bool = True,
+        cache_dir: Optional[Path] = None,
+        prefix: str = '',
+    ) -> Optional[Path]:
+        return None if cache_dir is None else Path(cache_dir) / '{}materials{}.npz'.format(prefix, '_with_thresholding' if use_thresholding else '')
+
+    @staticmethod
+    def _convert_hounsfield_to_density(hu_values: np.ndarray):
+        return load_dicom.conv_hu_to_density(hu_values)
+
+    @staticmethod
+    def _segment_materials(
+        hu_values: np.ndarray,
+        use_thresholding: bool = True,
+    ) -> Dict[str, np.ndarray]:
+        """Segment the materials.
+
+        Meant for internal use, particularly to be overriden by volumes with different materials.
+
+        Args:
+            hu_values (np.ndarray): volume data in Hounsfield Units.
+            use_thretholding (bool, optional): whether to segment with thresholding (true) or a DNN. Defaults to True.
+
+        Returns:
+            Dict[str, np.ndarray]: materials segmentation.
+        """
+        if use_thresholding:
+            return load_dicom.conv_hu_to_materials_thresholding(hu_values)
+        else:
+            return load_dicom.conv_hu_to_materials(hu_values)
+
+    @classmethod
+    def segment_materials(
+        cls,
+        hu_values: np.ndarray,
+        use_thresholding: bool = True,
+        use_cached: bool = True,
+        cache_dir: Optional[Path] = None,
+        prefix: str = '',
+    ) -> Dict[str, np.ndarray]:
+        """Segment the materials in a volume, potentially caching.
+
+       
+
+        Args:
+            hu_values (np.ndarray): volume data in Hounsfield Units.
+            use_thretholding (bool, optional): whether to segment with thresholding (true) or a DNN. Defaults to True.
+            use_cached (bool, optional): use the cached segmentation, if it exists. Defaults to True.
+            cache_dir (Optional[Path], optional): where to look for the segmentation cache. If None, no caching performed. Defaults to None.
+            prefix (str, optional): Optional prefix to prepend to the cache names. Defaults to ''.
+
+        Returns:
+            Dict[str, np.ndarray]: materials segmentation.
+        """
+
+        materials_path = cls._get_cache_path(use_thresholding=use_thresholding, cache_dir=cache_dir, prefix=prefix)
+
+        if materials_path is not None and materials_path.exists() and use_cached:
+            logger.info(f'using cached materials segmentation at {materials_path}')
+            materials = dict(np.load(materials_path))
+        else:
+            logger.info(f'segmenting materials in volume')
+            materials = cls._segment_materials(hu_values, use_thresholding=use_thresholding)
+        
+            if materials_path is not None:
+                np.savez(materials_path, **materials)
+
+        return materials
+
+
+    @classmethod
     def from_nifti(
         cls,
         path: Path,
-        use_thresholding: bool = True,
         world_from_anatomical: Optional[geo.FrameTransform] = None,
+        use_thresholding: bool = True,
         use_cached: bool = True,
         cache_dir: Optional[Path] = None,
     ):
@@ -118,7 +212,6 @@ class Volume(object):
             [type]: [description]
         """
         path = Path(path)
-        stem = path.name.split('.')[0]
 
         if cache_dir is None:
             cache_dir = path.parent
@@ -130,27 +223,10 @@ class Volume(object):
 
         anatomical_from_ijk = geo.FrameTransform(img.affine)
         hu_values = img.get_fdata()
-        data = load_dicom.conv_hu_to_density(hu_values)
-
-        if use_thresholding:
-            materials_path = cache_dir / f'{stem}_materials_thresholding.npz'
-            if use_cached and materials_path.exists():
-                logger.info(f'found materials segmentation at {materials_path}.')
-                materials = dict(np.load(materials_path))
-            else:
-                logger.info(f'segmenting materials in volume')
-                materials = load_dicom.conv_hu_to_materials_thresholding(hu_values)
-                np.savez(materials_path, **materials)
-        else:
-            materials_path = cache_dir / f'{stem}_materials.npz'
-            if use_cached and materials_path.exists():
-                logger.info(f'found materials segmentation at {materials_path}.')
-                materials = dict(np.load(materials_path))
-            else:
-                logger.info(f'segmenting materials in volume')
-                materials = load_dicom.conv_hu_to_materials(hu_values)
-                np.savez(materials_path, **materials)
-
+        
+        data = cls._convert_hounsfield_to_density(hu_values)
+        materials = cls.segment_materials(hu_values, use_thresholding=use_thresholding, use_cached=use_cached, cache_dir=cache_dir)
+        
         return cls(
             data,
             materials,
@@ -182,6 +258,11 @@ class Volume(object):
         return geo.point(self.anatomical_from_ijk.t)
 
     @property
+    def origin_in_world(self) -> geo.Point3D:
+        """The origin of the volume in world space."""
+        return geo.point(self.world_from_ijk.t)
+
+    @property
     def spacing(self) -> geo.Vector3D:
         """The spacing of the voxels."""
         return geo.vector(np.abs(np.array(self.anatomical_from_ijk.R)).max(axis=0))
@@ -211,3 +292,25 @@ class Volume(object):
     def __array__(self) -> np.ndarray:
         return self.data
 
+
+class MetalVolume(Volume):
+    """Same as a volume, but with a different segmentation for the materials.
+
+    """
+    @staticmethod
+    def _convert_hounsfield_to_density(hu_values: np.ndarray):
+        # TODO: verify
+        logger.debug(f'metal hu values: min, max, mean: {hu_values.min()}, {hu_values.max()}, {hu_values.mean()}')
+        return 30 * hu_values
+
+    @staticmethod
+    def _segment_materials(hu_values: np.ndarray, use_thresholding: bool = True) -> Dict[str, np.ndarray]:
+        if not use_thresholding:
+            raise NotImplementedError
+
+        return dict(
+            air=(hu_values == 0),
+            bone=(hu_values > 0),
+            titanium=(hu_values > 0),
+        )
+        
