@@ -20,9 +20,6 @@ from .mcgpu_mean_free_path_data.water_mfp import water_MFP as WATER_MFP
 
 import numpy as np
 
-# For sanity checking
-from .spectral_data import SPECTRUM120KV_AL43 # the spectrum with the largest range
-
 mfp_data = {
     "adipose": ADIPOSE_MFP,
     "air": AIR_MFP,
@@ -40,7 +37,7 @@ mfp_data = {
     "red marrow": RED_MARROW_MFP,
     "skin": SKIN_MFP,
     "soft tissue": SOFT_TISSUE_MFP,
-    "stomach intenstines": STOMACH_INTESTINES_MFP,
+    "stomach intestines": STOMACH_INTESTINES_MFP,
     "titanium": TITANIUM_MFP,
     "water": WATER_MFP
 }

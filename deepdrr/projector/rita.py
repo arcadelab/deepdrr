@@ -38,6 +38,29 @@ class RITA:
         self.y_arr = y_arr.astype(self.dtype)
         self.a_arr = a_arr.astype(self.dtype)
         self.b_arr = b_arr.astype(self.dtype)
+    
+    @classmethod
+    def from_saved_params(
+        cls,
+        params: np.ndarray
+    ):
+        """Creates and returns a RITA object based on the saved RITA parameters.
+
+        Args:
+            params (np.ndarray): the saved parameters.  See mcgpu_rita_samplers.py:saved_rita_params dictionary for available options
+        """
+        np_x = np.ascontiguousarray(params[:,0])
+        np_y = np.ascontiguousarray(params[:,1])
+        np_a = np.ascontiguousarray(params[:,2])
+        np_b = np.ascontiguousarray(params[:,3])
+
+        # the saved RITA params should have 128 gridpoints
+        assert 128 == np_x.size
+        assert 128 == np_y.size
+        assert 128 == np_a.size
+        assert 128 == np_b.size
+
+        return cls(np_x, np_y, np_a, np_b)
 
     @classmethod
     def from_pdf(
@@ -54,9 +77,6 @@ class RITA:
             x_max (np.float64): the upper bound of the interval to sample from
             pdf_func (Callable[np.float64, np.float64]): the analytical PDF (float -> float) of the function whose PDF we are sampling from
             n_grid_points (Optional[np.int32], optional): the number of grid points to finish with.  Must be at least 10.  Defaults to 128
-        
-        Returns:
-            A properly initialized RITA object
         """
         def cdf_func(x):
             return numerically_integrate(pdf_func, x_min, x)
