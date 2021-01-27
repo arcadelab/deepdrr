@@ -90,7 +90,7 @@ def one_hot(
 T = TypeVar('T')
 
 
-def tuplify(t: Union[Tuple[T,...], T], n: int) -> Tuple[T,...]:
+def tuplify(t: Union[Tuple[T,...], T], n: int = 1) -> Tuple[T,...]:
     """ Create a tuple with `n` copies of `t`,  if `t` is not already a tuple of length `n`."""
     if isinstance(t, Tuple):
         assert len(t) == n
@@ -98,6 +98,11 @@ def tuplify(t: Union[Tuple[T,...], T], n: int) -> Tuple[T,...]:
     else:
         return tuple(t for _ in range(n))
 
+def listify(x: Union[List[T], T], n: int = 1) -> List[T]:
+    if isinstance(x, list):
+        return x
+    else:
+        return [x] * n
 
 def radians(*ts: Union[float, np.ndarray], degrees: bool = True) -> Union[float, List[float]]:
     """Convert to radians.
