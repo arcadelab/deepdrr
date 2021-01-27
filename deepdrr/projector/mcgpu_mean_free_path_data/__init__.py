@@ -15,7 +15,7 @@ __all__ = [
     "red_marrow_mfp",
     "skin_mfp",
     "soft_tissue_mfp",
-    "stomach_mfp",
+    "stomach_intestines_mfp",
     "titanium_mfp",
     "water_mfp"
 ]
@@ -35,6 +35,7 @@ from .muscle_mfp import muscle_ICRP110_MFP
 from .PMMA_mfp import PMMA_MFP
 from .red_marrow_mfp import red_marrow_Woodard_MFP
 from .skin_mfp import skin_ICRP110_MFP
-from .stomach_mfp import stomach_intestines_ICRP110_MFP
+from .soft_tissue_mfp import soft_tissue_ICRP110_MFP
+from .stomach_intestines_mfp import stomach_intestines_ICRP110_MFP
 from .titanium_mfp import titanium_MFP
 from .water_mfp import water_MFP
