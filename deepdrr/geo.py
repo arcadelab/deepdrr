@@ -196,6 +196,9 @@ class Point(HomogeneousPointOrVector):
         else:
             return NotImplemented
 
+    def __div__(self, other):
+        return self * (1 / other)
+
     def __neg__(self):
         return self * (-1)
 
@@ -423,7 +426,12 @@ class Transform(HomogeneousObject):
             # if other is a Transform, then compose their inverses as well to store that.
             assert self.input_dim == other.dim, f'dimensions must match between other ({other.dim}) and self ({self.input_dim})'
             _inv = other.inv.data @ self.inv.data
-            return Transform(self.data @ other.data, _inv=_inv)
+            
+            if isinstance(self, FrameTransform) and isinstance(other, FrameTransform):
+                # very common case of composing FrameTransforms.
+                return FrameTransform(self.data @ other.data)
+            else:
+                return Transform(self.data @ other.data, _inv=_inv)
         else:
             return NotImplemented
 
