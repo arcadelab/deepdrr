@@ -2,11 +2,15 @@ from typing import Literal, List, Union, Tuple, Optional, Dict
 
 import logging
 import pycuda.driver as cuda
+from pycuda.tools import make_default_context
 import pycuda.autoinit
 from pycuda.autoinit import context
 from pycuda.compiler import SourceModule
 import numpy as np
 from pathlib import Path 
+
+# debugging
+import matplotlib.pyplot as plt
 
 from . import spectral_data
 from . import mass_attenuation
@@ -14,7 +18,7 @@ from . import scatter
 from . import analytic_generators
 from .material_coefficients import material_coefficients
 from .. import geo
-from ..vol import Volume
+from .. import vol
 from ..device import CArm
 from .. import utils
 
@@ -22,7 +26,18 @@ from .. import utils
 logger = logging.getLogger(__name__)
 
 
-def _get_kernel_projector_module(num_materials) -> SourceModule:
+def _get_spectrum(spectrum):
+    if isinstance(spectrum, np.ndarray):
+        return spectrum
+    elif isinstance(spectrum, str):
+        assert spectrum in spectral_data.spectrums, f'unrecognized spectrum: {spectrum}'
+        return spectral_data.spectrums[spectrum]
+    else:
+        raise TypeError(f'unrecognized spectrum: {type(spectrum)}')
+
+
+
+def _get_kernel_projector_module(num_materials, attenuation = True) -> SourceModule:
     """Compile the cuda code for the kernel projector.
 
     Assumes `project_kernel.cu` and `cubic` interpolation library is in the same directory as THIS file.
@@ -33,31 +48,29 @@ def _get_kernel_projector_module(num_materials) -> SourceModule:
     #path to files for cubic interpolation (folder cubic in DeepDRR)
     d = Path(__file__).resolve().parent
     bicubic_path = str(d / 'cubic')
-    source_path = str(d / 'project_kernel.cu')        
+    source_path = str(d / 'project_kernel.cu') if attenuation else str(d / 'project_kernel_no-attenuation.cu')
 
     with open(source_path, 'r') as file:
         source = file.read()
 
+    logger.debug(f'compiling {source_path} with NUM_MATERIALS={num_materials}')
     # TODO: replace the NUM_MATERIALS junk with some elegant meta-programming.
     return SourceModule(source, include_dirs=[bicubic_path], no_extern_c=True, options=['-D', f'NUM_MATERIALS={num_materials}'])
 
+    
+class SingleProjector(object):
+    initialized: bool = False
 
-class Projector(object):
     def __init__(
         self,
-        volume: Volume,
+        volume: vol.Volume,
         camera_intrinsics: geo.CameraIntrinsicTransform,
-        carm: Optional[CArm] = None,
         step: float = 0.1,
         mode: Literal['linear'] = 'linear',
         spectrum: Union[np.ndarray, Literal['60KV_AL35', '90KV_AL40', '120KV_AL43']] = '90KV_AL40',
-        add_scatter: bool = False, # add scatter noise
-        add_noise: bool = False, # add poisson noise
-        photon_count: int = 100000,
         threads: int = 8,
         max_block_index: int = 1024,
-        collected_energy: bool = False, # convert to keV / cm^2 or keV / mm^2
-        neglog: bool = False,
+        attenuation: bool = True,
     ) -> None:
         """Create the projector, which has info for simulating the DRR.
 
@@ -84,38 +97,38 @@ class Projector(object):
         # set variables
         self.volume = volume # spacing units defaults to mm
         self.camera_intrinsics = camera_intrinsics
-        self.carm = carm
         self.step = step
         self.mode = mode
-        self.spectrum = self._get_spectrum(spectrum)
-        self.add_scatter = add_scatter
-        self.add_noise = add_noise
-        self.photon_count = photon_count
+        self.spectrum = _get_spectrum(spectrum)
         self.threads = threads
         self.max_block_index = max_block_index
-        self.collected_energy = collected_energy
-        self.neglog = neglog
+        self.attenuation = attenuation
 
-        # other parameters
-        self.sensor_size = self.camera_intrinsics.sensor_size
         self.num_materials = len(self.volume.materials)
-        self.scatter_net = scatter.ScatterNet() if self.add_scatter else None
 
         # compile the module
-        self.mod = _get_kernel_projector_module(self.num_materials) # TODO: make this not a compile-time option.
+        self.mod = _get_kernel_projector_module(self.num_materials, attenuation=self.attenuation) # TODO: make this not a compile-time option.
         self.project_kernel = self.mod.get_function("projectKernel")
-        
+
         # assertions
         for mat in self.volume.materials:
             assert mat in material_coefficients, f'unrecognized material: {mat}'
 
-        # Has the cuda memory been allocated?
-        self.initialized = False
+    @property
+    def output_shape(self) -> Tuple[int, int]:
+        if self.attenuation:
+            return self.camera_intrinsics.sensor_size
+        else:
+            return self.camera_intrinsics.sensor_width, self.camera_intrinsics.sensor_height, self.num_materials
+    
+    @property
+    def output_size(self) -> int:
+        return int(np.prod(self.output_shape))
 
-    def _project(
+    def project(
         self,
         camera_projection: geo.CameraProjection,
-    ) -> (np.ndarray, np.ndarray):
+    ) -> Union[np.ndarray, Tuple[np.ndarray, np.ndarray]]:
         """Perform the projection over just one image.
 
         Args:
@@ -138,6 +151,8 @@ class Projector(object):
         logger.debug(f'camera_center_ijk (source point): {camera_center_in_volume}')
 
         ijk_from_index = camera_projection.get_ray_transform(self.volume)
+        logger.debug('center ray: {}'.format(ijk_from_index @ geo.point(self.output_shape[0] / 2, self.output_shape[1] / 2)))
+
         ijk_from_index = np.array(ijk_from_index).astype(np.float32)
 
         # spacing
@@ -147,34 +162,55 @@ class Projector(object):
         cuda.memcpy_htod(self.rt_kinv_gpu, ijk_from_index)
 
         # Make the arguments to the CUDA "projectKernel".
-        args = [
-            np.int32(self.camera_intrinsics.sensor_width),          # out_width
-            np.int32(self.camera_intrinsics.sensor_height),          # out_height
-            np.float32(self.step),                  # step
-            np.float32(-0.5),                       # gVolumeEdgeMinPointX
-            np.float32(-0.5),                       # gVolumeEdgeMinPointY
-            np.float32(-0.5),                       # gVolumeEdgeMinPointZ
-            np.float32(self.volume.shape[0] - 0.5), # gVolumeEdgeMaxPointX
-            np.float32(self.volume.shape[1] - 0.5), # gVolumeEdgeMaxPointY
-            np.float32(self.volume.shape[2] - 0.5), # gVolumeEdgeMaxPointZ
-            np.float32(spacing[0]),         # gVoxelElementSizeX
-            np.float32(spacing[1]),         # gVoxelElementSizeY
-            np.float32(spacing[2]),         # gVoxelElementSizeZ
-            camera_center_in_volume[0],                        # sx
-            camera_center_in_volume[1],                        # sy
-            camera_center_in_volume[2],                        # sz
-            self.rt_kinv_gpu,                       # RT_Kinv
-            self.intensity_gpu,                     # intensity
-            self.photon_prob_gpu,                   # photon_prob
-            np.int32(self.spectrum.shape[0]),       # n_bins
-            self.energies_gpu,                      # energies
-            self.pdf_gpu,                           # pdf
-            self.absorbtion_coef_table_gpu          # absorb_coef_table
-        ]
+        if self.attenuation:
+            args = [
+                np.int32(camera_projection.sensor_width),          # out_width
+                np.int32(camera_projection.sensor_height),          # out_height
+                np.float32(self.step),                  # step
+                np.float32(-0.5),                       # gVolumeEdgeMinPointX
+                np.float32(-0.5),                       # gVolumeEdgeMinPointY
+                np.float32(-0.5),                       # gVolumeEdgeMinPointZ
+                np.float32(self.volume.shape[0] - 0.5), # gVolumeEdgeMaxPointX
+                np.float32(self.volume.shape[1] - 0.5), # gVolumeEdgeMaxPointY
+                np.float32(self.volume.shape[2] - 0.5), # gVolumeEdgeMaxPointZ
+                np.float32(spacing[0]),         # gVoxelElementSizeX
+                np.float32(spacing[1]),         # gVoxelElementSizeY
+                np.float32(spacing[2]),         # gVoxelElementSizeZ
+                camera_center_in_volume[0],                        # sx
+                camera_center_in_volume[1],                        # sy
+                camera_center_in_volume[2],                        # sz
+                self.rt_kinv_gpu,                       # RT_Kinv
+                self.intensity_gpu,                     # intensity
+                self.photon_prob_gpu,                   # photon_prob (or NULL)
+                np.int32(self.spectrum.shape[0]),       # n_bins
+                self.energies_gpu,                      # energies
+                self.pdf_gpu,                           # pdf
+                self.absorption_coef_table_gpu,          # absorb_coef_table
+            ]
+        else:
+            args = [
+                np.int32(camera_projection.sensor_width),          # out_width
+                np.int32(camera_projection.sensor_height),          # out_height
+                np.float32(self.step),                  # step
+                np.float32(-0.5),                       # gVolumeEdgeMinPointX
+                np.float32(-0.5),                       # gVolumeEdgeMinPointY
+                np.float32(-0.5),                       # gVolumeEdgeMinPointZ
+                np.float32(self.volume.shape[0] - 0.5), # gVolumeEdgeMaxPointX
+                np.float32(self.volume.shape[1] - 0.5), # gVolumeEdgeMaxPointY
+                np.float32(self.volume.shape[2] - 0.5), # gVolumeEdgeMaxPointZ
+                np.float32(spacing[0]),         # gVoxelElementSizeX
+                np.float32(spacing[1]),         # gVoxelElementSizeY
+                np.float32(spacing[2]),         # gVoxelElementSizeZ
+                camera_center_in_volume[0],                        # sx
+                camera_center_in_volume[1],                        # sy
+                camera_center_in_volume[2],                        # sz
+                self.rt_kinv_gpu,                       # RT_Kinv
+                self.output_gpu,                        # output
+            ]
 
         # Calculate required blocks
-        blocks_w = np.int(np.ceil(self.sensor_size[0] / self.threads))
-        blocks_h = np.int(np.ceil(self.sensor_size[1] / self.threads))
+        blocks_w = np.int(np.ceil(self.output_shape[0] / self.threads))
+        blocks_h = np.int(np.ceil(self.output_shape[1] / self.threads))
         block = (self.threads, self.threads, 1)
         # lfkj("running:", blocks_w, "x", blocks_h, "blocks with ", self.threads, "x", self.threads, "threads")
 
@@ -191,20 +227,205 @@ class Projector(object):
                     self.project_kernel(*args, offset_w, offset_h, block=block, grid=(self.max_block_index, self.max_block_index))
                     context.synchronize()
 
-        intensity = np.empty(self.output_shape, dtype=np.float32)
-        cuda.memcpy_dtoh(intensity, self.intensity_gpu)
-        photon_prob = np.empty(self.output_shape, dtype=np.float32)
-        cuda.memcpy_dtoh(photon_prob, self.photon_prob_gpu)
+        if self.attenuation:
+            intensity = np.empty(self.output_shape, dtype=np.float32)
+            cuda.memcpy_dtoh(intensity, self.intensity_gpu)
+            # transpose the axes, which previously have width on the slow dimension
+            intensity = np.swapaxes(intensity, 0, 1).copy()
 
-        # transpose the axes, which previously have width on the slow dimension
-        intensity = np.swapaxes(intensity, 0, 1).copy()
-        photon_prob = np.swapaxes(photon_prob, 0, 1).copy()
-        #
-        # TODO: ask about this np.swapaxes(...) call.  It's not clear to me why it's necessary or desirable, given that
-        #   we were working off of self.output_shape, which basically goes off of self.sensor_shape
-        #
+            photon_prob = np.empty(self.output_shape, dtype=np.float32)
+            cuda.memcpy_dtoh(photon_prob, self.photon_prob_gpu)
+            photon_prob = np.swapaxes(photon_prob, 0, 1).copy()
 
-        return intensity, photon_prob
+            #
+            # TODO: ask about this np.swapaxes(...) call.  It's not clear to me why it's necessary or desirable, given that
+            #   we were working off of self.output_shape, which basically goes off of self.sensor_shape
+            #
+
+            return intensity, photon_prob
+
+        else:
+            # copy the output to CPU
+            output = np.empty(self.output_shape, np.float32)
+            cuda.memcpy_dtoh(output, self.output_gpu)
+
+            # transpose the axes, which previously have width on the slow dimension
+            output = np.swapaxes(output, 0, 1).copy()
+
+            # normalize to centimeters
+            output /= 10
+
+            return output
+
+    def initialize(self):
+        """Allocate GPU memory and transfer the volume, segmentations to GPU."""
+        if self.initialized:
+            raise RuntimeError("Close projector before initializing again.")
+
+        # allocate and transfer volume texture to GPU
+        # TODO: this axis-swap is messy and actually may be messing things up. Maybe use a FrameTransform in the Volume class instead?
+        volume = np.array(self.volume)
+        volume = np.moveaxis(volume, [0, 1, 2], [2, 1, 0]).copy() # TODO: is this axis swap necessary?
+        self.volume_gpu = cuda.np_to_array(volume, order='C')
+        self.volume_texref = self.mod.get_texref("volume")
+        cuda.bind_array_to_texref(self.volume_gpu, self.volume_texref)
+        
+        # set the (interpolation?) mode
+        if self.mode == 'linear':
+            self.volume_texref.set_filter_mode(cuda.filter_mode.LINEAR)
+        else:
+            raise RuntimeError
+
+        # allocate and transfer segmentation texture to GPU
+        # TODO: remove axis swap?
+        # self.segmentations_gpu = [cuda.np_to_array(seg, order='C') for mat, seg in self.volume.materials.items()]
+        self.segmentations_gpu = [cuda.np_to_array(np.moveaxis(seg, [0, 1, 2], [2, 1, 0]).copy(), order='C') for mat, seg in self.volume.materials.items()]
+        self.segmentations_texref = [self.mod.get_texref(f"seg_{m}") for m, _ in enumerate(self.volume.materials)]
+        for seg, texref in zip(self.segmentations_gpu, self.segmentations_texref):
+            cuda.bind_array_to_texref(seg, texref)
+            if self.mode == 'linear':
+                texref.set_filter_mode(cuda.filter_mode.LINEAR)
+            else:
+                raise RuntimeError
+
+        # allocate ijk_from_index matrix array on GPU (3x3 array x 4 bytes per float32)
+        self.rt_kinv_gpu = cuda.mem_alloc(3 * 3 * 4)
+
+        if self.attenuation:
+            # allocate intensity array on GPU (4 bytes to a float32)
+            self.intensity_gpu = cuda.mem_alloc(self.output_size * 4)
+            logger.debug(f"bytes alloc'd for self.intensity_gpu: {self.output_size * 4}")
+
+            # allocate photon_prob array on GPU (4 bytes to a float32)
+            self.photon_prob_gpu = cuda.mem_alloc(self.output_size * 4)
+            logger.debug(f"bytes alloc'd for self.photon_prob_gpu: {self.output_size * 4}")
+
+            # allocate and transfer spectrum energies (4 bytes to a float32)
+            assert isinstance(self.spectrum, np.ndarray)
+            noncont_energies = self.spectrum[:,0].copy() / 1000
+            contiguous_energies = np.ascontiguousarray(noncont_energies, dtype=np.float32)
+            n_bins = contiguous_energies.shape[0]
+            self.energies_gpu = cuda.mem_alloc(n_bins * 4)
+            cuda.memcpy_htod(self.energies_gpu, contiguous_energies)
+            logger.debug(f"bytes alloc'd for self.energies_gpu: {n_bins * 4}")
+
+            # allocate and transfer spectrum pdf (4 bytes to a float32)
+            noncont_pdf = self.spectrum[:, 1]  / np.sum(self.spectrum[:, 1])
+            contiguous_pdf = np.ascontiguousarray(noncont_pdf.copy(), dtype=np.float32)
+            assert contiguous_pdf.shape == contiguous_energies.shape
+            assert contiguous_pdf.shape[0] == n_bins
+            self.pdf_gpu = cuda.mem_alloc(n_bins * 4)
+            cuda.memcpy_htod(self.pdf_gpu, contiguous_pdf)
+            logger.debug(f"bytes alloc'd for self.pdf_gpu {n_bins * 4}")
+
+            # precompute, allocate, and transfer the get_absorption_coef(energy, material) table (4 bytes to a float32)
+            absorption_coef_table = np.empty(n_bins * self.num_materials).astype(np.float32)
+            for bin in range(n_bins): #, energy in enumerate(energies):
+                for m, mat_name in enumerate(self.volume.materials):
+                    absorption_coef_table[bin * self.num_materials + m] = mass_attenuation.get_absorption_coefs(contiguous_energies[bin], mat_name)
+            self.absorption_coef_table_gpu = cuda.mem_alloc(n_bins * self.num_materials * 4)
+            cuda.memcpy_htod(self.absorption_coef_table_gpu, absorption_coef_table)
+            logger.debug(f"size alloc'd for self.absorption_coef_table_gpu: {n_bins * self.num_materials * 4}")
+        else:
+            # allocate output image array on GPU (4 bytes to a float32)
+            self.output_gpu = cuda.mem_alloc(self.output_size * 4)
+            logger.debug(f"bytes alloc'd for self.output_gpu {self.output_size * 4}")
+
+        # Mark self as initialized.
+        self.initialized = True
+
+    def free(self):
+        if self.initialized:
+            self.volume_gpu.free()
+            for seg in self.segmentations_gpu:
+                seg.free()
+            self.rt_kinv_gpu.free()
+
+            if self.attenuation:
+                self.intensity_gpu.free()
+                self.photon_prob_gpu.free()
+                self.energies_gpu.free()
+                self.pdf_gpu.free()
+                self.absorption_coef_table_gpu.free()
+            else:
+                self.output_gpu.free()
+
+        self.initialized = False
+
+
+class Projector(object):
+    def __init__(
+        self,
+        volume: Union[vol.Volume, List[vol.Volume]],
+        camera_intrinsics: Optional[geo.CameraIntrinsicTransform] = None,
+        carm: Optional[CArm] = None,
+        step: float = 0.1,
+        mode: Literal['linear'] = 'linear',
+        spectrum: Union[np.ndarray, Literal['60KV_AL35', '90KV_AL40', '120KV_AL43']] = '90KV_AL40',
+        add_scatter: bool = False, # add scatter noise
+        add_noise: bool = False, # add poisson noise
+        photon_count: int = 100000,
+        threads: int = 8,
+        max_block_index: int = 1024,
+        collected_energy: bool = False, # convert to keV / cm^2 or keV / mm^2
+        neglog: bool = False,
+    ) -> None:
+        """Create the projector, which has info for simulating the DRR.
+
+        Usage:
+        ```
+        with Projector(volume, materials, ...) as projector:
+            for projection in projections:
+                yield projector(projection)
+        ```
+
+        Args:
+            volume (Union[Volume, List[Volume]]): a volume object with materials segmented. If multiple volumes are provided, they should have mutually exclusive materials (not checked).
+            camera_intrinsics (CameraIntrinsicTransform): intrinsics of the projector's camera. (used for sensor size). None is NotImplemented. Defaults to None.
+            carm (Optional[CArm], optional): Optional C-arm device, for convenience which can be used to get projections from C-Arm pose. If not provided, camera pose must be defined by user. Defaults to None.
+            step (float, optional): size of the step along projection ray in voxels. Defaults to 0.1.
+            mode (Literal['linear']): [description].
+            spectrum (Union[np.ndarray, Literal['60KV_AL35', '90KV_AL40', '120KV_AL43'], optional): spectrum array or name of spectrum to use for projection. Defaults to '90KV_AL40'.
+            add_scatter (bool, optional): whether to add scatter noise. Defaults to False.
+            threads (int, optional): number of threads to use. Defaults to 8.
+            max_block_index (int, optional): maximum GPU block. Defaults to 1024.
+            neglog (bool, optional): whether to apply negative log transform to output images. Recommended for easy viewing. Defaults to False.
+        """
+                    
+        # set variables
+        self.volumes = utils.listify(volume)
+        self.camera_intrinsics = camera_intrinsics
+        self.carm = carm
+        self.spectrum = _get_spectrum(spectrum)
+        self.add_scatter = add_scatter
+        self.add_noise = add_noise
+        self.photon_count = photon_count
+        self.collected_energy = collected_energy
+        self.neglog = neglog
+
+        assert len(self.volumes) > 0
+        self.attenuation = len(self.volumes) == 1
+
+        self.projectors = [
+            SingleProjector(
+                volume,
+                self.camera_intrinsics,
+                step=step,
+                mode=mode,
+                spectrum=spectrum,
+                threads=threads,
+                max_block_index=max_block_index,
+                attenuation=self.attenuation,
+            ) for volume in self.volumes
+        ]
+
+        # other parameters
+        self.scatter_net = scatter.ScatterNet() if self.add_scatter else None
+
+    @property
+    def initialized(self):
+        # Has the cuda memory been allocated?
+        return np.all([p.initialized for p in self.projectors])
 
     def project(
         self,
@@ -229,19 +450,57 @@ class Projector(object):
         
         logger.info("Initiating projection and attenuation")
 
-        intensities_arr = []
-        photon_probs_arr = []
+        # TODO: handle multiple volumes more elegantly, i.e. in the kernel. (!)
+        if self.attenuation:
+            projector = self.projectors[0]
+            intensities = []
+            photon_probs = []
+            for i, proj in enumerate(camera_projections):
+                logger.info(f"Projecting and attenuating camera position {i+1} / {len(camera_projections)}")
+                intensity, photon_prob = projector.project(proj)
+                intensities.append(intensity)
+                photon_probs.append(photon_prob)
 
-        for i, proj in enumerate(camera_projections):
-            logger.info(f"Projecting and attenuating camera position {i+1} / {camera_projections.__len__()}")
-            intensity, photon_prob = self._project(proj)
-            intensities_arr.append(intensity)
-            photon_probs_arr.append(photon_prob)
+            images = np.stack(intensities)
+            photon_prob = np.stack(photon_probs)
+            logger.info("Completed projection and attenuation")
+        else:
+            # Separate the projection and mass attenuation
+            forward_projections = dict()
+            for pidx, projector in enumerate(self.projectors):
+                outputs = []
+                for proj in camera_projections:
+                    outputs.append(projector.project(proj))
 
-        images = np.stack(intensities_arr)
-        photon_prob = np.stack(photon_probs_arr)
+                outputs = np.stack(outputs)
 
-        logger.info("Completed projection and attenuation")
+                # convert forward_projections to dict over materials
+                _forward_projections = dict((mat, outputs[:, :, :, m]) for m, mat in enumerate(projector.volume.materials))
+                # if len(set(_forward_projections.keys()).intersection(set(forward_projections.keys()))) > 0:
+                #     logger.error(f'{_forward_projections.keys()}')
+                #     raise NotImplementedError(f'non mutually exclusive materials in multiple volumes.')
+
+                # TODO: this is actively terrible.
+                if isinstance(projector.volume, vol.MetalVolume):
+                    for mat in ['air', 'soft tissue', 'bone']:
+                        if mat not in forward_projections:
+                            logger.warning(f'existing projections does not contain material: {mat}')
+                            continue
+                        elif mat not in _forward_projections:
+                            logger.warning(f'new projections does not contain material: {mat}')
+                            continue
+                        forward_projections[mat] -= _forward_projections[mat]
+
+                    if 'titanium' in forward_projections:
+                        forward_projections['titanium'] += _forward_projections['titanium']
+                    else:
+                        forward_projections['titanium'] = _forward_projections['titanium']
+                else:
+                    forward_projections.update(_forward_projections)
+
+            logger.info(f'performing mass attenuation...')
+            images, photon_prob = mass_attenuation.calculate_intensity_from_spectrum(forward_projections, self.spectrum)
+            logger.info('done.')
 
         if self.add_scatter:
             # lfkj('adding scatter (may cause Nan errors)')
@@ -297,109 +556,18 @@ class Projector(object):
 
         return self.project(*camera_projections)
 
-    @property
-    def output_shape(self):
-        return (self.sensor_size[0], self.sensor_size[1]) # pixel counts
-    
-    @property
-    def output_size(self):
-        return self.sensor_size[0] * self.sensor_size[1] # pixel counts
-
-    def _get_spectrum(self, spectrum):
-        if isinstance(spectrum, np.ndarray):
-            return spectrum
-        elif isinstance(spectrum, str):
-            assert spectrum in spectral_data.spectrums, f'unrecognized spectrum: {spectrum}'
-            return spectral_data.spectrums[spectrum]
-        else:
-            raise TypeError(f'unrecognized spectrum: {type(spectrum)}')
-
     def initialize(self):
         """Allocate GPU memory and transfer the volume, segmentations to GPU."""
         if self.initialized:
-            raise RuntimeError("Close projector before initializing again.")
-
-        # allocate and transfer volume texture to GPU
-        # TODO: this axis-swap is messy and actually may be messing things up. Maybe use a FrameTransform in the Volume class instead?
-        volume = self.volume.data
-        volume = np.moveaxis(volume, [0, 1, 2], [2, 1, 0]).copy() # TODO: is this axis swap necessary?
-        self.volume_gpu = cuda.np_to_array(volume, order='C')
-        self.volume_texref = self.mod.get_texref("volume")
-        cuda.bind_array_to_texref(self.volume_gpu, self.volume_texref)
+            raise RuntimeError("Close projector before initializing again.")        
         
-        # set the (interpolation?) mode
-        if self.mode == 'linear':
-            self.volume_texref.set_filter_mode(cuda.filter_mode.LINEAR)
-        else:
-            raise RuntimeError
-
-        # allocate and transfer segmentation texture to GPU
-        # TODO: remove axis swap?
-        # self.segmentations_gpu = [cuda.np_to_array(seg, order='C') for mat, seg in self.volume.materials.items()]
-        self.segmentations_gpu = [cuda.np_to_array(np.moveaxis(seg, [0, 1, 2], [2, 1, 0]).copy(), order='C') for mat, seg in self.volume.materials.items()]
-        self.segmentations_texref = [self.mod.get_texref(f"seg_{m}") for m, _ in enumerate(self.volume.materials)]
-        for seg, texref in zip(self.segmentations_gpu, self.segmentations_texref):
-            cuda.bind_array_to_texref(seg, texref)
-            if self.mode == 'linear':
-                texref.set_filter_mode(cuda.filter_mode.LINEAR)
-            else:
-                raise RuntimeError
-
-        # allocate ijk_from_index matrix array on GPU (3x3 array x 4 bytes per float32)
-        self.rt_kinv_gpu = cuda.mem_alloc(3 * 3 * 4)
-
-        # allocate intensity array on GPU (4 bytes to a float32)
-        self.intensity_gpu = cuda.mem_alloc(self.output_size * 4)
-        logger.debug(f"bytes alloc'd for self.intensity_gpu: {self.output_size * 4}")
-
-        # allocate photon_prob array on GPU (4 bytes to a float32)
-        self.photon_prob_gpu = cuda.mem_alloc(self.output_size * 4)
-        logger.debug(f"bytes alloc'd for self.photon_prob_gpu: {self.output_size * 4}")
-
-        # allocate and transfer spectrum energies (4 bytes to a float32)
-        assert isinstance(self.spectrum, np.ndarray)
-        noncont_energies = self.spectrum[:,0].copy() / 1000 # units: keV
-        contiguous_energies = np.ascontiguousarray(noncont_energies, dtype=np.float32)
-        n_bins = contiguous_energies.shape[0]
-        self.energies_gpu = cuda.mem_alloc(n_bins * 4)
-        cuda.memcpy_htod(self.energies_gpu, contiguous_energies)
-        logger.debug(f"bytes alloc'd for self.energies_gpu: {n_bins * 4}")
-
-        # allocate and transfer spectrum pdf (4 bytes to a float32)
-        noncont_pdf = self.spectrum[:, 1]  / np.sum(self.spectrum[:, 1])
-        contiguous_pdf = np.ascontiguousarray(noncont_pdf.copy(), dtype=np.float32)
-        assert contiguous_pdf.shape == contiguous_energies.shape
-        assert contiguous_pdf.shape[0] == n_bins
-        self.pdf_gpu = cuda.mem_alloc(n_bins * 4)
-        cuda.memcpy_htod(self.pdf_gpu, contiguous_pdf)
-        logger.debug(f"bytes alloc'd for self.pdf_gpu {n_bins * 4}")
-
-        # precompute, allocate, and transfer the get_absorption_coef(energy, material) table (4 bytes to a float32)
-        absorbtion_coef_table = np.empty(n_bins * self.num_materials).astype(np.float32) # units: [cm^2 / g]
-        for bin in range(n_bins): #, energy in enumerate(energies):
-            for m, mat_name in enumerate(self.volume.materials):
-                absorbtion_coef_table[bin * self.num_materials + m] = mass_attenuation.get_absorbtion_coefs(contiguous_energies[bin], mat_name)
-        self.absorbtion_coef_table_gpu = cuda.mem_alloc(n_bins * self.num_materials * 4)
-        cuda.memcpy_htod(self.absorbtion_coef_table_gpu, absorbtion_coef_table)
-        logger.debug(f"bytes alloc'd for self.absorbtion_coef_table_gpu {n_bins * self.num_materials * 4}")
-
-        # Mark self as initialized.
-        self.initialized = True
+        for p in self.projectors:
+            p.initialize()
 
     def free(self):
         """Free the allocated GPU memory."""
-        if self.initialized:
-            self.volume_gpu.free()
-            for seg in self.segmentations_gpu:
-                seg.free()
-
-            self.rt_kinv_gpu.free()
-            self.intensity_gpu.free()
-            self.photon_prob_gpu.free()
-            self.energies_gpu.free()
-            self.pdf_gpu.free()
-            self.absorbtion_coef_table_gpu.free()
-        self.initialized = False
+        for p in self.projectors:
+            p.free()
 
     def __enter__(self):
         self.initialize()

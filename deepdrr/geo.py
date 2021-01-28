@@ -178,7 +178,7 @@ class Point(HomogeneousPointOrVector):
     ) -> Union[Vector2D, Vector3D]:
         """ Subtract two points, obtaining a vector. """
         other = self.from_any(other)
-        return vector(self.data - other.data)
+        return _point_or_vector(self.data - other.data)
 
     def __add__(self, other):
         """ Can add a vector to a point, but cannot add two points. """
@@ -195,6 +195,9 @@ class Point(HomogeneousPointOrVector):
             return point(other * np.array(self))
         else:
             return NotImplemented
+
+    def __div__(self, other):
+        return self * (1 / other)
 
     def __neg__(self):
         return self * (-1)
@@ -416,14 +419,19 @@ class Transform(HomogeneousObject):
             self,
             other: Union[Transform, PointOrVector],
     ) -> Union[Transform, PointOrVector]:
-        assert self.input_dim == other.dim, f'dimensions must match between other ({other.dim}) and self ({self.input_dim})'
-
         if issubclass(type(other), HomogeneousPointOrVector):
+            assert self.input_dim == other.dim, f'dimensions must match between other ({other.dim}) and self ({self.input_dim})'
             return _point_or_vector(self.data @ other.data)
         elif issubclass(type(other), Transform):
             # if other is a Transform, then compose their inverses as well to store that.
+            assert self.input_dim == other.dim, f'dimensions must match between other ({other.dim}) and self ({self.input_dim})'
             _inv = other.inv.data @ self.inv.data
-            return Transform(self.data @ other.data, _inv=_inv)
+            
+            if isinstance(self, FrameTransform) and isinstance(other, FrameTransform):
+                # very common case of composing FrameTransforms.
+                return FrameTransform(self.data @ other.data)
+            else:
+                return Transform(self.data @ other.data, _inv=_inv)
         else:
             return NotImplemented
 
