@@ -300,7 +300,6 @@ class MetalVolume(Volume):
     @staticmethod
     def _convert_hounsfield_to_density(hu_values: np.ndarray):
         # TODO: verify
-        logger.debug(f'metal hu values: min, max, mean: {hu_values.min()}, {hu_values.max()}, {hu_values.mean()}')
         return 30 * hu_values
 
     @staticmethod
