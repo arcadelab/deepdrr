@@ -42,6 +42,8 @@ from .mcgpu_incoherent_scatter_data.stomach_intestines_compton_data import stoma
 from .mcgpu_incoherent_scatter_data.titanium_compton_data import titanium_compton_data as TITANIUM_COMPTON_DATA
 from .mcgpu_incoherent_scatter_data.water_compton_data import water_compton_data as WATER_COMPTON_DATA
 
+MAX_NSHELLS = 30
+
 material_nshells = {
     "adipose": ADIPOSE_NUM_SHELLS,
     "air": AIR_NUM_SHELLS,
@@ -88,4 +90,6 @@ compton_data = {
 
 def sanity_check_compton_data():
     for mat in list(compton_data.keys()):
-        assert material_nshells
+        assert material_nshells[mat] == compton_data[mat].shape[0]
+
+    print("Compton data sanity has been checked!")

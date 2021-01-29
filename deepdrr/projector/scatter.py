@@ -9,11 +9,15 @@ import numpy as np
 import spectral_data
 from deepdrr import geo
 from deepdrr import vol
-from rayleigh_form_factor_data import build_form_factor_func
-import compton_data
 from rita import RITA
 
-import math
+from .mcgpu_mfp_data import mfp_data
+from .mcgpu_compton_data import MAX_NSHELLS as COMPTON_MAX_NSHELLS
+from .mcgpu_compton_data import material_nshells, compton_data
+
+from .mcgpu_rita_samplers import rita_samplers
+
+import math # for 'count_milestones'
 
 
 logger = logging.getLogger(__name__)
@@ -38,7 +42,7 @@ def simulate_scatter_no_vr(
     output_shape: Tuple[int, int],
     spectrum: Optional[np.ndarray] = spectral_data.spectrums['90KV_AL40'], 
     photon_count: Optional[int] = 10000000, # 10^7
-    E_abs: Optional[np.float32] = 1000 # TODO: check that the spectrum data uses keV as its units -- ask Benjamin about the spectral data source
+    E_abs: Optional[np.float32] = 5000
 ) -> np.ndarray:
     """Produce a grayscale (intensity-based) image representing the photon scatter during an X-Ray, 
     without using VR (variance reduction) techniques.
@@ -48,7 +52,7 @@ def simulate_scatter_no_vr(
         source (Point3D): the source point for rays in the camera's IJK space
         spectrum (Optional[np.ndarray], optional): spectrum array.  Defaults to 90KV_AL40 spectrum.
         photon_count (Optional[int], optional): the number of photons simulated.  Defaults to 10^7 photons.
-        E_abs (Optional[np.float32], optional): the energy (in keV) at or below which photons are assumed to be absorbed by the materials.  Defaults to 1000 (keV).
+        E_abs (Optional[np.float32], optional): the energy (in keV) at or below which photons are assumed to be absorbed by the materials.  Defaults to 1000 (eV).
         output_shape (Tuple[int, int]): the {height}x{width} dimensions of the output image
 
     Returns:
@@ -58,26 +62,25 @@ def simulate_scatter_no_vr(
 
     accumulator = np.zeros(output_shape).astype(np.float32)
 
-    N_vals = None
-    sigma_C_vals = None
-    sigma_R_vals = None
+    material_ids = {}
+    for i, mat_name in enumerate(volume.materials.keys()):
+        material_ids[i] = mat_name
+    assert len(material_ids) > 0
+    
+    # Convert the volume segmentation data from one-hot to [0..N-1]-labeled
+    assert np.all(np.equal(volume.data.shape, volume.materials[material_ids[0]].shape))
+    labeled_seg = np.empty_like(volume.data)
 
-    rayleigh_samplers = {}
-    for mat in volume.segmentation:
-        pdf_func = build_form_factor_func(mat)
-        maximum_spectrum_energy = spectrum[0,-1] # TODO: convert to eV
-        maximum_kappa = maximum_spectrum_energy / ELECTRON_REST_ENERGY
-        x_max = 20.6074 * 2 * maximum_kappa
-        x_max2 = x_max * x_max
-        rayleigh_samplers[mat] = RITA.from_pdf(0, x_max2, pdf_func) # uses default of 128 grid-points
+    for ilabel in material_ids.keys():
+        labeled_seg = np.add(labeled_seg, ilabel * volume.materials[material_ids[ilabel]])
 
     for i in range(photon_count):
         if (i+1) in count_milestones:
             print(f"Simulating photon history {i+1} / {photon_count}")
         BLAH = 0
-        initial_dir = BLAH # Random sampling is a TODO
+        initial_dir = BLAH # Random sampling is a TODO -- need to figure out this geometry
         initial_E = sample_initial_energy(spectrum)
-        single_scatter = track_single_photon_no_vr(source, initial_dir, initial_E, E_abs, N_vals, sigma_C_vals, sigma_R_vals)
+        single_scatter = track_single_photon_no_vr(source, initial_dir, initial_E, E_abs, labeled_seg, volume.data, material_ids)
         accumulator = accumulator + single_scatter
     
     print(f"Finished simulating {photon_count} photon histories")
@@ -88,9 +91,9 @@ def track_single_photon_no_vr(
     initial_dir: geo.Vector3D,
     initial_E: np.float32,
     E_abs: np.float32,
-    N_vals: np.ndarray,
-    sigma_C_vals: np.ndarray,
-    sigma_R_vals: np.ndarray
+    labeled_seg: np.ndarray,
+    density_vol: np.ndarray,
+    material_ids: Dict[int, str]
 ) -> np.ndarray:
     """Produce a grayscale (intensity-based) image representing the photon scatter of a single photon 
     during an X-Ray, without using VR (variance reduction) techniques.
@@ -99,11 +102,10 @@ def track_single_photon_no_vr(
         initial_pos (geo.Point3D): the initial position of the photon, which is the X-Ray source
         initial_dir (geo.Vector3D): the initial direction of travel of the photon
         initital_E (np.float32): the initial energy of the photon
-        E_abs (np.float32): the energy (in keV) at or below which photons are assumed to be absorbed by the materials.  Defaults to 1000 (keV).
-        N_vals (np.ndarray): a field over the volume of 'N', the number of molecules per unit volume.  Each cell in N_vals contains the information for the corresponding voxel.
-        sigma_C_vals (np.ndarray): a field over the volume of 'sigma_C', the interactional cross-section for Compton scatter.  Each cell in sigma_C_vals contains the information for the corresponding voxel.
-        sigma_R_vals (np.ndarray): a field over the volume of 'sigma_R', the interactional cross-section for Rayleigh scatter.  Each cell in sigma_R_vals contains the information for the corresponding voxel.
-
+        E_abs (np.float32): the energy (in keV) at or below which photons are assumed to be absorbed by the materials.
+        labeled_seg (np.ndarray): a [0..N-1]-labeled segmentation of the volume
+        density_vol (np.ndarray): the density information of the volume
+        material_ids (Dict[int,str]): a dictionary mapping an integer material ID-label to the name of the material
     Returns:
         np.ndarray: intensity image of the photon scatter
     """
@@ -114,35 +116,64 @@ def track_single_photon_no_vr(
 
     photon_energy = initial_E # tracker variable throughout the duration of the photon history
 
+    s = 0 # So that the photon doesn't move upon entering the loop
+
     while True: # emulate a do-while loop
+        voxel_coords = VOXEL_FROM_POS(pos) # TODO: implement this
+        mat_label = labeled_seg[voxel_coords]
+        mat_name = material_ids[mat_label]
+
+        # NOTE: I could perform some interpolation to get slighter more accurate mfp data
+        mfp_data_E_bin = CHOOSE_ENERGY_BIN(photon_energy) # TODO: implement
+
+        mfp_Ra = mfp_data[mat_name][mfp_data_E_bin, 1]
+        mfp_Co = mfp_data[mat_name][mfp_data_E_bin, 2]
+        mfp_Tot = mfp_data[mat_name][mfp_data_E_bin, 4]
+
         # simulate moving the photon
-        sigma_T = BLAH # function of photon_energy
-        lambda_T = BLAH # function of N_vals[pos] and sigma_T[pos]
-        s = -1 * lambda_T * np.log(sample_U01())
-        
+        s = -1 * mfp_Tot * np.log(sample_U01())
         pos = pos + (s * dir)
 
         # Handle crossings of segementation boundary
-        BLAH = 0
+        BLAH = 0 # TODO -- handle crossing boundaries
 
         will_exit_volume = BLAH
         if will_exit_volume:
             break
 
-        # simulate the photon interaction
-        prob_of_Compton = BLAH 
-        theta, W = None, None
-        if sample_U01() < prob_of_Compton:
-            theta, W = sample_Compton_theta_E_prime(None, None)
+        # Sample the photon interaction type
+        #
+        # (1 / mfp_Tot) * (1 / molecules_per_vol) ==    total interaction cross section =: sigma_Tot
+        # (1 / mfp_Ra ) * (1 / molecules_per_vol) == Rayleigh interaction cross section =: sigma_Ra
+        # (1 / mfp_Co ) * (1 / molecules_per_vol) ==  Compton interaction cross section =: sigma_Co
+        #
+        # SAMPLING RULE: Let rnd be a uniformly selected number on [0,1]
+        # 
+        # if rnd > simga_Co / sigma_Tot: # if rnd > (mfp_Tot / mfp_Co)
+        #   COMPTON INTERACTION
+        # elif rnd > (sigma_Ra + sigma_Co) / sigma_Tot: # if rnd > mfp_Tot * ((1 / mfp_Co) + (1 / mfp_Ra))
+        #   RAYLEIGH INTERACTION
+        # else:
+        #   DELTA INTERACTION (AKA no interaction, continue on course)
+        # 
+        cos_theta, E_prime = None, None
+        rnd = sample_U01()
+        if rnd > (mfp_Tot / mfp_Co):
+            cos_theta, E_prime = sample_Compton_theta_E_prime(photon_energy, material_nshells[mat_name], compton_data[mat_name])
+        elif rnd > mfp_Tot * ((1 / mfp_Co) + (1 / mfp_Ra)):
+            cos_theta = sample_Rayleigh_theta(photon_energy, rita_samplers[mat_name])
+            E_prime = photon_energy
         else:
-            theta, W = sample_Rayleigh_theta(None, None)
+            # "delta" interaction
+            cos_theta = 0
+            E_prime = photon_energy
         
-        photon_energy = photon_energy - W
+        photon_energy = E_prime
         if photon_energy <= E_abs:
             break
         
         phi = 2 * np.pi * sample_U01()
-        dir = get_scattered_dir(dir, theta, phi)
+        dir = get_scattered_dir(dir, cos_theta, phi)
 
         # END WHILE
     
@@ -153,24 +184,48 @@ def track_single_photon_no_vr(
 
 def get_scattered_dir(
     dir: geo.Vector3D,
-    theta: np.float32,
+    cos_theta: np.float32,
     phi: np.float32
 ) -> geo.Vector3D:
     """Determine the new direction of travel after getting scattered
 
     Args:
         dir (geo.Vector3D): the incoming direction of travel
-        theta (np.float32): the polar scattering angle, i.e. the angle dir and dir_prime
+        cos_theta (np.float32): the cosine of the polar scattering angle, i.e. the angle dir and dir_prime
         phi (np.float32): the azimuthal angle, i.e. how dir_prime is rotated about the axis 'dir'.
 
     Returns:
         geo.Vector3D: the outgoing direction of travel
     """
-    return NotImplemented
+    dx = dir.data[0]
+    dy = dir.data[1]
+    dz = dir.data[2]
+
+    # since \theta is restricted to [0, \pi], sin_theta is restricted to [0,1]
+    sin_theta = np.sqrt(1 - cos_theta * cos_theta)
+    cos_phi = np.cos(phi)
+    sin_phi = np.sin(phi)
+
+    tmp = np.sqrt(1 - dz * dz)
+
+    # See PENELOPE-2006 Eqn 1.131
+    new_dx = dx * cos_theta + sin_theta * (dx * dz * cos_phi - dy * sin_phi) / tmp
+    new_dy = dy * cos_theta + sin_theta * (dy * dz * cos_phi - dx * sin_phi) / tmp
+    new_dz = dz * cos_theta - tmp * sin_theta * cos_phi
+
+    # Normalize the new direction vector
+    new_mag = np.sqrt((new_dx * new_dx) + (new_dy * new_dy) + (new_dz * new_dz))
+
+    new_dx = new_dx / new_mag
+    new_dy = new_dy / new_mag
+    new_dz = new_dz / new_mag
+
+    return geo.Vector3D.from_array(np.array([new_dx, new_dy, new_dz]))
 
 def sample_U01() -> np.float32:
     """Returns a value uniformly sampled from the interval [0,1]"""
-    return NotImplemented
+    # TODO: implement RANECU? Could be useful for validating translation to CUDA
+    return np.random.random_sample()
 
 def sample_initial_energy(spectrum: np.ndarray) -> np.float32:
     """Determine the energy (in keV) of a photon emitted by an X-Ray source with the given spectrum
@@ -179,22 +234,36 @@ def sample_initial_energy(spectrum: np.ndarray) -> np.float32:
         spectrum (np.ndarray): the data associated with the spectrum.  Cross-reference spectral_data.py
     
     Returns:
-        np.float32: the energy of a photon, in keV
+        np.float32: the energy of a photon, in eV
     """
-    return NotImplemented
+    total_count = sum(spectrum[:,1])
+    threshold = sample_U01() * total_count
+    accumulator = 0
+    for i in range(spectrum.shape[0] - 1):
+        accumulator = accumulator + spectrum[i, 1]
+        if accumulator >= threshold:
+            return spectrum[i, 0]
+    
+    # If threshold hasn't been reached yet, we must have sampled the highest energy level
+    return spectrum[-1, 0]
 
 def sample_Rayleigh_theta(
-    mat: str,
     photon_energy: np.float32,
-    rayleigh_samplers: Dict[str, RITA]
+    rayleigh_sampler: RITA
 ) -> np.float32:
-    """Randomly sample values of theta and W for a given Rayleigh scatter interaction
+    """Randomly sample values of theta for a given Rayleigh scatter interaction
     Based on page 49 of paper 'PENELOPE-2006: A Code System for Monte Carlo Simulation of Electron and Photon Transport'
 
+    Note that the materials files distributed with MC-GPU_v1.3 (https://code.google.com/archive/p/mcgpu/downloads) uses
+    Form Factor data from PENELOPE-2006 files.  Accordingly, the (unnormalized) PDF is factored as:
+            p_{Ra}(\\cos \\theta) = g(\\cos \\theta)[F(x,Z)]^2
+    not
+            p_{Ra}(\\cos \\theta) = g(\\cos \\theta)[F(q,Z)]^2
+    Accordingly, we compute cos(theta) using the x-values, not the q-values
+
     Args:
-        mat (str): a string specifying the material at that position in the volume
         photon_energy (np.float32): the energy of the incoming photon
-        rayleigh_samplers (Dict[str, RITA]): a dictionary associating materials to their respective RITA sampler objects 
+        rayleigh_sampler (RITA): the RITA sampler object for the material at the location of the interaction
 
     Returns:
         np.float32: cos(theta), where theta is the polar scattering angle 
@@ -203,11 +272,10 @@ def sample_Rayleigh_theta(
     # Sample a random value of x^2 from the distribution pi(x^2), restricted to the interval (0, x_{max}^2)
     x_max = 20.6074 * 2 * kappa
     x_max2 = x_max * x_max
-    sampler = rayleigh_samplers[mat]
-    x2 = sampler.sample_rita()
+    x2 = rayleigh_sampler.sample_rita()
     while (x2 > x_max2):
         # Resample until x^2 is in the interval (0, x_{max}^2)
-        x2 = sampler.sample_rita()
+        x2 = rayleigh_sampler.sample_rita()
 
     while True:
         # Set cos_theta
@@ -223,12 +291,15 @@ def sample_Rayleigh_theta(
 
 def sample_Compton_theta_E_prime(
     photon_energy: np.float32,
+    mat_nshells: np.int32,
+    mat_compton_data: np.ndarray
 ) -> np.float32:
     """Randomly sample values of theta and W for a given Compton scatter interaction
 
     Args:
-        N_val: the number of molecules per unit volume at the location of the photon interaction
-        sigma_val: the interactional cross-sectional area at the location of the photon interation
+        photon_energy (np.float32): the energy of the incoming photon
+        mat_nshells (np.int32): the number of electron shells in the material being interacted with
+        mat_compton_data (np.ndarray): the Compton scatter data for the material being interacted with.  See mcgpu_compton_data.py for more details 
 
     Returns:
         np.float32: cos_theta, the polar scattering angle 
@@ -242,136 +313,141 @@ def sample_Compton_theta_E_prime(
 
     tau_min = 1 / one_p2k
 
-    #
-    # ---- Function definitions ----
-    #
+    ### Sample cos_theta
 
-    def f_i(i):
-        return compton_data.electron_counts[i]
+    # Compute S(E, \theta=\pi) here, since it does not depend on cos_theta
+    s_pi = 0
+    for shell in range(mat_nshells):
+        U_i = mat_compton_data[shell, 1]
+        if photon_energy > U_i: # this serves as the Heaviside function
+            left_term = photon_energy * (photon_energy - U_i) * 2 # since (1 - \cos(\theta=\pi)) == 2
+            p_i_max = (left_term - ELECTRON_REST_ENERGY * U_i) / (LIGHT_C * np.sqrt(2 * left_term + U_i * U_i))
+            # NOTE: the above line uses LIGHT_C in the denominator on the assumption that 
+            # mat_compton_data[shell,2], from the Compton data files, contains the value J_{i,0}.
+            # If the data files instead store the value (J_{i,0} m_{e} c), I should replace the
+            # instance of LIGHT_C with ELECTRON_REST_ENERGY
+            
+            # Use several steps to calculate n_{i}(p_{i,max})
+            tmp = mat_compton_data[shell, 2] * p_i_max # J_{i,0} p_{i,max}
+            tmp = (1 - tmp - tmp) if (p_i_max < 0) else (1 + tmp + tmp)
+            exponent = 0.5 - 0.5 * tmp * tmp
+            tmp = 0.5 * np.exp(exponent)
+            if (p_i_max > 0):
+                tmp = 1 - tmp
+            # 'tmp' now holds n_{i}(p_{i,max})
 
-    def U_i(i):
-        return compton_data.ionization_energies[i]
+            s_pi = s_pi + mat_compton_data[shell, 0] * tmp # Equivalent to: s_pi += f_{i} n_{i}(p_{i,max})
+    # s_pi is now set
 
-    def p_i_max(i, E, cos_theta):
-        """Computes p_{i,max}(E,\\theta)
-        
-        Args:
-            i: the number of the electron shell, as per Table 6.2 in 'PENELOPE-2006' specifications
-            E: the energy of the incoming photon
-            cos_theta: the cosine of the scatter angle, theta
-        
-        Returns:
-            the result of applying Eqn 2.45
-        """
-        U_i = compton_data.ionization_energies[i]
-        tmp = E * (E - U_i) * (1 - cos_theta)
-        numerator = tmp - ELECTRON_REST_ENERGY * U_i
-        denom_term = 2 * tmp + U_i * U_i
-        return numerator / (LIGHT_C * np.sqrt(denom_term))
-    
-    def n_i_A(i, p_z):
-        """Implements Eqn 2.54 from 'PENELOPE-2006' specification"""
-        d_1 = np.sqrt(0.5)
-        d_2 = np.sqrt(2)
-        J_i = compton_data.compton_profile[i]
-        if p_z < 0:
-            tmp = d_1 - (d_2 * J_i * p_z)
-            return 0.5 * np.exp((d_1 * d_1) - (tmp * tmp))
-        else:
-            tmp = d_1 + (d_2 * J_i * p_z)
-            return 1 - 0.5 * np.exp((d_1 * d_1) - (tmp * tmp))
+    cos_theta = None
+    # local storage for the results of calculating n_{i}(p_{i,max})
+    n_p_i_max_vals = [0 for i in range(COMPTON_MAX_NSHELLS)]
 
-    def heaviside(x):
-        return 1 if x > 0 else 0
-    
-    def set_shell_scatter_vals(S_E_theta_vals, E, cos_theta, p_i_max_vals):
-        """computes: f_{i} \\Theta(E - U_{i}) n_{i}(p_{i,max}) and stores the result in S_E_theta_vals"""
-        assert len(S_E_theta_vals) == compton_data.NUM_SHELLS
-        for i in range(compton_data.NUM_SHELLS):
-            S_E_theta_vals[i] = f_i(i) * heaviside(E - U_i(i)) * n_i_A(i, p_i_max_vals[i])
-
-    def S(E, cos_theta):
-        return sum(
-            [
-                f_i(i) * heaviside(E - U_i(i)) * n_i_A(i, p_i_max(i, E, cos_theta))
-                for i in range(compton_data.NUM_SHELLS)
-            ]
-        )
-    
-    def T(tau, cos_theta, p_i_max_vals, S_E_theta_vals):
-        lt_numer = (1 - tau) * ((2 * kappa + 1) * tau - 1)
-        lt_denom = kappa * kappa * tau * (1 + tau * tau)
-        return (1 - lt_numer / lt_denom) * S_E_theta_vals[i] / S(photon_energy, np.pi)
-
-    # Sample cos_theta
-    # want local storage, since p_{i,max} values are reused in the E_prime sampling
-    p_i_max_vals = [0 for i in range(compton_data.NUM_SHELLS)]
-    S_E_theta_vals = [0 for i in range(compton_data.NUM_SHELLS)]
-
-    while True:
-        i = 1 if sample_U01() < (a_1 / (a_1 + a_2)) else 2
-        tau = None
-        if 1 == i:
-            tau = np.power(tau_min, sample_U01())
-        else:
-            assert 2 == i
-            rnd = sample_U01()
-            tau = np.sqrt(rnd + tau_min * tau_min * (1 - rnd))
-        
+    while True: # emulate do-while loop
+        i = 1 if sample_U01() < (a_1 / (a_1 + a_2)) else 2 # in CUDA code, we will be able to avoid using a variable to store i
+        trnd = sample_U01() # random number for calculating tau
+        tau = np.power(tau_min, trnd) if (1 == i) else np.sqrt(trnd + tau_min * tau_min * (1 - trnd))
         cos_theta = 1 - (1 - tau) / (kappa * tau)
 
-        for i in range(compton_data.NUM_SHELLS):
-            p_i_max_vals[i] = p_i_max(i, photon_energy, cos_theta)
-            set_shell_scatter_vals(S_E_theta_vals, photon_energy, cos_theta, p_i_max_vals)
+        # Compute S(E, \theta)
+        s_theta = 0
+        one_minus_cos = 1 - cos_theta
+        for shell in range(mat_nshells):
+            U_i = mat_compton_data[shell, 1]
+            if photon_energy > U_i: # this serves as the Heaviside function
+                left_term = photon_energy * (photon_energy - U_i) * one_minus_cos
+                p_i_max = (left_term - ELECTRON_REST_ENERGY * U_i) / (LIGHT_C * np.sqrt(2 * left_term + U_i * U_i))
+                # NOTE: the above line uses LIGHT_C in the denominator on the assumption that 
+                # mat_compton_data[shell,2], from the Compton data files, contains the value J_{i,0}.
+                # If the data files instead store the value (J_{i,0} m_{e} c), I should replace the
+                # instance of LIGHT_C with ELECTRON_REST_ENERGY
+                
+                # Use several steps to calculate n_{i}(p_{i,max})
+                tmp = mat_compton_data[shell, 2] * p_i_max # J_{i,0} p_{i,max}
+                tmp = (1 - tmp - tmp) if (p_i_max < 0) else (1 + tmp + tmp)
+                exponent = 0.5 - 0.5 * tmp * tmp
+                tmp = 0.5 * np.exp(exponent)
+                if (p_i_max > 0):
+                    tmp = 1 - tmp
+                # 'tmp' now holds n_{i}(p_{i,max})
 
-        if sample_U01() <= T(tau, cos_theta, p_i_max_vals, S_E_theta_vals):
+                n_p_i_max_vals[shell] = tmp # for later use in sampling E_prime
+
+                s_theta = s_theta + mat_compton_data[shell, 0] * tmp # Equivalent to: s_pi += f_{i} n_{i}(p_{i,max})
+            else:
+                n_p_i_max_vals[shell] = 0
+
+        # s_theta is now set
+
+        # Compute the term of T(cos_theta) that does not involve S(E,\theta)
+        T_tau_term = 1 - ((1 - tau) * ((2 * kappa + 1) * tau - 1)) / (kappa * kappa * tau * (1 + tau * tau))
+
+        # Test for acceptance
+        if (s_pi * sample_U01()) <= (T_tau_term * s_theta):
             break
-
-    # cos_theta is now set
-
-    # Select active electron shell
-    def F(p_z, tau, cos_theta):
-        beta = np.sqrt(1 + (tau * tau) - (2 * tau * cos_theta))
-        tmp = tau * (tau - cos_theta) / (beta * beta)
-        return 1 + beta * (1 + tmp) * p_z / (ELECTRON_MASS * LIGHT_C)
     
-    F_max = F(0.2 * ELECTRON_MASS * LIGHT_C, tau, cos_theta)
+    # cos_theta is set by now
 
-    total_shell_prob = sum(S_E_theta_vals)
-    while True:
-        rnd = sample_U01()
-        active_shell = 0
-        for i in range(len(S_E_theta_vals)):
-            if rnd < (S_E_theta_vals[i] / total_shell_prob):
-                active_shell = i
+    # Choose the active shell
+    while True: # emulate do-while loop
+        #
+        # Steps:
+        #   1. Choose a threshold value in range [0, s_theta]
+        #   2. Accumulate the partial sum of f_{i} \Theta(E - U_i) n_{i}(p_{i,max}) over the electron shells
+        #   3. Once the partial sum reaches the threshold value, we 'return' the most recently considered 
+        #       shell. In this manner, we select the active electron shell with relative probability equal 
+        #       to f_{i} \Theta(E - U_i) n_{i}(p_{i,max}).
+        #   4. Calculate a random value of p_z
+        #   5. Reject p_z and start over if p_z < -1 * m_{e} * c
+        #   6. Calculate F_{max} and F_{p_z} and reject appropriately
+        #
+        threshold = sample_U01() * s_theta
+        accumulator = 0
+        active_shell = None
+        for shell in range(mat_nshells): 
+            accumulator += mat_compton_data[shell, 0] * n_p_i_max_vals[shell]
+            if (accumulator >= threshold):
+                active_shell = shell
                 break
-        
-        A = sample_U01() * n_i_A(active_shell, p_i_max_vals[active_shell])
-        d_1 = np.sqrt(0.5)
-        d_2 = np.sqrt(2)
-        J_i = compton_data.compton_profile[i]
+        # active_shell is now set
 
         p_z = None
-        if A < 0.5:
-            p_z = (d_1 - np.sqrt(d_1 * d_1 - np.log(2 * A))) / (d_2 * J_i)
+        two_A = sample_U01() * 2 * n_p_i_max_vals[active_shell]
+        if two_A < 1:
+            p_z = 0.5 - np.sqrt(0.25 - 0.5 * np.log(two_A))
         else:
-            p_z = (np.sqrt(d_1 * d_1 - np.log(2 * (1 - A))) - d_1) / (d_2 * J_i)
+            p_z = np.sqrt(0.25 - 0.5 * np.log(2 - two_A)) - 0.5
+        p_z = p_z / mat_compton_data[active_shell,2] # Equivalent to: p_z = p_z / J_{i,0}, completing the calculation
 
-        if p_z >= (-1 * ELECTRON_MASS * LIGHT_C):
-            break
+        if p_z < -1:
+            continue
+            # NOTE: the above if-statement condition uses -1 on the assumption that 
+            # mat_compton_data[shell,2], from the Compton data files, contains the value 
+            # (J_{i,0} m_{e} c). If the data files instead store the value J_{i,0}, I should 
+            # replace the instance of (-1) with (-1 * m_{e} * c)
+        
+        # Calculate F(p_z), where p_z is the PENELOPE-2006 'p_z' divided by (m_{e} c)
+        # NOTE: I think the MC-GPU variable 'pzomc' might mean "p_z over (m_{e} c)"
+        beta2 = 1 + (tau * tau) - (2 * tau * cos_theta) # beta2 = (\beta)^2, where \beta := (c q_{C}) / E
+        beta_tau_factor = np.sqrt(beta2) * (1 + tau * (tau - cos_theta) / beta2)
+        F_p_z = 1 + beta_tau_factor * p_z
+        F_max = 1 + beta_tau_factor * (0.2 * (-1 if p_z < 0 else 1))
+        # NOTE: when converting to CUDA, I will want to see what happens when I "multiply everything through" by beta2.
+        # That way, when comparing F_p_z with (\xi * F_max), there will only be multiplications and no divisions
 
-        if sample_U01() * F_max < F(p_z, tau, cos_theta):
-            break
+        if sample_U01() * F_max < F_p_z:
+            break # p_z is accepted
     
-    # p_z is set
-
-    def sign(x):
-        return 1 if x > 0 else (0 if x == 0 else -1)
+    # p_z is now set. Calculate E_ratio = E_prime / E
+    t = p_z * p_z
+    term_tau = 1 - t * tau * tau
+    term_cos = 1 - t * tau * cos_theta
     
-    t = (p_z * p_z) / (ELECTRON_MASS * ELECTRON_REST_ENERGY)
-    tmp1 = 1 - t * tau * cos_theta
-    tmp2 = 1 - t * tau * tau
+    tmp = np.sqrt(term_cos * term_cos - term_tau * (1 - t))
+    if p_z < 0:
+        tmp = -1 * tmp
+    tmp = term_cos + tmp
 
-    # E_prime = E_ratio * photon_energy
-    E_ratio = (tmp1 + sign(p_z) * np.sqrt(tmp1 * tmp1 - tmp2 * (1 - tau))) * tau / tmp2
+    E_ratio = tau * tmp / term_tau
+
     return cos_theta, E_ratio * photon_energy

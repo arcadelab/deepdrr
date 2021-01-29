@@ -67,6 +67,15 @@ def sanity_check_mfps():
             # Check that the other data categories for data_1 and data_2 DON'T match
             for i in range(1, 6):
                 assert np.all(np.not_equal(data_1[:,0], data_2[:,0]))
+    
+    for i in range(NUM_MATS):
+        data = mfp_data[mats[i]]
+        # Check the inverse-MFP sum equation: \sum_{interaction type i} (MFP_{i})^{-1} = MFP_{total}
+        for energy_bin in range(data.shape[0]):
+            Ra_inv = 1 / data[energy_bin, 1]
+            Co_inv = 1 / data[energy_bin, 2]
+            PE_inv = 1 / data[energy_bin, 3]
+            Tot_inv = 1 / data[energy_bin, 4]
+            assert (Ra_inv + Co_inv + PE_inv) <= Tot_inv
 
     print("MFP sanity has been checked!")
-
