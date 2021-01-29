@@ -2,15 +2,11 @@ from typing import Literal, List, Union, Tuple, Optional, Dict
 
 import logging
 import pycuda.driver as cuda
-from pycuda.tools import make_default_context
 import pycuda.autoinit
 from pycuda.autoinit import context
 from pycuda.compiler import SourceModule
 import numpy as np
 from pathlib import Path 
-
-# debugging
-import matplotlib.pyplot as plt
 
 from . import spectral_data
 from . import mass_attenuation
@@ -23,7 +19,8 @@ from ..device import CArm
 from .. import utils
 
 
-logger = logging.getLogger(__name__)
+# logger = logging.getLogger(__name__)
+logger = logging.getLogger(f'ray.rllib.{__name__}')
 
 
 def _get_spectrum(spectrum):
@@ -34,7 +31,6 @@ def _get_spectrum(spectrum):
         return spectral_data.spectrums[spectrum]
     else:
         raise TypeError(f'unrecognized spectrum: {type(spectrum)}')
-
 
 
 def _get_kernel_projector_module(num_materials, attenuation = True) -> SourceModule:
@@ -57,7 +53,7 @@ def _get_kernel_projector_module(num_materials, attenuation = True) -> SourceMod
     # TODO: replace the NUM_MATERIALS junk with some elegant meta-programming.
     return SourceModule(source, include_dirs=[bicubic_path], no_extern_c=True, options=['-D', f'NUM_MATERIALS={num_materials}'])
 
-    
+
 class SingleProjector(object):
     initialized: bool = False
 
@@ -84,7 +80,8 @@ class SingleProjector(object):
         self.num_materials = len(self.volume.materials)
 
         # compile the module
-        self.mod = _get_kernel_projector_module(self.num_materials, attenuation=self.attenuation) # TODO: make this not a compile-time option.
+        # TODO: fix attenuation vs no-attenuation ugliness.
+        self.mod = _get_kernel_projector_module(self.num_materials, attenuation=self.attenuation)
         self.project_kernel = self.mod.get_function("projectKernel")
 
         # assertions
@@ -365,7 +362,7 @@ class Projector(object):
             spectrum (Union[np.ndarray, Literal['60KV_AL35', '90KV_AL40', '120KV_AL43'], optional): spectrum array or name of spectrum to use for projection. Defaults to '90KV_AL40'.
             add_scatter (bool, optional): whether to add scatter noise. Defaults to False.
             threads (int, optional): number of threads to use. Defaults to 8.
-            max_block_index (int, optional): maximum GPU block. Defaults to 1024.
+            max_block_index (int, optional): maximum GPU block. Defaults to 1024. TODO: determine from compute capability.
             neglog (bool, optional): whether to apply negative log transform to output images. Recommended for easy viewing. Defaults to False.
         """
                     
@@ -381,7 +378,6 @@ class Projector(object):
         self.neglog = neglog
 
         assert len(self.volumes) > 0
-        self.attenuation = len(self.volumes) == 1
 
         self.projectors = [
             SingleProjector(
@@ -392,7 +388,7 @@ class Projector(object):
                 spectrum=spectrum,
                 threads=threads,
                 max_block_index=max_block_index,
-                attenuation=self.attenuation,
+                attenuation=len(self.volumes) == 1,
             ) for volume in self.volumes
         ]
 
@@ -403,6 +399,12 @@ class Projector(object):
     def initialized(self):
         # Has the cuda memory been allocated?
         return np.all([p.initialized for p in self.projectors])
+
+    @property
+    def volume(self):
+        if len(self.projectors) != 1:
+            raise DeprecationWarning(f'volume is deprecated. Each projector contains multiple "SingleProjectors", which contain their own volumes.')
+        return self.projectors[0].volume
 
     def project(
         self,
@@ -428,7 +430,7 @@ class Projector(object):
         logger.info("Initiating projection and attenuation")
 
         # TODO: handle multiple volumes more elegantly, i.e. in the kernel. (!)
-        if self.attenuation:
+        if len(self.projectors) == 1:
             projector = self.projectors[0]
             intensities = []
             photon_probs = []
