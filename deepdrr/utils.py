@@ -145,19 +145,33 @@ def generate_uniform_angles(
     return phis, thetas
 
 
-def neglog(image, I_0=1):
-    """Negative log transform.
+def neglog(image: np.ndarray, epsilon: float = 0.01) -> np.ndarray:
+    """Take the negative log transform of an intensity image.
 
     Args:
-        image (np.ndarray): the image, as output by projector. Assumes last two dimensions are height and width.
-        I_0 (int, optional): I_0. Defaults to 1.
+        image (np.ndarray): a single 2D image, or N such images.
+        epsilon (float, optional): positive offset from 0 before taking the logarithm.
 
     Returns:
-        np.ndarray: Image with neg_log transform applied.
+        np.ndarray: the image or images after a negative log transform, scaled to [0, 1]
     """
-    if np.all(image == 0):
-        logger.warning(f'image is all 0')
+    image = np.array(image)
+    shape = image.shape
+    if len(shape) == 2:
+        image = np.expand_dims(image, 0)
+
+    # shift image to avoid invalid values
+    image += image.min(axis=(1, 2), keepdims=True) + epsilon
+
+    # negative log transform
+    image = -np.log(image)
+
+    # linear interpolate to range [0, 1]
+    image_min = image.min(axis=(1, 2), keepdims=True)
+    image_max = image.max(axis=(1, 2), keepdims=True)
+    image = (image - image_min) / (image_max - image_min)
+
+    if len(shape) == 2:
+        return image[0]
+    else:
         return image
-        
-    min_nonzero_value = image[image > 0].min()
-    return np.where(image <= 0, min_nonzero_value, -np.log(image / I_0))
