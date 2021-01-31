@@ -336,13 +336,14 @@ class Projector(object):
         step: float = 0.1,
         mode: Literal['linear'] = 'linear',
         spectrum: Union[np.ndarray, Literal['60KV_AL35', '90KV_AL40', '120KV_AL43']] = '90KV_AL40',
-        add_scatter: bool = False, # add scatter noise
-        add_noise: bool = False, # add poisson noise
+        add_scatter: bool = False,
+        add_noise: bool = False,
         photon_count: int = 100000,
         threads: int = 8,
         max_block_index: int = 1024,
         collected_energy: bool = False, # convert to keV / cm^2 or keV / mm^2
-        neglog: bool = False,
+        neglog: bool = True,
+        intensity_upper_bound: Optional[float] = None,
     ) -> None:
         """Create the projector, which has info for simulating the DRR.
 
@@ -360,10 +361,12 @@ class Projector(object):
             step (float, optional): size of the step along projection ray in voxels. Defaults to 0.1.
             mode (Literal['linear']): [description].
             spectrum (Union[np.ndarray, Literal['60KV_AL35', '90KV_AL40', '120KV_AL43'], optional): spectrum array or name of spectrum to use for projection. Defaults to '90KV_AL40'.
-            add_scatter (bool, optional): whether to add scatter noise. Defaults to False.
+            add_scatter (bool, optional): whether to add scatter noise from artifacts. Defaults to False.
+            add_noise: (bool, optional): whether to add Poisson noise. Defaults to False.
             threads (int, optional): number of threads to use. Defaults to 8.
             max_block_index (int, optional): maximum GPU block. Defaults to 1024. TODO: determine from compute capability.
-            neglog (bool, optional): whether to apply negative log transform to output images. Recommended for easy viewing. Defaults to False.
+            neglog (bool, optional): whether to apply negative log transform to intensity images. If True, outputs are in range [0, 1]. Recommended for easy viewing. Defaults to False.
+            intensity_upper_bound (Optional[float], optional): Maximum intensity, clipped before neglog, after noise and scatter. Defaults to 40.
         """
                     
         # set variables
@@ -376,6 +379,7 @@ class Projector(object):
         self.photon_count = photon_count
         self.collected_energy = collected_energy
         self.neglog = neglog
+        self.intensity_upper_bound = intensity_upper_bound
 
         assert len(self.volumes) > 0
 
@@ -495,6 +499,9 @@ class Projector(object):
         if self.add_noise:
             logger.info("adding Poisson noise")
             images = analytic_generators.add_noise(images, photon_prob, self.photon_count)
+
+        if self.intensity_upper_bound is not None:
+            images = np.clip(images, None, self.intensity_upper_bound)
 
         if self.neglog:
             logger.info("applying negative log transform")
