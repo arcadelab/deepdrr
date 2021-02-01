@@ -53,7 +53,7 @@ texture<float, 3, cudaReadModeElementType> seg(13);
 #endif
 
 #define UPDATE(multiplier, n) do {\
-    output[idx + (n)] += (multiplier) * tex3D(volume, px, py, pz) * round(cubicTex3D(seg(n), px, py, pz));\
+    area_density[idx + (n)] += (multiplier) * tex3D(volume, px, py, pz) * round(cubicTex3D(seg(n), px, py, pz));\
 } while (0)
 
 #if NUM_MATERIALS == 1
@@ -221,7 +221,7 @@ extern "C" {
         float sy,
         float sz,
         float* rt_kinv, // (3, 3) array giving the image-to-world-ray transform.
-        float* output, // flat array, with shape (out_height, out_width, NUM_MATERIALS).
+        float* area_density, // flat array, with shape (out_height, out_width, NUM_MATERIALS).
         int offsetW,
         int offsetH)
     {
@@ -247,7 +247,7 @@ extern "C" {
         if (udx >= out_width || vdx >= out_height)
             return;
 
-        // flat index to first material in output "channel". 
+        // flat index to first material in output "channel" of the area density. 
         // So (idx + m) gets you the pixel for material index m in [0, NUM_MATERIALS)
         int idx = udx * (out_height * NUM_MATERIALS) + vdx * NUM_MATERIALS; 
 
@@ -328,7 +328,7 @@ extern "C" {
 
         // initialize the output to 0.
         for (int m = 0; m < NUM_MATERIALS; m++) {
-            output[idx + m] = 0;
+            area_density[idx + m] = 0;
         }
 
         // Sample the points along the ray at the entrance boundary of the volume and the mid segments.
@@ -346,19 +346,19 @@ extern "C" {
              */ 
             boundary_factor = (t == 0 || alpha + step >= maxAlpha) ? 0.5 : 1.0;
 
-            // Perform the interpolation. This involves the variables: output, idx, px, py, pz, and volume. 
+            // Perform the interpolation. This involves the variables: area_density, idx, px, py, pz, and volume. 
             // It is done for each segmentation.
             INTERPOLATE(boundary_factor);
         }
 
         // Scaling by step;
         for (int m = 0; m < NUM_MATERIALS; m++) {
-            output[idx + m] *= step;
+            area_density[idx + m] *= step;
         }
 
 
         // Last segment of the line
-        if (output[idx] > 0.0f) {
+        if (area_density[idx] > 0.0f) {
             alpha -= step;
             float lastStepsize = maxAlpha - alpha;
 
@@ -376,11 +376,14 @@ extern "C" {
 
         // normalize output value to world coordinate system units
         for (int m = 0; m < NUM_MATERIALS; m++) {
-            output[idx + m] *= sqrt((rx * gVoxelElementSizeX)*(rx * gVoxelElementSizeX) + (ry * gVoxelElementSizeY)*(ry * gVoxelElementSizeY) + (rz * gVoxelElementSizeZ)*(rz * gVoxelElementSizeZ));
+            area_density[idx + m] *= sqrt((rx * gVoxelElementSizeX)*(rx * gVoxelElementSizeX) + (ry * gVoxelElementSizeY)*(ry * gVoxelElementSizeY) + (rz * gVoxelElementSizeZ)*(rz * gVoxelElementSizeZ));
+            
+            // convert to centimeters
+            area_density[idx + m] /= 10;
         }
 
         if (u == 800 && v == 800)
-            printf("output: %f", output[idx]);
+            printf("output: %f", area_density[idx]);
     
         return;
     }

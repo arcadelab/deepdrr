@@ -53,7 +53,7 @@ texture<float, 3, cudaReadModeElementType> seg(13);
 #endif
 
 #define UPDATE(multiplier, n) do {\
-    output[(n)] += (multiplier) * tex3D(volume, px, py, pz) * round(cubicTex3D(seg(n), px, py, pz));\
+    area_density[(n)] += (multiplier) * tex3D(volume, px, py, pz) * round(cubicTex3D(seg(n), px, py, pz));\
 } while (0)
 
 #if NUM_MATERIALS == 1
@@ -329,12 +329,14 @@ extern "C" {
         float alpha; // distance along ray (alpha = minAlpha + step * t)
         float boundary_factor; // factor to multiply at the boundary.
 
-        // material projection-output channels
-        float output[NUM_MATERIALS];
+        // Output channels of the raycasting
+        // Stores the product of [linear distance of the ray through material 'm'] and 
+        // [density of the material]
+        float area_density[NUM_MATERIALS];
 
-        // initialize the projection-output to 0.
+        // initialize the raycasting output (the area density) to 0.
         for (int m = 0; m < NUM_MATERIALS; m++) {
-            output[m] = 0;
+            area_density[m] = 0;
         }
 
         // Sample the points along the ray at the entrance boundary of the volume and the mid segments.
@@ -352,18 +354,18 @@ extern "C" {
              */ 
             boundary_factor = (t == 0 || alpha + step >= maxAlpha) ? 0.5 : 1.0;
 
-            // Perform the interpolation. This involves the variables: output, idx, px, py, pz, and volume. 
+            // Perform the interpolation. This involves the variables: area_density, idx, px, py, pz, and volume. 
             // It is done for each segmentation.
             INTERPOLATE(boundary_factor);
         }
 
         // Scaling by step;
         for (int m = 0; m < NUM_MATERIALS; m++) {
-            output[m] *= step;
+            area_density[m] *= step;
         }
 
         // Last segment of the line
-        if (output[0] > 0.0f) {
+        if (area_density[0] > 0.0f) {
             alpha -= step;
             float lastStepsize = maxAlpha - alpha;
 
@@ -379,21 +381,21 @@ extern "C" {
             INTERPOLATE(0.5 * lastStepsize);
         }
 
-        // normalize output value to world coordinate system units
+        // normalize area_density value to world coordinate system units
         for (int m = 0; m < NUM_MATERIALS; m++) {
-            output[m] *= sqrt((rx * gVoxelElementSizeX)*(rx * gVoxelElementSizeX) + (ry * gVoxelElementSizeY)*(ry * gVoxelElementSizeY) + (rz * gVoxelElementSizeZ)*(rz * gVoxelElementSizeZ));
+            area_density[m] *= sqrt((rx * gVoxelElementSizeX)*(rx * gVoxelElementSizeX) + (ry * gVoxelElementSizeY)*(ry * gVoxelElementSizeY) + (rz * gVoxelElementSizeZ)*(rz * gVoxelElementSizeZ));
             
             // convert to centimeters
-            output[m] /= 10;
+            area_density[m] /= 10;
         }
 
         /* Up to this point, we have accomplished the original projectKernel functionality.
          * The next steps to do are combining the forward_projections dictionary-ization and 
          * the mass_attenuation computation.
          * 
-         * output[m] contains, for material 'm', the length (in centimeters) of the ray's path that passes 
+         * area_density[m] contains, for material 'm', the length (in centimeters) of the ray's path that passes 
          * through material 'm', multiplied by the density of the material (in g / cm^3).  Accordingly, the
-         * units of output[m] are (g / cm^2).
+         * units of area_density[m] are (g / cm^2).
          */
 
         // forward_projections dictionary-ization is implicit.
@@ -414,8 +416,8 @@ extern "C" {
          * \mu is the linear attenuation coefficient, and \rho is the mass density.  \mu has units of
          * inverse length, and \rho has units of mass/volume, so the mass attenuation coefficient has
          * units of [cm^2 / g]
-         *      output[m] is the product of [linear distance of the ray through material 'm'] and 
-         * [density of the material].  Accordingly, output[m] has units of [g / cm^2].
+         *      area_density[m] is the product of [linear distance of the ray through material 'm'] and 
+         * [density of the material].  Accordingly, area_density[m] has units of [g / cm^2].
          *
          * The mass attenuation code uses the Beer-Lambert law:
          *
@@ -423,7 +425,7 @@ extern "C" {
          *
          * where I_{0} is the initial intensity, (\mu / \rho) is the mass attenuation coefficient, 
          * \rho is the density, and d is the length of the ray passing through the material.  Note 
-         * that the product (\rho * d), also known as the 'area density' is the quantity output[m].
+         * that the product (\rho * d), also known as the 'area density' is the quantity area_density[m].
          *      Because we are attenuating multiple materials, the exponent that we use for the 
          * Beer-Lambert law is the sum of the (\mu_{mat} / \rho_{mat}) * (\rho_{mat} * d_{mat}) for
          * each material 'mat'.
@@ -445,7 +447,7 @@ extern "C" {
             float intensity_tmp = 0.0f; // lifting the call to calculate_attenuation_gpu(...) up a level
             for (int m = 0; m < NUM_MATERIALS; m++) {
                 float absorb_coef = absorb_coef_table[bin * NUM_MATERIALS + m];
-                intensity_tmp += output[m] * -1 * absorb_coef;
+                intensity_tmp += area_density[m] * -1 * absorb_coef;
             }
             intensity_tmp = expf(intensity_tmp) * energy * p;
             // done with the "lifted" call to calculate_attenuation_gpu(...)
