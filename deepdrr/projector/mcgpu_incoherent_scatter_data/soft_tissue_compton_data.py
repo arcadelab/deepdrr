@@ -5,6 +5,8 @@ import numpy as np
 #[COMPTON INTERACTIONS (relativistic impulse model with approximated one-electron analytical profiles)]
 #[SHELL INFORMATION FROM COMMON/CGCO/: FCO, UICO, FJ0, KZCO, KSCO]
 
+# Note: the FJ0 values represent the PENELOPE-2006 quantities: (J_{i,0} m_{e} c), and are thus dimensionless.
+
 soft_tissue_ICRP110_NUM_SHELLS = 30
 
 soft_tissue_ICRP110_compton_data = np.array([

@@ -5,6 +5,8 @@ import numpy as np
 #[COMPTON INTERACTIONS (relativistic impulse model with approximated one-electron analytical profiles)]
 #[SHELL INFORMATION FROM COMMON/CGCO/: FCO, UICO, FJ0, KZCO, KSCO]
 
+# Note: the FJ0 values represent the PENELOPE-2006 quantities: (J_{i,0} m_{e} c), and are thus dimensionless.
+
 water_NUM_SHELLS = 3
 
 water_compton_data = np.array([
