@@ -19,8 +19,7 @@ from ..device import CArm
 from .. import utils
 
 
-# logger = logging.getLogger(__name__)
-logger = logging.getLogger(f'ray.rllib.{__name__}')
+logger = logging.getLogger(__name__)
 
 
 def _get_spectrum(spectrum):
