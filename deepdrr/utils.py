@@ -158,7 +158,7 @@ def neglog(image: np.ndarray, epsilon: float = 0.01) -> np.ndarray:
     image = np.array(image)
     shape = image.shape
     if len(shape) == 2:
-        image = np.expand_dims(image, 0)
+        image = image[np.newaxis, :, :]
 
     # shift image to avoid invalid values
     image += image.min(axis=(1, 2), keepdims=True) + epsilon
@@ -169,7 +169,13 @@ def neglog(image: np.ndarray, epsilon: float = 0.01) -> np.ndarray:
     # linear interpolate to range [0, 1]
     image_min = image.min(axis=(1, 2), keepdims=True)
     image_max = image.max(axis=(1, 2), keepdims=True)
-    image = (image - image_min) / (image_max - image_min)
+    if np.any(image_max == image_min):
+        logger.warning(f'mapping constant image to 0. This probably indicates the projector is pointed away from the volume.')
+        image.fill(0) # TODO(killeen): for multiple images, only fill the bad ones
+        if image.shape[0] > 1:
+            logger.error('TODO: zeroed all images, even though only one might be bad.')
+    else:
+        image = (image - image_min) / (image_max - image_min)
 
     if len(shape) == 2:
         return image[0]
