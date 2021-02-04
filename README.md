@@ -32,7 +32,7 @@ camera_intrinsics = deepdrr.geo.CameraIntrinsicTransform.from_sizes(
 
 
 center = volume.world_from_ijk @ deepdrr.geo.point(100, 100, 100)
-carm = deepdrr.CArm(isocenter=center)
+carm = deepdrr.CArm(isocenter=center, isocenter_distance=800)
 
 with deepdrr.Projector(volume, camera_intrinsics, carm) as projector:
   projection = projector()
