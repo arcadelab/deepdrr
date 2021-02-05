@@ -1,12 +1,16 @@
 from typing import Literal, List, Union, Tuple, Optional, Dict
 
 import logging
-import pycuda.driver as cuda
-import pycuda.autoinit
-from pycuda.autoinit import context
-from pycuda.compiler import SourceModule
 import numpy as np
-from pathlib import Path 
+from pathlib import Path
+
+try:
+    import pycuda.driver as cuda
+    import pycuda.autoinit
+    from pycuda.autoinit import context
+    from pycuda.compiler import SourceModule
+except ImportError:
+    logging.warning('pycuda unavailable')
 
 from . import spectral_data
 from . import mass_attenuation
