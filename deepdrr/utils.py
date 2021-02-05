@@ -177,6 +177,9 @@ def neglog(image: np.ndarray, epsilon: float = 0.01) -> np.ndarray:
     else:
         image = (image - image_min) / (image_max - image_min)
 
+    if np.any(np.isnan(image)):
+        logger.warning(f'got NaN values from negative log transform.')
+
     if len(shape) == 2:
         return image[0]
     else:
