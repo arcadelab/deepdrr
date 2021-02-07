@@ -1,12 +1,16 @@
 from typing import Literal, List, Union, Tuple, Optional, Dict
 
 import logging
-import pycuda.driver as cuda
-import pycuda.autoinit
-from pycuda.autoinit import context
-from pycuda.compiler import SourceModule
 import numpy as np
-from pathlib import Path 
+from pathlib import Path
+
+try:
+    import pycuda.driver as cuda
+    import pycuda.autoinit
+    from pycuda.autoinit import context
+    from pycuda.compiler import SourceModule
+except ImportError:
+    logging.warning('pycuda unavailable')
 
 from . import spectral_data
 from . import mass_attenuation
@@ -409,6 +413,9 @@ class Projector(object):
             raise DeprecationWarning(f'volume is deprecated. Each projector contains multiple "SingleProjectors", which contain their own volumes.')
         return self.projectors[0].volume
 
+    def get_carm_camera_projection(self):
+        return geo.CameraProjection(self.camera_intrinsics, self.carm.camera3d_from_world)
+
     def project(
         self,
         *camera_projections: geo.CameraProjection,
@@ -428,7 +435,7 @@ class Projector(object):
         if not camera_projections and self.carm is None:
             raise ValueError('must provide a camera projection object to the projector, unless imaging device (e.g. CArm) is provided')
         elif not camera_projections and self.carm is not None:
-            camera_projections = [geo.CameraProjection(self.camera_intrinsics, self.carm.camera3d_from_world)]
+            camera_projections = [self.get_carm_camera_projection()]
         
         logger.info("Initiating projection and attenuation")
 

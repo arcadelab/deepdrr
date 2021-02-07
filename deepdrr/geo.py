@@ -351,10 +351,10 @@ def vector(*v: Union[np.ndarray, float, Vector2D, Vector3D]) -> Union[Vector2D, 
 
 
 def _point_or_vector(data: np.ndarray):
-    assert data.ndim == 1 and data[-1] in [0, 1], f'{data} must be a point or vector'
+    """Convert a point where the "homogeneous" element may not be 1."""
 
     if bool(data[-1]):
-        return point(data[:-1])
+        return point(data[:-1] / data[-1])
     else:
         return vector(data[:-1])
 
@@ -765,6 +765,7 @@ class CameraIntrinsicTransform(FrameTransform):
         """Tuple with the (width, height) of the sense/image, in pixels."""
         return (self.sensor_width, self.sensor_height)
 
+# TODO(killeen): CameraProjection never calls super().__init__() and thus has no self.data attribute.
 
 class CameraProjection(Transform):
     dim = 3
