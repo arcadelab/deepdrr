@@ -263,6 +263,11 @@ class Volume(object):
         return geo.point(self.world_from_ijk.t)
 
     @property
+    def center_in_world(self) -> geo.Point3D:
+        """The center of the volume in world coorindates. Useful for debugging."""
+        return geo.point(self.world_from_ijk @ geo.point(np.array(self.shape) / 2))
+
+    @property
     def spacing(self) -> geo.Vector3D:
         """The spacing of the voxels."""
         return geo.vector(np.abs(np.array(self.anatomical_from_ijk.R)).max(axis=0))

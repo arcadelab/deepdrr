@@ -64,7 +64,7 @@ class SegmentationNet():
         for i in range(0, blocks[0]):
             for j in range(0, blocks[1]):
                 for k in range(0, blocks[2]):
-                    logger.debug(counter)
+                    logger.debug(f'segmenting block {counter} / {blocks[0] * blocks[1] * blocks[2]}')
                     counter += 1
                     curren_block = padded_volume[i * blocksize:(i + 1) * blocksize, j * blocksize:(j + 1) * blocksize, k * blocksize:(k + 1) * blocksize]
                     presegmentation = np.zeros((4, blocksize, blocksize, blocksize), dtype=np.float32)
