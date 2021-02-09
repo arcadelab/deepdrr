@@ -20,11 +20,15 @@ from __future__ import annotations
 
 from typing import Union, Tuple, Optional, Type, List, Generic, TypeVar
 
+import logging
 from abc import ABC, abstractmethod
 import numpy as np
 
 from . import vol
 from . import utils
+
+
+logger = logging.getLogger(__name__)
 
 
 def _to_homogeneous(x: np.ndarray, is_point: bool = True) -> np.ndarray:
@@ -123,7 +127,6 @@ class HomogeneousObject(ABC):
 
     def __setitem__(self, key, value):
         return self.data.__setitem__(key, value)
-
 
 
 class HomogeneousPointOrVector(HomogeneousObject):
@@ -574,7 +577,15 @@ class FrameTransform(Transform):
         translation: np.ndarray,
     ) -> FrameTransform:
         """Wrapper around from_rt."""
-        return cls.from_rt(translation)
+        return cls.from_rt(translation=translation)
+
+    @classmethod
+    def from_rotation(
+        cls,
+        rotation: np.ndarray,
+    ) -> FrameTransform:
+        """Wrapper around from_rt."""
+        return cls.from_rt(rotation=rotation)
 
     @classmethod
     def identity(
@@ -629,6 +640,57 @@ class FrameTransform(Transform):
     def inv(self):
         R_inv = np.linalg.inv(self.R)
         return FrameTransform.from_rt(R_inv, -(R_inv @ self.t))
+
+
+def frame_transform(*args) -> FrameTransform:
+    """Convenience function for creating a frame transform.
+
+    The output depends on how the function is called:
+    frame_transform() -> 3D identity transform
+    frame_transform(None) -> 3D identity transform
+    frame_transform(scalar) -> FrameTransform.from_scaling(scalar)
+    frame_transform(ft: FrameTransform) -> ft
+    frame_transform(data: np.ndarray[4,4]) -> FrameTransform(data)
+    frame_transform(R: np.ndarray[3,3]) -> FrameTransform.from_rt(R)
+    frame_transform(t: np.ndarray[3]) -> FrameTransform.from_translation(t)
+    frame_transform((R, t)) -> FrameTransform.from_rt(R, t)
+    frame_transform(R, t) -> FrameTransform.from_rt(R, t)
+
+    Returns:
+        FrameTransform: [description]
+    """
+    logger.debug(f'args: {args}')
+
+    if len(args) == 0:
+        return FrameTransform.identity()
+    elif len(args) == 1:
+        if args[0] is None:
+            return FrameTransform.identity()
+        elif isinstance(args[0], FrameTransform):
+            return args[0]
+        elif isinstance(args[0], (int, float)):
+            return FrameTransform.from_scaling(args[0])
+        elif isinstance(args[0], np.ndarray):
+            if args[0].shape == (4, 4):
+                return FrameTransform(args[0])
+            elif args[0].shape == (3, 3):
+                return FrameTransform.from_rt(rotation=args[0])
+            elif args[0].shape == (3,) or args[0].shape == (1, 3):
+                return FrameTransform.from_rt(translation=args[0])
+            else:
+                raise TypeError(f"couldn't convert numpy array to FrameTransform: {args[0]}")
+        elif isinstance(args[0], (tuple, list)) and len(args[0]) == 2:
+            return frame_transform(args[0][0], args[0][1])
+    elif len(args) == 2:
+        if (isinstance(args[0], np.ndarray)
+            and isinstance(args[1], np.ndarray) 
+            and args[0].shape == (3, 3)
+            and args[1].shape == (3,)):
+            return FrameTransform.from_rt(rotation=args[0], translation=args[1])
+        else:
+            raise TypeError(f'could not parse FrameTransfrom from [R, t]: [{args[0]}, {args[1]}]')
+    else:
+        raise TypeError(f"too many arguments: {args}")
 
 
 class CameraIntrinsicTransform(FrameTransform):

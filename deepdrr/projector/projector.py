@@ -432,13 +432,13 @@ class Projector(object):
         Returns:
             np.ndarray: array of DRRs, after mass attenuation, etc.
         """
-        logger.debug(f'carm isocenter: {self.carm.isocenter}')
         if not camera_projections and self.carm is None:
             raise ValueError('must provide a camera projection object to the projector, unless imaging device (e.g. CArm) is provided')
         elif not camera_projections and self.carm is not None:
             camera_projections = [self.get_carm_camera_projection()]
+            logger.debug(f'projecting with source at {camera_projections[0].center_in_world}, pointing toward isocenter at {self.carm.isocenter}...')
         
-        logger.info("Initiating projection and attenuation")
+        logger.info("Initiating projection and attenuation...")
 
         # TODO: handle multiple volumes more elegantly, i.e. in the kernel. (!)
         if len(self.projectors) == 1:
