@@ -10,6 +10,7 @@ try:
     from pycuda.autoinit import context
     from pycuda.compiler import SourceModule
 except ImportError:
+    SourceModule = "SourceModule"
     logging.warning('pycuda unavailable')
 
 from . import spectral_data
