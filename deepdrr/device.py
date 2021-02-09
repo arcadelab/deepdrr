@@ -132,6 +132,20 @@ class MobileCArm(object):
             self.beta += utils.radians(float(delta_beta), degrees=degrees)
             self.beta = np.clip(self.beta, self.min_beta, self.max_beta)
 
+    def move_to(
+        self,
+        isocenter: Optional[geo.Point3D] = None,
+        alpha: Optional[geo.Point3D] = None,
+        beta: Optional[geo.Point3D] = None,
+        degrees: bool = False,
+    ) -> None:
+        if isocenter is not None:
+            self.isocenter = geo.point(isocenter)
+        if alpha is not None:
+            self.alpha = utils.radians(float(alpha), degrees=degrees)
+        if beta is not None:
+            self.beta = utils.radians(float(beta), degrees=degrees)
+
     @property
     def camera3d_from_world(self) -> geo.FrameTransform:
         return self.get_camera3d_from_world()
