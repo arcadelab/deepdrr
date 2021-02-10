@@ -23,6 +23,7 @@ from typing import Union, Tuple, Optional, Type, List, Generic, TypeVar
 import logging
 from abc import ABC, abstractmethod
 import numpy as np
+import scipy.spatial.distance
 
 from . import vol
 from . import utils
@@ -128,6 +129,9 @@ class HomogeneousObject(ABC):
     def __setitem__(self, key, value):
         return self.data.__setitem__(key, value)
 
+    def __iter__(self):
+        return iter(np.array(self))
+
 
 class HomogeneousPointOrVector(HomogeneousObject):
     """A Homogeneous point or vector in any dimension."""
@@ -152,6 +156,8 @@ class HomogeneousPointOrVector(HomogeneousObject):
         """Return the L2 norm of the point or vector."""
         return self.norm()
 
+    def __div__(self, other):
+        return self * (1 / other)
     
 class Point(HomogeneousPointOrVector):
     def __init__(self, data: np.ndarray) -> None:
@@ -178,7 +184,7 @@ class Point(HomogeneousPointOrVector):
     def __sub__(
             self: Point,
             other: Point,
-    ) -> Union[Vector2D, Vector3D]:
+    ) -> Vector:
         """ Subtract two points, obtaining a vector. """
         other = self.from_any(other)
         return _point_or_vector(self.data - other.data)
@@ -199,11 +205,21 @@ class Point(HomogeneousPointOrVector):
         else:
             return NotImplemented
 
-    def __div__(self, other):
-        return self * (1 / other)
-
     def __neg__(self):
         return self * (-1)
+
+    def lerp(self, other: Point, alpha: float = 0.5) -> Point:
+        """Linearly interpolate between one point and another.
+
+        Args:
+            other (Point): other point.
+            alpha (float): fraction of the distance from self to other to travel. Defaults to 0.5 (the midpoint).
+
+        Returns:
+            Point: the point that is `alpha` of the way between self and other.
+        """
+        return (1 - alpha) * self + alpha * other
+
 
 
 class Vector(HomogeneousPointOrVector):
@@ -259,6 +275,20 @@ class Vector(HomogeneousPointOrVector):
 
     def __radd__(self, other: Vector):
         return self + other
+
+    def hat(self) -> Vector:
+        return self * (1 / self.norm())
+
+    def cosine_distance(self, other: Vector) -> float:
+        """Get the cosine distance between the angles.
+
+        Args:
+            other (Vector): the other vector.
+
+        Returns:
+            float: `1 - cos(angle)`, where `angle` is between self and other.
+        """
+        return scipy.spatial.distance.cosine(np.array(self), np.array(other))
 
 
 class Point2D(Point):

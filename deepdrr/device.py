@@ -103,6 +103,10 @@ class MobileCArm(object):
     def carm_from_world(self) -> geo.FrameTransform:
         return self.world_from_carm.inv
 
+    @property
+    def isocenter_in_world(self) -> geo.Point3D:
+        return self.world_from_carm @ self.isocenter
+
     def move_by(
         self,
         delta_isocenter: Optional[geo.Vector3D] = None,
@@ -139,16 +143,32 @@ class MobileCArm(object):
         beta: Optional[geo.Point3D] = None,
         degrees: bool = False,
     ) -> None:
+        """Move to the specified point.
+
+        Args:
+            isocenter (Optional[geo.Point3D], optional): the desired isocenter in carm coordinates. Defaults to None.
+            alpha (Optional[geo.Point3D], optional): the desired alpha angulation. Defaults to None.
+            beta (Optional[geo.Point3D], optional): the desired secondary angulation. Defaults to None.
+            degrees (bool, optional): whether angles are in degrees or radians. Defaults to False.
+        """
         if isocenter is not None:
             self.isocenter = geo.point(isocenter)
         if alpha is not None:
             self.alpha = utils.radians(float(alpha), degrees=degrees)
+            self.alpha = np.clip(self.alpha, self.min_alpha, self.max_alpha)
         if beta is not None:
             self.beta = utils.radians(float(beta), degrees=degrees)
+            self.beta = np.clip(self.beta, self.min_beta, self.max_beta)
 
     @property
     def camera3d_from_world(self) -> geo.FrameTransform:
         return self.get_camera3d_from_world()
+
+    def get_pose_vector(self) -> geo.Vector3D:
+        """Get the unit vector pointing toward the detector of the C-arm from its isocenter, in the carm space."""
+        rot = Rotation.from_euler('xy', [-self.alpha, -self.beta])
+        x = rot.apply([0, 0, 1])
+        return geo.vector(x)
 
     def get_spherical_coordinates(self) -> Tuple[float, float]:
         """Get theta, phi in spherical coordinates for the C-arm position.
@@ -158,13 +178,11 @@ class MobileCArm(object):
         Returns:
             Tuple[float, float]: theta, phi, in radians.
         """
-        rot = Rotation.from_euler('xy', [-self.alpha, -self.beta])
-        x, y, z = rot.apply([0, 0, 1])
+        x, y, z = self.get_pose_vector()
         theta = np.arctan2(y, x)
         phi = np.sqrt(x * x + y * y) / z
 
         return theta, phi
-
 
     def get_camera3d_from_world(self) -> geo.FrameTransform:
         # convert the alpha, beta to spherical coordinates
@@ -177,9 +195,6 @@ class MobileCArm(object):
         isocenter_from_carm = geo.FrameTransform.from_origin(self.isocenter)
 
         return camera3d_from_isocenter @ isocenter_from_carm @ self.carm_from_world
-
-    
-
 
 class CArm(object):
     """C-arm device for positioning a camera in space."""
