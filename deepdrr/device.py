@@ -11,10 +11,11 @@ from . import utils
 logger = logging.getLogger(__name__)
 
 PI = np.float32(np.pi)
-DEFAULT_MIN_BETA = -PI / 4
-DEFAULT_MAX_BETA = PI / 4
 DEFAULT_MIN_ALPHA = -2 * PI / 3
 DEFAULT_MAX_ALPHA = 2 * PI / 3
+DEFAULT_MIN_BETA = -PI / 4
+DEFAULT_MAX_BETA = PI / 4
+
 
 
 def make_detector_rotation(phi: float, theta: float, rho: float):
@@ -170,28 +171,16 @@ class MobileCArm(object):
         x = rot.apply([0, 0, 1])
         return geo.vector(x)
 
-    def get_spherical_coordinates(self) -> Tuple[float, float]:
-        """Get theta, phi in spherical coordinates for the C-arm position.
-
-        Converts these from self.alpha, self.beta.
-
-        Returns:
-            Tuple[float, float]: theta, phi, in radians.
-        """
-        x, y, z = self.get_pose_vector()
-        theta = np.arctan2(y, x)
-        phi = np.sqrt(x * x + y * y) / z
-
-        return theta, phi
+    def get_pose_vector_in_world(self) -> geo.Vector3D:
+        return self.world_from_carm @ self.get_pose_vector()
 
     def get_camera3d_from_world(self) -> geo.FrameTransform:
-        # convert the alpha, beta to spherical coordinates
-        theta, phi = self.get_spherical_coordinates()
-
+        """Rigid transformation of the C-arm camera pose."""
         # get the rotation corresponding to the c-arm, then translate to the camera-center frame, along z-axis.
-        R = make_detector_rotation(phi, theta, rho=0)
+
+        rot = Rotation.from_euler('xy', [self.alpha, self.beta]).as_matrix()
         t = np.array([0, 0, self.isocenter_distance])
-        camera3d_from_isocenter = geo.FrameTransform.from_rt(R, t)
+        camera3d_from_isocenter = geo.FrameTransform.from_rt(rot, t)
         isocenter_from_carm = geo.FrameTransform.from_origin(self.isocenter)
 
         return camera3d_from_isocenter @ isocenter_from_carm @ self.carm_from_world

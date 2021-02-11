@@ -189,21 +189,27 @@ class Point(HomogeneousPointOrVector):
         other = self.from_any(other)
         return _point_or_vector(self.data - other.data)
 
-    def __add__(self, other):
+    def __add__(self, other: Vector):
         """ Can add a vector to a point, but cannot add two points. """
         if issubclass(type(other), Vector):
-            return type(self)(other.data + self.data)
+            return type(self)(self.data + other.data)
+        elif issubclass(type(other), Point):
+            # TODO: should points be allowed to be added together?
+            return point(np.array(self) + np.array(other))
         else:
             return NotImplemented
 
     def __radd__(self, other):
         return self + other
 
-    def __mul__(self, other):
+    def __mul__(self, other: Union[int, float]) -> Vector:
         if isinstance(other, (int, float)):
             return point(other * np.array(self))
         else:
             return NotImplemented
+
+    def __rmul__(self, other: Union[int, float]) -> Vector:
+        return self * other
 
     def __neg__(self):
         return self * (-1)
@@ -267,7 +273,7 @@ class Vector(HomogeneousPointOrVector):
     def __sub__(self, other: Vector):
         return self + (-other)
 
-    def __rmul__(self, other: Vector):
+    def __rmul__(self, other: Union[int, float]):
         return self * other
 
     def __rsub__(self, other: Vector):
