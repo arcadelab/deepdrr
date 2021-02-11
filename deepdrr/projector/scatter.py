@@ -38,7 +38,9 @@ ELECTRON_REST_ENERGY = 510998.918 # eV
 
 def simulate_scatter_no_vr(
     volume: vol.Volume,
-    source: geo.Point3D,
+    source_ijk: geo.Point3D,
+    rt_kinv: np.ndarray,
+    sensor_size: Tuple[int, int],
     output_shape: Tuple[int, int],
     spectrum: Optional[np.ndarray] = spectral_data.spectrums['90KV_AL40'], 
     photon_count: Optional[int] = 10000000, # 10^7
@@ -49,11 +51,13 @@ def simulate_scatter_no_vr(
 
     Args:
         volume (np.ndarray): the volume density data.
-        source (Point3D): the source point for rays in the camera's IJK space
+        source (geo.Point3D): the source point for rays in the camera's IJK space
+        rt_kinv (np.ndarray): the ray transform for the projection.  Transforms pixel indices (u,v,1) to IJK offset from the X-Ray source
+        sensor_size (Tuple[int,int]): the sensor size {width}x{height}, in pixels, of the detector
+        output_shape (Tuple[int, int]): the {height}x{width} dimensions of the output image
         spectrum (Optional[np.ndarray], optional): spectrum array.  Defaults to 90KV_AL40 spectrum.
         photon_count (Optional[int], optional): the number of photons simulated.  Defaults to 10^7 photons.
-        E_abs (Optional[np.float32], optional): the energy (in keV) at or below which photons are assumed to be absorbed by the materials.  Defaults to 1000 (eV).
-        output_shape (Tuple[int, int]): the {height}x{width} dimensions of the output image
+        E_abs (Optional[np.float32], optional): the energy (in eV) at or below which photons are assumed to be absorbed by the materials.  Defaults to 1000 (eV).
 
     Returns:
         np.ndarray: intensity image of the photon scatter
@@ -74,13 +78,16 @@ def simulate_scatter_no_vr(
     for ilabel in material_ids.keys():
         labeled_seg = np.add(labeled_seg, ilabel * volume.materials[material_ids[ilabel]])
 
+    # Plane data
+    vol_planes, vol_plane_bounds = get_volume_surface_planes(volume)
+    detector_plane = get_detector_plane(rt_kinv, source_ijk, sensor_size)
+
     for i in range(photon_count):
         if (i+1) in count_milestones:
             print(f"Simulating photon history {i+1} / {photon_count}")
-        BLAH = 0
-        initial_dir = BLAH # Random sampling is a TODO -- need to figure out this geometry
+        initial_dir, initial_pos, sample_count = sample_initial_direction(vol_planes, vol_plane_bounds, volume.data.shape, source_ijk)
         initial_E = sample_initial_energy(spectrum)
-        single_scatter = track_single_photon_no_vr(source, initial_dir, initial_E, E_abs, labeled_seg, volume.data, material_ids)
+        single_scatter = track_single_photon_no_vr(initial_pos, initial_dir, initial_E, E_abs, labeled_seg, volume.data, detector_plane, material_ids)
         accumulator = accumulator + single_scatter
     
     print(f"Finished simulating {photon_count} photon histories")
@@ -93,52 +100,55 @@ def track_single_photon_no_vr(
     E_abs: np.float32,
     labeled_seg: np.ndarray,
     density_vol: np.ndarray,
+    detector_plane: np.ndarray,
     material_ids: Dict[int, str]
-) -> np.ndarray:
+) -> Union[None, Tuple[Tuple[int,int], np.float32]]:
     """Produce a grayscale (intensity-based) image representing the photon scatter of a single photon 
     during an X-Ray, without using VR (variance reduction) techniques.
 
     Args:
-        initial_pos (geo.Point3D): the initial position of the photon, which is the X-Ray source
-        initial_dir (geo.Vector3D): the initial direction of travel of the photon
+        initial_pos (geo.Point3D): the initial position (in IJK space) of the photon once it has entered the volume.  This IS NOT the X-Ray source.  See function sample_initial_direction(...)
+        initial_dir (geo.Vector3D): the initial direction of travel of the photon, in IJK space
         initital_E (np.float32): the initial energy of the photon
-        E_abs (np.float32): the energy (in keV) at or below which photons are assumed to be absorbed by the materials.
+        E_abs (np.float32): the energy (in eV) at or below which photons are assumed to be absorbed by the materials.
         labeled_seg (np.ndarray): a [0..N-1]-labeled segmentation of the volume
         density_vol (np.ndarray): the density information of the volume
+        detector_plane (np.ndarray): the 'plane vector' of the detector
         material_ids (Dict[int,str]): a dictionary mapping an integer material ID-label to the name of the material
     Returns:
-        np.ndarray: intensity image of the photon scatter
+        Union[None, Tuple[Tuple[int, int], np.float32]]: if the photon doesn't hit the detector, returns None.  Otherwise, returns the pixel coord.s of the hit pixel,
+                                                        as well as the energy (in eV) of the photon when it hit the detector.
     """
-    BLAH = 0
-    # find the point on the boundary of the volume that the photon from the source first reaches
-    pos = BLAH
-    dir = initial_dir
+    pos = initial_pos
+    direction = initial_dir
 
     photon_energy = initial_E # tracker variable throughout the duration of the photon history
 
-    s = 0 # So that the photon doesn't move upon entering the loop
-
     while True: # emulate a do-while loop
-        voxel_coords = VOXEL_FROM_POS(pos) # TODO: implement this
+        # Get voxel (index) coord.s.  Keep in mind that IJK coord.s are voxel-centered
+        vox_x = np.floor(pos.data[0])
+        vox_y = np.floor(pos.data[1])
+        vox_z = np.floor(pos.data[2])
+        voxel_coords = (vox_x, vox_y, vox_z)
         mat_label = labeled_seg[voxel_coords]
         mat_name = material_ids[mat_label]
 
         # NOTE: I could perform some interpolation to get slighter more accurate mfp data
-        mfp_data_E_bin = CHOOSE_ENERGY_BIN(photon_energy) # TODO: implement
-
-        mfp_Ra = mfp_data[mat_name][mfp_data_E_bin, 1]
-        mfp_Co = mfp_data[mat_name][mfp_data_E_bin, 2]
-        mfp_Tot = mfp_data[mat_name][mfp_data_E_bin, 4]
+        mfp_Ra, mfp_Co, mfp_Tot = get_mfp_data(mfp_data[mat_name], photon_energy)
 
         # simulate moving the photon
         s = -1 * mfp_Tot * np.log(sample_U01())
-        pos = pos + (s * dir)
+        pos = pos + (s * direction)
 
-        # Handle crossings of segementation boundary
-        BLAH = 0 # TODO -- handle crossing boundaries
-
-        will_exit_volume = BLAH
-        if will_exit_volume:
+        # Check for leaving the volume
+        vox_x = np.floor(pos.data[0])
+        vox_y = np.floor(pos.data[1])
+        vox_z = np.floor(pos.data[2])
+        if (vox_x < 0) or (vox_x >= density_vol.shape[0]):
+            break
+        if (vox_y < 0) or (vox_y >= density_vol.shape[1]):
+            break
+        if (vox_z < 0) or (vox_z >= density_vol.shape[2]):
             break
 
         # Sample the photon interaction type
@@ -173,14 +183,345 @@ def track_single_photon_no_vr(
             break
         
         phi = 2 * np.pi * sample_U01()
-        dir = get_scattered_dir(dir, cos_theta, phi)
+        direction = get_scattered_dir(direction, cos_theta, phi)
 
         # END WHILE
     
     # final processing
-    BLAH = BLAH
+    detector_alpha = ray_intersect_plane(pos, direction, detector_plane)
+    if detector_alpha is None:
+        return None
+    
+    # TODO: math for which pixel got hit
 
     return NotImplemented
+
+def get_mfp_data(
+    table: np.ndarray,
+    E: np.float32
+) -> Tuple[np.float32, np.float32, np.float32]:
+    """Access the Mean Free Path data for the given material's table at the given photon energy level.
+    Performs linear interpolation for any energy value that isn't exactly a table entry.
+
+    Args:
+        table (np.ndarray): a table of Mean Free Path data.  See mcgpu_mean_free_path_data directory for examples.
+        E (np.float32): the energy of the photon
+    
+    Returns:
+        np.float32: the Rayleigh scatter mean free path
+        np.float32: the Compton scatter mean free path
+        np.float32: the total mean free path
+    """
+    # Binary search to find the proper table entry.  Want energy(lo_bin) <= E < energy(hi_bin), with (lo_bin + 1) == hi_bin
+    lo_idx = 0 # inclusive
+    hi_idx = table.shape[0] # exclusive
+    i = None # the index of the bin that we find E in
+
+    while lo_idx < hi_idx:
+        mid_idx = np.floor_divide(lo_idx + hi_idx, np.int32(2))
+
+        if E < table[mid_idx, 0]:
+            # Need to check lower intervals
+            hi_idx = mid_idx
+        elif E < table[mid_idx + 1, 0]:
+            # found correct interval
+            i = mid_idx
+            break
+        else:
+            # Need to check higher intervals
+            lo_idx = mid_idx + 1
+    
+    assert (table[i, 0] <= E) and (E < table[i + 1, 0])
+    
+    # Linear interpolation for each of the three values
+    delta_E = table[i + 1, 0] - table[i, 0]
+    partial = E - table[i, 0]
+
+    delta_mfp_Ra = table[i + 1, 1] - table[i, 1]
+    delta_mfp_Co = table[i + 1, 2] - table[i, 2]
+    delta_mfp_Tot = table[i + 1, 4] - table[i, 4]
+
+    mfp_Ra = table[i, 1] + (delta_mfp_Ra * partial) / delta_E
+    mfp_Co = table[i, 1] + (delta_mfp_Co * partial) / delta_E
+    mfp_Tot = table[i, 1] + (delta_mfp_Tot * partial) / delta_E
+
+    return mfp_Ra, mfp_Co, mfp_Tot
+
+def ray_intersect_plane(
+    pos: geo.Point3D,
+    direction: geo.Vector3D,
+    plane: np.ndarray
+) -> np.float32:
+    """Calculates whether or not a photon at the specified position, travelling in the specified direction, will hit the specified plane.
+
+    It is imperative that all of the arguments are in the same coordinate system (unchecked).
+
+    Args:
+        pos (geo.Point3D): the position of the photon
+        dir (geo.Vector3D): the direction that the photon is travelling in
+        plane (np.ndarray): the 'plane vector' \\vec{m} = (n_x, n_y, n_z, d), where \\hat{n} is the normal vector to the plane, and 'd' is the distance away from the origin
+
+    Returns:
+        Union[np.float32, None]: if there will be an intersection, the distance \\alpha to the intersection.  If no intersection, returns a negative number (the negative number does not necessarily have a geometrical meaning) 
+    """
+    # (\vec{pos} + \alpha * \vec{dir}) \cdot \vec{m} = 0, then (\vec{pos} + \alpha * \vec{dir}) is the point of intersection.
+    # Want to return None if \alpha < 0, since then the photon is actually travelling the wrong way to hit the plane.
+    r_dot_m = (pos.data) @ plane
+    if 0 == r_dot_m:
+        # 'pos' is already on the plane
+        return 0
+    d_dot_m = (direction.data) @ plane
+    if 0 == d_dot_m:
+        # 'direction' is perpendicular to the normal vector of the plane ==> will never intersect
+        return -1
+    
+    alpha = (-1 * r_dot_m) / d_dot_m
+
+    return alpha
+
+def get_volume_surface_planes(
+    volume: vol.Volume
+) -> Tuple[np.ndarray, np.ndarray]:
+    """Given a volume, returns the 'plane vectors' \\vec{m}_i = (n_x, n_y, n_z, d), where \\hat{n} is the normal vector to the plane, and 'd' is the distance away from the origin,
+    for each of the six planes on the surface of the rectangular prism volume.
+
+    Also returns the 'valid coordinate bounds' for each of the planes.  Usage: suppose a photon ray intersects volume-surface 2 at coordinates (x,y,z).
+    This intersection point only actually hits the plane if:
+        1. x is in the closed interval [ valid_coordinate_bounds[2,0,0], valid_coordinate_bounds[2,0,1] ]
+        2. y is in the closed interval [ valid_coordinate_bounds[2,1,0], valid_coordinate_bounds[2,1,1] ]
+        3. z is in the closed interval [ valid_coordinate_bounds[2,2,0], valid_coordinate_bounds[2,2,1] ]
+
+    Everything is in IJK coordinates.  In this geometry, 3D coordinates (0,0,0) is the center of the voxel referenced by indexing into the volume at [0,0,0].
+
+    Args:
+        volume (vol.Volume): the volume in question.
+    
+    Returns:
+        np.ndarray: [6 rows]x[4 columns] matrix, where the i-th row is the 'plane vector' for the i-th face of the volume (no particular ordering)
+        np.ndarray: [6]x[3]x[2] matrix.  For each of the 6 planes, the upper and lower bounds of valid coordinates on that surface.  
+                    This takes advantage of the fact that each of the surface planes of the volume are parallel to one of the {XY, XZ, YZ}-planes.
+    """
+    # Since the volume is a rectangular prism, each of the normal vectors are going to be (+/-)1 in a single direction.
+    # The "distance from the origin" is then determined by which face is under consideration
+    # NOTE: as a stylistic choice, I am choosing the normal vectors to point outward
+    x_len = volume.data.shape[0]
+    y_len = volume.data.shape[1]
+    z_len = volume.data.shape[2]
+    return np.array([
+        [-1, 0, 0, 0.5],
+        [1, 0, 0, x_len - 0.5], 
+        [0, -1, 0, 0.5],
+        [0, 1, 0, y_len - 0.5],
+        [0, 0, -1, 0.5],
+        [0, 0, 1, z_len - 0.5]
+    ]), np.array([
+        [[-0.5, -0.5],               [-0.5, y_len - 0.5], [-0.5, z_len - 0.5]],
+        [[x_len - 0.5, x_len - 0.5], [-0.5, y_len - 0.5], [-0.5, z_len - 0.5]],
+        [[-0.5, x_len - 0.5], [-0.5, -0.5],               [-0.5, z_len - 0.5]],
+        [[-0.5, x_len - 0.5], [y_len - 0.5, y_len - 0.5], [-0.5, z_len - 0.5]],
+        [[-0.5, x_len - 0.5], [-0.5, y_len - 0.5], [-0.5, -0.5]              ],
+        [[-0.5, x_len - 0.5], [-0.5, y_len - 0.5], [z_len - 0.5, z_len - 0.5]],
+    ])
+
+def sample_initial_direction(
+    vol_planes: np.ndarray,
+    plane_bounds: np.ndarray,
+    vol_shape: Tuple[int, int, int],
+    source_ijk
+) -> Tuple[np.ndarray, np.ndarray, int]:
+    """Returns an initial direction vector for a photon that is guaranteed to hit the volume, as well as the coordinates of that initial intersection with the volume.
+    Behaves by randomly sampling \\theta from [0, PI] and \\phi from [0, 2 * PI], then determining if a photon going in that direction will hit the volume.
+    
+    Args:
+        vol_planes (np.ndarray): a 6x4 matrix containing the six 'plane vectors' for each of the 6 surfaces of the volume.  Uses IJK coord.s
+        plane_bounds (np.ndarray): a 6x3x2 matrix containing the 'valid coordinate bounds' for photon ray intersections with that plane.
+                                    For usage hints, see documentation for get_volume_surface_planes(...)
+        vol_shape (Tuple[int, int, int]): the shape of the volume, i.e., the number of voxels along each axis
+        source_ijk ([TYPE]): the IJK coordinates of the X-Ray source, relative to the IJK origin (indices [0,0,0] in the volume)
+
+    Returns:
+        np.ndarray: the initial direction unit vector (dx, dy, dz)^T
+        np.ndarray: the location where the photon first enters the volume
+        int: the number of times a direction was sampled before returning
+    """
+    source_3D = geo.Point3D.from_array(source_ijk)
+
+    # TODO: if sample_counts are consistently higher than what they should be, then the solution will be to 
+    # relax the plane-bounds returned by get_colume_surface_planes(...).  The main issue is that floating-point 
+    # precision errors could make it very difficult to hit the target of, for example, """x \in [-0.5, -0.5]""".
+    # If I end up needing to relax those bounds, I may want to make them something like:
+    #   epsilon := 0.0001
+    #   x_bounds := [-0.5 - epsilon, -0.5 + epsilon]
+    sample_count = 0
+
+    while True:
+        # Sampling explanation here: http://corysimon.github.io/articles/uniformdistn-on-sphere/
+        phi = 2 * np.pi * sample_U01() # azimuthal angle
+        theta = np.arccos(1 - 2 * sample_U01()) # polar angle
+
+        sin_theta = np.sin(theta)
+        
+        dx = sin_theta * np.cos(phi)
+        dy = sin_theta * np.sin(phi)
+        dz = np.cos(theta)
+
+        direction = geo.Vector3D.from_array(np.array([dx, dy, dz]))
+        sample_count += 1
+
+        for i in range(6):
+            plane_vector = vol_planes[i, :]
+            alpha = ray_intersect_plane(source_3D, direction, plane_vector)
+            if alpha < 0:
+                continue
+            intersection = source_3D + (alpha * direction)
+            
+            # Bounds checking for -where- on the plane the intersection is.  Is the intersection truly on the surface of the volume?
+            if (intersection[0] < plane_bounds[i,0,0]) or (intersection[0] > plane_bounds[i,0,1]):
+                break # goes to re-sampling
+            if (intersection[1] < plane_bounds[i,1,0]) or (intersection[1] > plane_bounds[i,1,1]):
+                break # goes to re-sampling
+            if (intersection[2] < plane_bounds[i,2,0]) or (intersection[2] > plane_bounds[i,2,1]):
+                break # goes to re-sampling
+            
+            return direction, intersection, sample_count
+
+    # Should never get here -- we were in an infinite loop
+    raise RuntimeError
+
+def get_detector_plane(
+    rt_kinv: np.ndarray,
+    source_ijk,
+    sensor_size: Tuple[int,int]
+) -> Tuple[np.ndarray, np.ndarray]:
+    """Calculates the 'plane vector' (n_x, n_y, n_z, d) of the detector plane in IJK coordinates.  Note that the
+    cosines of the normal vector (n_x, n_y, n_z) are NOT normalized to be a unit vector.
+
+    Args:
+        rt_kinv (np.ndarray): the ray transform for the projection.  Transforms pixel indices (u,v,1) to IJK offset from the X-Ray source
+        source_ijk ([TYPE]): the IJK coordinates of the X-Ray source, relative to the IJK origin (indices [0,0,0] in the volume)
+        sensor_size (Tuple[int,int]): the sensor size {width}x{height}, in pixels, of the detector
+
+    Returns:
+        np.ndarray: the 'plane vector' of the detector plane 
+    """
+    # Based off the project_kernel.cu code:
+    #   Let \hat{p} = (u,v,1)^T be the pixel coord.s on the detector plane
+    #   Then, the 3D IJK coord.s of that pixel are related to (R^T K^{-1}) \hat{p} == (rt_kinv) @ \hat{p}
+    #   Specifically, (rt_kinv) @ \hat{p} is the IJK vector from the X-Ray source to the pixel (u,v) on 
+    #   the detector plane.
+    #
+    # We calculate the normal vector of the detector plane in IJK by using the three-point method:
+    #   1. Let {p1, p2, p3} be three pixel coordinates of the form (u, v, 1)^T
+    #   2. Three coplanar points in IJK coordinates are r1 := (rt_kinv) @ p1, r2 := (rt_kinv) @ p2, 
+    #      r3 := (rt_kinv) @ p3
+    #   3. Compute two vectors that are -in- the plane: v1 := r2 - r1, v2 := r3 - r1
+    #   4. The cross product v := v1 x v2 is perpendicular to both v1 and v2.  Thus, v is a normal vector to the plane
+    #
+    # Note that even though {r1, r2, r3} are technically the vectors points from the X-ray source to the detector plane,
+    # not pointing from the IJK origin to the detector plane, the fact that {v1, v2} are [relative displacement vectors]
+    # means that the shift in "origin" for {r1, r2, r3} has no effect on calculating the normal vector for the detector plane.
+    #
+    # Simplifying the math to reduce the number of arithmetic steps:
+    #   v1 = r2 - r1 = (rt_kinv) @ p2 - (rt_kinv) @ p1 = (rt_kinv) @ (p2 - p1)
+    #   v2 = r3 - r1 = (rt_kinv) @ p3 - (rt_kinv) @ p1 = (rt_kinv) @ (p3 - p1)
+    #
+    # Choosing easy p_i's of: p1 = (0, 0, 1)^T, p2 = (1, 0, 1)^T, p3 = (0, 1, 1)^T, we get:
+    #   v1 = (rt_kinv) @ (1, 0, 0)^T = [first column of rt_kinv]
+    #   v2 = (rt_kinv) @ (0, 1, 0)^T = [second column of rt_kinv]
+    #
+    # To reduce the number of characters, let M: = (rt_kinv), as a 9-element row-major ordering of the 3x3 (rt_kinv).
+    #   v := v1 x v2 = (M[0], M[3], M[6])^T x (M[1], M[4], M[7])^T
+    #       = (
+    #           M[3] * M[7] - M[6] * M[4],
+    #           M[6] * M[1] - M[0] * M[7],
+    #           M[0] * M[4] - M[3] * M[1]  
+    #         )^T
+    #       = (
+    #           rt_kinv[1,0] * rt_kinv[2,1] - rt_kinv[2,0] * rt_kinv[1,1],
+    #           rt_kinv[2,0] * rt_kinv[0,1] - rt_kinv[0,0] * rt_kinv[2,1],
+    #           rt_kinv[0,0] * rt_kinv[1,1] - rt_kinv[1,0] * rt_kinv[0,1]
+    #         )^T
+    #
+    # Once we have the normal vector, we need the minimum distance between the detector plane and 
+    # the origin of the IJK coord.s to get the fourth entry in the 'plane vector' (n_x, n_y, n_z, d)
+    
+    # Normal vector to the detector plane:
+    vx = rt_kinv[1,0] * rt_kinv[2,1] - rt_kinv[2,0] * rt_kinv[1,1]
+    vy = rt_kinv[2,0] * rt_kinv[0,1] - rt_kinv[0,0] * rt_kinv[2,1]
+    vz = rt_kinv[0,0] * rt_kinv[1,1] - rt_kinv[1,0] * rt_kinv[0,1]
+
+    # Distance from the detector plane to the origin of the IJK coordinates
+    #
+    # Time for a diagram.
+    #
+    #       |   plane parallel to detector plane
+    #       |             v
+    #       |             |
+    #     X |  -----_____ |
+    #       |            -O---_____
+    #       |             |        -----_____
+    #     C | ------------P-----------------------  S
+    #       |             |
+    #       |             |
+    #       |
+    #       ^
+    # detector plane
+    #
+    # Points:
+    #   - S is the SOURCE of the X-rays
+    #   - O is the ORIGIN of the volume
+    #   - C is the CENTER of the detector
+    #   - X is the point where the ray from S to O intersects the detector plane
+    #   - P is a point along the ray from S to C such that triangle SPO is similar to triangle SCX
+    #
+    # Vector SC is always perpendicular to the detector plane.
+    # 
+    # The shortest distance between the detector plane and the origin O is the magnitude of a vector
+    # from O to the dectector plane, where that vector from O is perpendicular to the detector plane.
+    # Thus,
+    #
+    #   d = magnitude(projection of OX onto SC)
+    #     = magnitude(SC * (OX \cdot SC) / (magnitude(SC)^2))
+    #     = magnitude(SC) * (OX \cdot SC) / (magnitude(SC)^2)
+    #     = (OX \cdot SC) / magnitude(SC)
+    #
+    # Vector SC can be found by finding the IJK coordinates of the detector center (vector OC) and 
+    # the IJK coordinates of the X-ray source (vector OS).  SC = OC - OS
+    #
+    # Vector SP = projection of SO onto SC
+    #           = SC * (SO \cdot SC) / (magnitude(SC)^2)
+    # magnitude(SP) = (SO \cdot SC) / magnitude(SC)
+    #
+    # Vector SX = SO * magnitude(SC) / magnitude(SP) = SO * (SC \cdot SC) / (SO \cdot SC)
+    # Vector OX = SX - SO
+    #           = SO * ([(SC \cdot SC) / (SO \cdot SC)] - 1)
+    #           = OS * (-1) * ([(SC \cdot SC) / ((-1) OS \cdot SC)] - 1)
+    #           = OS * ([(SC \cdot SC) / (OS \cdot SC)] + 1)
+    # 
+    # Once we know vector OX, we can plug it into the above formula for 'd'.
+    #
+    # d = (OX \cdot SC) / magnitude(SC)
+    #   = ({OS * ([(SC \cdot SC) / (OS \cdot SC)] + 1)} \cdot SC) / magnitude(SC)
+    #   = ([(SC \cdot SC) / (OS \cdot SC)] + 1) * (OS \cdot SC) / magnitude(SC)
+    #   = magnitude(SC) + [(SC \cdot OS) / magitude(SC)]
+    #   = magnitude(SC) * [1 + (SC \cdot OS) / (SC \cdot SC)]
+
+    cu = sensor_size[0] / 2 # pixel coord.s of the center of the detector
+    cv = sensor_size[1] / 2
+
+    # IJK coord.s of the SC, the ray from the X-Ray source S to the center C of the detector
+    sc_x = cu * rt_kinv[0] + cv * rt_kinv[1] + rt_kinv[2]
+    sc_y = cu * rt_kinv[3] + cv * rt_kinv[4] + rt_kinv[5]
+    sc_z = cu * rt_kinv[6] + cv * rt_kinv[7] + rt_kinv[8]
+
+    # Note that the IJK coord.s of vector OS are contained in source_ijk, which is obtained 
+    # by calling the camera_center_in_volume method
+    sc_dot_sc = (sc_x * sc_x) + (sc_y * sc_y) + (sc_z * sc_z)
+    sc_dot_os = (sc_x * source_ijk[0]) + (sc_y * source_ijk[1]) + (sc_z * source_ijk[2])
+
+    d = np.sqrt(sc_dot_sc) * (1 + (sc_dot_os / sc_dot_sc))
+
+    return np.array([vx, vy, vz, d])
 
 def get_scattered_dir(
     dir: geo.Vector3D,
@@ -228,7 +569,7 @@ def sample_U01() -> np.float32:
     return np.random.random_sample()
 
 def sample_initial_energy(spectrum: np.ndarray) -> np.float32:
-    """Determine the energy (in keV) of a photon emitted by an X-Ray source with the given spectrum
+    """Determine the energy (in eV) of a photon emitted by an X-Ray source with the given spectrum
 
     Args:
         spectrum (np.ndarray): the data associated with the spectrum.  Cross-reference spectral_data.py
