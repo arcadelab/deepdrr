@@ -392,7 +392,7 @@ def get_detector_plane(
     rt_kinv: np.ndarray,
     source_ijk,
     sensor_size: Tuple[int,int]
-) -> Tuple[np.ndarray, np.ndarray]:
+) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
     """Calculates the 'plane vector' (n_x, n_y, n_z, d) of the detector plane in IJK coordinates.  Note that the
     cosines of the normal vector (n_x, n_y, n_z) are NOT normalized to be a unit vector.
 
@@ -402,7 +402,9 @@ def get_detector_plane(
         sensor_size (Tuple[int,int]): the sensor size {width}x{height}, in pixels, of the detector
 
     Returns:
-        np.ndarray: the 'plane vector' of the detector plane 
+        np.ndarray: the 'plane vector' of the detector plane
+        np.ndarray: a basis vector that represents how increasing pixel x-coordinate by 1 affects the 3D position
+        np.ndarray: a basis vector that represents how increasing pixel y-coordinate by 1 affects the 3D position
     """
     # Based off the project_kernel.cu code:
     #   Let \hat{p} = (u,v,1)^T be the pixel coord.s on the detector plane
@@ -521,7 +523,20 @@ def get_detector_plane(
 
     d = np.sqrt(sc_dot_sc) * (1 + (sc_dot_os / sc_dot_sc))
 
-    return np.array([vx, vy, vz, d])
+    plane_vector = np.array([vx, vy, vz, d])
+
+    # The orthonormal basis is {b1 := normalized(v1), b2 := normalized(v2)}, where {v1, v2} are
+    # the vectors described in the "choosing easy p_i's" section
+    v1 = np.array([rt_kinv[0,0], rt_kinv[1,0], rt_kinv[2,0]])
+    v1_mag2 = (v1[0] * v1[0]) + (v1[1] * v1[1]) + (v1[2] * v1[2])
+
+    v2 = np.array([rt_kinv[0,1], rt_kinv[1,1], rt_kinv[2,1]])
+    v2_mag2 = (v2[0] * v2[0]) + (v2[1] * v2[1]) + (v2[2] * v2[2])
+
+    b1 = v1 / np.sqrt(v1_mag2)
+    b2 = v2 / np.sqrt(v2_mag2)
+
+    return plane_vector, b1, b2
 
 def get_scattered_dir(
     dir: geo.Vector3D,
@@ -792,3 +807,137 @@ def sample_Compton_theta_E_prime(
     E_ratio = tau * tmp / term_tau
 
     return cos_theta, E_ratio * photon_energy
+
+class PlaneSurface:
+    plane_vector: np.ndarray
+    basis_1: np.ndarray
+    basis_2: np.ndarray
+    bounds: np.ndarray
+    
+
+    def __init__(
+        self,
+        plane_vector: np.ndarray,
+        surface_origin: geo.Point3D,
+        basis: Tuple[geo.Vector3D, geo.Vector3D],
+        bounds: np.ndarray
+    ):
+        """A representation of a rectangular region on a 2D plane embedded in 3D space.
+
+        Args:
+            plane_vector (np.ndarray): a 1x4 matrix uniquely identifying the plane.  The first three elements are the normal vector, and the fourth element is the distance between the plane and the origin of the coordinate axes.  \\vec{m} = (n_x, n_y, n_z, d), where \\hat{n} is the normal vector to the plane, and 'd' is the distance away from the origin
+            surface_origin (geo.Point3D): a point on the plane that is used as a reference point for every other position on the surface.  Points on the plane are only on the surface if the point is [surface_origin] + [in-bounds coefficients] * [basis]
+            basis (Tuple[geo.Vector3D, geo.Vector3D]): an orthonormal basis for the plane.  All points on the plane are represented by [surface_origin] + [linear combination of basis]
+            bounds (np.ndarray): a 2x2 matrix that provides the in-bounds coefficients for the linear combination of the basis vectors.  bounds[0,0] and bounds[0,1] give the lower and upper bounds (inclusive) on the acceptable coefficient for the first basis vector, and bounds[1,0] and bounds[1,1] behave the same for the second basis vector
+        """
+        self.plane_vector = plane_vector.copy()
+        self.surface_origin = geo.Point3D.from_any(surface_origin)
+        self.basis_1 = geo.Vector3D.from_any(basis[0])
+        self.basis_2 = geo.Vector3D.from_any(basis[1])
+        self.bounds = bounds.copy()
+
+        # Check that the basis is orthonormal:
+        b1_mag = (self.basis_1[0] * self.basis_1[0]) + (self.basis_1[1] * self.basis_1[1]) + (self.basis_1[2] * self.basis_1[2])
+        b2_mag = (self.basis_2[0] * self.basis_2[0]) + (self.basis_2[1] * self.basis_2[1]) + (self.basis_2[2] * self.basis_2[2])
+
+        assert 1 == b1_mag
+        assert 1 == b2_mag
+
+        b1_dot_b2 = (self.basis_1[0] * self.basis_2[0]) + (self.basis_1[1] * self.basis_2[1]) + (self.basis_1[2] * self.basis_2[2])
+
+        assert 0 == b1_dot_b2
+
+    def check_ray_intersection(
+        self,
+        pos: geo.Point3D,
+        direction: geo.Vector3D
+    ) -> np.float32:
+        """Calculates whether or not a photon at the specified position, travelling in the specified direction, will hit the plane of the PlaneSurface object.
+
+        It is imperative that all of the arguments are in the same coordinate system (unchecked).
+
+        Args:
+            pos (geo.Point3D): the position of the photon
+            dir (geo.Vector3D): the direction that the photon is travelling in
+
+        Returns:
+            np.float32: if there will be an intersection, the distance \\alpha to the intersection.  If no intersection, returns a negative number (the negative number does not necessarily have a geometrical meaning) 
+        """
+        # (\vec{pos} + \alpha * \vec{dir}) \cdot \vec{m} = 0, then (\vec{pos} + \alpha * \vec{dir}) is the point of intersection.
+        # Want to return None if \alpha < 0, since then the photon is actually travelling the wrong way to hit the plane.
+        r_dot_m = (pos.data) @ self.plane_vector
+        if 0 == r_dot_m:
+            # 'pos' is already on the plane
+            return 0
+        d_dot_m = (direction.data) @ self.plane_vector
+        if 0 == d_dot_m:
+            # 'direction' is perpendicular to the normal vector of the plane ==> will never intersect
+            return -1
+        
+        alpha = (-1 * r_dot_m) / d_dot_m
+
+        return alpha
+
+    def point_on_surface(
+        self,
+        point: geo.Point3D
+    ) -> bool:
+        """Returns whether the given point, which is assumed to be on the plane of the surface, is within the bounds of the surface.
+
+        Args:
+            point (geo.Point3D): the point to check
+        
+        Returns:
+            bool: True if the point is in-bounds, False otherwise
+        """
+        # Working in 3D (i.e., non-homogeneous) coordinates:
+        # Let \vec{x} := point, \vec{s} := surface_origin. Thus, (\vec{x} - \vec{s}) = \alpha_1 * b_1 + \alpha_2 * b_2, 
+        # where {b_1, b_2} is the orthonormal basis.  In other terms,
+        #
+        #       (\vec{x} - \vec{s}) = (b_1 b_2) (\alpha_1 \alpha_2)^T = B \vec{\alpha}
+        #
+        # Accordingly,
+        # 
+        #       \vec{\alpha} = B^{-1} (\vec{x} - \vec{s})
+        # 
+        # where B^{-1} is the right-inverse of the 3x2 matrix B = (b_1 b_2).  Since the basis {b_1, b_2} is orthonormal,
+        # we have:
+        # 
+        #       B^{-1} = (b_1^T
+        #                 b_2^T)
+        #              = B^T
+        #
+        # Once we have \vec{\alpha}, we just need to check against the acceptable bounds, given by self.bounds
+
+        disp_np_3 = (point - self.surface_origin).data[0:3] # \vec{x} - \vec{s}, only 3 values (non-homogeneous)
+
+        b_1_np_3 = self.basis_1.data[0:3] # b_1, only 3 values (non-homogeneous)
+        alpha_1 = np.dot(b_1_np_3, disp_np_3)
+
+        if (alpha_1 < self.bounds[0,0]) or (alpha_1 > self.bounds[0,1]):
+            return False
+
+        b_2_np_3 = self.basis_2.data[0:3] # b_2, only 3 values (non-homogeneous)
+        alpha_2 = np.dot(b_2_np_3, disp_np_3)
+
+        return (alpha_2 >= self.bounds[1,0]) and (alpha_2 <= self.bounds[1,1])
+    
+    def point_on_surface_checking(
+        self,
+        point: geo.Point3D
+    ) -> bool:
+        """Returns whether the given point, which is not assumed to be on the plane of the surface, is within the bounds of the surface.
+
+        Args:
+            point (geo.Point3D): the point to check
+        
+        Returns:
+            bool: True if the point is on the plane and in-bounds, False otherwise
+        """
+        pvec = point.data
+        assert (4,) == pvec.shape
+        assert 1 == pvec[-1]
+
+        if (0 == np.dot(pvec, self.plane_vector)):
+            return self.point_on_surface(point)
+        return False
