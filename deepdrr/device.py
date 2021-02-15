@@ -12,7 +12,7 @@ logger = logging.getLogger(__name__)
 
 PI = np.float32(np.pi)
 DEFAULT_MIN_ALPHA = -2 * PI / 3
-DEFAULT_MAX_ALPHA = 2 * PI / 3
+{DEFAULT_MAX_ALPHA = 2 * PI / 3
 DEFAULT_MIN_BETA = -PI / 4
 DEFAULT_MAX_BETA = PI / 4
 
@@ -194,7 +194,7 @@ class MobileCArm(object):
     def get_camera3d_from_world(self) -> geo.FrameTransform:
         """Rigid transformation of the C-arm camera pose."""
         # get the rotation corresponding to the c-arm, then translate to the camera-center frame, along z-axis.
-
+        # Note the difference between this rotation and the one to get the pose vector. This is going the opposite way.
         rot = Rotation.from_euler('xy', [self.alpha, self.beta]).as_matrix()
         t = np.array([0, 0, self.isocenter_distance])
         camera3d_from_isocenter = geo.FrameTransform.from_rt(rot, t)
