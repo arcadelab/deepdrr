@@ -64,6 +64,23 @@ def make_detector_rotation(phi: float, theta: float, rho: float):
     return R
 
 
+def pose_vector_angles(pose: geo.Vector3D) -> Tuple[float, float]:
+    """Get the C-arm angles alpha, beta corrsponding the the pose vector.
+
+    TODO(killeen): make a part of the MobileCArm object, to convert from a world-space vector.
+
+    Args:
+        pose (geo.Vector3D): the vector pointing from the isocenter (or camera) to the detector.
+
+    Returns:
+        Tuple[float, float]: carm angulation (alpha, beta) in radians.
+    """
+    x, y, z = pose
+    alpha = np.arctan2(y, np.sqrt(x * x + z * z))
+    beta = -np.arctan2(x, z)
+    return alpha, beta
+
+
 class MobileCArm(object):
     def __init__(
         self,
