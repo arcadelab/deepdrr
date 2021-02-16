@@ -12,7 +12,7 @@ logger = logging.getLogger(__name__)
 
 PI = np.float32(np.pi)
 DEFAULT_MIN_ALPHA = -2 * PI / 3
-{DEFAULT_MAX_ALPHA = 2 * PI / 3
+DEFAULT_MAX_ALPHA = 2 * PI / 3
 DEFAULT_MIN_BETA = -PI / 4
 DEFAULT_MAX_BETA = PI / 4
 
