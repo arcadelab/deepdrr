@@ -2,7 +2,7 @@
 # TODO: cite the papers that form the basis of this code
 #
 
-from typing import Tuple, Optional, Dict, Callable
+from typing import Tuple, Optional, Dict, List
 
 import logging
 import numpy as np
@@ -10,8 +10,9 @@ import spectral_data
 from deepdrr import geo
 from deepdrr import vol
 from rita import RITA
+from plane_surface import PlaneSurface
 
-from .mcgpu_mfp_data import mfp_data
+from .mcgpu_mfp_data import mfp_data, mfp_woodcock
 from .mcgpu_compton_data import MAX_NSHELLS as COMPTON_MAX_NSHELLS
 from .mcgpu_compton_data import material_nshells, compton_data
 
@@ -79,15 +80,17 @@ def simulate_scatter_no_vr(
         labeled_seg = np.add(labeled_seg, ilabel * volume.materials[material_ids[ilabel]])
 
     # Plane data
-    vol_planes, vol_plane_bounds = get_volume_surface_planes(volume)
+    vol_planes = get_volume_surface_planes(volume)
     detector_plane = get_detector_plane(rt_kinv, source_ijk, sensor_size)
 
     for i in range(photon_count):
         if (i+1) in count_milestones:
             print(f"Simulating photon history {i+1} / {photon_count}")
-        initial_dir, initial_pos, sample_count = sample_initial_direction(vol_planes, vol_plane_bounds, volume.data.shape, source_ijk)
+        initial_dir, initial_pos, sample_count = sample_initial_direction(vol_planes, source_ijk)
         initial_E = sample_initial_energy(spectrum)
-        single_scatter = track_single_photon_no_vr(initial_pos, initial_dir, initial_E, E_abs, labeled_seg, volume.data, detector_plane, material_ids)
+        pixel_x, pixel_y, energy = track_single_photon_no_vr(initial_pos, initial_dir, initial_E, E_abs, labeled_seg, volume.data, detector_plane, material_ids)
+        
+        # TODO: math/physics for how the detector converts energy detected to an image intensity
         accumulator = accumulator + single_scatter
     
     print(f"Finished simulating {photon_count} photon histories")
@@ -100,9 +103,9 @@ def track_single_photon_no_vr(
     E_abs: np.float32,
     labeled_seg: np.ndarray,
     density_vol: np.ndarray,
-    detector_plane: np.ndarray,
+    detector_plane: PlaneSurface,
     material_ids: Dict[int, str]
-) -> Union[None, Tuple[Tuple[int,int], np.float32]]:
+) -> Tuple[int,int, np.float32]:
     """Produce a grayscale (intensity-based) image representing the photon scatter of a single photon 
     during an X-Ray, without using VR (variance reduction) techniques.
 
@@ -116,8 +119,8 @@ def track_single_photon_no_vr(
         detector_plane (np.ndarray): the 'plane vector' of the detector
         material_ids (Dict[int,str]): a dictionary mapping an integer material ID-label to the name of the material
     Returns:
-        Union[None, Tuple[Tuple[int, int], np.float32]]: if the photon doesn't hit the detector, returns None.  Otherwise, returns the pixel coord.s of the hit pixel,
-                                                        as well as the energy (in eV) of the photon when it hit the detector.
+        Tuple[int, int, np.float32]: the pixel coord.s of the hit pixel, as well as the energy (in eV) of the photon when it hit the detector.  
+                                    Note that the returned pixel coord.s CAN BE out-of-bounds.
     """
     pos = initial_pos
     direction = initial_dir
@@ -133,24 +136,34 @@ def track_single_photon_no_vr(
         mat_label = labeled_seg[voxel_coords]
         mat_name = material_ids[mat_label]
 
-        # NOTE: I could perform some interpolation to get slighter more accurate mfp data
-        mfp_Ra, mfp_Co, mfp_Tot = get_mfp_data(mfp_data[mat_name], photon_energy)
+        mfp_wc = get_woodcock_mfp(photon_energy)
+        mfp_Ra, mfp_Co, mfp_Tot = None, None, None
 
-        # simulate moving the photon
-        s = -1 * mfp_Tot * np.log(sample_U01())
-        pos = pos + (s * direction)
+        # Delta interactions
+        while True:
+            # simulate moving the photon
+            s = -1 * mfp_wc * np.log(sample_U01())
+            pos = pos + (s * direction)
 
-        # Check for leaving the volume
-        vox_x = np.floor(pos.data[0])
-        vox_y = np.floor(pos.data[1])
-        vox_z = np.floor(pos.data[2])
-        if (vox_x < 0) or (vox_x >= density_vol.shape[0]):
-            break
-        if (vox_y < 0) or (vox_y >= density_vol.shape[1]):
-            break
-        if (vox_z < 0) or (vox_z >= density_vol.shape[2]):
-            break
+            # Check for leaving the volume
+            vox_x = np.floor(pos.data[0])
+            vox_y = np.floor(pos.data[1])
+            vox_z = np.floor(pos.data[2])
+            if (vox_x < 0) or (vox_x >= density_vol.shape[0]):
+                break
+            if (vox_y < 0) or (vox_y >= density_vol.shape[1]):
+                break
+            if (vox_z < 0) or (vox_z >= density_vol.shape[2]):
+                break
+            
+            mfp_Ra, mfp_Co, mfp_Tot = get_mfp_data(mfp_data[mat_name], photon_energy)
 
+            if sample_U01() < mfp_wc / mfp_Tot:
+                # Accept the collision.  See http://serpent.vtt.fi/mediawiki/index.php/Delta-_and_surface-tracking
+                break
+        
+        # Now at a legitimate photon interaction
+        
         # Sample the photon interaction type
         #
         # (1 / mfp_Tot) * (1 / molecules_per_vol) ==    total interaction cross section =: sigma_Tot
@@ -174,13 +187,12 @@ def track_single_photon_no_vr(
             cos_theta = sample_Rayleigh_theta(photon_energy, rita_samplers[mat_name])
             E_prime = photon_energy
         else:
-            # "delta" interaction
-            cos_theta = 0
-            E_prime = photon_energy
+            # Photoelectric interaction OR pair production.  Photon is absorbed, and thus does not hit the detector.
+            return -1, -1, photon_energy
         
         photon_energy = E_prime
         if photon_energy <= E_abs:
-            break
+            return -1, -1, photon_energy
         
         phi = 2 * np.pi * sample_U01()
         direction = get_scattered_dir(direction, cos_theta, phi)
@@ -188,13 +200,16 @@ def track_single_photon_no_vr(
         # END WHILE
     
     # final processing
-    detector_alpha = ray_intersect_plane(pos, direction, detector_plane)
-    if detector_alpha is None:
-        return None
+    hits_detector_dist = detector_plane.check_ray_intersection(pos, direction)
+    if hits_detector_dist is None:
+        return -1, -1, photon_energy
     
-    # TODO: math for which pixel got hit
+    hit = pos + (hits_detector_dist * direction)
 
-    return NotImplemented
+    # NOTE: an alternative formulation would be to use (rt_kinv).inv
+    pixel_x, pixel_y = detector_plane.get_lin_comb_coefs(hit)
+    
+    return np.floor(pixel_x), np.floor(pixel_y), photon_energy
 
 def get_mfp_data(
     table: np.ndarray,
@@ -247,49 +262,54 @@ def get_mfp_data(
 
     return mfp_Ra, mfp_Co, mfp_Tot
 
-def ray_intersect_plane(
-    pos: geo.Point3D,
-    direction: geo.Vector3D,
-    plane: np.ndarray
+def get_woodcock_mfp(
+    E: np.float32
 ) -> np.float32:
-    """Calculates whether or not a photon at the specified position, travelling in the specified direction, will hit the specified plane.
-
-    It is imperative that all of the arguments are in the same coordinate system (unchecked).
+    """Access the Woodcock Mean Free Path at the given photon energy level.  
+    For an explanation of what the Woodcock Mean Free Path is, see mcgpu_mfp_data.py.
+    Performs linear interpolation for any energy value that isn't exactly a table entry.
 
     Args:
-        pos (geo.Point3D): the position of the photon
-        dir (geo.Vector3D): the direction that the photon is travelling in
-        plane (np.ndarray): the 'plane vector' \\vec{m} = (n_x, n_y, n_z, d), where \\hat{n} is the normal vector to the plane, and 'd' is the distance away from the origin
-
-    Returns:
-        Union[np.float32, None]: if there will be an intersection, the distance \\alpha to the intersection.  If no intersection, returns a negative number (the negative number does not necessarily have a geometrical meaning) 
-    """
-    # (\vec{pos} + \alpha * \vec{dir}) \cdot \vec{m} = 0, then (\vec{pos} + \alpha * \vec{dir}) is the point of intersection.
-    # Want to return None if \alpha < 0, since then the photon is actually travelling the wrong way to hit the plane.
-    r_dot_m = (pos.data) @ plane
-    if 0 == r_dot_m:
-        # 'pos' is already on the plane
-        return 0
-    d_dot_m = (direction.data) @ plane
-    if 0 == d_dot_m:
-        # 'direction' is perpendicular to the normal vector of the plane ==> will never intersect
-        return -1
+        E (np.float32): the energy of the photon
     
-    alpha = (-1 * r_dot_m) / d_dot_m
+    Returns:
+        np.float32: the inverse of the total majorant cross section.  This returned value has units of centimeters.
+    """
+    # Binary search to find the proper table entry.  Want energy(lo_bin) <= E < energy(hi_bin), with (lo_bin + 1) == hi_bin
+    lo_idx = 0 # inclusive
+    hi_idx = mfp_woodcock.shape[0] # exclusive
+    i = None # the index of the bin that we find E in
 
-    return alpha
+    while lo_idx < hi_idx:
+        mid_idx = np.floor_divide(lo_idx + hi_idx, np.int32(2))
+
+        if E < mfp_woodcock[mid_idx, 0]:
+            # Need to check lower intervals
+            hi_idx = mid_idx
+        elif E < mfp_woodcock[mid_idx + 1, 0]:
+            # found correct interval
+            i = mid_idx
+            break
+        else:
+            # Need to check higher intervals
+            lo_idx = mid_idx + 1
+    
+    assert (mfp_woodcock[i, 0] <= E) and (E < mfp_woodcock[i + 1, 0])
+    
+    # Linear interpolation 
+    delta_E = mfp_woodcock[i + 1, 0] - mfp_woodcock[i, 0]
+    partial = E - mfp_woodcock[i, 0]
+
+    delta_mfp_Tot = mfp_woodcock[i + 1, 1] - mfp_woodcock[i, 1]
+
+    mfp_wc = mfp_woodcock[i, 1] + (delta_mfp_Tot * partial) / delta_E
+
+    return mfp_wc
 
 def get_volume_surface_planes(
     volume: vol.Volume
-) -> Tuple[np.ndarray, np.ndarray]:
-    """Given a volume, returns the 'plane vectors' \\vec{m}_i = (n_x, n_y, n_z, d), where \\hat{n} is the normal vector to the plane, and 'd' is the distance away from the origin,
-    for each of the six planes on the surface of the rectangular prism volume.
-
-    Also returns the 'valid coordinate bounds' for each of the planes.  Usage: suppose a photon ray intersects volume-surface 2 at coordinates (x,y,z).
-    This intersection point only actually hits the plane if:
-        1. x is in the closed interval [ valid_coordinate_bounds[2,0,0], valid_coordinate_bounds[2,0,1] ]
-        2. y is in the closed interval [ valid_coordinate_bounds[2,1,0], valid_coordinate_bounds[2,1,1] ]
-        3. z is in the closed interval [ valid_coordinate_bounds[2,2,0], valid_coordinate_bounds[2,2,1] ]
+) -> List[PlaneSurface]:
+    """Given a volume, returns the PlaneSurface objects for each of the six planes on the surface of the rectangular prism volume in a raw Python array.
 
     Everything is in IJK coordinates.  In this geometry, 3D coordinates (0,0,0) is the center of the voxel referenced by indexing into the volume at [0,0,0].
 
@@ -297,9 +317,7 @@ def get_volume_surface_planes(
         volume (vol.Volume): the volume in question.
     
     Returns:
-        np.ndarray: [6 rows]x[4 columns] matrix, where the i-th row is the 'plane vector' for the i-th face of the volume (no particular ordering)
-        np.ndarray: [6]x[3]x[2] matrix.  For each of the 6 planes, the upper and lower bounds of valid coordinates on that surface.  
-                    This takes advantage of the fact that each of the surface planes of the volume are parallel to one of the {XY, XZ, YZ}-planes.
+        List[PlaneSurface]: the 6 PlaneSurface objects, where the i-th object corresponds to the i-th face of the volume (no particular ordering)
     """
     # Since the volume is a rectangular prism, each of the normal vectors are going to be (+/-)1 in a single direction.
     # The "distance from the origin" is then determined by which face is under consideration
@@ -307,52 +325,71 @@ def get_volume_surface_planes(
     x_len = volume.data.shape[0]
     y_len = volume.data.shape[1]
     z_len = volume.data.shape[2]
-    return np.array([
-        [-1, 0, 0, 0.5],
-        [1, 0, 0, x_len - 0.5], 
-        [0, -1, 0, 0.5],
-        [0, 1, 0, y_len - 0.5],
-        [0, 0, -1, 0.5],
-        [0, 0, 1, z_len - 0.5]
-    ]), np.array([
-        [[-0.5, -0.5],               [-0.5, y_len - 0.5], [-0.5, z_len - 0.5]],
-        [[x_len - 0.5, x_len - 0.5], [-0.5, y_len - 0.5], [-0.5, z_len - 0.5]],
-        [[-0.5, x_len - 0.5], [-0.5, -0.5],               [-0.5, z_len - 0.5]],
-        [[-0.5, x_len - 0.5], [y_len - 0.5, y_len - 0.5], [-0.5, z_len - 0.5]],
-        [[-0.5, x_len - 0.5], [-0.5, y_len - 0.5], [-0.5, -0.5]              ],
-        [[-0.5, x_len - 0.5], [-0.5, y_len - 0.5], [z_len - 0.5, z_len - 0.5]],
-    ])
+
+    plane_vectors = [
+        np.array([-1, 0, 0, 0]),
+        np.array([1, 0, 0, x_len]),
+        np.array([0, -1, 0, 0]),
+        np.array([0, 1, 0, y_len]),
+        np.array([0, 0, -1, 0]),
+        np.array([0, 0, 1, z_len])
+    ]
+    surface_origins = [
+        geo.Point3D.from_array(np.array([0, 0, 0])),
+        geo.Point3D.from_array(np.array([x_len, 0, 0])),
+        geo.Point3D.from_array(np.array([0, 0, 0])),
+        geo.Point3D.from_array(np.array([0, y_len, 0])),
+        geo.Point3D.from_array(np.array([0, 0, 0])),
+        geo.Point3D.from_array(np.array([0, 0, z_len]))
+    ]
+
+    x_dir = geo.Vector3D.from_array(np.array([1, 0, 0]))
+    y_dir = geo.Vector3D.from_array(np.array([0, 1, 0]))
+    z_dir = geo.Vector3D.from_array(np.array([0, 0, 1]))
+    bases = [
+        (geo.Vector3D.from_any(y_dir), geo.Vector3D(z_dir)),
+        (geo.Vector3D.from_any(y_dir), geo.Vector3D(z_dir)),
+        
+        (geo.Vector3D.from_any(x_dir), geo.Vector3D(z_dir)),
+        (geo.Vector3D.from_any(x_dir), geo.Vector3D(z_dir)),
+
+        (geo.Vector3D.from_any(x_dir), geo.Vector3D(y_dir)),
+        (geo.Vector3D.from_any(x_dir), geo.Vector3D(y_dir))
+    ]
+    bounds = [
+        np.array([[0, y_len], [0, z_len]]), 
+        np.array([[0, y_len], [0, z_len]]), 
+
+        np.array([[0, x_len], [0, z_len]]),
+        np.array([[0, x_len], [0, z_len]]),
+
+        np.array([[0, x_len], [0, y_len]]),
+        np.array([[0, x_len], [0, y_len]]),
+    ]
+
+    return [PlaneSurface(plane_vectors[i], surface_origins[i], bases[i], bounds[i], True) for i in range(6)]
 
 def sample_initial_direction(
-    vol_planes: np.ndarray,
-    plane_bounds: np.ndarray,
-    vol_shape: Tuple[int, int, int],
-    source_ijk
-) -> Tuple[np.ndarray, np.ndarray, int]:
+    surfaces: List[PlaneSurface],
+    source_ijk: geo.Point3D
+) -> Tuple[geo.Vector3D, geo.Point3D, int]:
     """Returns an initial direction vector for a photon that is guaranteed to hit the volume, as well as the coordinates of that initial intersection with the volume.
     Behaves by randomly sampling \\theta from [0, PI] and \\phi from [0, 2 * PI], then determining if a photon going in that direction will hit the volume.
     
     Args:
-        vol_planes (np.ndarray): a 6x4 matrix containing the six 'plane vectors' for each of the 6 surfaces of the volume.  Uses IJK coord.s
-        plane_bounds (np.ndarray): a 6x3x2 matrix containing the 'valid coordinate bounds' for photon ray intersections with that plane.
-                                    For usage hints, see documentation for get_volume_surface_planes(...)
-        vol_shape (Tuple[int, int, int]): the shape of the volume, i.e., the number of voxels along each axis
-        source_ijk ([TYPE]): the IJK coordinates of the X-Ray source, relative to the IJK origin (indices [0,0,0] in the volume)
+        surfaces (List[PlaneSurface]): six PlaneSurface objects, one for each face of the volume
+        source_ijk (geo.point3D): the IJK coordinates of the X-Ray source, relative to the IJK origin (indices [0,0,0] in the volume)
 
     Returns:
-        np.ndarray: the initial direction unit vector (dx, dy, dz)^T
-        np.ndarray: the location where the photon first enters the volume
+        geo.Vector3D: the initial direction unit vector (dx, dy, dz)^T
+        geo.Point3D: the location where the photon first enters the volume
         int: the number of times a direction was sampled before returning
     """
-    source_3D = geo.Point3D.from_array(source_ijk)
-
-    # TODO: if sample_counts are consistently higher than what they should be, then the solution will be to 
-    # relax the plane-bounds returned by get_colume_surface_planes(...).  The main issue is that floating-point 
-    # precision errors could make it very difficult to hit the target of, for example, """x \in [-0.5, -0.5]""".
-    # If I end up needing to relax those bounds, I may want to make them something like:
-    #   epsilon := 0.0001
-    #   x_bounds := [-0.5 - epsilon, -0.5 + epsilon]
     sample_count = 0
+
+    intersection_points = [] # since there could be multiple points that the ray intersects the volume
+    distances = []
+    direction = None
 
     while True:
         # Sampling explanation here: http://corysimon.github.io/articles/uniformdistn-on-sphere/
@@ -368,41 +405,52 @@ def sample_initial_direction(
         direction = geo.Vector3D.from_array(np.array([dx, dy, dz]))
         sample_count += 1
 
-        for i in range(6):
-            plane_vector = vol_planes[i, :]
-            alpha = ray_intersect_plane(source_3D, direction, plane_vector)
-            if alpha < 0:
-                continue
-            intersection = source_3D + (alpha * direction)
-            
-            # Bounds checking for -where- on the plane the intersection is.  Is the intersection truly on the surface of the volume?
-            if (intersection[0] < plane_bounds[i,0,0]) or (intersection[0] > plane_bounds[i,0,1]):
-                break # goes to re-sampling
-            if (intersection[1] < plane_bounds[i,1,0]) or (intersection[1] > plane_bounds[i,1,1]):
-                break # goes to re-sampling
-            if (intersection[2] < plane_bounds[i,2,0]) or (intersection[2] > plane_bounds[i,2,1]):
-                break # goes to re-sampling
-            
-            return direction, intersection, sample_count
+        intersection_points = [] # since there could be multiple points that the ray intersects the volume
 
-    # Should never get here -- we were in an infinite loop
-    raise RuntimeError
+        for i in range(6):
+            distance = surfaces[i].check_ray_intersection(source_ijk, direction)
+            if distance < 0:
+                continue
+            intersection = source_ijk + (distance * direction)
+            
+            if surfaces[i].point_on_surface(intersection):
+                intersection_points.append(intersection)
+                distances.append(distance)
+        
+        if 0 < len(intersection_points):
+            break
+
+        # Othewise, re-samples the direction
+
+    assert len(intersection_points) == len(distances)
+
+    # Return the intersection point that is closest to the X-Ray source
+    min_dist_idx = 0
+    min_dist = float("inf")
+    for i in range(len(intersection_points)):
+        if distances[i] < min_dist:
+            min_dist = distances[i]
+            min_dist_idx = i
+            
+    return direction, intersection_points[min_dist_idx]
 
 def get_detector_plane(
     rt_kinv: np.ndarray,
-    source_ijk,
+    source_ijk: geo.Point3D,
     sensor_size: Tuple[int,int]
-) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
-    """Calculates the 'plane vector' (n_x, n_y, n_z, d) of the detector plane in IJK coordinates.  Note that the
-    cosines of the normal vector (n_x, n_y, n_z) are NOT normalized to be a unit vector.
+) -> PlaneSurface:
+    """Calculates the PlaneSurface object of the detector plane in IJK coordinates.
+    Note that the cosines of the plane's normal vector (n_x, n_y, n_z) are NOT normalized to be a unit vector.
+
+    The first basis vector represents
 
     Args:
         rt_kinv (np.ndarray): the ray transform for the projection.  Transforms pixel indices (u,v,1) to IJK offset from the X-Ray source
-        source_ijk ([TYPE]): the IJK coordinates of the X-Ray source, relative to the IJK origin (indices [0,0,0] in the volume)
+        source_ijk (geo.Point3D): the IJK coordinates of the X-Ray source, relative to the IJK origin (indices [0,0,0] in the volume)
         sensor_size (Tuple[int,int]): the sensor size {width}x{height}, in pixels, of the detector
 
     Returns:
-        np.ndarray: the 'plane vector' of the detector plane
+        PlaneSurface: a PlaneSurface object representing the detector.  
         np.ndarray: a basis vector that represents how increasing pixel x-coordinate by 1 affects the 3D position
         np.ndarray: a basis vector that represents how increasing pixel y-coordinate by 1 affects the 3D position
     """
@@ -428,8 +476,8 @@ def get_detector_plane(
     #   v2 = r3 - r1 = (rt_kinv) @ p3 - (rt_kinv) @ p1 = (rt_kinv) @ (p3 - p1)
     #
     # Choosing easy p_i's of: p1 = (0, 0, 1)^T, p2 = (1, 0, 1)^T, p3 = (0, 1, 1)^T, we get:
-    #   v1 = (rt_kinv) @ (1, 0, 0)^T = [first column of rt_kinv]
-    #   v2 = (rt_kinv) @ (0, 1, 0)^T = [second column of rt_kinv]
+    #   v1 = (rt_kinv) @ (1, 0, 0)^T = [first column of rt_kinv]        // corresponds to moving 1 pixel over in x-direction (x increases)  
+    #   v2 = (rt_kinv) @ (0, 1, 0)^T = [second column of rt_kinv]       // corresponds to moving 1 pixel down in y-direction (y increases)
     #
     # To reduce the number of characters, let M: = (rt_kinv), as a 9-element row-major ordering of the 3x3 (rt_kinv).
     #   v := v1 x v2 = (M[0], M[3], M[6])^T x (M[1], M[4], M[7])^T
@@ -519,27 +567,40 @@ def get_detector_plane(
     # Note that the IJK coord.s of vector OS are contained in source_ijk, which is obtained 
     # by calling the camera_center_in_volume method
     sc_dot_sc = (sc_x * sc_x) + (sc_y * sc_y) + (sc_z * sc_z)
-    sc_dot_os = (sc_x * source_ijk[0]) + (sc_y * source_ijk[1]) + (sc_z * source_ijk[2])
+    sc_dot_os = (sc_x * source_ijk.data[0]) + (sc_y * source_ijk.data[1]) + (sc_z * source_ijk.data[2])
 
     d = np.sqrt(sc_dot_sc) * (1 + (sc_dot_os / sc_dot_sc))
 
     plane_vector = np.array([vx, vy, vz, d])
 
-    # The orthonormal basis is {b1 := normalized(v1), b2 := normalized(v2)}, where {v1, v2} are
-    # the vectors described in the "choosing easy p_i's" section
-    v1 = np.array([rt_kinv[0,0], rt_kinv[1,0], rt_kinv[2,0]])
-    v1_mag2 = (v1[0] * v1[0]) + (v1[1] * v1[1]) + (v1[2] * v1[2])
+    # The 'surface origin' corresponds to the pixel [0,0] on the detector.
+    # Vector source_to_surf_ori = (rt_kinv) @ (0,0,1)^T = [third column of rt_kinv]
+    surf_ori_x = rt_kinv[2] + source_ijk.data[0] # source_to_surf_ori + origin_to_source == origin_to_surf_ori
+    surf_ori_y = rt_kinv[5] + source_ijk.data[1]
+    surf_ori_z = rt_kinv[8] + source_ijk.data[2]
+    # SANITY CHECK: after using an inverse-of-upper-triangular-matrix formula, we get:
+    # kinv[2] == (s c_y - c_x f_y) / (f_x f_y)
+    # kinv[5] == c_y / f_y
+    # kinv[8] == 1
+    surface_origin = geo.Point3D.from_array(np.array([surf_ori_x, surf_ori_y, surf_ori_z]))
 
-    v2 = np.array([rt_kinv[0,1], rt_kinv[1,1], rt_kinv[2,1]])
-    v2_mag2 = (v2[0] * v2[0]) + (v2[1] * v2[1]) + (v2[2] * v2[2])
+    # The basis is {v1, v2}, where {v1, v2} are the vectors described in the "choosing easy p_i's" section
+    # That way, the point of intersection is:
+    #
+    #   intersection = surface_origin + (pixel_x_value) * v1 + (pixel_y_value) * v2
+    #
+    v1 = geo.Vector3D.from_array(np.array([rt_kinv[0,0], rt_kinv[1,0], rt_kinv[2,0]]))
+    v2 = geo.Vector3D.from_array(np.array([rt_kinv[0,1], rt_kinv[1,1], rt_kinv[2,1]]))
 
-    b1 = v1 / np.sqrt(v1_mag2)
-    b2 = v2 / np.sqrt(v2_mag2)
+    # Coordinate bounds correspond to the size of the detector, in pixels
+    bounds = np.array([[0, sensor_size[0]],
+                       [0, sensor_size[1]]])
 
-    return plane_vector, b1, b2
+    # Not guaranteed that the basis vectors are orthogonal
+    return PlaneSurface(plane_vector, surface_origin, (v1, v2), bounds, False)
 
 def get_scattered_dir(
-    dir: geo.Vector3D,
+    direction: geo.Vector3D,
     cos_theta: np.float32,
     phi: np.float32
 ) -> geo.Vector3D:
@@ -553,9 +614,9 @@ def get_scattered_dir(
     Returns:
         geo.Vector3D: the outgoing direction of travel
     """
-    dx = dir.data[0]
-    dy = dir.data[1]
-    dz = dir.data[2]
+    dx = direction.data[0]
+    dy = direction.data[1]
+    dz = direction.data[2]
 
     # since \theta is restricted to [0, \pi], sin_theta is restricted to [0,1]
     sin_theta = np.sqrt(1 - cos_theta * cos_theta)
@@ -583,7 +644,9 @@ def sample_U01() -> np.float32:
     # TODO: implement RANECU? Could be useful for validating translation to CUDA
     return np.random.random_sample()
 
-def sample_initial_energy(spectrum: np.ndarray) -> np.float32:
+def sample_initial_energy(
+    spectrum: np.ndarray
+) -> np.float32:
     """Determine the energy (in eV) of a photon emitted by an X-Ray source with the given spectrum
 
     Args:
@@ -807,137 +870,3 @@ def sample_Compton_theta_E_prime(
     E_ratio = tau * tmp / term_tau
 
     return cos_theta, E_ratio * photon_energy
-
-class PlaneSurface:
-    plane_vector: np.ndarray
-    basis_1: np.ndarray
-    basis_2: np.ndarray
-    bounds: np.ndarray
-    
-
-    def __init__(
-        self,
-        plane_vector: np.ndarray,
-        surface_origin: geo.Point3D,
-        basis: Tuple[geo.Vector3D, geo.Vector3D],
-        bounds: np.ndarray
-    ):
-        """A representation of a rectangular region on a 2D plane embedded in 3D space.
-
-        Args:
-            plane_vector (np.ndarray): a 1x4 matrix uniquely identifying the plane.  The first three elements are the normal vector, and the fourth element is the distance between the plane and the origin of the coordinate axes.  \\vec{m} = (n_x, n_y, n_z, d), where \\hat{n} is the normal vector to the plane, and 'd' is the distance away from the origin
-            surface_origin (geo.Point3D): a point on the plane that is used as a reference point for every other position on the surface.  Points on the plane are only on the surface if the point is [surface_origin] + [in-bounds coefficients] * [basis]
-            basis (Tuple[geo.Vector3D, geo.Vector3D]): an orthonormal basis for the plane.  All points on the plane are represented by [surface_origin] + [linear combination of basis]
-            bounds (np.ndarray): a 2x2 matrix that provides the in-bounds coefficients for the linear combination of the basis vectors.  bounds[0,0] and bounds[0,1] give the lower and upper bounds (inclusive) on the acceptable coefficient for the first basis vector, and bounds[1,0] and bounds[1,1] behave the same for the second basis vector
-        """
-        self.plane_vector = plane_vector.copy()
-        self.surface_origin = geo.Point3D.from_any(surface_origin)
-        self.basis_1 = geo.Vector3D.from_any(basis[0])
-        self.basis_2 = geo.Vector3D.from_any(basis[1])
-        self.bounds = bounds.copy()
-
-        # Check that the basis is orthonormal:
-        b1_mag = (self.basis_1[0] * self.basis_1[0]) + (self.basis_1[1] * self.basis_1[1]) + (self.basis_1[2] * self.basis_1[2])
-        b2_mag = (self.basis_2[0] * self.basis_2[0]) + (self.basis_2[1] * self.basis_2[1]) + (self.basis_2[2] * self.basis_2[2])
-
-        assert 1 == b1_mag
-        assert 1 == b2_mag
-
-        b1_dot_b2 = (self.basis_1[0] * self.basis_2[0]) + (self.basis_1[1] * self.basis_2[1]) + (self.basis_1[2] * self.basis_2[2])
-
-        assert 0 == b1_dot_b2
-
-    def check_ray_intersection(
-        self,
-        pos: geo.Point3D,
-        direction: geo.Vector3D
-    ) -> np.float32:
-        """Calculates whether or not a photon at the specified position, travelling in the specified direction, will hit the plane of the PlaneSurface object.
-
-        It is imperative that all of the arguments are in the same coordinate system (unchecked).
-
-        Args:
-            pos (geo.Point3D): the position of the photon
-            dir (geo.Vector3D): the direction that the photon is travelling in
-
-        Returns:
-            np.float32: if there will be an intersection, the distance \\alpha to the intersection.  If no intersection, returns a negative number (the negative number does not necessarily have a geometrical meaning) 
-        """
-        # (\vec{pos} + \alpha * \vec{dir}) \cdot \vec{m} = 0, then (\vec{pos} + \alpha * \vec{dir}) is the point of intersection.
-        # Want to return None if \alpha < 0, since then the photon is actually travelling the wrong way to hit the plane.
-        r_dot_m = (pos.data) @ self.plane_vector
-        if 0 == r_dot_m:
-            # 'pos' is already on the plane
-            return 0
-        d_dot_m = (direction.data) @ self.plane_vector
-        if 0 == d_dot_m:
-            # 'direction' is perpendicular to the normal vector of the plane ==> will never intersect
-            return -1
-        
-        alpha = (-1 * r_dot_m) / d_dot_m
-
-        return alpha
-
-    def point_on_surface(
-        self,
-        point: geo.Point3D
-    ) -> bool:
-        """Returns whether the given point, which is assumed to be on the plane of the surface, is within the bounds of the surface.
-
-        Args:
-            point (geo.Point3D): the point to check
-        
-        Returns:
-            bool: True if the point is in-bounds, False otherwise
-        """
-        # Working in 3D (i.e., non-homogeneous) coordinates:
-        # Let \vec{x} := point, \vec{s} := surface_origin. Thus, (\vec{x} - \vec{s}) = \alpha_1 * b_1 + \alpha_2 * b_2, 
-        # where {b_1, b_2} is the orthonormal basis.  In other terms,
-        #
-        #       (\vec{x} - \vec{s}) = (b_1 b_2) (\alpha_1 \alpha_2)^T = B \vec{\alpha}
-        #
-        # Accordingly,
-        # 
-        #       \vec{\alpha} = B^{-1} (\vec{x} - \vec{s})
-        # 
-        # where B^{-1} is the right-inverse of the 3x2 matrix B = (b_1 b_2).  Since the basis {b_1, b_2} is orthonormal,
-        # we have:
-        # 
-        #       B^{-1} = (b_1^T
-        #                 b_2^T)
-        #              = B^T
-        #
-        # Once we have \vec{\alpha}, we just need to check against the acceptable bounds, given by self.bounds
-
-        disp_np_3 = (point - self.surface_origin).data[0:3] # \vec{x} - \vec{s}, only 3 values (non-homogeneous)
-
-        b_1_np_3 = self.basis_1.data[0:3] # b_1, only 3 values (non-homogeneous)
-        alpha_1 = np.dot(b_1_np_3, disp_np_3)
-
-        if (alpha_1 < self.bounds[0,0]) or (alpha_1 > self.bounds[0,1]):
-            return False
-
-        b_2_np_3 = self.basis_2.data[0:3] # b_2, only 3 values (non-homogeneous)
-        alpha_2 = np.dot(b_2_np_3, disp_np_3)
-
-        return (alpha_2 >= self.bounds[1,0]) and (alpha_2 <= self.bounds[1,1])
-    
-    def point_on_surface_checking(
-        self,
-        point: geo.Point3D
-    ) -> bool:
-        """Returns whether the given point, which is not assumed to be on the plane of the surface, is within the bounds of the surface.
-
-        Args:
-            point (geo.Point3D): the point to check
-        
-        Returns:
-            bool: True if the point is on the plane and in-bounds, False otherwise
-        """
-        pvec = point.data
-        assert (4,) == pvec.shape
-        assert 1 == pvec[-1]
-
-        if (0 == np.dot(pvec, self.plane_vector)):
-            return self.point_on_surface(point)
-        return False
