@@ -138,7 +138,7 @@ class SingleProjector(object):
             RuntimeError: if the projector has not been initialized.
 
         Returns:
-            np.ndarray: the intensity image
+            np.ndarray: the deposited-energy image
             np.ndarray: the photon probability field
         """
         if not self.initialized:
@@ -180,7 +180,7 @@ class SingleProjector(object):
                 camera_center_in_volume[1],                        # sy
                 camera_center_in_volume[2],                        # sz
                 self.rt_kinv_gpu,                       # RT_Kinv
-                self.intensity_gpu,                     # intensity
+                self.deposited_energy_gpu,              # deposited_energy
                 self.photon_prob_gpu,                   # photon_prob (or NULL)
                 np.int32(self.spectrum.shape[0]),       # n_bins
                 self.energies_gpu,                      # energies
@@ -228,10 +228,10 @@ class SingleProjector(object):
                     context.synchronize()
 
         if self.attenuation:
-            intensity = np.empty(self.output_shape, dtype=np.float32)
-            cuda.memcpy_dtoh(intensity, self.intensity_gpu)
+            deposited_energy = np.empty(self.output_shape, dtype=np.float32)
+            cuda.memcpy_dtoh(deposited_energy, self.deposited_energy_gpu)
             # transpose the axes, which previously have width on the slow dimension
-            intensity = np.swapaxes(intensity, 0, 1).copy()
+            deposited_energy = np.swapaxes(deposited_energy, 0, 1).copy()
 
             photon_prob = np.empty(self.output_shape, dtype=np.float32)
             cuda.memcpy_dtoh(photon_prob, self.photon_prob_gpu)
@@ -242,7 +242,7 @@ class SingleProjector(object):
             #   we were working off of self.output_shape, which basically goes off of self.sensor_shape
             #
 
-            return intensity, photon_prob
+            return deposited_energy, photon_prob
 
         else:
             # copy the output to CPU
@@ -292,9 +292,9 @@ class SingleProjector(object):
         self.rt_kinv_gpu = cuda.mem_alloc(3 * 3 * 4)
 
         if self.attenuation:
-            # allocate intensity array on GPU (4 bytes to a float32)
-            self.intensity_gpu = cuda.mem_alloc(self.output_size * 4)
-            logger.debug(f"bytes alloc'd for self.intensity_gpu: {self.output_size * 4}")
+            # allocate deposited_energy array on GPU (4 bytes to a float32)
+            self.deposited_energy_gpu = cuda.mem_alloc(self.output_size * 4)
+            logger.debug(f"bytes alloc'd for self.deposited_energy_gpu: {self.output_size * 4}")
 
             # allocate photon_prob array on GPU (4 bytes to a float32)
             self.photon_prob_gpu = cuda.mem_alloc(self.output_size * 4)
@@ -342,7 +342,7 @@ class SingleProjector(object):
             self.rt_kinv_gpu.free()
 
             if self.attenuation:
-                self.intensity_gpu.free()
+                self.deposited_energy_gpu.free()
                 self.photon_prob_gpu.free()
                 self.energies_gpu.free()
                 self.pdf_gpu.free()
@@ -453,15 +453,15 @@ class Projector(object):
         # TODO: handle multiple volumes more elegantly, i.e. in the kernel. (!)
         if self.attenuation:
             projector = self.projectors[0]
-            intensities = []
+            deposited_energies = []
             photon_probs = []
             for i, proj in enumerate(camera_projections):
                 logger.info(f"Projecting and attenuating camera position {i+1} / {len(camera_projections)}")
-                intensity, photon_prob = projector.project(proj)
-                intensities.append(intensity)
+                deposited_energy, photon_prob = projector.project(proj)
+                deposited_energies.append(deposited_energy)
                 photon_probs.append(photon_prob)
 
-            images = np.stack(intensities)
+            images = np.stack(deposited_energies)
             photon_prob = np.stack(photon_probs)
             logger.info("Completed projection and attenuation")
         else:

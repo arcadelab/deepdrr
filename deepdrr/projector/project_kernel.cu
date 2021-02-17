@@ -221,7 +221,7 @@ extern "C" {
         float sy,
         float sz,
         float *rt_kinv, // (3, 3) array giving the image-to-world-ray transform.
-        float *intensity, // flat array, with shape (out_height, out_width).
+        float *deposited_energy, // flat array, with shape (out_height, out_width).
         float *photon_prob, // flat array, with shape (out_height, out_width).
         int n_bins, // the number of spectral bins
         float *energies, // 1-D array -- size is the n_bins
@@ -400,11 +400,11 @@ extern "C" {
 
         // forward_projections dictionary-ization is implicit.
 
-        // flat index to pixel in *intensity and *photon_prob
+        // flat index to pixel in *deposited_energy and *photon_prob
         int img_dx = (udx * out_height) + vdx;
 
-        // zero-out intensity and photon_prob
-        intensity[img_dx] = 0;
+        // zero-out deposited_energy and photon_prob
+        deposited_energy[img_dx] = 0;
         photon_prob[img_dx] = 0;
 
         // MASS ATTENUATION COMPUTATION
@@ -431,7 +431,7 @@ extern "C" {
          * each material 'mat'.
          *
          *      The above explains the calculation up to and including 
-         *              'intensity_tmp = expf(intensity_tmp)',
+         *              '____ = expf(-1 * beer_lambert_exp)',
          * but does not yet explain the remaining calculation.  The remaining calculation serves to 
          * approximate the workings of a pixel in the dectector:
          *      
@@ -439,21 +439,24 @@ extern "C" {
          *
          * where attenuatedBeamStrength follows the Beer-Lambert law as above, E is the energies of
          * the spectrum, and p(E) is the PDF of the spectrum.
+         *      Note also that the Beer-Lambert law deals with the quantity 'intensity', which is 
+         * related to the power transmitted through [unit area perpendicular to the direction of travel].
+         * Since the intensities mentioned in the Beer-Lambert law are proportional to 1/[unit area], we
+         * can replace the "intensity" calcuation with simply the energies involved.  Later conversion to 
+         * true (physical) intensity, by dividing by the pixel area, can be done outside of the kernel.
          */
         for (int bin = 0; bin < n_bins; bin++) {
             float energy = energies[bin];
             float p = pdf[bin];
 
-            float intensity_tmp = 0.0f; // lifting the call to calculate_attenuation_gpu(...) up a level
+            float beer_lambert_exp = 0.0f;
             for (int m = 0; m < NUM_MATERIALS; m++) {
-                float absorb_coef = absorb_coef_table[bin * NUM_MATERIALS + m];
-                intensity_tmp += area_density[m] * -1 * absorb_coef;
+                beer_lambert_exp += area_density[m] * absorb_coef_table[bin * NUM_MATERIALS + m];
             }
-            intensity_tmp = expf(intensity_tmp) * energy * p;
-            // done with the "lifted" call to calculate_attenuation_gpu(...)
+            photon_prob_tmp = expf(-1 * beer_lambert_exp) * p; // dimensionless value
 
-            intensity[img_dx] += intensity_tmp;
-            photon_prob[img_dx] += intensity_tmp * (1.0 / energy);
+            photon_prob[img_dx] += photon_prob_tmp;
+            deposited_energy[img_dx] += energy * photon_prob_tmp; // units: [eV]
         }
 
         return;

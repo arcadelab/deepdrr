@@ -92,17 +92,15 @@ def simulate_scatter_no_vr(
         
         # Model for detector: ideal image formation
         # Each pixel counts the total energy of the X-rays that enter the pixel (100% efficient pixels)
-        # NOTE: will have to take care that this sort of tallying is atomic in the GPU
+        # NOTE: will have to take care that this sort of tallying is <<<ATOMIC>>> in the GPU
         if (pixel_x < 0) or (pixel_x >= sensor_size[0]):
             continue
         if (pixel_y < 0) or (pixel_y >= sensor_size[1]):
             continue
         accumulator[pixel_x, pixel_y] = accumulator[pixel_x, pixel_y] + energy
-
-    # TODO: convert detector values to output X-Ray images
     
     print(f"Finished simulating {photon_count} photon histories")
-    return NotImplemented
+    return accumulator
 
 def track_single_photon_no_vr(
     initial_pos: geo.Point3D,
