@@ -419,9 +419,6 @@ class Projector(object):
             ) for volume in self.volumes
         ]
 
-        # other parameters
-        self.scatter_net = scatter.ScatterNet() if self.add_scatter else None
-
     @property
     def initialized(self):
         # Has the cuda memory been allocated?
