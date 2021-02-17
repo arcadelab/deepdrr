@@ -1,16 +1,17 @@
 from typing import Literal, List, Union, Tuple, Optional, Dict
 
 import logging
-import pycuda.driver as cuda
-from pycuda.tools import make_default_context
-import pycuda.autoinit
-from pycuda.autoinit import context
-from pycuda.compiler import SourceModule
 import numpy as np
-from pathlib import Path 
+from pathlib import Path
 
-# debugging
-import matplotlib.pyplot as plt
+try:
+    import pycuda.driver as cuda
+    import pycuda.autoinit
+    from pycuda.autoinit import context
+    from pycuda.compiler import SourceModule
+except ImportError:
+    SourceModule = "SourceModule"
+    logging.warning('pycuda unavailable')
 
 from . import spectral_data
 from . import mass_attenuation
@@ -36,7 +37,6 @@ def _get_spectrum(spectrum):
         raise TypeError(f'unrecognized spectrum: {type(spectrum)}')
 
 
-
 def _get_kernel_projector_module(num_materials, attenuation = True) -> SourceModule:
     """Compile the cuda code for the kernel projector.
 
@@ -57,7 +57,7 @@ def _get_kernel_projector_module(num_materials, attenuation = True) -> SourceMod
     # TODO: replace the NUM_MATERIALS junk with some elegant meta-programming.
     return SourceModule(source, include_dirs=[bicubic_path], no_extern_c=True, options=['-D', f'NUM_MATERIALS={num_materials}'])
 
-    
+
 class SingleProjector(object):
     initialized: bool = False
 
@@ -107,7 +107,8 @@ class SingleProjector(object):
         self.num_materials = len(self.volume.materials)
 
         # compile the module
-        self.mod = _get_kernel_projector_module(self.num_materials, attenuation=self.attenuation) # TODO: make this not a compile-time option.
+        # TODO: fix attenuation vs no-attenuation ugliness.
+        self.mod = _get_kernel_projector_module(self.num_materials, attenuation=self.attenuation)
         self.project_kernel = self.mod.get_function("projectKernel")
 
         # assertions
@@ -362,13 +363,14 @@ class Projector(object):
         step: float = 0.1,
         mode: Literal['linear'] = 'linear',
         spectrum: Union[np.ndarray, Literal['60KV_AL35', '90KV_AL40', '120KV_AL43']] = '90KV_AL40',
-        add_scatter: bool = False, # add scatter noise
-        add_noise: bool = False, # add poisson noise
+        add_scatter: bool = False,
+        add_noise: bool = False,
         photon_count: int = 100000,
         threads: int = 8,
         max_block_index: int = 1024,
         collected_energy: bool = False, # convert to keV / cm^2 or keV / mm^2
-        neglog: bool = False,
+        neglog: bool = True,
+        intensity_upper_bound: Optional[float] = None,
     ) -> None:
         """Create the projector, which has info for simulating the DRR.
 
@@ -386,10 +388,12 @@ class Projector(object):
             step (float, optional): size of the step along projection ray in voxels. Defaults to 0.1.
             mode (Literal['linear']): [description].
             spectrum (Union[np.ndarray, Literal['60KV_AL35', '90KV_AL40', '120KV_AL43'], optional): spectrum array or name of spectrum to use for projection. Defaults to '90KV_AL40'.
-            add_scatter (bool, optional): whether to add scatter noise. Defaults to False.
+            add_scatter (bool, optional): whether to add scatter noise from artifacts. Defaults to False.
+            add_noise: (bool, optional): whether to add Poisson noise. Defaults to False.
             threads (int, optional): number of threads to use. Defaults to 8.
-            max_block_index (int, optional): maximum GPU block. Defaults to 1024.
-            neglog (bool, optional): whether to apply negative log transform to output images. Recommended for easy viewing. Defaults to False.
+            max_block_index (int, optional): maximum GPU block. Defaults to 1024. TODO: determine from compute capability.
+            neglog (bool, optional): whether to apply negative log transform to intensity images. If True, outputs are in range [0, 1]. Recommended for easy viewing. Defaults to False.
+            intensity_upper_bound (Optional[float], optional): Maximum intensity, clipped before neglog, after noise and scatter. Defaults to 40.
         """
                     
         # set variables
@@ -402,9 +406,9 @@ class Projector(object):
         self.photon_count = photon_count
         self.collected_energy = collected_energy
         self.neglog = neglog
+        self.intensity_upper_bound = intensity_upper_bound
 
         assert len(self.volumes) > 0
-        self.attenuation = len(self.volumes) == 1
 
         self.projectors = [
             SingleProjector(
@@ -415,7 +419,7 @@ class Projector(object):
                 spectrum=spectrum,
                 threads=threads,
                 max_block_index=max_block_index,
-                attenuation=self.attenuation,
+                attenuation=len(self.volumes) == 1,
             ) for volume in self.volumes
         ]
 
@@ -423,6 +427,15 @@ class Projector(object):
     def initialized(self):
         # Has the cuda memory been allocated?
         return np.all([p.initialized for p in self.projectors])
+
+    @property
+    def volume(self):
+        if len(self.projectors) != 1:
+            raise DeprecationWarning(f'volume is deprecated. Each projector contains multiple "SingleProjectors", which contain their own volumes.')
+        return self.projectors[0].volume
+
+    def get_carm_camera_projection(self):
+        return geo.CameraProjection(self.camera_intrinsics, self.carm.camera3d_from_world)
 
     def project(
         self,
@@ -439,16 +452,16 @@ class Projector(object):
         Returns:
             np.ndarray: array of DRRs, after mass attenuation, etc.
         """
-        logger.debug(f'carm isocenter: {self.carm.isocenter}')
         if not camera_projections and self.carm is None:
             raise ValueError('must provide a camera projection object to the projector, unless imaging device (e.g. CArm) is provided')
         elif not camera_projections and self.carm is not None:
-            camera_projections = [geo.CameraProjection(self.camera_intrinsics, self.carm.camera3d_from_world)]
+            camera_projections = [self.get_carm_camera_projection()]
+            logger.debug(f'projecting with source at {camera_projections[0].center_in_world}, pointing toward isocenter at {self.carm.isocenter}...')
         
-        logger.info("Initiating projection and attenuation")
+        logger.info("Initiating projection and attenuation...")
 
         # TODO: handle multiple volumes more elegantly, i.e. in the kernel. (!)
-        if self.attenuation:
+        if len(self.projectors) == 1:
             projector = self.projectors[0]
             deposited_energies = []
             photon_probs = []
@@ -513,6 +526,9 @@ class Projector(object):
         if self.add_noise:
             logger.info("adding Poisson noise")
             images = analytic_generators.add_noise(images, photon_prob, self.photon_count)
+
+        if self.intensity_upper_bound is not None:
+            images = np.clip(images, None, self.intensity_upper_bound)
 
         if self.neglog:
             logger.info("applying negative log transform")

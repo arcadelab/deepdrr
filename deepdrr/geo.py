@@ -20,11 +20,16 @@ from __future__ import annotations
 
 from typing import Union, Tuple, Optional, Type, List, Generic, TypeVar
 
+import logging
 from abc import ABC, abstractmethod
 import numpy as np
+import scipy.spatial.distance
 
 from . import vol
 from . import utils
+
+
+logger = logging.getLogger(__name__)
 
 
 def _to_homogeneous(x: np.ndarray, is_point: bool = True) -> np.ndarray:
@@ -124,6 +129,8 @@ class HomogeneousObject(ABC):
     def __setitem__(self, key, value):
         return self.data.__setitem__(key, value)
 
+    def __iter__(self):
+        return iter(np.array(self))
 
 
 class HomogeneousPointOrVector(HomogeneousObject):
@@ -149,6 +156,8 @@ class HomogeneousPointOrVector(HomogeneousObject):
         """Return the L2 norm of the point or vector."""
         return self.norm()
 
+    def __div__(self, other):
+        return self * (1 / other)
     
 class Point(HomogeneousPointOrVector):
     def __init__(self, data: np.ndarray) -> None:
@@ -175,32 +184,48 @@ class Point(HomogeneousPointOrVector):
     def __sub__(
             self: Point,
             other: Point,
-    ) -> Union[Vector2D, Vector3D]:
+    ) -> Vector:
         """ Subtract two points, obtaining a vector. """
         other = self.from_any(other)
         return _point_or_vector(self.data - other.data)
 
-    def __add__(self, other):
+    def __add__(self, other: Vector):
         """ Can add a vector to a point, but cannot add two points. """
         if issubclass(type(other), Vector):
-            return type(self)(other.data + self.data)
+            return type(self)(self.data + other.data)
+        elif issubclass(type(other), Point):
+            # TODO: should points be allowed to be added together?
+            return point(np.array(self) + np.array(other))
         else:
             return NotImplemented
 
     def __radd__(self, other):
         return self + other
 
-    def __mul__(self, other):
+    def __mul__(self, other: Union[int, float]) -> Vector:
         if isinstance(other, (int, float)):
             return point(other * np.array(self))
         else:
             return NotImplemented
 
-    def __div__(self, other):
-        return self * (1 / other)
+    def __rmul__(self, other: Union[int, float]) -> Vector:
+        return self * other
 
     def __neg__(self):
         return self * (-1)
+
+    def lerp(self, other: Point, alpha: float = 0.5) -> Point:
+        """Linearly interpolate between one point and another.
+
+        Args:
+            other (Point): other point.
+            alpha (float): fraction of the distance from self to other to travel. Defaults to 0.5 (the midpoint).
+
+        Returns:
+            Point: the point that is `alpha` of the way between self and other.
+        """
+        return (1 - alpha) * self + alpha * other
+
 
 
 class Vector(HomogeneousPointOrVector):
@@ -248,7 +273,7 @@ class Vector(HomogeneousPointOrVector):
     def __sub__(self, other: Vector):
         return self + (-other)
 
-    def __rmul__(self, other: Vector):
+    def __rmul__(self, other: Union[int, float]):
         return self * other
 
     def __rsub__(self, other: Vector):
@@ -256,6 +281,20 @@ class Vector(HomogeneousPointOrVector):
 
     def __radd__(self, other: Vector):
         return self + other
+
+    def hat(self) -> Vector:
+        return self * (1 / self.norm())
+
+    def cosine_distance(self, other: Vector) -> float:
+        """Get the cosine distance between the angles.
+
+        Args:
+            other (Vector): the other vector.
+
+        Returns:
+            float: `1 - cos(angle)`, where `angle` is between self and other.
+        """
+        return scipy.spatial.distance.cosine(np.array(self), np.array(other))
 
 
 class Point2D(Point):
@@ -351,10 +390,10 @@ def vector(*v: Union[np.ndarray, float, Vector2D, Vector3D]) -> Union[Vector2D, 
 
 
 def _point_or_vector(data: np.ndarray):
-    assert data.ndim == 1 and data[-1] in [0, 1], f'{data} must be a point or vector'
+    """Convert a point where the "homogeneous" element may not be 1."""
 
     if bool(data[-1]):
-        return point(data[:-1])
+        return point(data[:-1] / data[-1])
     else:
         return vector(data[:-1])
 
@@ -574,7 +613,15 @@ class FrameTransform(Transform):
         translation: np.ndarray,
     ) -> FrameTransform:
         """Wrapper around from_rt."""
-        return cls.from_rt(translation)
+        return cls.from_rt(translation=translation)
+
+    @classmethod
+    def from_rotation(
+        cls,
+        rotation: np.ndarray,
+    ) -> FrameTransform:
+        """Wrapper around from_rt."""
+        return cls.from_rt(rotation=rotation)
 
     @classmethod
     def identity(
@@ -629,6 +676,57 @@ class FrameTransform(Transform):
     def inv(self):
         R_inv = np.linalg.inv(self.R)
         return FrameTransform.from_rt(R_inv, -(R_inv @ self.t))
+
+
+def frame_transform(*args) -> FrameTransform:
+    """Convenience function for creating a frame transform.
+
+    The output depends on how the function is called:
+    frame_transform() -> 3D identity transform
+    frame_transform(None) -> 3D identity transform
+    frame_transform(scalar) -> FrameTransform.from_scaling(scalar)
+    frame_transform(ft: FrameTransform) -> ft
+    frame_transform(data: np.ndarray[4,4]) -> FrameTransform(data)
+    frame_transform(R: np.ndarray[3,3]) -> FrameTransform.from_rt(R)
+    frame_transform(t: np.ndarray[3]) -> FrameTransform.from_translation(t)
+    frame_transform((R, t)) -> FrameTransform.from_rt(R, t)
+    frame_transform(R, t) -> FrameTransform.from_rt(R, t)
+
+    Returns:
+        FrameTransform: [description]
+    """
+    logger.debug(f'args: {args}')
+
+    if len(args) == 0:
+        return FrameTransform.identity()
+    elif len(args) == 1:
+        if args[0] is None:
+            return FrameTransform.identity()
+        elif isinstance(args[0], FrameTransform):
+            return args[0]
+        elif isinstance(args[0], (int, float)):
+            return FrameTransform.from_scaling(args[0])
+        elif isinstance(args[0], np.ndarray):
+            if args[0].shape == (4, 4):
+                return FrameTransform(args[0])
+            elif args[0].shape == (3, 3):
+                return FrameTransform.from_rt(rotation=args[0])
+            elif args[0].shape == (3,) or args[0].shape == (1, 3):
+                return FrameTransform.from_rt(translation=args[0])
+            else:
+                raise TypeError(f"couldn't convert numpy array to FrameTransform: {args[0]}")
+        elif isinstance(args[0], (tuple, list)) and len(args[0]) == 2:
+            return frame_transform(args[0][0], args[0][1])
+    elif len(args) == 2:
+        if (isinstance(args[0], np.ndarray)
+            and isinstance(args[1], np.ndarray) 
+            and args[0].shape == (3, 3)
+            and args[1].shape == (3,)):
+            return FrameTransform.from_rt(rotation=args[0], translation=args[1])
+        else:
+            raise TypeError(f'could not parse FrameTransfrom from [R, t]: [{args[0]}, {args[1]}]')
+    else:
+        raise TypeError(f"too many arguments: {args}")
 
 
 class CameraIntrinsicTransform(FrameTransform):
@@ -765,6 +863,7 @@ class CameraIntrinsicTransform(FrameTransform):
         """Tuple with the (width, height) of the sense/image, in pixels."""
         return (self.sensor_width, self.sensor_height)
 
+# TODO(killeen): CameraProjection never calls super().__init__() and thus has no self.data attribute.
 
 class CameraProjection(Transform):
     dim = 3
