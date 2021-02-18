@@ -265,7 +265,7 @@ class Volume(object):
     @property
     def center_in_world(self) -> geo.Point3D:
         """The center of the volume in world coorindates. Useful for debugging."""
-        return geo.point(self.world_from_ijk @ geo.point(np.array(self.shape) / 2))
+        return self.world_from_ijk @ geo.point(np.array(self.shape) / 2)
 
     @property
     def spacing(self) -> geo.Vector3D:
@@ -296,6 +296,19 @@ class Volume(object):
 
     def __array__(self) -> np.ndarray:
         return self.data
+
+    def translate_center_to(self, x: geo.Point3D) -> None:
+        """Translate the volume so that its center is located at world-space point x.
+
+        Only changes the translation elements of the world_from_anatomical transform. Preserves the current rotation of the 
+
+        Args:
+            x (geo.Point3D): the world-space point.
+
+        """
+        x = geo.point(x)
+        center_anatomical = self.anatomical_from_ijk @ geo.point(np.array(self.shape) / 2)
+        self.world_from_anatomical = geo.FrameTransform.from_rt(self.world_from_anatomical.R) @ geo.FrameTransform.from_origin(center_anatomical)
 
 
 class MetalVolume(Volume):

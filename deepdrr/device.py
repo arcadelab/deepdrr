@@ -11,10 +11,10 @@ from . import utils
 logger = logging.getLogger(__name__)
 
 PI = np.float32(np.pi)
-DEFAULT_MIN_ALPHA = -2 * PI / 3
-DEFAULT_MAX_ALPHA = 2 * PI / 3
-DEFAULT_MIN_BETA = -PI / 4
-DEFAULT_MAX_BETA = PI / 4
+DEFAULT_MIN_ALPHA = -2 * PI / 3 # -120
+DEFAULT_MAX_ALPHA = 2 * PI / 3 # 120
+DEFAULT_MIN_BETA = -PI / 4 # -45
+DEFAULT_MAX_BETA = PI / 4 # 45
 
 
 
@@ -98,6 +98,8 @@ class MobileCArm(object):
         """Make a CArm device.
 
         The geometry follows figure 2 in Kausch et al: https://pubmed.ncbi.nlm.nih.gov/32533315/
+
+        TODO(killeen): limit the translation of the C-arm, as it would be in reality.
 
         Args:
             isocenter_distance (float): the distance from the X-ray source to the isocenter of the CAarm. (The center of rotation).
