@@ -191,7 +191,7 @@ class MobileCArm(object):
         return geo.vector(x)
 
     def get_pose_vector_in_world(self) -> geo.Vector3D:
-        return self.world_from_carm @ self.get_pose_vector()
+        return (self.world_from_carm @ self.get_pose_vector()).hat()
 
     def get_camera3d_from_world(self) -> geo.FrameTransform:
         """Rigid transformation of the C-arm camera pose."""
