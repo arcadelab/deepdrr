@@ -111,13 +111,16 @@ class MobileCArm(object):
         """
         self.isocenter_distance = isocenter_distance
         self.isocenter = geo.point(0, 0, 0) if isocenter is None else isocenter
-        self.alpha = alpha
-        self.beta = beta
+        self.alpha = utils.radians(alpha, degrees=degrees)
+        self.beta = utils.radians(beta, degrees=degrees)
         self.min_alpha = DEFAULT_MIN_ALPHA if min_alpha is None else utils.radians(min_alpha, degrees=degrees)
         self.max_alpha = DEFAULT_MAX_ALPHA if max_alpha is None else utils.radians(max_alpha, degrees=degrees)
         self.min_beta = DEFAULT_MIN_BETA if min_beta is None else utils.radians(min_beta, degrees=degrees)
         self.max_beta = DEFAULT_MAX_BETA if max_beta is None else utils.radians(max_beta, degrees=degrees)
         self.world_from_carm = geo.frame_transform(world_from_carm)
+
+    def __str__(self):
+        return f'MobileCArm(isocenter={np.array_str(np.array(self.isocenter))}, alpha={np.degrees(self.alpha)}, beta={np.degrees(self.beta)}, degrees=True)'
 
     @property
     def carm_from_world(self) -> geo.FrameTransform:
