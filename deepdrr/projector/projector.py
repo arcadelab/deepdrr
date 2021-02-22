@@ -243,7 +243,35 @@ class SingleProjector(object):
             #   we were working off of self.output_shape, which basically goes off of self.sensor_shape
             #
 
-            return deposited_energy, photon_prob
+            ### BEGIN TEMP
+            index_from_ijk = camera_projection.world_from_index.inv @ self.volume.ijk_from_world.inv
+            print(f"index_from_ijk transform:\n{index_from_ijk}")
+            index_from_ijk = np.array(index_from_ijk).astype(np.float32)
+            print(f"index_from_ijk ndarray:\n{index_from_ijk}")
+
+            print("camera intrinsics (K):")
+            print(f"\t{self.camera_intrinsics}")
+            print("ijk_from_index:")
+            print(f"\t{ijk_from_index}")
+            print("index_from_ijk")
+            print(f"\t{index_from_ijk}")
+
+            noise = scatter.simulate_scatter_no_vr(
+                self.volume, 
+                geo.Point3D.from_any(camera_center_in_volume), 
+                ijk_from_index, 
+                index_from_ijk,
+                (camera_projection.sensor_width, camera_projection.sensor_height),
+                (camera_projection.sensor_width, camera_projection.sensor_height),
+                self.spectrum,
+                photon_count=100#000, # 10^5
+            )
+            noise = np.swapaxes(noise, 0, 1).copy()
+            print(f"noise.shape: {noise.shape}")
+            return deposited_energy, photon_prob, noise
+            ###return deposited_energy, photon_prob
+            ### END TEMP
+
 
         else:
             # copy the output to CPU
@@ -465,14 +493,18 @@ class Projector(object):
             projector = self.projectors[0]
             deposited_energies = []
             photon_probs = []
+            noises = [] ###
             for i, proj in enumerate(camera_projections):
                 logger.info(f"Projecting and attenuating camera position {i+1} / {len(camera_projections)}")
-                deposited_energy, photon_prob = projector.project(proj)
+                ###deposited_energy, photon_prob = projector.project(proj)
+                deposited_energy, photon_prob, noise = projector.project(proj) ###
                 deposited_energies.append(deposited_energy)
                 photon_probs.append(photon_prob)
+                noises.append(noise) ###
 
             images = np.stack(deposited_energies)
             photon_prob = np.stack(photon_probs)
+            all_noise = np.stack(noises) ###
             logger.info("Completed projection and attenuation")
         else:
             # Separate the projection and mass attenuation
@@ -511,6 +543,8 @@ class Projector(object):
             logger.info(f'performing mass attenuation...')
             images, photon_prob = mass_attenuation.calculate_intensity_from_spectrum(forward_projections, self.spectrum)
             logger.info('done.')
+        
+        images_with_noise = images + all_noise ###
 
         if self.add_scatter:
             # lfkj('adding scatter (may cause Nan errors)')
@@ -529,15 +563,26 @@ class Projector(object):
 
         if self.intensity_upper_bound is not None:
             images = np.clip(images, None, self.intensity_upper_bound)
+            images_with_noise = np.clip(images_with_noise, None, self.intensity_upper_bound) ###
+            all_noise = np.clip(all_noise, None, self.intensity_upper_bound) ###
 
         if self.neglog:
             logger.info("applying negative log transform")
             images = utils.neglog(images)
+            images_with_noise = utils.neglog(images_with_noise) ###
+            all_noise = utils.neglog(all_noise) ###
+        
+        print("Shapes:")
+        print(f"\timages: {images.shape}")
+        print(f"\timages_with_noise: {images_with_noise.shape}")
+        print(f"\tall_noise: {all_noise.shape}")
 
         if images.shape[0] == 1:
-            return images[0]
+            ###return images[0]
+            return images[0], images_with_noise[0], all_noise[0] ###
         else:
-            return images
+            ###return images
+            return images, images_with_noise, all_noise ###
         
     def project_over_carm_range(
         self,

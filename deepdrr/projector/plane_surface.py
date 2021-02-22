@@ -1,4 +1,4 @@
-from Typing import Tuple
+from typing import Tuple
 
 from deepdrr import geo
 import numpy as np

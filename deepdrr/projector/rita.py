@@ -67,7 +67,7 @@ class RITA:
         cls, 
         x_min: dtype,
         x_max: dtype,
-        pdf_func: Callable[dtype, dtype],
+        pdf_func: Callable[[dtype], dtype],
         n_grid_points: Optional[np.int32] = 128
     ):
         """Creates and returns a RITA object from the provided PDF over the provided interval, using the specified number of gridpoints.
@@ -75,7 +75,7 @@ class RITA:
         Args:
             x_min (np.float64): the lower bound of the interval to sample from
             x_max (np.float64): the upper bound of the interval to sample from
-            pdf_func (Callable[np.float64, np.float64]): the analytical PDF (float -> float) of the function whose PDF we are sampling from
+            pdf_func (Callable[[np.float64], np.float64]): the analytical PDF (float -> float) of the function whose PDF we are sampling from
             n_grid_points (Optional[np.int32], optional): the number of grid points to finish with.  Must be at least 10.  Defaults to 128
         """
         def cdf_func(x):
@@ -187,14 +187,14 @@ class RITA:
 #
 
 def numerically_integrate(
-    func: Callable[np.float64, np.float64],
+    func: Callable[[np.float64], np.float64],
     x_min: np.float64,
     x_max: np.float64
 ):
     """Numerically integrates function 'func' on the interval [x_min,x_max] using the 20-point Gauss method (see page 261 of 'PENELOPE-2006')
 
     Args:
-        func (Callable[np.float64, np.float64]): the function to integrate
+        func (Callable[[np.float64], np.float64]): the function to integrate
         x_min (np.float64): the lower integration bound
         x_max (np.float64): the upper integration bound
     
@@ -287,7 +287,7 @@ def _rita_calc_interp_error(
     y_arr,
     a_arr,
     b_arr,
-    pdf_func: Callable[np.float64, np.float64],
+    pdf_func: Callable[[np.float64], np.float64],
     idx: np.int32,
 ):
     """Calculate the interpolation error \\epsilon_{idx}.  The formula for interpolation error is given in Eqn 1.57:
@@ -301,7 +301,7 @@ def _rita_calc_interp_error(
         y_arr (raw Python array): the y-values for RITA
         a_arr (raw Python array): the 'a_i' parameters for RITA
         b_arr (raw Python array): the 'b_i' parameters for RITA
-        pdf_func (Callable[np.float64, np.float64]): the analytical PDF (float -> float) of the function whose PDF we are sampling from
+        pdf_func (Callable[[np.float64], np.float64]): the analytical PDF (float -> float) of the function whose PDF we are sampling from
         idx (np.int32): the index of the interval we are calculating for
     """
     x_i = a_arr[idx]
@@ -341,8 +341,8 @@ def _rita_add_gridpoint(
     a_arr,
     b_arr,
     eps_arr,
-    pdf_func: Callable[np.float64, np.float64],
-    cdf_func: Callable[np.float64, np.float64]
+    pdf_func: Callable[[np.float64], np.float64],
+    cdf_func: Callable[[np.float64], np.float64]
 ):
     """Add a gridpoint for the RITA algorithm (within the interval with the currently-largest interpolation error)
 
@@ -353,8 +353,8 @@ def _rita_add_gridpoint(
         a_arr (raw Python array): the 'a_i' parameters for RITA
         b_arr (raw Python array): the 'b_i' parameters for RITA
         eps_arr (raw Python array): the interpolation errors for each interval
-        pdf_func (Callable[np.float64, np.float64]): the analytical PDF (float -> float) of the function whose PDF we are sampling from
-        cdf_func (Callable[np.float64, np.float64]): the analytical CDF (float -> float) of the function whose PDF we are sampling from
+        pdf_func (Callable[[np.float64], np.float64]): the analytical PDF (float -> float) of the function whose PDF we are sampling from
+        cdf_func (Callable[[np.float64], np.float64]): the analytical CDF (float -> float) of the function whose PDF we are sampling from
     
     Returns:
         Upon return, data and parameters for a new gridpoint will have been placed in the arrays

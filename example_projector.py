@@ -68,10 +68,10 @@ def main():
     )
 
     # Angles to take projections over
-    min_theta = 0
-    max_theta = 120
-    min_phi = 0
-    max_phi = 91
+    min_theta = 0#30#0
+    max_theta = 1#31#120
+    min_phi = 0#60#0
+    max_phi = 1#61#91
     spacing_theta = 30
     spacing_phi = 90
 
@@ -87,9 +87,10 @@ def main():
         photon_count=100000,
         add_scatter=False,
         threads=8,
-        neglog=True,
+        neglog=False#True,
     ) as projector:
-        images = projector.project_over_carm_range(
+        ###images = projector.project_over_carm_range(
+        images, images_with_noise, noises = projector.project_over_carm_range(
             (min_phi, max_phi, spacing_phi),
             (min_theta, max_theta, spacing_theta)
         )
@@ -104,12 +105,28 @@ def main():
     # save results as matplotlib plots
     output_dir = Path(f'examples')
     output_dir.mkdir(exist_ok=True)
-    for i, image in enumerate(images):
+    for i, image in enumerate([images]):
         plt.imshow(image, cmap="gray")
         plt.title(f'phi, theta = {phis[i], thetas[i]}')
-        output_path = output_dir / f'image_phi={int(phis[i])}_theta={int(thetas[i])}.png'
+        output_path = output_dir / f'image10_phi={int(phis[i])}_theta={int(thetas[i])}.png'
         logger.info(f'writing image {output_path}')
         plt.savefig(output_path)
+    
+    ### BEGIN TEMP (noise testing)
+    for i, image in enumerate([images_with_noise]):
+        plt.imshow(image, cmap="gray")
+        plt.title(f'phi, theta = {phis[i], thetas[i]}')
+        output_path = output_dir / f'image_with_noise10_phi={int(phis[i])}_theta={int(thetas[i])}.png'
+        logger.info(f'writing image {output_path}')
+        plt.savefig(output_path)
+
+    for i, image in enumerate([noises]):
+        plt.imshow(image, cmap="gray")
+        plt.title(f'phi, theta = {phis[i], thetas[i]}')
+        output_path = output_dir / f'noise10_phi={int(phis[i])}_theta={int(thetas[i])}.png'
+        logger.info(f'writing image {output_path}')
+        plt.savefig(output_path)
+    ### END TEMP (noise testing)
 
 
 if __name__ == "__main__":

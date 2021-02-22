@@ -47,11 +47,11 @@ mfp_data = {
 # We assume that the volume is homogenous with the largest cross section of all the materials.
 # Accordingly, we assume that the mean free path is homogeneous with the shortest mean free 
 # path of all materials
-mfp_woodcock = np.concatenate(
+mfp_woodcock = np.stack(
     (
         mfp_data["bone"][:, 0], 
         np.minimum.reduce([mfp_data[mat][:, 4] for mat in mfp_data])
-    ), 
+    ),
     axis=1
 )
 

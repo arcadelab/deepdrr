@@ -453,7 +453,7 @@ extern "C" {
             for (int m = 0; m < NUM_MATERIALS; m++) {
                 beer_lambert_exp += area_density[m] * absorb_coef_table[bin * NUM_MATERIALS + m];
             }
-            photon_prob_tmp = expf(-1 * beer_lambert_exp) * p; // dimensionless value
+            float photon_prob_tmp = expf(-1 * beer_lambert_exp) * p; // dimensionless value
 
             photon_prob[img_dx] += photon_prob_tmp;
             deposited_energy[img_dx] += energy * photon_prob_tmp; // units: [eV]

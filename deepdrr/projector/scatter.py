@@ -6,11 +6,11 @@ from typing import Tuple, Optional, Dict, List
 
 import logging
 import numpy as np
-import spectral_data
+from . import spectral_data
 from deepdrr import geo
 from deepdrr import vol
-from rita import RITA
-from plane_surface import PlaneSurface
+from .rita import RITA
+from .plane_surface import PlaneSurface
 
 from .mcgpu_mfp_data import mfp_data, mfp_woodcock
 from .mcgpu_compton_data import MAX_NSHELLS as COMPTON_MAX_NSHELLS
@@ -19,6 +19,7 @@ from .mcgpu_compton_data import material_nshells, compton_data
 from .mcgpu_rita_samplers import rita_samplers
 
 import math # for 'count_milestones'
+import time # for keeping track of how long things take
 
 
 logger = logging.getLogger(__name__)
@@ -40,7 +41,8 @@ ELECTRON_REST_ENERGY = 510998.918 # eV
 def simulate_scatter_no_vr(
     volume: vol.Volume,
     source_ijk: geo.Point3D,
-    rt_kinv: np.ndarray,
+    ijk_from_index: np.ndarray,
+    index_from_ijk: np.ndarray,
     sensor_size: Tuple[int, int],
     output_shape: Tuple[int, int],
     spectrum: Optional[np.ndarray] = spectral_data.spectrums['90KV_AL40'], 
@@ -53,7 +55,8 @@ def simulate_scatter_no_vr(
     Args:
         volume (np.ndarray): the volume density data.
         source (geo.Point3D): the source point for rays in the camera's IJK space
-        rt_kinv (np.ndarray): the ray transform for the projection.  Transforms pixel indices (u,v,1) to IJK offset from the X-Ray source
+        ijk_from_index (np.ndarray): the ray transform for the projection.  Transforms pixel indices (u,v,1) to IJK offset from the X-Ray source
+        index_from_ijk (np.ndarray): the inverse transformation of ijk_from_index
         sensor_size (Tuple[int,int]): the sensor size {width}x{height}, in pixels, of the detector
         output_shape (Tuple[int, int]): the {height}x{width} dimensions of the output image
         spectrum (Optional[np.ndarray], optional): spectrum array.  Defaults to 90KV_AL40 spectrum.
@@ -81,14 +84,37 @@ def simulate_scatter_no_vr(
 
     # Plane data
     vol_planes = get_volume_surface_planes(volume)
-    detector_plane = get_detector_plane(rt_kinv, source_ijk, sensor_size)
+    detector_plane = get_detector_plane(ijk_from_index, source_ijk, sensor_size)
+    print(f"detector plane:")
+    print(f"\t{detector_plane.plane_vector}")
+    print(f"\t{detector_plane.surface_origin}")
+    print(f"\t{detector_plane.basis_1}")
+    print(f"\t{detector_plane.basis_2}")
 
+    ###
+    print(f"volume shape: {volume.data.shape}")
+    print(f"source_ijk: {source_ijk}")
+    print(f"Start time: {time.asctime()}")
+    ###
+
+    photon_hits = 0 # counts the number of photons that hit the detector
     for i in range(photon_count):
         if (i+1) in count_milestones:
             print(f"Simulating photon history {i+1} / {photon_count}")
+            print(f"\tCurrent time: {time.asctime()}")
         initial_dir, initial_pos, sample_count = sample_initial_direction(vol_planes, source_ijk)
         initial_E = sample_initial_energy(spectrum)
-        pixel_x, pixel_y, energy = track_single_photon_no_vr(initial_pos, initial_dir, initial_E, E_abs, labeled_seg, volume.data, detector_plane, material_ids)
+        pixel_x, pixel_y, energy = track_single_photon_no_vr(
+            initial_pos, 
+            initial_dir, 
+            initial_E, 
+            E_abs, 
+            labeled_seg, 
+            volume.data, 
+            detector_plane, 
+            index_from_ijk, 
+            material_ids
+        )
         
         # Model for detector: ideal image formation
         # Each pixel counts the total energy of the X-rays that enter the pixel (100% efficient pixels)
@@ -98,8 +124,9 @@ def simulate_scatter_no_vr(
         if (pixel_y < 0) or (pixel_y >= sensor_size[1]):
             continue
         accumulator[pixel_x, pixel_y] = accumulator[pixel_x, pixel_y] + energy
+        photon_hits += 1
     
-    print(f"Finished simulating {photon_count} photon histories")
+    print(f"Finished simulating {photon_count} photon histories.  {photon_hits} / {photon_count} photons hit the detector")
     return accumulator
 
 def track_single_photon_no_vr(
@@ -110,6 +137,7 @@ def track_single_photon_no_vr(
     labeled_seg: np.ndarray,
     density_vol: np.ndarray,
     detector_plane: PlaneSurface,
+    index_from_ijk: np.ndarray,
     material_ids: Dict[int, str]
 ) -> Tuple[int,int, np.float32]:
     """Produce a grayscale (intensity-based) image representing the photon scatter of a single photon 
@@ -123,6 +151,7 @@ def track_single_photon_no_vr(
         labeled_seg (np.ndarray): a [0..N-1]-labeled segmentation of the volume
         density_vol (np.ndarray): the density information of the volume
         detector_plane (np.ndarray): the 'plane vector' of the detector
+        index_from_ijk (np.ndarray): the inverse transformation of ijk_from_index, the ray transform for the projection.
         material_ids (Dict[int,str]): a dictionary mapping an integer material ID-label to the name of the material
     Returns:
         Tuple[int, int, np.float32]: the pixel coord.s of the hit pixel, as well as the energy (in eV) of the photon when it hit the detector.  
@@ -135,32 +164,41 @@ def track_single_photon_no_vr(
 
     while True: # emulate a do-while loop
         # Get voxel (index) coord.s.  Keep in mind that IJK coord.s are voxel-centered
-        vox_x = np.floor(pos.data[0])
-        vox_y = np.floor(pos.data[1])
-        vox_z = np.floor(pos.data[2])
-        voxel_coords = (vox_x, vox_y, vox_z)
-        mat_label = labeled_seg[voxel_coords]
+        vox_x = int(np.floor(pos.data[0]))
+        vox_y = int(np.floor(pos.data[1]))
+        vox_z = int(np.floor(pos.data[2]))
+        if (vox_x < 0) or (vox_x >= density_vol.shape[0]):
+            break
+        if (vox_y < 0) or (vox_y >= density_vol.shape[1]):
+            break
+        if (vox_z < 0) or (vox_z >= density_vol.shape[2]):
+            break
+        #voxel_coords = (vox_x, vox_y, vox_z)
+        mat_label = labeled_seg[vox_x, vox_y, vox_z]
         mat_name = material_ids[mat_label]
 
         mfp_wc = get_woodcock_mfp(photon_energy)
-        mfp_Ra, mfp_Co, mfp_Tot = None, None, None
+        mfp_Ra, mfp_Co, mfp_Tot = get_mfp_data(mfp_data[mat_name], photon_energy)
 
         # Delta interactions
         while True:
             # simulate moving the photon
-            s = -1 * mfp_wc * np.log(sample_U01())
+            s = -1 * (10 * mfp_wc) * np.log(sample_U01()) # multiply by 10 to convert from MFP data (cm) to voxel spacing (mm)
             pos = pos + (s * direction)
 
             # Check for leaving the volume
-            vox_x = np.floor(pos.data[0])
-            vox_y = np.floor(pos.data[1])
-            vox_z = np.floor(pos.data[2])
+            vox_x = int(np.floor(pos.data[0]))
+            vox_y = int(np.floor(pos.data[1]))
+            vox_z = int(np.floor(pos.data[2]))
             if (vox_x < 0) or (vox_x >= density_vol.shape[0]):
                 break
             if (vox_y < 0) or (vox_y >= density_vol.shape[1]):
                 break
             if (vox_z < 0) or (vox_z >= density_vol.shape[2]):
                 break
+
+            mat_label = labeled_seg[vox_x, vox_y, vox_z]
+            mat_name = material_ids[mat_label]
             
             mfp_Ra, mfp_Co, mfp_Tot = get_mfp_data(mfp_data[mat_name], photon_energy)
 
@@ -206,16 +244,29 @@ def track_single_photon_no_vr(
         # END WHILE
     
     # final processing
+
+    # Transport the photon to the detector plane
     hits_detector_dist = detector_plane.check_ray_intersection(pos, direction)
     if hits_detector_dist is None:
         return -1, -1, photon_energy
     
-    hit = pos + (hits_detector_dist * direction)
+    hit = geo.Point3D.from_any(pos + (hits_detector_dist * direction))
+
+    print(f"hit: {hit}")
 
     # NOTE: an alternative formulation would be to use (rt_kinv).inv
     pixel_x, pixel_y = detector_plane.get_lin_comb_coefs(hit)
+    print(f"old pixel: {pixel_x}, {pixel_y}")
     
-    return np.floor(pixel_x), np.floor(pixel_y), photon_energy
+    hit_x = hit.data[0]
+    hit_y = hit.data[1]
+    hit_z = hit.data[2]
+    pixel_x = index_from_ijk[0,0] * hit_x + index_from_ijk[0,1] * hit_y + index_from_ijk[0,2] * hit_z + index_from_ijk[0,3]
+    pixel_y = index_from_ijk[1,0] * hit_x + index_from_ijk[1,1] * hit_y + index_from_ijk[1,2] * hit_z + index_from_ijk[1,3]
+
+    print(f"new pixel: {pixel_x}, {pixel_y}")
+    
+    return int(np.floor(pixel_x)), int(np.floor(pixel_y)), photon_energy
 
 def get_mfp_data(
     table: np.ndarray,
@@ -417,7 +468,7 @@ def sample_initial_direction(
             distance = surfaces[i].check_ray_intersection(source_ijk, direction)
             if distance < 0:
                 continue
-            intersection = source_ijk + (distance * direction)
+            intersection = geo.Point3D.from_any(source_ijk + (distance * direction))
             
             if surfaces[i].point_on_surface(intersection):
                 intersection_points.append(intersection)
@@ -437,8 +488,8 @@ def sample_initial_direction(
         if distances[i] < min_dist:
             min_dist = distances[i]
             min_dist_idx = i
-            
-    return direction, intersection_points[min_dist_idx]
+    
+    return direction, intersection_points[min_dist_idx], sample_count
 
 def get_detector_plane(
     rt_kinv: np.ndarray,
@@ -500,11 +551,24 @@ def get_detector_plane(
     #
     # Once we have the normal vector, we need the minimum distance between the detector plane and 
     # the origin of the IJK coord.s to get the fourth entry in the 'plane vector' (n_x, n_y, n_z, d)
+
+    print("rt_kinv:")
+    print(f"\t[{rt_kinv[0,0]} {rt_kinv[0,1]} {rt_kinv[0,2]}]")
+    print(f"\t[{rt_kinv[1,0]} {rt_kinv[1,1]} {rt_kinv[1,2]}]")
+    print(f"\t[{rt_kinv[2,0]} {rt_kinv[2,1]} {rt_kinv[2,2]}]")
     
     # Normal vector to the detector plane:
     vx = rt_kinv[1,0] * rt_kinv[2,1] - rt_kinv[2,0] * rt_kinv[1,1]
     vy = rt_kinv[2,0] * rt_kinv[0,1] - rt_kinv[0,0] * rt_kinv[2,1]
     vz = rt_kinv[0,0] * rt_kinv[1,1] - rt_kinv[1,0] * rt_kinv[0,1]
+
+    v_mag = np.sqrt((vx * vx) + (vy * vy) + (vz * vz))
+
+    vx /= v_mag
+    vy /= v_mag
+    vz /= v_mag
+
+    print(f"vx, vy, vz: {vx}, {vy}, {vz}")
 
     # Distance from the detector plane to the origin of the IJK coordinates
     #
@@ -566,9 +630,9 @@ def get_detector_plane(
     cv = sensor_size[1] / 2
 
     # IJK coord.s of the SC, the ray from the X-Ray source S to the center C of the detector
-    sc_x = cu * rt_kinv[0] + cv * rt_kinv[1] + rt_kinv[2]
-    sc_y = cu * rt_kinv[3] + cv * rt_kinv[4] + rt_kinv[5]
-    sc_z = cu * rt_kinv[6] + cv * rt_kinv[7] + rt_kinv[8]
+    sc_x = cu * rt_kinv[0,0] + cv * rt_kinv[0,1] + rt_kinv[0,2]
+    sc_y = cu * rt_kinv[1,0] + cv * rt_kinv[1,1] + rt_kinv[1,2]
+    sc_z = cu * rt_kinv[2,0] + cv * rt_kinv[2,1] + rt_kinv[2,2]
 
     # Note that the IJK coord.s of vector OS are contained in source_ijk, which is obtained 
     # by calling the camera_center_in_volume method
@@ -577,13 +641,13 @@ def get_detector_plane(
 
     d = np.sqrt(sc_dot_sc) * (1 + (sc_dot_os / sc_dot_sc))
 
-    plane_vector = np.array([vx, vy, vz, d])
+    plane_vector = np.array([vx, vy, vz, np.abs(d)])
 
     # The 'surface origin' corresponds to the pixel [0,0] on the detector.
     # Vector source_to_surf_ori = (rt_kinv) @ (0,0,1)^T = [third column of rt_kinv]
-    surf_ori_x = rt_kinv[2] + source_ijk.data[0] # source_to_surf_ori + origin_to_source == origin_to_surf_ori
-    surf_ori_y = rt_kinv[5] + source_ijk.data[1]
-    surf_ori_z = rt_kinv[8] + source_ijk.data[2]
+    surf_ori_x = rt_kinv[0,2] + source_ijk.data[0] # source_to_surf_ori + origin_to_source == origin_to_surf_ori
+    surf_ori_y = rt_kinv[1,2] + source_ijk.data[1]
+    surf_ori_z = rt_kinv[2,2] + source_ijk.data[2]
     # SANITY CHECK: after using an inverse-of-upper-triangular-matrix formula, we get:
     # kinv[2] == (s c_y - c_x f_y) / (f_x f_y)
     # kinv[5] == c_y / f_y
@@ -746,11 +810,7 @@ def sample_Compton_theta_E_prime(
         U_i = mat_compton_data[shell, 1]
         if photon_energy > U_i: # this serves as the Heaviside function
             left_term = photon_energy * (photon_energy - U_i) * 2 # since (1 - \cos(\theta=\pi)) == 2
-            p_i_max = (left_term - ELECTRON_REST_ENERGY * U_i) / (LIGHT_C * np.sqrt(2 * left_term + U_i * U_i))
-            # NOTE: the above line uses LIGHT_C in the denominator on the assumption that 
-            # mat_compton_data[shell,2], from the Compton data files, contains the value J_{i,0}.
-            # If the data files instead store the value (J_{i,0} m_{e} c), I should replace the
-            # instance of LIGHT_C with ELECTRON_REST_ENERGY
+            p_i_max = (left_term - ELECTRON_REST_ENERGY * U_i) / (ELECTRON_REST_ENERGY * np.sqrt(2 * left_term + U_i * U_i))
             
             # Use several steps to calculate n_{i}(p_{i,max})
             tmp = mat_compton_data[shell, 2] * p_i_max # J_{i,0} p_{i,max}
@@ -781,11 +841,7 @@ def sample_Compton_theta_E_prime(
             U_i = mat_compton_data[shell, 1]
             if photon_energy > U_i: # this serves as the Heaviside function
                 left_term = photon_energy * (photon_energy - U_i) * one_minus_cos
-                p_i_max = (left_term - ELECTRON_REST_ENERGY * U_i) / (LIGHT_C * np.sqrt(2 * left_term + U_i * U_i))
-                # NOTE: the above line uses LIGHT_C in the denominator on the assumption that 
-                # mat_compton_data[shell,2], from the Compton data files, contains the value J_{i,0}.
-                # If the data files instead store the value (J_{i,0} m_{e} c), I should replace the
-                # instance of LIGHT_C with ELECTRON_REST_ENERGY
+                p_i_max = (left_term - ELECTRON_REST_ENERGY * U_i) / (ELECTRON_REST_ENERGY * np.sqrt(2 * left_term + U_i * U_i))
                 
                 # Use several steps to calculate n_{i}(p_{i,max})
                 tmp = mat_compton_data[shell, 2] * p_i_max # J_{i,0} p_{i,max}
@@ -814,6 +870,8 @@ def sample_Compton_theta_E_prime(
     # cos_theta is set by now
 
     # Choose the active shell
+    p_z_omc = None # p_z / (m_{e} c) 
+
     while True: # emulate do-while loop
         #
         # Steps:
@@ -836,40 +894,34 @@ def sample_Compton_theta_E_prime(
                 break
         # active_shell is now set
 
-        p_z = None
         two_A = sample_U01() * 2 * n_p_i_max_vals[active_shell]
         if two_A < 1:
-            p_z = 0.5 - np.sqrt(0.25 - 0.5 * np.log(two_A))
+            p_z_omc = 0.5 - np.sqrt(0.25 - 0.5 * np.log(two_A))
         else:
-            p_z = np.sqrt(0.25 - 0.5 * np.log(2 - two_A)) - 0.5
-        p_z = p_z / mat_compton_data[active_shell,2] # Equivalent to: p_z = p_z / J_{i,0}, completing the calculation
+            p_z_omc = np.sqrt(0.25 - 0.5 * np.log(2 - two_A)) - 0.5
+        p_z_omc = p_z_omc / mat_compton_data[active_shell,2] # Equivalent to: p_z_omc = p_z_omc / (J_{i,0} m_{e} c), completing the calculation
 
-        if p_z < -1:
+        if p_z_omc < -1:
             continue
-            # NOTE: the above if-statement condition uses -1 on the assumption that 
-            # mat_compton_data[shell,2], from the Compton data files, contains the value 
-            # (J_{i,0} m_{e} c). If the data files instead store the value J_{i,0}, I should 
-            # replace the instance of (-1) with (-1 * m_{e} * c)
         
         # Calculate F(p_z), where p_z is the PENELOPE-2006 'p_z' divided by (m_{e} c)
-        # NOTE: I think the MC-GPU variable 'pzomc' might mean "p_z over (m_{e} c)"
         beta2 = 1 + (tau * tau) - (2 * tau * cos_theta) # beta2 = (\beta)^2, where \beta := (c q_{C}) / E
         beta_tau_factor = np.sqrt(beta2) * (1 + tau * (tau - cos_theta) / beta2)
-        F_p_z = 1 + beta_tau_factor * p_z
-        F_max = 1 + beta_tau_factor * (0.2 * (-1 if p_z < 0 else 1))
+        F_p_z = 1 + beta_tau_factor * p_z_omc
+        F_max = 1 + beta_tau_factor * (0.2 * (-1 if p_z_omc < 0 else 1))
         # NOTE: when converting to CUDA, I will want to see what happens when I "multiply everything through" by beta2.
         # That way, when comparing F_p_z with (\xi * F_max), there will only be multiplications and no divisions
 
         if sample_U01() * F_max < F_p_z:
             break # p_z is accepted
     
-    # p_z is now set. Calculate E_ratio = E_prime / E
-    t = p_z * p_z
+    # p_z_omc is now set. Calculate E_ratio = E_prime / E
+    t = p_z_omc * p_z_omc
     term_tau = 1 - t * tau * tau
     term_cos = 1 - t * tau * cos_theta
     
     tmp = np.sqrt(term_cos * term_cos - term_tau * (1 - t))
-    if p_z < 0:
+    if p_z_omc < 0:
         tmp = -1 * tmp
     tmp = term_cos + tmp
 
