@@ -123,17 +123,74 @@ extern "C" {
         return 0.0f
     }
 
-    __device__ double sample_rita(const rita_t *sampler) {
-        // TODO: implement
-        return 0.0;
+    __device__ double sample_rita(
+        const rita_t *sampler,
+        rng_seed_t *seed
+    ) {
+        double y = ranecu_double(seed);
+
+        // Binary search to find the interval [y_i, y_{i+1}] that contains y
+        int lo_idx = 0; // inclusive
+        int hi_idx = sampler->n_gridpts;
+        int i;
+        while (lo_idx < hi_idx) {
+            i = (lo_idx + hi_idx) / 2;
+
+            // Check if 'i' is the lower bound of the correct interval
+            if (y < sampler->y[i]) {
+                // Need to check lower intervals
+                hi_idx = i;
+            } else if (y < sampler->y[i+1]) {
+                // Found correct interval
+                break;
+            } else {
+                // Need to check higher intervals
+                lo_idx = i + 1;
+            }
+        }
+
+        /* DEBUG STATEMENT
+        if (sampler->y[i] > y) {
+            printf("ERROR: RITA identified too-high interval. y=%.10f, y[i]=%.10f\n", y, sampler->y[i]);
+        }
+        if (sampler->y[i+1] <= y) {
+            printf("ERROR: RITA identified too-low interval. y=%.10f, y[i+1]=%.10f\n", y, sampler->y[i+1]);
+        }
+        */
+
+        double nu = y - sampler->y[i];
+        double delta_i = sampler->y[i+1] - sampler->y[i];
+
+        double tmp = (delta_i * delta_i) + (sampler->a[i] * delta_i * nu) + (sampler->b[i] * nu * nu); // denominator
+        tmp = (1.0 + sampler->a[i] + sampler->b[i]) * delta_i * nu / tmp; // numerator / denominator
+
+        return sampler->x[i] + (tmp * (sampler->x[i+1] - sampler->x[i]));
     }
 
     __device__ double sample_Rayleigh(
         float energy,
-        const rita_t *ff_sampler
+        const rita_t *ff_sampler,
+        rng_seed_t *seed
     ) {
-        double cos_theta = 0.0f;
-        // TODO: implement
+        double kappa = ((double)energy) * (double)INV_ELECTRON_REST_ENERGY;
+        // Sample a random value of x^2 from the distribution pi(x^2), restricted to the interval (0, x_{max}^2)
+        double x_max2 = 424.66493476 * 4.0 * kappa * kappa;
+        float x2;
+        do {
+            x2 = sample_rita(ff_sampler, seed);
+        } while (x2 > x_max2);
+
+        double cos_theta;
+        do {
+            // Set cos_theta
+            cos_theta = 1.0 - (2.0 * x2 / x_max2);
+
+            // Test cos_theta
+            //double g = (1.0 + cos_theta * cos_theta) * 0.5;
+            
+            // Reject and re-sample if \xi > g
+        } while (ranecu_double(seed) > ((1.0 + cos_theta * cos_theta) * 0.5));
+
         return cos_theta;
     }
 
