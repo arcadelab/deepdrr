@@ -18,6 +18,12 @@
 /* Compton data constant */
 #define MAX_NSHELLS 30
 
+/* Mathematical constants */
+#define PI_FLOAT  3.141592653589793f
+#define PI_DOUBLE 3.141592653589793
+#define TWO_PI_FLOAT  6.283185307179586f
+#define TWO_PI_DOUBLE 6.283185307179586
+
 extern "C" {
     typedef struct plane_surface {
         // plane vector (nx, ny, nz, d), where \vec{n} is the normal vector and d is the distance to the origin
@@ -72,6 +78,35 @@ extern "C" {
         return;
     }
 
+    __device__ void get_scattered_dir(
+        float *dx, // both input and output
+        float *dy,
+        float *dz,
+        double cos_theta,
+        double phi
+    ) {
+        // Since \theta is restricted to [0,\pi], sin_theta is restricted to [0,1]
+        float cos_th  = (float)cos_theta;
+        float sin_th  = (float)sqrt(1.0 - cos_theta * cos_theta);
+        float cos_phi = (float)cos(phi);
+        float sin_phi = (float)sin(phi);
+
+        float tmp = sqrtf(1.f - (*dz) * (*dz));
+
+        float x = *dx, y = *dy, z = *dz;
+
+        *dx = x * cos_th + sin_th * (x * z * cos_phi - y * sin_phi) / tmp;
+        *dy = y * cos_th + sin_th * (y * z * cos_phi - x * sin_phi) / tmp;
+        *dz = z * cos_th - sin_th * tmp * cos_phi;
+
+        float mag = ((*dx) * (*dx)) + ((*dy) * (*dy)) + ((*dz) * (*dz));
+        mag = sqrtf(mag);
+
+        *dx /= mag;
+        *dy /= mag;
+        *dz /= mag;
+    }
+
     __device__ void move_photon_to_volume(
         float *pos_x, // position of the photon.  Serves as both input and ouput
         float *pos_y,
@@ -94,33 +129,71 @@ extern "C" {
         return;
     }
 
-    __device__ void get_scattered_dir(
-        float *dx, // both input and output
-        float *dy,
-        float *dz,
-        double cos_theta,
-        double phi
-    ) {
-        // TODO: implement
-        return;
-    }
-
     __device__ void sample_initial_dir(
         float *dx,
         float *dy,
-        float *dz
+        float *dz,
+        rng_seed_t *seed
     ) {
         // TODO: implement
-        return;
+        // Sampling explanation here: http://corysimon.github.io/articles/uniformdistn-on-sphere/
+        double phi = TWO_PI_DOUBLE * ranecu_double(seed);
+        double theta = acos(1.0 - 2.0 * ranecu_double(seed));
+
+        double sin_theta = sin(theta);
+        
+        *dx = (float)(sin_theta * cos(phi));
+        *dy = (float)(sin_theta * sin(phi));
+        *dz = (float)(cos(theta));
     }
 
     __device__ float sample_initial_energy(
         const int n_bins,
         const float *spectrum_energies,
-        const float *spectrum_cdf
+        const float *spectrum_cdf,
+        rng_seed_t *seed
     ) {
-        // TODO: implement -- binary search?
-        return 0.0f
+        float threshold = ranecu(seed);
+
+        // Binary search to find the interval [CDF(i), CDF(i+1)] that contains 'threshold'
+        int lo_idx = 0; // inclusive
+        int hi_idx = n_bins; // exclusive
+        int i;
+        while (lo_idx < hi_idx) {
+            i = (lo_idx + hi_idx) / 2; 
+
+            // Check if 'i' is the lower bound of the correct interval
+            if (threshold < spectrum_cdf[i]) {
+                // Need to check lower intervals
+                hi_idx = i;
+            } else if (threshold < spectrum_cdf[i+1]) {
+                // Found the correct interval
+                break;
+            } else {
+                // Need to check higher intervals
+                lo_idx = i + 1;
+            }
+        }
+
+        /* DEBUG STATEMENT
+        if (spectrum_cdf[i] > threshold) {
+            printf(
+                "ERROR: sample_initial_energy identified too-high interval. threshold=%.10f, spectrum_cdf[i]=%.10f\n", 
+                threshold, spectrum_cdf[i]
+            );
+        }
+        if (spectrum_cdf[i+1] <= threshold) {
+            printf(
+                "ERROR: sample_initial_energy identified too-low interval. threshold=%.10f, spectrum_cdf[i+1]=%.10f\n", 
+                threshold, spectrum_cdf[i+1]
+            );
+        }
+        */
+
+        // Final interpolation within the spectral bin
+        float slope = (spectrum_energies[i+1] - spectrum_energies[i]) / (spectrum_cdf[i+1] - spectrum_cdf[i])
+
+        return spectrum_energies[i] + (slope * (threshold - spectrum_cdf[i]));
     }
 
     __device__ double sample_rita(
@@ -131,7 +204,7 @@ extern "C" {
 
         // Binary search to find the interval [y_i, y_{i+1}] that contains y
         int lo_idx = 0; // inclusive
-        int hi_idx = sampler->n_gridpts;
+        int hi_idx = sampler->n_gridpts; // exclusive
         int i;
         while (lo_idx < hi_idx) {
             i = (lo_idx + hi_idx) / 2;
