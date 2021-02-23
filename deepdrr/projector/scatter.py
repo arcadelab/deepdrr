@@ -384,20 +384,20 @@ def get_volume_surface_planes(
     z_len = volume.data.shape[2]
 
     plane_vectors = [
-        np.array([-1, 0, 0, 0]),
-        np.array([1, 0, 0, x_len]),
-        np.array([0, -1, 0, 0]),
-        np.array([0, 1, 0, y_len]),
-        np.array([0, 0, -1, 0]),
-        np.array([0, 0, 1, z_len])
+        np.array([-1, 0, 0, 0.5]),
+        np.array([1, 0, 0, x_len - 0.5]),
+        np.array([0, -1, 0, 0.5]),
+        np.array([0, 1, 0, y_len - 0.5]),
+        np.array([0, 0, -1, 0.5]),
+        np.array([0, 0, 1, z_len - 0.5])
     ]
     surface_origins = [
-        geo.Point3D.from_array(np.array([0, 0, 0])),
-        geo.Point3D.from_array(np.array([x_len, 0, 0])),
-        geo.Point3D.from_array(np.array([0, 0, 0])),
-        geo.Point3D.from_array(np.array([0, y_len, 0])),
-        geo.Point3D.from_array(np.array([0, 0, 0])),
-        geo.Point3D.from_array(np.array([0, 0, z_len]))
+        geo.Point3D.from_array(np.array([-0.5, 0, 0])),
+        geo.Point3D.from_array(np.array([x_len - 0.5, 0, 0])),
+        geo.Point3D.from_array(np.array([0, -0.5, 0])),
+        geo.Point3D.from_array(np.array([0, y_len - 0.5, 0])),
+        geo.Point3D.from_array(np.array([0, 0, -0.5])),
+        geo.Point3D.from_array(np.array([0, 0, z_len - 0.5]))
     ]
 
     x_dir = geo.Vector3D.from_array(np.array([1, 0, 0]))
@@ -414,14 +414,14 @@ def get_volume_surface_planes(
         (geo.Vector3D.from_any(x_dir), geo.Vector3D(y_dir))
     ]
     bounds = [
-        np.array([[0, y_len], [0, z_len]]), 
-        np.array([[0, y_len], [0, z_len]]), 
+        np.array([[-0.5, y_len - 0.5], [-0.5, z_len - 0.5]]), 
+        np.array([[-0.5, y_len - 0.5], [-0.5, z_len - 0.5]]), 
 
-        np.array([[0, x_len], [0, z_len]]),
-        np.array([[0, x_len], [0, z_len]]),
+        np.array([[-0.5, x_len - 0.5], [-0.5, z_len - 0.5]]),
+        np.array([[-0.5, x_len - 0.5], [-0.5, z_len - 0.5]]),
 
-        np.array([[0, x_len], [0, y_len]]),
-        np.array([[0, x_len], [0, y_len]]),
+        np.array([[-0.5, x_len - 0.5], [-0.5, y_len - 0.5]]),
+        np.array([[-0.5, x_len - 0.5], [-0.5, y_len - 0.5]]),
     ]
 
     return [PlaneSurface(plane_vectors[i], surface_origins[i], bases[i], bounds[i], True) for i in range(6)]
