@@ -15,8 +15,9 @@
 #define NOM_DENSITY_SOFT 1.0f
 #define NOM_DENSITY_BONE 1.92f
 
-/* Compton data constant */
+/* Data meta-constants */
 #define MAX_NSHELLS 30
+#define MAX_MFP_BINS 25005
 
 /* Mathematical constants -- credit to Wolfram Alpha */
 #define PI_FLOAT  3.14159265358979323846f
@@ -32,6 +33,9 @@
 #define MIN_VAL(a, b) (((a) < (b)) ? (a) : (b))
 
 extern "C" {
+    // TODO: forward declare functions
+    // TODO: define useful structs like float3, int2, etc., then refactor
+
     typedef struct plane_surface {
         // plane vector (nx, ny, nz, d), where \vec{n} is the normal vector and d is the distance to the origin
         float nx, ny, nz, d;
@@ -46,6 +50,38 @@ extern "C" {
         // can we assume that the basis vectors orthogonal?
         int orthogonal;
     } plane_surface_t;
+
+    __device__ float psurface_check_ray_intersection(
+        float px, // current position of photon
+        float py,
+        float pz,
+        float dx, // direction of photon travel
+        float dy, 
+        float dz,
+        const plane_surface_t *psur
+    ) {
+        /*
+         * If there will be an intersection, returns the distance to the intersection.
+         * If no intersection, returns a negative number (the negative number does not necessarily have a
+         * geometrical meaning) 
+         *
+         * Let \vec{m} be the 'plane vector'.
+         * (\vec{pos} + \alpha * \vec{dir}) \cdot \vec{m} = 0, 
+         * then (\vec{pos} + \alpha * \vec{dir}) is the point of intersection.
+         */
+        float r_dot_m = (px * psur->nx) + (py * psur->ny) + (pz * psur->nz) + psur->d;
+        if (0.0f == r_dot_m) {
+            // Photon is already on the plane
+            return 0.0f;
+        }
+        float d_dot_m = (dx * psur->nx) + (dy * psur->ny) + (dz * psur->nz);
+        if (0.0f == d_dot_m) {
+            // Direction of photon travel is perpendicular to the normal vector of the plane
+            // Thus, there will be no intersection
+            return -1.f;
+        }
+        return -1.f * r_dot_m / d_dot_m;
+    }
 
     typedef struct rng_seed {
         int x, y;
@@ -65,6 +101,40 @@ extern "C" {
         float ui[MAX_NSHELLS]; // ionization energy for each shell, in [eV]
         float jmc[MAX_NSHELLS]; // (J_{i,0} m_{e} c) for each shell i. Dimensionless.
     } compton_data_t;
+
+    typedef struct mat_mfp_data {
+        int n_bins;
+        float energy[MAX_MFP_BINS];
+        float mfp_Ra[MAX_MFP_BINS];
+        float mfp_Co[MAX_MFP_BINS];
+        float mfp_Tot[MAX_MFP_BINS];
+    } mat_mfp_data_t;
+
+    __device__ void get_mat_mfp_data(
+        mat_mfp_data_t *data,
+        float nrg, // energy of the photon
+        float *ra, // output: MFP for Rayleigh scatter
+        float *co, // output: MFP for Compton scatter
+        float *tot // output: MFP (total)
+    ) {
+        // TODO: implement (using binary search)
+        return;
+    }
+
+    typedef struct wc_mfp_data {
+        int n_bins;
+        float energy[MAX_MFP_BINS];
+        float mfp_wc[MAX_MFP_BINS];
+    } wc_mfp_data_t;
+
+    __device__ void read_wc_mfp_data(
+        wc_mfp_data_t *data,
+        float nrg, // energy of the photon
+        float *mfp // output: Woodcock MFP
+    ) {
+        // TODO: implement (using binary search)
+        return;
+    }
 
     __global__ void initialization_stage(
         int detector_width, // size of detector in pixels 
