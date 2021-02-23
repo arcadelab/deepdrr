@@ -35,29 +35,35 @@
 extern "C" {
     // TODO: forward declare functions
     // TODO: define useful structs like float3, int2, etc., then refactor
+    typedef struct int2 {
+        int x, y;
+    } int2_t;
+
+    typedef struct float2 {
+        float x, y;
+    } float2_t;
+
+    typedef struct float3 {
+        float x, y, z;
+    } float3_t;
 
     typedef struct plane_surface {
         // plane vector (nx, ny, nz, d), where \vec{n} is the normal vector and d is the distance to the origin
-        float nx, ny, nz, d;
+        float3_t n;
+        float d;
         // 'surface origin': a point on the plane that is used as the reference point for the plane's basis vectors 
-        float ori_x, ori_y, ori_z;
+        float3_t ori;
         // the two basis vectors
-        float b1_x, b1_y, b1_z;
-        float b2_x, b2_y, b2_z;
+        float3_t b1, b2;
         // the bounds for the basis vector multipliers to stay within the surface's region on the plane
-        float bound1_lo, bound1_hi;
-        float bound2_lo, bound2_hi;
+        float2_t bound1, bound2; // .x is lower bound, .y is upper bound
         // can we assume that the basis vectors orthogonal?
         int orthogonal;
     } plane_surface_t;
 
     __device__ float psurface_check_ray_intersection(
-        float px, // current position of photon
-        float py,
-        float pz,
-        float dx, // direction of photon travel
-        float dy, 
-        float dz,
+        float3_t *pos, // input: current position of the photon
+        float3_t *dir, // input: direction of photon travel
         const plane_surface_t *psur
     ) {
         /*
@@ -69,12 +75,12 @@ extern "C" {
          * (\vec{pos} + \alpha * \vec{dir}) \cdot \vec{m} = 0, 
          * then (\vec{pos} + \alpha * \vec{dir}) is the point of intersection.
          */
-        float r_dot_m = (px * psur->nx) + (py * psur->ny) + (pz * psur->nz) + psur->d;
+        float r_dot_m = (pos->x * psur->n.x) + (pos->y * psur->n.y) + (pos->z * psur->n.z) + psur->d;
         if (0.0f == r_dot_m) {
             // Photon is already on the plane
             return 0.0f;
         }
-        float d_dot_m = (dx * psur->nx) + (dy * psur->ny) + (dz * psur->nz);
+        float d_dot_m = (dir->x * psur->n.x) + (dir->y * psur->n.y) + (dir->z * psur->n.z);
         if (0.0f == d_dot_m) {
             // Direction of photon travel is perpendicular to the normal vector of the plane
             // Thus, there will be no intersection
@@ -140,9 +146,7 @@ extern "C" {
         int detector_width, // size of detector in pixels 
         int detector_height,
         char *nominal_segmentation, // [0..2]-labeled segmentation obtained by thresholding: [-infty, -500, 300, infty]
-        float sx, // x-coordinate of source in IJK
-        float sy,
-        float sz,
+        float3_t *s, // coordinates of source in IJK
         float *rt_kinv, // (3, 3) array giving the image-to-world-ray transform.
         int n_bins, // the number of spectral bins
         float *spectrum_energies, // 1-D array -- size is the n_bins
@@ -156,9 +160,7 @@ extern "C" {
     }
 
     __device__ void get_scattered_dir(
-        float *dx, // both input and output
-        float *dy,
-        float *dz,
+        float3_t *dir, // direction: both input and output
         double cos_theta,
         double phi
     ) {
@@ -168,35 +170,31 @@ extern "C" {
         float cos_phi = (float)cos(phi);
         float sin_phi = (float)sin(phi);
 
-        float tmp = sqrtf(1.f - (*dz) * (*dz));
+        float tmp = sqrtf(1.f - dir->z * dir->z);
 
-        float x = *dx, y = *dy, z = *dz;
+        float orig_x = dir->x;
 
-        *dx = x * cos_th + sin_th * (x * z * cos_phi - y * sin_phi) / tmp;
-        *dy = y * cos_th + sin_th * (y * z * cos_phi - x * sin_phi) / tmp;
-        *dz = z * cos_th - sin_th * tmp * cos_phi;
+        dir->x = dir->x * cos_th + sin_th * (dir->x * dir->z * cos_phi - dir->y * sin_phi) / tmp;
+        dir->y = dir->y * cos_th + sin_th * (dir->y * dir->z * cos_phi - orig_x * sin_phi) / tmp;
+        dir->z = dir->z * cos_th - sin_th * tmp * cos_phi;
 
-        float mag = ((*dx) * (*dx)) + ((*dy) * (*dy)) + ((*dz) * (*dz)); // actually magnitude^2
+        float mag = (dir->x * dir->x) + (dir->y * dir->y) + (dir->z * dir->z); // actually magnitude^2
 
         if (fabs(mag - 1.0f) > 1.0e-14) {
             // Only do the computationally expensive normalization when necessary
             mag = sqrtf(mag);
 
-            *dx /= mag;
-            *dy /= mag;
-            *dz /= mag;
+            dir->x /= mag;
+            dir->y /= mag;
+            dir->z /= mag;
         }
     }
 
     #define VOXEL_EPS      0.000015f // epsilon (small distance) that we use to ensure that 
     #define NEG_VOXEL_EPS -0.000015f // the particle fully inside a voxel. Value from MC-GPU
     __device__ void move_photon_to_volume(
-        float *pos_x, // position of the photon.  Serves as both input and ouput
-        float *pos_y,
-        float *pos_z,
-        float dx, // direction of photon travel
-        float dy,
-        float dz,
+        float3_t *pos, // position of the photon.  Serves as both input and ouput
+        float3_t *dir, // input: direction of photon travel
         int *hits_volume, // Boolean output.  Does the photon actually hit the volume?
         float gVolumeEdgeMinPointX, // bounds of the volume
         float gVolumeEdgeMinPointY,
@@ -213,21 +211,21 @@ extern "C" {
          */
         float dist_x, dist_y, dist_z;
         /* Calculations for x-direction */
-        if (dx > VOXEL_EPS) {
-            if (*pos_x > gVolumeEdgeMinPointX) {
+        if (dir->x > VOXEL_EPS) {
+            if (pos->x > gVolumeEdgeMinPointX) {
                 // Photon inside or past volume
                 dist_x = 0.0f;
             } else {
                 // Add VOXEL_EPS to make super sure that the photon reaches the volume
-                dist_x = VOXEL_EPS + (gVolumeEdgeMinPointX - *pos_x) / dx;
+                dist_x = VOXEL_EPS + (gVolumeEdgeMinPointX - pos->x) / dir->x;
             }
-        } else if (dx < NEG_VOXEL_EPS) {
-            if (*pos_x < gVolumeEdgeMaxPointX) {
+        } else if (dir->x < NEG_VOXEL_EPS) {
+            if (pos->x < gVolumeEdgeMaxPointX) {
                 dist_x = 0.0f;
             } else {
                 // In order to ensure that dist_x is positive, we divide the negative 
-                // quantity (gVolumeEdgeMaxPointX - *pos_x) by the negative quantity 'dx'.
-                dist_x = VOXEL_EPS + (gVolumeEdgeMaxPointX - *pos_x) / dx;
+                // quantity (gVolumeEdgeMaxPointX - pos->x) by the negative quantity 'dir->x'.
+                dist_x = VOXEL_EPS + (gVolumeEdgeMaxPointX - pos->x) / dir->x;
             }
         } else {
             // No collision with an x-normal-plane possible
@@ -235,21 +233,21 @@ extern "C" {
         }
 
         /* Calculations for y-direction */
-        if (dy > VOXEL_EPS) {
-            if (*pos_y > gVolumeEdgeMinPointY) {
+        if (dir->y > VOXEL_EPS) {
+            if (pos->y > gVolumeEdgeMinPointY) {
                 // Photon inside or past volume
                 dist_y = 0.0f;
             } else {
                 // Add VOXEL_EPS to make super sure that the photon reaches the volume
-                dist_y = VOXEL_EPS + (gVolumeEdgeMinPointY - *pos_y) / dy;
+                dist_y = VOXEL_EPS + (gVolumeEdgeMinPointY - pos->y) / dir->y;
             }
-        } else if (dy < NEG_VOXEL_EPS) {
-            if (*pos_y < gVolumeEdgeMaxPointY) {
+        } else if (dir->y < NEG_VOXEL_EPS) {
+            if (pos->y < gVolumeEdgeMaxPointY) {
                 dist_y = 0.0f;
             } else {
                 // In order to ensure that dist_y is positive, we divide the negative 
-                // quantity (gVolumeEdgeMaxPointY - *pos_y) by the negative quantity 'dy'.
-                dist_y = VOXEL_EPS + (gVolumeEdgeMaxPointY - *pos_y) / dy;
+                // quantity (gVolumeEdgeMaxPointY - pos->y) by the negative quantity 'dir->y'.
+                dist_y = VOXEL_EPS + (gVolumeEdgeMaxPointY - pos->y) / dir->y;
             }
         } else {
             // No collision with an y-normal-plane possible
@@ -257,21 +255,21 @@ extern "C" {
         }
 
         /* Calculations for z-direction */
-        if (dz > VOXEL_EPS) {
-            if (*pos_z > gVolumeEdgeMinPointZ) {
+        if (dir->z > VOXEL_EPS) {
+            if (pos->z > gVolumeEdgeMinPointZ) {
                 // Photon inside or past volume
                 dist_z = 0.0f;
             } else {
                 // Add VOXEL_EPS to make super sure that the photon reaches the volume
-                dist_z = VOXEL_EPS + (gVolumeEdgeMinPointZ - *pos_z) / dz;
+                dist_z = VOXEL_EPS + (gVolumeEdgeMinPointZ - pos->z) / dir->z;
             }
-        } else if (dz < NEG_VOXEL_EPS) {
-            if (*pos_z < gVolumeEdgeMaxPointZ) {
+        } else if (dir->z < NEG_VOXEL_EPS) {
+            if (pos->z < gVolumeEdgeMaxPointZ) {
                 dist_z = 0.0f;
             } else {
                 // In order to ensure that dist_z is positive, we divide the negative 
-                // quantity (gVolumeEdgeMaxPointZ - *pos_z) by the negative quantity 'dz'.
-                dist_z = VOXEL_EPS + (gVolumeEdgeMaxPointZ - *pos_z) / dz;
+                // quantity (gVolumeEdgeMaxPointZ - pos->z) by the negative quantity 'dir->z'.
+                dist_z = VOXEL_EPS + (gVolumeEdgeMaxPointZ - pos->z) / dir->z;
             }
         } else {
             // No collision with an y-normal-plane possible
@@ -286,21 +284,21 @@ extern "C" {
         dist_z = MAX_VAL(dist_z, MAX_VAL(dist_x, dist_y));
 
         // Move the photon to the volume (yay! the whole purpose of this function!)
-        *pos_x += dist_z * dx;
-        *pos_y += dist_z * dy;
-        *pos_z += dist_z * dz;
+        pos->x += dist_z * dir->x;
+        pos->y += dist_z * dir->y;
+        pos->z += dist_z * dir->z;
 
         /*
          * Final error checking. Check if the new position is outside the volume.
          * If so, move the particle back to original position and set the intersection
          * flag to false.
          */
-        if ((*pos_x < gVolumeEdgeMinPointX) || (*pos_x > gVolumeEdgeMaxPointX) ||
-                (*pos_y < gVolumeEdgeMinPointY) || (*pos_y > gVolumeEdgeMaxPointY) ||
-                (*pos_z < gVolumeEdgeMinPointZ) || (*pos_z > gVolumeEdgeMaxPointZ) ) {
-            *pos_x -= dist_z * dx;
-            *pos_y -= dist_z * dy;
-            *pos_z -= dist_z * dz;
+        if ((pos->x < gVolumeEdgeMinPointX) || (pos->x > gVolumeEdgeMaxPointX) ||
+                (pos->y < gVolumeEdgeMinPointY) || (pos->y > gVolumeEdgeMaxPointY) ||
+                (pos->z < gVolumeEdgeMinPointZ) || (pos->z > gVolumeEdgeMaxPointZ) ) {
+            pos->x -= dist_z * dir->x;
+            pos->y -= dist_z * dir->y;
+            pos->z -= dist_z * dir->z;
             *hits_volume = 0;
         } else {
             *hits_volume = 1;
@@ -308,21 +306,18 @@ extern "C" {
     }
 
     __device__ void sample_initial_dir(
-        float *dx,
-        float *dy,
-        float *dz,
+        float3_t *dir, // output: the sampled direction
         rng_seed_t *seed
     ) {
-        // TODO: implement
         // Sampling explanation here: http://corysimon.github.io/articles/uniformdistn-on-sphere/
         double phi = TWO_PI_DOUBLE * ranecu_double(seed);
         double theta = acos(1.0 - 2.0 * ranecu_double(seed));
 
         double sin_theta = sin(theta);
         
-        *dx = (float)(sin_theta * cos(phi));
-        *dy = (float)(sin_theta * sin(phi));
-        *dz = (float)(cos(theta));
+        dir->x = (float)(sin_theta * cos(phi));
+        dir->y = (float)(sin_theta * sin(phi));
+        dir->z = (float)(cos(theta));
     }
 
     __device__ float sample_initial_energy(
