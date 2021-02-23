@@ -37,8 +37,7 @@
 #define MIN_VAL(a, b) (((a) < (b)) ? (a) : (b))
 
 extern "C" {
-    // TODO: forward declare functions
-    // TODO: define useful structs like float3, int2, etc., then refactor
+    /*** STRUCT DEFINITIONS ***/
     typedef struct int2 {
         int x, y;
     } int2_t;
@@ -69,34 +68,6 @@ extern "C" {
         int orthogonal;
     } plane_surface_t;
 
-    __device__ float psurface_check_ray_intersection(
-        float3_t *pos, // input: current position of the photon
-        float3_t *dir, // input: direction of photon travel
-        const plane_surface_t *psur
-    ) {
-        /*
-         * If there will be an intersection, returns the distance to the intersection.
-         * If no intersection, returns a negative number (the negative number does not necessarily have a
-         * geometrical meaning) 
-         *
-         * Let \vec{m} be the 'plane vector'.
-         * (\vec{pos} + \alpha * \vec{dir}) \cdot \vec{m} = 0, 
-         * then (\vec{pos} + \alpha * \vec{dir}) is the point of intersection.
-         */
-        float r_dot_m = (pos->x * psur->n.x) + (pos->y * psur->n.y) + (pos->z * psur->n.z) + psur->d;
-        if (0.0f == r_dot_m) {
-            // Photon is already on the plane
-            return 0.0f;
-        }
-        float d_dot_m = (dir->x * psur->n.x) + (dir->y * psur->n.y) + (dir->z * psur->n.z);
-        if (0.0f == d_dot_m) {
-            // Direction of photon travel is perpendicular to the normal vector of the plane
-            // Thus, there will be no intersection
-            return -1.f;
-        }
-        return -1.f * r_dot_m / d_dot_m;
-    }
-
     typedef struct rng_seed {
         int x, y;
     } rng_seed_t;
@@ -124,48 +95,248 @@ extern "C" {
         float mfp_Tot[MAX_MFP_BINS]; // Units: [mm]
     } mat_mfp_data_t;
 
-    __device__ void get_mat_mfp_data(
-        mat_mfp_data_t *data,
-        float nrg, // energy of the photon
-        float *ra, // output: MFP for Rayleigh scatter. Units: [mm]
-        float *co, // output: MFP for Compton scatter. Units: [mm]
-        float *tot // output: MFP (total). Units: [mm]
-    ) {
-        // TODO: implement (using binary search)
-        return;
-    }
-
     typedef struct wc_mfp_data {
         int n_bins;
         float energy[MAX_MFP_BINS]; // Units: [eV]
         float mfp_wc[MAX_MFP_BINS]; // Units: [mm]
     } wc_mfp_data_t;
 
-    __device__ void get_wc_mfp_data(
-        wc_mfp_data_t *data,
-        float nrg, // energy of the photon [eV]
-        float *mfp // output: Woodcock MFP. Units: [mm]
-    ) {
-        // TODO: implement (using binary search)
-        return;
-    }
-
+    /*** FUNCTION FORWARD DECLARATIONS ***/
     __global__ void initialization_stage(
         int detector_width, // size of detector in pixels 
         int detector_height,
+        int histories_for_thread, // number of photons for -this- thread to track
         char *nominal_segmentation, // [0..2]-labeled segmentation obtained by thresholding: [-infty, -500, 300, infty]
         float sx, // coordinates of source in IJK
         float sy, // (not in a float3_t for ease of calling from Python wrapper)
         float sz,
-        float *rt_kinv, // (3, 3) array giving the image-to-world-ray transform.
+        int volume_shape_x, // integer size of the volume to avoid 
+        int volume_shape_y, // floating-point errors with the gVolumeEdge{Min,Max}Point
+        int volume_shape_z, // and gVoxelElementSize math
+        float gVolumeEdgeMinPointX, // bounds of the volume in IJK
+        float gVolumeEdgeMinPointY,
+        float gVolumeEdgeMinPointZ,
+        float gVolumeEdgeMaxPointX,
+        float gVolumeEdgeMaxPointY,
+        float gVolumeEdgeMaxPointZ,
+        float gVoxelElementSizeX, // voxel size in IJK
+        float gVoxelElementSizeY,
+        float gVoxelElementSizeZ,
+        float *index_from_ijk, // (2, 4) array giving the IJK-homogeneous-coord.s-to-pixel-coord.s transformation
+        mat_mfp_data_t *air_mfp,
+        mat_mfp_data_t *soft_mfp,
+        mat_mfp_data_t *bone_mfp,
+        wc_mfp_data_t *woodcock_mfp,
+        compton_data_t *air_Co_data,
+        compton_data_t *soft_Co_data,
+        compton_data_t *bone_Co_data,
+        rita_t *air_rita,
+        rita_t *soft_rita,
+        rita_t *bone_rita,
+        plane_surface_t *detector_plane,
         int n_bins, // the number of spectral bins
         float *spectrum_energies, // 1-D array -- size is the n_bins
         float *spectrum_cdf, // 1-D array -- cumulative density function over the energies
-        int photon_count, // number of photons to simulate (emit from source)
+        float E_abs, // the energy level below which photons are assumed to be absorbed
+        float *deposited_energy // the output.  Size is [detector_width]x[detector_height]
+    );
+    __device__ void initialization_track_photon(
+        float3_t *pos, // input: initial position in volume. output: end position of photon history
+        float3_t *dir, // input: initial direction
+        float *energy, // input: initial energy. output: energy at end of photon history
+        int *hits_detector, // Boolean output.  Does the photon actually reach the detector plane?
+        float E_abs, // the energy level below which the photon is assumed to be absorbed
+        char *labeled_segmentation, // [0..2]-labeled segmentation obtained by thresholding: [-infty, -500, 300, infty]
+        mat_mfp_data_t **mfp_data_arr, // 3-element array of pointers to mat_mfp_data_t structs. Idx NOM_SEG_AIR_ID associated with air, etc
+        wc_mfp_data_t *wc_data,
+        compton_data_t **compton_arr, // 3-element array of pointers to compton_data_t.  Material associations as with mfp_data_arr
+        rita_t **rita_arr, // 3-element array of pointers to rita_t.  Material associations as with mfp_data_arr
+        int3_t *volume_shape, // number of voxels in each direction IJK
+        float3_t *gVolumeEdgeMinPoint, // IJK coordinate of minimum bounds of volume
+        float3_t *gVolumeEdgeMaxPoint, // IJK coordinate of maximum bounds of volume
+        float3_t *gVoxelElementSize, // IJK coordinate lengths of each dimension of a voxel
+        plane_surface_t *detector_plane, 
+        rng_seed_t *seed
+    );
+    __device__ int get_voxel_1D(
+        float3_t *pos,
+        float3_t *gVolumeEdgeMinPoint,
+        float3_t *gVolumeEdgeMaxPoint,
+        float3_t *gVoxelElementSize,
+        int3_t *volume_shape
+    );
+    __device__ void get_scattered_dir(
+        float3_t *dir, // direction: both input and output
+        double cos_theta, // polar scattering angle
+        double phi // azimuthal scattering angle
+    );
+    __device__ void move_photon_to_volume(
+        float3_t *pos, // position of the photon.  Serves as both input and ouput
+        float3_t *dir, // input: direction of photon travel
+        int *hits_volume, // Boolean output.  Does the photon actually hit the volume?
+        float3_t *gVolumeEdgeMinPoint, // IJK coordinate of minimum bounds of volume
+        float3_t *gVolumeEdgeMaxPoint, // IJK coordinate of maximum bounds of volume
+    );
+    __device__ void sample_initial_dir(
+        float3_t *dir, // output: the sampled direction
+        rng_seed_t *seed
+    );
+    __device__ float sample_initial_energy(
+        const int n_bins,
+        const float *spectrum_energies,
+        const float *spectrum_cdf,
+        rng_seed_t *seed
+    );
+    __device__ double sample_rita(
+        const rita_t *sampler,
+        rng_seed_t *seed
+    );
+    __device__ float psurface_check_ray_intersection(
+        float3_t *pos, // input: current position of the photon
+        float3_t *dir, // input: direction of photon travel
+        const plane_surface_t *psur
+    );
+    __device__ void get_mat_mfp_data(
+        mat_mfp_data_t *data,
+        float nrg, // energy of the photon
+        float *ra, // output: MFP for Rayleigh scatter. Units: [mm]
+        float *co, // output: MFP for Compton scatter. Units: [mm]
+        float *tot // output: MFP (total). Units: [mm]
+    );
+    __device__ void get_wc_mfp_data(
+        wc_mfp_data_t *data,
+        float nrg, // energy of the photon [eV]
+        float *mfp // output: Woodcock MFP. Units: [mm]
+    );
+    __device__ double sample_Rayleigh(
+        float energy,
+        const rita_t *ff_sampler,
+        rng_seed_t *seed
+    );
+    __device__ double sample_Compton(
+        float *energy, // serves as both input and output
+        const compton_data_t *compton_data,
+        rng_seed_t *seed
+    );
+    float ranecu(rng_seed_t *seed);
+    double ranecu_double(rng_seed_t *seed);
+
+    /*** FUNCTION DEFINITIONS ***/
+
+    __global__ void initialization_stage(
+        int detector_width, // size of detector in pixels 
+        int detector_height,
+        int histories_for_thread, // number of photons for -this- thread to track
+        char *nominal_segmentation, // [0..2]-labeled segmentation obtained by thresholding: [-infty, -500, 300, infty]
+        float sx, // coordinates of source in IJK
+        float sy, // (not in a float3_t for ease of calling from Python wrapper)
+        float sz,
+        int volume_shape_x, // integer size of the volume to avoid 
+        int volume_shape_y, // floating-point errors with the gVolumeEdge{Min,Max}Point
+        int volume_shape_z, // and gVoxelElementSize math
+        float gVolumeEdgeMinPointX, // bounds of the volume in IJK
+        float gVolumeEdgeMinPointY,
+        float gVolumeEdgeMinPointZ,
+        float gVolumeEdgeMaxPointX,
+        float gVolumeEdgeMaxPointY,
+        float gVolumeEdgeMaxPointZ,
+        float gVoxelElementSizeX, // voxel size in IJK
+        float gVoxelElementSizeY,
+        float gVoxelElementSizeZ,
+        float *index_from_ijk, // (2, 4) array giving the IJK-homogeneous-coord.s-to-pixel-coord.s transformation
+        mat_mfp_data_t *air_mfp,
+        mat_mfp_data_t *soft_mfp,
+        mat_mfp_data_t *bone_mfp,
+        wc_mfp_data_t *woodcock_mfp,
+        compton_data_t *air_Co_data,
+        compton_data_t *soft_Co_data,
+        compton_data_t *bone_Co_data,
+        rita_t *air_rita,
+        rita_t *soft_rita,
+        rita_t *bone_rita,
+        plane_surface_t *detector_plane,
+        int n_bins, // the number of spectral bins
+        float *spectrum_energies, // 1-D array -- size is the n_bins
+        float *spectrum_cdf, // 1-D array -- cumulative density function over the energies
         float E_abs, // the energy level below which photons are assumed to be absorbed
         float *deposited_energy // the output.  Size is [detector_width]x[detector_height]
     ) {
         // TODO: further develop the arguments
+        rng_seed_t seed; // TODO: initialize
+
+        int3_t volume_shape = {
+            .x = volume_shape_x,
+            .y = volume_shape_y,
+            .z = volume_shape_z
+        };
+        float3_t gVolumeEdgeMinPoint = {
+            .x = gVolumeEdgeMinPointX,
+            .y = gVolumeEdgeMinPointY,
+            .z = gVolumeEdgeMinPointZ
+        };
+        float3_t gVolumeEdgeMaxPoint = {
+            .x = gVolumeEdgeMaxPointX,
+            .y = gVolumeEdgeMaxPointY,
+            .z = gVolumeEdgeMaxPointZ
+        };
+        float3_t gVoxelElementSize = {
+            .x = gVoxelElementSizeX,
+            .y = gVoxelElementSizeY,
+            .z = gVoxelElementSizeZ
+        };
+
+        mat_mfp_data_t *mfp_data_arr[3];
+        mfp_data_arr[NOM_SEG_AIR_ID] = air_mfp;
+        mfp_data_arr[NOM_SEG_SOFT_ID] = soft_mfp;
+        mfp_data_arr[NOM_SEG_BONE_ID] = bone_mfp;
+
+        compton_data_t *compton_arr[3];
+        compton_arr[NOM_SEG_AIR_ID] = air_Co_data;
+        compton_arr[NOM_SEG_SOFT_ID] = soft_Co_data;
+        compton_arr[NOM_SEG_BONE_ID] = bone_Co_data;
+
+        rita_t *rita_arr[3];
+        rita_arr[NOM_SEG_AIR_ID] = air_rita;
+        rita_arr[NOM_SEG_SOFT_ID] = soft_rita;
+        rita_arr[NOM_SEG_BONE_ID] = bone_rita;
+
+        for (; histories_for_thread > 0; histories_for_thread--) {
+            float energy = sample_initial_energy(n_bins, spectrum_energies, spectrum_cdf, seed);
+            float3_t pos = { .x = sx, .y = sy, .z = sz };
+            float3_t dir;
+            sample_initial_dir(&dir, &seed);
+            int is_hit;
+            move_photon_to_volume(&pos, &dir, &is_hit, &gVolumeEdgeMinPoint, &gVolumeEdgeMaxPoint);
+            if (is_hit) {
+                // is_hit gets repurposed since we don't need it anymore for 'did the photon hit the volume'
+                initialization_track_photon(
+                    &pos, &dir, &energy, &is_hit,
+                    E_abs, nominal_segmentation, 
+                    mfp_data_arr, woodcock_mfp, compton_arr, rita_arr,
+                    &volume_shape, 
+                    &gVolumeEdgeMinPoint, &gVolumeEdgeMaxPoint, &gVoxelElementSize,
+                    detector_plane, &seed
+                );
+
+                if (is_hit) {
+                    // 'pos' contains the IJK coord.s of collision with the detector.
+                    // Calculate the pixel indices for the detector image
+                    int pixel_x = (int)((index_from_ijk[0] * pos->x) + (index_from_ijk[1] * pos->y) + (index_from_ijk[2] * pos->z) + index_from_ijk[3]);
+                    int pixel_y = (int)((index_from_ijk[4] * pos->x) + (index_from_ijk[5] * pos->y) + (index_from_ijk[6] * pos->z) + index_from_ijk[7]);
+                    if ((pixel_x >= 0) && (pixel_x < detector_width) && (pixel_y >= 0) && (pixel_y < detector_height)) {
+                        // NOTE: atomicAdd(float *, float) only available for compute capability 2.x and higher.
+                        // https://docs.nvidia.com/cuda/cuda-c-programming-guide/index.html#atomicadd
+                        atomicAdd(&deposited_energy[(pixel_y * detector_width) + pixel_x], energy);
+                    }
+                }
+            } else {
+                /*
+                 * Do not need to check if the photon hits the detector here since
+                 * that photon would be considered part of the primary X-ray image
+                 */
+            }
+        }
+
         return;
     }
 
@@ -178,8 +349,8 @@ extern "C" {
         char *labeled_segmentation, // [0..2]-labeled segmentation obtained by thresholding: [-infty, -500, 300, infty]
         mat_mfp_data_t **mfp_data_arr, // 3-element array of pointers to mat_mfp_data_t structs. Idx NOM_SEG_AIR_ID associated with air, etc
         wc_mfp_data_t *wc_data,
-        rita_t **rita_arr, // 3-element array of pointers to rita_t.  Material associations as with mfp_data_arr
         compton_data_t **compton_arr, // 3-element array of pointers to compton_data_t.  Material associations as with mfp_data_arr
+        rita_t **rita_arr, // 3-element array of pointers to rita_t.  Material associations as with mfp_data_arr
         int3_t *volume_shape, // number of voxels in each direction IJK
         float3_t *gVolumeEdgeMinPoint, // IJK coordinate of minimum bounds of volume
         float3_t *gVolumeEdgeMaxPoint, // IJK coordinate of maximum bounds of volume
@@ -300,8 +471,8 @@ extern "C" {
 
     __device__ void get_scattered_dir(
         float3_t *dir, // direction: both input and output
-        double cos_theta,
-        double phi
+        double cos_theta, // polar scattering angle
+        double phi // azimuthal scattering angle
     ) {
         // Since \theta is restricted to [0,\pi], sin_theta is restricted to [0,1]
         float cos_th  = (float)cos_theta;
@@ -544,6 +715,54 @@ extern "C" {
         tmp = (1.0 + sampler->a[i] + sampler->b[i]) * delta_i * nu / tmp; // numerator / denominator
 
         return sampler->x[i] + (tmp * (sampler->x[i+1] - sampler->x[i]));
+    }
+
+    __device__ float psurface_check_ray_intersection(
+        float3_t *pos, // input: current position of the photon
+        float3_t *dir, // input: direction of photon travel
+        const plane_surface_t *psur
+    ) {
+        /*
+         * If there will be an intersection, returns the distance to the intersection.
+         * If no intersection, returns a negative number (the negative number does not necessarily have a
+         * geometrical meaning) 
+         *
+         * Let \vec{m} be the 'plane vector'.
+         * (\vec{pos} + \alpha * \vec{dir}) \cdot \vec{m} = 0, 
+         * then (\vec{pos} + \alpha * \vec{dir}) is the point of intersection.
+         */
+        float r_dot_m = (pos->x * psur->n.x) + (pos->y * psur->n.y) + (pos->z * psur->n.z) + psur->d;
+        if (0.0f == r_dot_m) {
+            // Photon is already on the plane
+            return 0.0f;
+        }
+        float d_dot_m = (dir->x * psur->n.x) + (dir->y * psur->n.y) + (dir->z * psur->n.z);
+        if (0.0f == d_dot_m) {
+            // Direction of photon travel is perpendicular to the normal vector of the plane
+            // Thus, there will be no intersection
+            return -1.f;
+        }
+        return -1.f * r_dot_m / d_dot_m;
+    }
+
+    __device__ void get_mat_mfp_data(
+        mat_mfp_data_t *data,
+        float nrg, // energy of the photon
+        float *ra, // output: MFP for Rayleigh scatter. Units: [mm]
+        float *co, // output: MFP for Compton scatter. Units: [mm]
+        float *tot // output: MFP (total). Units: [mm]
+    ) {
+        // TODO: implement (using binary search)
+        return;
+    }
+
+    __device__ void get_wc_mfp_data(
+        wc_mfp_data_t *data,
+        float nrg, // energy of the photon [eV]
+        float *mfp // output: Woodcock MFP. Units: [mm]
+    ) {
+        // TODO: implement (using binary search)
+        return;
     }
 
     __device__ double sample_Rayleigh(
