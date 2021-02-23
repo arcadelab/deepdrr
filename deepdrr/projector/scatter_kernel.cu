@@ -18,11 +18,18 @@
 /* Compton data constant */
 #define MAX_NSHELLS 30
 
-/* Mathematical constants */
-#define PI_FLOAT  3.141592653589793f
-#define PI_DOUBLE 3.141592653589793
-#define TWO_PI_FLOAT  6.283185307179586f
-#define TWO_PI_DOUBLE 6.283185307179586
+/* Mathematical constants -- credit to Wolfram Alpha */
+#define PI_FLOAT  3.14159265358979323846f
+#define PI_DOUBLE 3.14159265358979323846
+#define TWO_PI_FLOAT  6.28318530717958647693f
+#define TWO_PI_DOUBLE 6.28318530717958647693
+
+#define INFTY 500000.0f // inspired by MC-GPU :)
+#define NEG_INFTY -500000.0f
+
+/* Useful macros */
+#define MAX_VAL(a, b) (((a) > (b)) ? (a) : (b))
+#define MIN_VAL(a, b) (((a) < (b)) ? (a) : (b))
 
 extern "C" {
     typedef struct plane_surface {
@@ -99,14 +106,20 @@ extern "C" {
         *dy = y * cos_th + sin_th * (y * z * cos_phi - x * sin_phi) / tmp;
         *dz = z * cos_th - sin_th * tmp * cos_phi;
 
-        float mag = ((*dx) * (*dx)) + ((*dy) * (*dy)) + ((*dz) * (*dz));
-        mag = sqrtf(mag);
+        float mag = ((*dx) * (*dx)) + ((*dy) * (*dy)) + ((*dz) * (*dz)); // actually magnitude^2
 
-        *dx /= mag;
-        *dy /= mag;
-        *dz /= mag;
+        if (fabs(mag - 1.0f) > 1.0e-14) {
+            // Only do the computationally expensive normalization when necessary
+            mag = sqrtf(mag);
+
+            *dx /= mag;
+            *dy /= mag;
+            *dz /= mag;
+        }
     }
 
+    #define VOXEL_EPS      0.000015f // epsilon (small distance) that we use to ensure that 
+    #define NEG_VOXEL_EPS -0.000015f // the particle fully inside a voxel. Value from MC-GPU
     __device__ void move_photon_to_volume(
         float *pos_x, // position of the photon.  Serves as both input and ouput
         float *pos_y,
@@ -120,13 +133,108 @@ extern "C" {
         float gVolumeEdgeMinPointZ,
         float gVolumeEdgeMaxPointX,
         float gVolumeEdgeMaxPointY,
-        float gVolumeEdgeMaxPointZ,
-        float gVoxelElementSizeX, // voxel size
-        float gVoxelElementSizeY,
-        float gVoxelElementSizeZ
+        float gVolumeEdgeMaxPointZ
     ) {
-        // TODO: implement
-        return;
+        /*
+         * Strategy: calculate the which direction out of {x,y,z} needs to travel the most to get
+         * to the volume.  This determines how far the photon must travel if it has any hope of 
+         * reaching the volume.
+         * Next, will need to do checks to ensure that the resulting position is inside of the volume.
+         */
+        float dist_x, dist_y, dist_z;
+        /* Calculations for x-direction */
+        if (dx > VOXEL_EPS) {
+            if (*pos_x > gVolumeEdgeMinPointX) {
+                // Photon inside or past volume
+                dist_x = 0.0f;
+            } else {
+                // Add VOXEL_EPS to make super sure that the photon reaches the volume
+                dist_x = VOXEL_EPS + (gVolumeEdgeMinPointX - *pos_x) / dx;
+            }
+        } else if (dx < NEG_VOXEL_EPS) {
+            if (*pos_x < gVolumeEdgeMaxPointX) {
+                dist_x = 0.0f;
+            } else {
+                // In order to ensure that dist_x is positive, we divide the negative 
+                // quantity (gVolumeEdgeMaxPointX - *pos_x) by the negative quantity 'dx'.
+                dist_x = VOXEL_EPS + (gVolumeEdgeMaxPointX - *pos_x) / dx;
+            }
+        } else {
+            // No collision with an x-normal-plane possible
+            dist_x = NEG_INFTY;
+        }
+
+        /* Calculations for y-direction */
+        if (dy > VOXEL_EPS) {
+            if (*pos_y > gVolumeEdgeMinPointY) {
+                // Photon inside or past volume
+                dist_y = 0.0f;
+            } else {
+                // Add VOXEL_EPS to make super sure that the photon reaches the volume
+                dist_y = VOXEL_EPS + (gVolumeEdgeMinPointY - *pos_y) / dy;
+            }
+        } else if (dy < NEG_VOXEL_EPS) {
+            if (*pos_y < gVolumeEdgeMaxPointY) {
+                dist_y = 0.0f;
+            } else {
+                // In order to ensure that dist_y is positive, we divide the negative 
+                // quantity (gVolumeEdgeMaxPointY - *pos_y) by the negative quantity 'dy'.
+                dist_y = VOXEL_EPS + (gVolumeEdgeMaxPointY - *pos_y) / dy;
+            }
+        } else {
+            // No collision with an y-normal-plane possible
+            dist_y = NEG_INFTY;
+        }
+
+        /* Calculations for z-direction */
+        if (dz > VOXEL_EPS) {
+            if (*pos_z > gVolumeEdgeMinPointZ) {
+                // Photon inside or past volume
+                dist_z = 0.0f;
+            } else {
+                // Add VOXEL_EPS to make super sure that the photon reaches the volume
+                dist_z = VOXEL_EPS + (gVolumeEdgeMinPointZ - *pos_z) / dz;
+            }
+        } else if (dz < NEG_VOXEL_EPS) {
+            if (*pos_z < gVolumeEdgeMaxPointZ) {
+                dist_z = 0.0f;
+            } else {
+                // In order to ensure that dist_z is positive, we divide the negative 
+                // quantity (gVolumeEdgeMaxPointZ - *pos_z) by the negative quantity 'dz'.
+                dist_z = VOXEL_EPS + (gVolumeEdgeMaxPointZ - *pos_z) / dz;
+            }
+        } else {
+            // No collision with an y-normal-plane possible
+            dist_z = NEG_INFTY;
+        }
+
+        /* 
+         * Store the longest distance to a plane in dist_z.
+         * If distance if zero: interpret as photon already in volume, or no
+         * intersection is possible (for example, if the photon is moving away)
+         */
+        dist_z = MAX_VAL(dist_z, MAX_VAL(dist_x, dist_y));
+
+        // Move the photon to the volume (yay! the whole purpose of this function!)
+        *pos_x += dist_z * dx;
+        *pos_y += dist_z * dy;
+        *pos_z += dist_z * dz;
+
+        /*
+         * Final error checking. Check if the new position is outside the volume.
+         * If so, move the particle back to original position and set the intersection
+         * flag to false.
+         */
+        if ((*pos_x < gVolumeEdgeMinPointX) || (*pos_x > gVolumeEdgeMaxPointX) ||
+                (*pos_y < gVolumeEdgeMinPointY) || (*pos_y > gVolumeEdgeMaxPointY) ||
+                (*pos_z < gVolumeEdgeMinPointZ) || (*pos_z > gVolumeEdgeMaxPointZ) ) {
+            *pos_x -= dist_z * dx;
+            *pos_y -= dist_z * dy;
+            *pos_z -= dist_z * dz;
+            *hits_volume = 0;
+        } else {
+            *hits_volume = 1;
+        }
     }
 
     __device__ void sample_initial_dir(
