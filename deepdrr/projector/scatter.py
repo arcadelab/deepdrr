@@ -216,18 +216,18 @@ def track_single_photon_no_vr(
         #
         # SAMPLING RULE: Let rnd be a uniformly selected number on [0,1]
         # 
-        # if rnd > simga_Co / sigma_Tot: # if rnd > (mfp_Tot / mfp_Co)
+        # if rnd < (simga_Co / sigma_Tot): # if rnd < (mfp_Tot / mfp_Co)
         #   COMPTON INTERACTION
-        # elif rnd > (sigma_Ra + sigma_Co) / sigma_Tot: # if rnd > mfp_Tot * ((1 / mfp_Co) + (1 / mfp_Ra))
+        # elif rnd < (sigma_Ra + sigma_Co) / sigma_Tot: # if rnd < mfp_Tot * ((1 / mfp_Co) + (1 / mfp_Ra))
         #   RAYLEIGH INTERACTION
         # else:
-        #   DELTA INTERACTION (AKA no interaction, continue on course)
+        #   OTHER INTERACTION (photoelectric for pair production) ==> photon absorbed
         # 
         cos_theta, E_prime = None, None
         rnd = sample_U01()
-        if rnd > (mfp_Tot / mfp_Co):
+        if rnd < (mfp_Tot / mfp_Co):
             cos_theta, E_prime = sample_Compton_theta_E_prime(photon_energy, material_nshells[mat_name], compton_data[mat_name])
-        elif rnd > mfp_Tot * ((1 / mfp_Co) + (1 / mfp_Ra)):
+        elif rnd < mfp_Tot * ((1 / mfp_Co) + (1 / mfp_Ra)):
             cos_theta = sample_Rayleigh_theta(photon_energy, rita_samplers[mat_name])
             E_prime = photon_energy
         else:
@@ -252,11 +252,11 @@ def track_single_photon_no_vr(
     
     hit = geo.Point3D.from_any(pos + (hits_detector_dist * direction))
 
-    print(f"hit: {hit}")
+    #print(f"hit: {hit}")
 
     # NOTE: an alternative formulation would be to use (rt_kinv).inv
-    pixel_x, pixel_y = detector_plane.get_lin_comb_coefs(hit)
-    print(f"old pixel: {pixel_x}, {pixel_y}")
+    #pixel_x, pixel_y = detector_plane.get_lin_comb_coefs(hit)
+    #print(f"old pixel: {pixel_x}, {pixel_y}")
     
     hit_x = hit.data[0]
     hit_y = hit.data[1]
@@ -264,7 +264,7 @@ def track_single_photon_no_vr(
     pixel_x = index_from_ijk[0,0] * hit_x + index_from_ijk[0,1] * hit_y + index_from_ijk[0,2] * hit_z + index_from_ijk[0,3]
     pixel_y = index_from_ijk[1,0] * hit_x + index_from_ijk[1,1] * hit_y + index_from_ijk[1,2] * hit_z + index_from_ijk[1,3]
 
-    print(f"new pixel: {pixel_x}, {pixel_y}")
+    #print(f"new pixel: {pixel_x}, {pixel_y}")
     
     return int(np.floor(pixel_x)), int(np.floor(pixel_y)), photon_energy
 

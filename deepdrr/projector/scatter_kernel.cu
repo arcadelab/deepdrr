@@ -19,6 +19,10 @@
 #define MAX_NSHELLS 30
 #define MAX_MFP_BINS 25005
 
+/* Numerically necessary evils */
+#define VOXEL_EPS      0.000015f // epsilon (small distance) that we use to ensure that 
+#define NEG_VOXEL_EPS -0.000015f // the particle fully inside a voxel. Value from MC-GPU
+
 /* Mathematical constants -- credit to Wolfram Alpha */
 #define PI_FLOAT  3.14159265358979323846f
 #define PI_DOUBLE 3.14159265358979323846
@@ -38,6 +42,10 @@ extern "C" {
     typedef struct int2 {
         int x, y;
     } int2_t;
+
+    typedef struct int3 {
+        int x, y, z;
+    } int3_t;
 
     typedef struct float2 {
         float x, y;
@@ -110,18 +118,18 @@ extern "C" {
 
     typedef struct mat_mfp_data {
         int n_bins;
-        float energy[MAX_MFP_BINS];
-        float mfp_Ra[MAX_MFP_BINS];
-        float mfp_Co[MAX_MFP_BINS];
-        float mfp_Tot[MAX_MFP_BINS];
+        float energy[MAX_MFP_BINS]; // Units: [eV]
+        float mfp_Ra[MAX_MFP_BINS]; // Units: [mm]
+        float mfp_Co[MAX_MFP_BINS]; // Units: [mm]
+        float mfp_Tot[MAX_MFP_BINS]; // Units: [mm]
     } mat_mfp_data_t;
 
     __device__ void get_mat_mfp_data(
         mat_mfp_data_t *data,
         float nrg, // energy of the photon
-        float *ra, // output: MFP for Rayleigh scatter
-        float *co, // output: MFP for Compton scatter
-        float *tot // output: MFP (total)
+        float *ra, // output: MFP for Rayleigh scatter. Units: [mm]
+        float *co, // output: MFP for Compton scatter. Units: [mm]
+        float *tot // output: MFP (total). Units: [mm]
     ) {
         // TODO: implement (using binary search)
         return;
@@ -129,14 +137,14 @@ extern "C" {
 
     typedef struct wc_mfp_data {
         int n_bins;
-        float energy[MAX_MFP_BINS];
-        float mfp_wc[MAX_MFP_BINS];
+        float energy[MAX_MFP_BINS]; // Units: [eV]
+        float mfp_wc[MAX_MFP_BINS]; // Units: [mm]
     } wc_mfp_data_t;
 
-    __device__ void read_wc_mfp_data(
+    __device__ void get_wc_mfp_data(
         wc_mfp_data_t *data,
-        float nrg, // energy of the photon
-        float *mfp // output: Woodcock MFP
+        float nrg, // energy of the photon [eV]
+        float *mfp // output: Woodcock MFP. Units: [mm]
     ) {
         // TODO: implement (using binary search)
         return;
@@ -146,7 +154,9 @@ extern "C" {
         int detector_width, // size of detector in pixels 
         int detector_height,
         char *nominal_segmentation, // [0..2]-labeled segmentation obtained by thresholding: [-infty, -500, 300, infty]
-        float3_t *s, // coordinates of source in IJK
+        float sx, // coordinates of source in IJK
+        float sy, // (not in a float3_t for ease of calling from Python wrapper)
+        float sz,
         float *rt_kinv, // (3, 3) array giving the image-to-world-ray transform.
         int n_bins, // the number of spectral bins
         float *spectrum_energies, // 1-D array -- size is the n_bins
@@ -157,6 +167,135 @@ extern "C" {
     ) {
         // TODO: further develop the arguments
         return;
+    }
+
+    __device__ void initialization_track_photon(
+        float3_t *pos, // input: initial position in volume. output: end position of photon history
+        float3_t *dir, // input: initial direction
+        float *energy, // input: initial energy. output: energy at end of photon history
+        int *hits_detector, // Boolean output.  Does the photon actually reach the detector plane?
+        float E_abs, // the energy level below which the photon is assumed to be absorbed
+        char *labeled_segmentation, // [0..2]-labeled segmentation obtained by thresholding: [-infty, -500, 300, infty]
+        mat_mfp_data_t **mfp_data_arr, // 3-element array of pointers to mat_mfp_data_t structs. Idx NOM_SEG_AIR_ID associated with air, etc
+        wc_mfp_data_t *wc_data,
+        rita_t **rita_arr, // 3-element array of pointers to rita_t.  Material associations as with mfp_data_arr
+        compton_data_t **compton_arr, // 3-element array of pointers to compton_data_t.  Material associations as with mfp_data_arr
+        int3_t *volume_shape, // number of voxels in each direction IJK
+        float3_t *gVolumeEdgeMinPoint, // IJK coordinate of minimum bounds of volume
+        float3_t *gVolumeEdgeMaxPoint, // IJK coordinate of maximum bounds of volume
+        float3_t *gVoxelElementSize, // IJK coordinate lengths of each dimension of a voxel
+        plane_surface_t *detector_plane, 
+        rng_seed_t *seed
+    ) {
+        int vox; // IJK voxel coord.s of photon, flattened for 1-D array labeled_segmentation
+        float mfp_wc, mfp_Ra, mfp_Co, mfp_Tot;
+        while (1) {
+            vox = get_voxel_1D(pos, gVolumeEdgeMinPoint, gVolumeEdgeMaxPoint, gVoxelElementSize, volume_shape);
+            if (vox < 0) { break; } // photon escaped volume
+
+            mfp_wc = get_wc_mfp_data(wc_data, *energy, &mfp_wc);
+
+            // Delta interactions
+            do {
+                // simulate moving the photon
+                float s = -mfp_wc * logf(ranecu(seed));
+                pos->x += s * dir->x;
+                pos->y += s * dir->y;
+                pos->z += s * dir->z;
+
+                vox = get_voxel_1D(pos, gVolumeEdgeMinPoint, gVolumeEdgeMaxPoint, gVoxelElementSize, volume_shape);
+                if (vox < 0) { break; } // phtoton escaped volume
+
+                char mat_id = labeled_segmentation[vox]
+                get_mat_mfp_data(mfp_data_arr[mat_id], *energy, &mfp_Ra, &mfp_Co, &mfp_Tot);
+
+                // Accept the collision if \xi < mfp_wc / mfp_Tot.
+                // Thus, reject the collision if \xi >= mfp_wc / mfp_Tot.
+                // See http://serpent.vtt.fi/mediawiki/index.php/Delta-_and_surface-tracking
+            } while (ranecu(seed) >= mfp_wc / mfp_Tot);
+
+            char mat_id = labeled_segmentation[vox]
+            get_mat_mfp_data(mfp_data_arr[mat_id], *energy, &mfp_Ra, &mfp_Co, &mfp_Tot);
+            
+            /* 
+             * Now at a legitimate photon interaction. 
+             * 
+             * Sample the photon interaction type
+             *
+             * (1 / mfp_Tot) * (1 / molecules_per_vol) ==    total interaction cross section =: sigma_Tot
+             * (1 / mfp_Ra ) * (1 / molecules_per_vol) == Rayleigh interaction cross section =: sigma_Ra
+             * (1 / mfp_Co ) * (1 / molecules_per_vol) ==  Compton interaction cross section =: sigma_Co
+             *
+             * SAMPLING RULE: Let rnd be a uniformly selected number on [0,1]
+             *
+             * if rnd < (sigma_Co / sigma_Tot): // if rnd < (mfp_Tot / mfp_Co):
+             *   COMPTON INTERACTION
+             * elif rnd < ((sigma_Ra + sigma_Co) / sigma_Tot): // if rnd < mfp_Tot * ((1 / mfp_Co) + (1 / mfp_Ra)):
+             *   RAYLEIGH INTERACTION
+             * else:
+             *   OTHER INTERACTION (photoelectric for pair production) ==> photon absorbed
+             */
+            double cos_theta;
+            float rnd = ranecu(seed);
+            float prob_Co = mfp_Tot / mfp_Co;
+            if (rnd < prob_Co) {
+                cos_theta = sample_Compton(energy, compton_arr[mat_id], seed);
+            } else if (rnd < (prob_Co + (mfp_Tot / mfp_Ra))) {
+                cos_theta = sample_Rayleigh(*energy, rita_arr[mat_id], seed);
+            } else {
+                *hits_detector = 0;
+                return;
+            }
+
+            if (*energy < E_abs) {
+                *hits_detector = 0;
+                return;
+            }
+
+            phi = TWO_PI_DOUBLE * ranecu_double(seed);
+            get_scattered_dir(dir, cos_theta, phi);
+        }
+
+        /* Final processing once the photon has left the volume */
+
+        // Transport the photon to the detector plane
+        float dist_to_detector = psurface_check_ray_intersection(pos, dir, detector_plane);
+        if (dist_to_detector < 0.0f) {
+            *hits_detector = 0;
+        }
+
+        pos->x += dist_to_detector * dir->x;
+        pos->y += dist_to_detector * dir->y;
+        pos->z += dist_to_detector * dir->z;
+        *hits_detector = 1;
+        // NOTE: the calculation for determine which pixel is done in caller function
+    }
+
+    __device__ int get_voxel_1D(
+        float3_t *pos,
+        float3_t *gVolumeEdgeMinPoint,
+        float3_t *gVolumeEdgeMaxPoint,
+        float3_t *gVoxelElementSize,
+        int3_t *volume_shape
+    ) {
+        /* 
+         * Returns index into a flattened 1-D array that represents the volume.  
+         * If outside volume, returns a negative value.
+         *
+         * volume_arr_3D[x, y, z] == volume_arr_1D[z * x_len * y_len + y * x_len + x]
+         */
+        if ((pos->x < gVolumeEdgeMinPoint->x + VOXEL_EPS) || (pos->x > gVolumeEdgeMaxPoint->x - VOXEL_EPS) ||
+                (pos->y < gVolumeEdgeMinPoint->y + VOXEL_EPS) || (pos->y > gVolumeEdgeMaxPoint->y - VOXEL_EPS) ||
+                (pos->z < gVolumeEdgeMinPoint->z + VOXEL_EPS) || (pos->z > gVolumeEdgeMaxPoint->z - VOXEL_EPS) ) {
+            // Photon outside volume
+            return -1;
+        }
+        int vox_x, vox_y, vox_z;
+        vox_x = (int)((pos->x - gVolumeEdgeMinPoint->x) / gVoxelElementSize->x);
+        vox_y = (int)((pos->y - gVolumeEdgeMinPoint->y) / gVoxelElementSize->y);
+        vox_z = (int)((pos->z - gVolumeEdgeMinPoint->z) / gVoxelElementSize->z);
+
+        return (vox_z * volume_shape->x * volume_shape->y) + (vox_y * volume_shape->x) + vox_x;
     }
 
     __device__ void get_scattered_dir(
@@ -190,18 +329,12 @@ extern "C" {
         }
     }
 
-    #define VOXEL_EPS      0.000015f // epsilon (small distance) that we use to ensure that 
-    #define NEG_VOXEL_EPS -0.000015f // the particle fully inside a voxel. Value from MC-GPU
     __device__ void move_photon_to_volume(
         float3_t *pos, // position of the photon.  Serves as both input and ouput
         float3_t *dir, // input: direction of photon travel
         int *hits_volume, // Boolean output.  Does the photon actually hit the volume?
-        float gVolumeEdgeMinPointX, // bounds of the volume
-        float gVolumeEdgeMinPointY,
-        float gVolumeEdgeMinPointZ,
-        float gVolumeEdgeMaxPointX,
-        float gVolumeEdgeMaxPointY,
-        float gVolumeEdgeMaxPointZ
+        float3_t *gVolumeEdgeMinPoint, // IJK coordinate of minimum bounds of volume
+        float3_t *gVolumeEdgeMaxPoint, // IJK coordinate of maximum bounds of volume
     ) {
         /*
          * Strategy: calculate the which direction out of {x,y,z} needs to travel the most to get
@@ -212,20 +345,20 @@ extern "C" {
         float dist_x, dist_y, dist_z;
         /* Calculations for x-direction */
         if (dir->x > VOXEL_EPS) {
-            if (pos->x > gVolumeEdgeMinPointX) {
+            if (pos->x > gVolumeEdgeMinPoint->x) {
                 // Photon inside or past volume
                 dist_x = 0.0f;
             } else {
                 // Add VOXEL_EPS to make super sure that the photon reaches the volume
-                dist_x = VOXEL_EPS + (gVolumeEdgeMinPointX - pos->x) / dir->x;
+                dist_x = VOXEL_EPS + (gVolumeEdgeMinPoint->x - pos->x) / dir->x;
             }
         } else if (dir->x < NEG_VOXEL_EPS) {
-            if (pos->x < gVolumeEdgeMaxPointX) {
+            if (pos->x < gVolumeEdgeMaxPoint->x) {
                 dist_x = 0.0f;
             } else {
                 // In order to ensure that dist_x is positive, we divide the negative 
-                // quantity (gVolumeEdgeMaxPointX - pos->x) by the negative quantity 'dir->x'.
-                dist_x = VOXEL_EPS + (gVolumeEdgeMaxPointX - pos->x) / dir->x;
+                // quantity (gVolumeEdgeMaxPoint->x - pos->x) by the negative quantity 'dir->x'.
+                dist_x = VOXEL_EPS + (gVolumeEdgeMaxPoint->x - pos->x) / dir->x;
             }
         } else {
             // No collision with an x-normal-plane possible
@@ -234,20 +367,20 @@ extern "C" {
 
         /* Calculations for y-direction */
         if (dir->y > VOXEL_EPS) {
-            if (pos->y > gVolumeEdgeMinPointY) {
+            if (pos->y > gVolumeEdgeMinPoint->y) {
                 // Photon inside or past volume
                 dist_y = 0.0f;
             } else {
                 // Add VOXEL_EPS to make super sure that the photon reaches the volume
-                dist_y = VOXEL_EPS + (gVolumeEdgeMinPointY - pos->y) / dir->y;
+                dist_y = VOXEL_EPS + (gVolumeEdgeMinPoint->y - pos->y) / dir->y;
             }
         } else if (dir->y < NEG_VOXEL_EPS) {
-            if (pos->y < gVolumeEdgeMaxPointY) {
+            if (pos->y < gVolumeEdgeMaxPoint->y) {
                 dist_y = 0.0f;
             } else {
                 // In order to ensure that dist_y is positive, we divide the negative 
-                // quantity (gVolumeEdgeMaxPointY - pos->y) by the negative quantity 'dir->y'.
-                dist_y = VOXEL_EPS + (gVolumeEdgeMaxPointY - pos->y) / dir->y;
+                // quantity (gVolumeEdgeMaxPoint->y - pos->y) by the negative quantity 'dir->y'.
+                dist_y = VOXEL_EPS + (gVolumeEdgeMaxPoint->y - pos->y) / dir->y;
             }
         } else {
             // No collision with an y-normal-plane possible
@@ -256,20 +389,20 @@ extern "C" {
 
         /* Calculations for z-direction */
         if (dir->z > VOXEL_EPS) {
-            if (pos->z > gVolumeEdgeMinPointZ) {
+            if (pos->z > gVolumeEdgeMinPoint->z) {
                 // Photon inside or past volume
                 dist_z = 0.0f;
             } else {
                 // Add VOXEL_EPS to make super sure that the photon reaches the volume
-                dist_z = VOXEL_EPS + (gVolumeEdgeMinPointZ - pos->z) / dir->z;
+                dist_z = VOXEL_EPS + (gVolumeEdgeMinPoint->z - pos->z) / dir->z;
             }
         } else if (dir->z < NEG_VOXEL_EPS) {
-            if (pos->z < gVolumeEdgeMaxPointZ) {
+            if (pos->z < gVolumeEdgeMaxPoint->z) {
                 dist_z = 0.0f;
             } else {
                 // In order to ensure that dist_z is positive, we divide the negative 
-                // quantity (gVolumeEdgeMaxPointZ - pos->z) by the negative quantity 'dir->z'.
-                dist_z = VOXEL_EPS + (gVolumeEdgeMaxPointZ - pos->z) / dir->z;
+                // quantity (gVolumeEdgeMaxPoint->z - pos->z) by the negative quantity 'dir->z'.
+                dist_z = VOXEL_EPS + (gVolumeEdgeMaxPoint->z - pos->z) / dir->z;
             }
         } else {
             // No collision with an y-normal-plane possible
@@ -293,9 +426,9 @@ extern "C" {
          * If so, move the particle back to original position and set the intersection
          * flag to false.
          */
-        if ((pos->x < gVolumeEdgeMinPointX) || (pos->x > gVolumeEdgeMaxPointX) ||
-                (pos->y < gVolumeEdgeMinPointY) || (pos->y > gVolumeEdgeMaxPointY) ||
-                (pos->z < gVolumeEdgeMinPointZ) || (pos->z > gVolumeEdgeMaxPointZ) ) {
+        if ((pos->x < gVolumeEdgeMinPoint->x) || (pos->x > gVolumeEdgeMaxPoint->x) ||
+                (pos->y < gVolumeEdgeMinPoint->y) || (pos->y > gVolumeEdgeMaxPoint->y) ||
+                (pos->z < gVolumeEdgeMinPoint->z) || (pos->z > gVolumeEdgeMaxPoint->z) ) {
             pos->x -= dist_z * dir->x;
             pos->y -= dist_z * dir->y;
             pos->z -= dist_z * dir->z;

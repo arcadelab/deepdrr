@@ -264,7 +264,7 @@ class SingleProjector(object):
                 (camera_projection.sensor_width, camera_projection.sensor_height),
                 (camera_projection.sensor_width, camera_projection.sensor_height),
                 self.spectrum,
-                photon_count=100#000, # 10^5
+                photon_count=100000,
             )
             noise = np.swapaxes(noise, 0, 1).copy()
             print(f"noise.shape: {noise.shape}")
@@ -500,7 +500,20 @@ class Projector(object):
                 deposited_energy, photon_prob, noise = projector.project(proj) ###
                 deposited_energies.append(deposited_energy)
                 photon_probs.append(photon_prob)
-                noises.append(noise) ###
+
+                accentuated_noise = noise.copy()
+                accentuate_distance = 2
+
+                for i in range(noise.shape[0]):
+                    for j in range(noise.shape[1]):
+                        if noise[i,j] > 0:
+                            for p in range(i - accentuate_distance, i + accentuate_distance + 1):
+                                for q in range(j - accentuate_distance, j + accentuate_distance + 1):
+                                    if (p >= 0) and (p < accentuated_noise.shape[0]):
+                                        if (q >= 0) and (q < accentuated_noise.shape[1]):
+                                            accentuated_noise[p,q] = noise[i,j]
+                noises.append(accentuated_noise)
+                #noises.append(noise) ###
 
             images = np.stack(deposited_energies)
             photon_prob = np.stack(photon_probs)

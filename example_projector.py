@@ -87,7 +87,7 @@ def main():
         photon_count=100000,
         add_scatter=False,
         threads=8,
-        neglog=False#True,
+        neglog=True,
     ) as projector:
         ###images = projector.project_over_carm_range(
         images, images_with_noise, noises = projector.project_over_carm_range(
