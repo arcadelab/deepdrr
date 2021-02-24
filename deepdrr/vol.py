@@ -310,6 +310,16 @@ class Volume(object):
         center_anatomical = self.anatomical_from_ijk @ geo.point(np.array(self.shape) / 2)
         self.world_from_anatomical = geo.FrameTransform.from_rt(self.world_from_anatomical.R) @ geo.FrameTransform.from_origin(center_anatomical)
 
+    def __contains__(self, x: geo.Point3D) -> bool:
+        """Determine whether the point x is inside the volume.
+
+        Args:
+            x (geo.Point3D): world-space point.
+
+        """
+        x_ijk = self.ijk_from_world @ geo.point(x)
+        return np.all(0 <= np.array(x_ijk) <= np.array(self.shape) - 1)
+
 
 class MetalVolume(Volume):
     """Same as a volume, but with a different segmentation for the materials.
