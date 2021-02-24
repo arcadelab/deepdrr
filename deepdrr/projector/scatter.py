@@ -263,7 +263,7 @@ def track_single_photon_no_vr(
     
     hit = geo.Point3D.from_any(pos + (hits_detector_dist * direction))
 
-    #print(f"hit: {hit}")
+    print(f"hit: {hit}")
 
     # NOTE: an alternative formulation would be to use (rt_kinv).inv
     #pixel_x, pixel_y = detector_plane.get_lin_comb_coefs(hit)
@@ -275,7 +275,7 @@ def track_single_photon_no_vr(
     pixel_x = index_from_ijk[0,0] * hit_x + index_from_ijk[0,1] * hit_y + index_from_ijk[0,2] * hit_z + index_from_ijk[0,3]
     pixel_y = index_from_ijk[1,0] * hit_x + index_from_ijk[1,1] * hit_y + index_from_ijk[1,2] * hit_z + index_from_ijk[1,3]
 
-    #print(f"new pixel: {pixel_x}, {pixel_y}")
+    print(f"new pixel: {pixel_x}, {pixel_y}")
     
     return int(np.floor(pixel_x)), int(np.floor(pixel_y)), photon_energy, num_scatter_events
 
