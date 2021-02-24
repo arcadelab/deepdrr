@@ -51,6 +51,7 @@ extern "C" {
         float3_t *dir, // input: initial direction
         float *energy, // input: initial energy. output: energy at end of photon history
         int *hits_detector, // Boolean output.  Does the photon actually reach the detector plane?
+        int *num_scatter_events, // should be passed a pointer to an int initialized to zero.  Returns the number of scatter events experienced by the photon
         float E_abs, // the energy level below which the photon is assumed to be absorbed
         char *labeled_segmentation, // [0..2]-labeled segmentation obtained by thresholding: [-infty, -500, 300, infty]
         mat_mfp_data_t **mfp_data_arr, // 3-element array of pointers to mat_mfp_data_t structs. Idx NOM_SEG_AIR_ID associated with air, etc

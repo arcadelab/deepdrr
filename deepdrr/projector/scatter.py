@@ -104,7 +104,7 @@ def simulate_scatter_no_vr(
             print(f"\tCurrent time: {time.asctime()}")
         initial_dir, initial_pos, sample_count = sample_initial_direction(vol_planes, source_ijk)
         initial_E = sample_initial_energy(spectrum)
-        pixel_x, pixel_y, energy = track_single_photon_no_vr(
+        pixel_x, pixel_y, energy, num_scatter_events = track_single_photon_no_vr(
             initial_pos, 
             initial_dir, 
             initial_E, 
@@ -115,6 +115,12 @@ def simulate_scatter_no_vr(
             index_from_ijk, 
             material_ids
         )
+
+        # Only keep track of photons that were scattered
+        if 0 == num_scatter_events:
+            continue
+        else:
+            print(f"photon history {i+1} / {photon_count}: {num_scatter_events} scatter events")
         
         # Model for detector: ideal image formation
         # Each pixel counts the total energy of the X-rays that enter the pixel (100% efficient pixels)
@@ -139,7 +145,7 @@ def track_single_photon_no_vr(
     detector_plane: PlaneSurface,
     index_from_ijk: np.ndarray,
     material_ids: Dict[int, str]
-) -> Tuple[int,int, np.float32]:
+) -> Tuple[int,int, np.float32, int]:
     """Produce a grayscale (intensity-based) image representing the photon scatter of a single photon 
     during an X-Ray, without using VR (variance reduction) techniques.
 
@@ -154,13 +160,16 @@ def track_single_photon_no_vr(
         index_from_ijk (np.ndarray): the inverse transformation of ijk_from_index, the ray transform for the projection.
         material_ids (Dict[int,str]): a dictionary mapping an integer material ID-label to the name of the material
     Returns:
-        Tuple[int, int, np.float32]: the pixel coord.s of the hit pixel, as well as the energy (in eV) of the photon when it hit the detector.  
+        Tuple[int, int, np.float32, int]: the pixel coord.s of the hit pixel, as well as the energy (in eV) of the photon when it hit the detector.  
+                                    The final int is the number of scatter events experienced by the photon.
                                     Note that the returned pixel coord.s CAN BE out-of-bounds.
     """
     pos = initial_pos
     direction = initial_dir
 
     photon_energy = initial_E # tracker variable throughout the duration of the photon history
+
+    num_scatter_events = 0
 
     while True: # emulate a do-while loop
         # Get voxel (index) coord.s.  Keep in mind that IJK coord.s are voxel-centered
@@ -232,12 +241,14 @@ def track_single_photon_no_vr(
             E_prime = photon_energy
         else:
             # Photoelectric interaction OR pair production.  Photon is absorbed, and thus does not hit the detector.
-            return -1, -1, photon_energy
+            return -1, -1, photon_energy, num_scatter_events
         
         photon_energy = E_prime
         if photon_energy <= E_abs:
-            return -1, -1, photon_energy
+            return -1, -1, photon_energy, num_scatter_events
         
+        num_scatter_events += 1
+
         phi = 2 * np.pi * sample_U01()
         direction = get_scattered_dir(direction, cos_theta, phi)
 
@@ -248,7 +259,7 @@ def track_single_photon_no_vr(
     # Transport the photon to the detector plane
     hits_detector_dist = detector_plane.check_ray_intersection(pos, direction)
     if hits_detector_dist is None:
-        return -1, -1, photon_energy
+        return -1, -1, photon_energy, num_scatter_events
     
     hit = geo.Point3D.from_any(pos + (hits_detector_dist * direction))
 
@@ -266,7 +277,7 @@ def track_single_photon_no_vr(
 
     #print(f"new pixel: {pixel_x}, {pixel_y}")
     
-    return int(np.floor(pixel_x)), int(np.floor(pixel_y)), photon_energy
+    return int(np.floor(pixel_x)), int(np.floor(pixel_y)), photon_energy, num_scatter_events
 
 def get_mfp_data(
     table: np.ndarray,

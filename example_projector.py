@@ -84,7 +84,7 @@ def main():
         mode='linear',
         max_block_index=200,
         spectrum='90KV_AL40',
-        photon_count=100000,
+        photon_count=1000,
         add_scatter=False,
         threads=8,
         neglog=True,

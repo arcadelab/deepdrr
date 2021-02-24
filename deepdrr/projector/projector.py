@@ -229,6 +229,9 @@ class SingleProjector(object):
                     context.synchronize()
 
         if self.attenuation:
+            # NOTE: this deposited_energy is actually the deposited energy PER UNIT PHOTON
+            # To convert to actual deposited energy, will need to multiply by the photon_count
+            # in the Projector class.
             deposited_energy = np.empty(self.output_shape, dtype=np.float32)
             cuda.memcpy_dtoh(deposited_energy, self.deposited_energy_gpu)
             # transpose the axes, which previously have width on the slow dimension
@@ -264,7 +267,7 @@ class SingleProjector(object):
                 (camera_projection.sensor_width, camera_projection.sensor_height),
                 (camera_projection.sensor_width, camera_projection.sensor_height),
                 self.spectrum,
-                photon_count=100000,
+                photon_count=1000,
             )
             noise = np.swapaxes(noise, 0, 1).copy()
             print(f"noise.shape: {noise.shape}")
@@ -498,7 +501,7 @@ class Projector(object):
                 logger.info(f"Projecting and attenuating camera position {i+1} / {len(camera_projections)}")
                 ###deposited_energy, photon_prob = projector.project(proj)
                 deposited_energy, photon_prob, noise = projector.project(proj) ###
-                deposited_energies.append(deposited_energy)
+                deposited_energies.append(deposited_energy * self.photon_count)
                 photon_probs.append(photon_prob)
 
                 accentuated_noise = noise.copy()
@@ -512,8 +515,8 @@ class Projector(object):
                                     if (p >= 0) and (p < accentuated_noise.shape[0]):
                                         if (q >= 0) and (q < accentuated_noise.shape[1]):
                                             accentuated_noise[p,q] = noise[i,j]
-                noises.append(accentuated_noise)
-                #noises.append(noise) ###
+                #noises.append(accentuated_noise)
+                noises.append(noise) ###
 
             images = np.stack(deposited_energies)
             photon_prob = np.stack(photon_probs)
