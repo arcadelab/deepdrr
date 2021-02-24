@@ -68,6 +68,7 @@ class SingleProjector(object):
         step: float = 0.1,
         mode: Literal['linear'] = 'linear',
         spectrum: Union[np.ndarray, Literal['60KV_AL35', '90KV_AL40', '120KV_AL43']] = '90KV_AL40',
+        photon_count: int = 100000,
         threads: int = 8,
         max_block_index: int = 1024,
         attenuation: bool = True,
@@ -100,6 +101,7 @@ class SingleProjector(object):
         self.step = step
         self.mode = mode
         self.spectrum = _get_spectrum(spectrum)
+        self.photon_count = photon_count
         self.threads = threads
         self.max_block_index = max_block_index
         self.attenuation = attenuation
@@ -231,11 +233,10 @@ class SingleProjector(object):
         if self.attenuation:
             # NOTE: this deposited_energy is actually the deposited energy PER UNIT PHOTON
             # To convert to actual deposited energy, will need to multiply by the photon_count
-            # in the Projector class.
             deposited_energy = np.empty(self.output_shape, dtype=np.float32)
             cuda.memcpy_dtoh(deposited_energy, self.deposited_energy_gpu)
             # transpose the axes, which previously have width on the slow dimension
-            deposited_energy = np.swapaxes(deposited_energy, 0, 1).copy()
+            deposited_energy = np.swapaxes(deposited_energy, 0, 1).copy() * self.photon_count
 
             photon_prob = np.empty(self.output_shape, dtype=np.float32)
             cuda.memcpy_dtoh(photon_prob, self.photon_prob_gpu)
@@ -267,7 +268,7 @@ class SingleProjector(object):
                 (camera_projection.sensor_width, camera_projection.sensor_height),
                 (camera_projection.sensor_width, camera_projection.sensor_height),
                 self.spectrum,
-                photon_count=1000,
+                self.photon_count
             )
             noise = np.swapaxes(noise, 0, 1).copy()
             print(f"noise.shape: {noise.shape}")
@@ -448,6 +449,7 @@ class Projector(object):
                 step=step,
                 mode=mode,
                 spectrum=spectrum,
+                photon_count=photon_count,
                 threads=threads,
                 max_block_index=max_block_index,
                 attenuation=len(self.volumes) == 1,
@@ -501,7 +503,7 @@ class Projector(object):
                 logger.info(f"Projecting and attenuating camera position {i+1} / {len(camera_projections)}")
                 ###deposited_energy, photon_prob = projector.project(proj)
                 deposited_energy, photon_prob, noise = projector.project(proj) ###
-                deposited_energies.append(deposited_energy * self.photon_count)
+                deposited_energies.append(deposited_energy)
                 photon_probs.append(photon_prob)
 
                 accentuated_noise = noise.copy()
