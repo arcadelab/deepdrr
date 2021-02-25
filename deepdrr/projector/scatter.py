@@ -167,6 +167,10 @@ def track_single_photon_no_vr(
     pos = initial_pos
     direction = initial_dir
 
+    print(f"initial_pos: {initial_pos}")
+    print(f"initial_dir: {initial_dir}")
+
+
     photon_energy = initial_E # tracker variable throughout the duration of the photon history
 
     num_scatter_events = 0
@@ -183,6 +187,7 @@ def track_single_photon_no_vr(
         if (vox_z < 0) or (vox_z >= density_vol.shape[2]):
             break
         #voxel_coords = (vox_x, vox_y, vox_z)
+        print(f"INSIDE VOLUME")
         mat_label = labeled_seg[vox_x, vox_y, vox_z]
         mat_name = material_ids[mat_label]
 
@@ -211,9 +216,12 @@ def track_single_photon_no_vr(
             
             mfp_Ra, mfp_Co, mfp_Tot = get_mfp_data(mfp_data[mat_name], photon_energy)
 
+            print(f"probability to accept the collision: mfp_wc / mfp_Tot == {mfp_wc / mfp_Tot}")
+
             if sample_U01() < mfp_wc / mfp_Tot:
                 # Accept the collision.  See http://serpent.vtt.fi/mediawiki/index.php/Delta-_and_surface-tracking
                 break
+            print(f"DELTA COLLISION")
         
         # Now at a legitimate photon interaction
         
@@ -248,6 +256,7 @@ def track_single_photon_no_vr(
             return -1, -1, photon_energy, num_scatter_events
         
         num_scatter_events += 1
+        print(f"SCATTER EVENT")
 
         phi = 2 * np.pi * sample_U01()
         direction = get_scattered_dir(direction, cos_theta, phi)
@@ -263,7 +272,7 @@ def track_single_photon_no_vr(
     
     hit = geo.Point3D.from_any(pos + (hits_detector_dist * direction))
 
-    print(f"hit: {hit}")
+    #print(f"hit: {hit}")
 
     # NOTE: an alternative formulation would be to use (rt_kinv).inv
     #pixel_x, pixel_y = detector_plane.get_lin_comb_coefs(hit)
@@ -275,7 +284,7 @@ def track_single_photon_no_vr(
     pixel_x = index_from_ijk[0,0] * hit_x + index_from_ijk[0,1] * hit_y + index_from_ijk[0,2] * hit_z + index_from_ijk[0,3]
     pixel_y = index_from_ijk[1,0] * hit_x + index_from_ijk[1,1] * hit_y + index_from_ijk[1,2] * hit_z + index_from_ijk[1,3]
 
-    print(f"new pixel: {pixel_x}, {pixel_y}")
+    #print(f"new pixel: {pixel_x}, {pixel_y}")
     
     return int(np.floor(pixel_x)), int(np.floor(pixel_y)), photon_energy, num_scatter_events
 

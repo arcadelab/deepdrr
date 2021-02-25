@@ -247,6 +247,8 @@ class SingleProjector(object):
             #   we were working off of self.output_shape, which basically goes off of self.sensor_shape
             #
 
+            return deposited_energy, photon_prob
+
             ### BEGIN TEMP
             index_from_ijk = camera_projection.world_from_index.inv @ self.volume.ijk_from_world.inv
             print(f"index_from_ijk transform:\n{index_from_ijk}")
@@ -501,11 +503,12 @@ class Projector(object):
             noises = [] ###
             for i, proj in enumerate(camera_projections):
                 logger.info(f"Projecting and attenuating camera position {i+1} / {len(camera_projections)}")
-                ###deposited_energy, photon_prob = projector.project(proj)
-                deposited_energy, photon_prob, noise = projector.project(proj) ###
+                deposited_energy, photon_prob = projector.project(proj)
+                #deposited_energy, photon_prob, noise = projector.project(proj) ###
                 deposited_energies.append(deposited_energy)
                 photon_probs.append(photon_prob)
 
+                """
                 accentuated_noise = noise.copy()
                 accentuate_distance = 2
 
@@ -519,10 +522,11 @@ class Projector(object):
                                             accentuated_noise[p,q] = noise[i,j]
                 #noises.append(accentuated_noise)
                 noises.append(noise) ###
+                """
 
             images = np.stack(deposited_energies)
             photon_prob = np.stack(photon_probs)
-            all_noise = np.stack(noises) ###
+            #all_noise = np.stack(noises) ###
             logger.info("Completed projection and attenuation")
         else:
             # Separate the projection and mass attenuation
@@ -562,7 +566,7 @@ class Projector(object):
             images, photon_prob = mass_attenuation.calculate_intensity_from_spectrum(forward_projections, self.spectrum)
             logger.info('done.')
         
-        images_with_noise = images + all_noise ###
+        #images_with_noise = images + all_noise ###
 
         if self.add_scatter:
             # lfkj('adding scatter (may cause Nan errors)')
@@ -581,23 +585,23 @@ class Projector(object):
 
         if self.intensity_upper_bound is not None:
             images = np.clip(images, None, self.intensity_upper_bound)
-            images_with_noise = np.clip(images_with_noise, None, self.intensity_upper_bound) ###
-            all_noise = np.clip(all_noise, None, self.intensity_upper_bound) ###
+            #images_with_noise = np.clip(images_with_noise, None, self.intensity_upper_bound) ###
+            #all_noise = np.clip(all_noise, None, self.intensity_upper_bound) ###
 
         if self.neglog:
             logger.info("applying negative log transform")
             images = utils.neglog(images)
-            images_with_noise = utils.neglog(images_with_noise) ###
-            all_noise = utils.neglog(all_noise) ###
+            #images_with_noise = utils.neglog(images_with_noise) ###
+            #all_noise = utils.neglog(all_noise) ###
         
         print("Shapes:")
         print(f"\timages: {images.shape}")
-        print(f"\timages_with_noise: {images_with_noise.shape}")
-        print(f"\tall_noise: {all_noise.shape}")
+        #print(f"\timages_with_noise: {images_with_noise.shape}")
+        #print(f"\tall_noise: {all_noise.shape}")
 
         if images.shape[0] == 1:
-            ###return images[0]
-            return images[0], images_with_noise[0], all_noise[0] ###
+            return images[0]
+            #return images[0], images_with_noise[0], all_noise[0] ###
         else:
             ###return images
             return images, images_with_noise, all_noise ###

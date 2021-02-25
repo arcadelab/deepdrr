@@ -19,7 +19,8 @@ logger = logging.getLogger(__name__)
 
 def main():
     # Define a simple phantom for test: a wire box around a cube.
-    volume = np.zeros((120, 100, 80), dtype=np.float32)
+    ###volume = np.zeros((120, 100, 80), dtype=np.float32)
+    volume = np.zeros((240, 200, 320), dtype=np.float32)
     volume[0, 0, :] = 1
     volume[0, -1, :] = 1
     volume[-1, 0, :] = 1
@@ -33,11 +34,12 @@ def main():
     volume[-1,:, 0] = 1
     volume[-1, :, -1] = 1
 
-    volume[40:60, 40:60, 40:60] = 1
+    ###volume[40:60, 40:60, 40:60] = 1
+    volume[80:160, 80:160, 80:120] = 1
     materials = {}
-    materials["air"] = volume == 0
-    materials["soft tissue"] = volume == 1
-    materials["bone"] = volume == 2
+    materials["air"] = volume == 2#0
+    materials["soft tissue"] = volume == 2#1
+    materials["bone"] = (volume == 1) + (volume == 0)#2
     voxel_size = np.array([1, 1, 1], dtype=np.float32)
 
     # Use the center of the volume as the "world" coordinates. The origin is the (0, 0, 0) index of the volume in the world frame.
@@ -69,9 +71,9 @@ def main():
 
     # Angles to take projections over
     min_theta = 0#30#0
-    max_theta = 1#31#120
+    max_theta = 120#1#31#120
     min_phi = 0#60#0
-    max_phi = 1#61#91
+    max_phi = 91#1#61#91
     spacing_theta = 30
     spacing_phi = 90
 
@@ -113,6 +115,7 @@ def main():
         plt.savefig(output_path)
     
     ### BEGIN TEMP (noise testing)
+    """
     for i, image in enumerate([images_with_noise]):
         plt.imshow(image, cmap="gray")
         plt.title(f'phi, theta = {phis[i], thetas[i]}')
@@ -126,6 +129,7 @@ def main():
         output_path = output_dir / f'noise10_phi={int(phis[i])}_theta={int(thetas[i])}.png'
         logger.info(f'writing image {output_path}')
         plt.savefig(output_path)
+    """
     ### END TEMP (noise testing)
 
 
