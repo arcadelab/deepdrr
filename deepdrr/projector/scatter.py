@@ -37,11 +37,16 @@ ELECTRON_MASS = 9.1093826e-28 # g
 
 ELECTRON_REST_ENERGY = 510998.918 # eV
 
+VOXEL_EPSILON = 0.000015
+NEG_VOXEL_EPSILON = -0.000015
+
 
 def simulate_scatter_no_vr(
     volume: vol.Volume,
     source_ijk: geo.Point3D,
-    ijk_from_index: np.ndarray,
+    rt_kinv: np.ndarray, # 4x3
+    rt_kinv_inv: np.ndarray, # 3x4 
+    source_to_detector_distance: float, 
     index_from_ijk: np.ndarray,
     sensor_size: Tuple[int, int],
     output_shape: Tuple[int, int],
@@ -55,7 +60,8 @@ def simulate_scatter_no_vr(
     Args:
         volume (np.ndarray): the volume density data.
         source (geo.Point3D): the source point for rays in the camera's IJK space
-        ijk_from_index (np.ndarray): the ray transform for the projection.  Transforms pixel indices (u,v,1) to IJK offset from the X-Ray source
+        rt_kinv (np.ndarray): the ray transform for the projection.  Transforms pixel indices (u,v,1) to IJK vector along ray from from the X-Ray source to the detector pixel [u,v].
+        source_to_detector_distance (float): distance from source to detector in millimeters.
         index_from_ijk (np.ndarray): the inverse transformation of ijk_from_index
         sensor_size (Tuple[int,int]): the sensor size {width}x{height}, in pixels, of the detector
         output_shape (Tuple[int, int]): the {height}x{width} dimensions of the output image
@@ -84,7 +90,7 @@ def simulate_scatter_no_vr(
 
     # Plane data
     vol_planes = get_volume_surface_planes(volume)
-    detector_plane = get_detector_plane(ijk_from_index, source_ijk, sensor_size)
+    detector_plane = get_detector_plane(rt_kinv, source_to_detector_distance, source_ijk, sensor_size)
     print(f"detector plane:")
     print(f"\t{detector_plane.plane_vector}")
     print(f"\t{detector_plane.surface_origin}")
@@ -97,12 +103,19 @@ def simulate_scatter_no_vr(
     print(f"Start time: {time.asctime()}")
     ###
 
-    photon_hits = 0 # counts the number of photons that hit the detector
+    detector_hits = 0 # counts the number of photons that hit the detector
+    volume_hits = 0
+    pixel_hit_data = []
     for i in range(photon_count):
         if (i+1) in count_milestones:
             print(f"Simulating photon history {i+1} / {photon_count}")
             print(f"\tCurrent time: {time.asctime()}")
-        initial_dir, initial_pos, sample_count = sample_initial_direction(vol_planes, source_ijk)
+        ###initial_dir, initial_pos, sample_count = sample_initial_direction(vol_planes, source_ijk)
+        initial_dir = sample_initial_direction()
+        hits_volume, initial_pos = move_photon_to_volume(source_ijk, initial_dir, volume.data.shape)
+        if not hits_volume:
+            continue
+        volume_hits += 1
         initial_E = sample_initial_energy(spectrum)
         pixel_x, pixel_y, energy, num_scatter_events = track_single_photon_no_vr(
             initial_pos, 
@@ -112,6 +125,7 @@ def simulate_scatter_no_vr(
             labeled_seg, 
             volume.data, 
             detector_plane, 
+            rt_kinv_inv,
             index_from_ijk, 
             material_ids
         )
@@ -121,6 +135,7 @@ def simulate_scatter_no_vr(
             continue
         else:
             print(f"photon history {i+1} / {photon_count}: {num_scatter_events} scatter events")
+            print(f"\tpixel: [{pixel_x}, {pixel_y}]\n")
         
         # Model for detector: ideal image formation
         # Each pixel counts the total energy of the X-rays that enter the pixel (100% efficient pixels)
@@ -129,11 +144,16 @@ def simulate_scatter_no_vr(
             continue
         if (pixel_y < 0) or (pixel_y >= sensor_size[1]):
             continue
+        pixel_hit_data.append((pixel_x, pixel_y, initial_E, energy))
         accumulator[pixel_x, pixel_y] = accumulator[pixel_x, pixel_y] + energy
-        photon_hits += 1
+        detector_hits += 1
     
-    print(f"Finished simulating {photon_count} photon histories.  {photon_hits} / {photon_count} photons hit the detector")
-    return accumulator
+    print(f"Finished simulating {photon_count} photon histories.  {detector_hits} / {photon_count} photons hit the detector")
+    print("pixel hit data: [pixel_x, pixel_y], initial_energy -> energy")
+    for tup in pixel_hit_data:
+        print(f"\t[{tup[0]}, {tup[1]}], {tup[2]} -> {tup[3]}")
+    ###return accumulator
+    return accumulator, pixel_hit_data
 
 def track_single_photon_no_vr(
     initial_pos: geo.Point3D,
@@ -143,6 +163,7 @@ def track_single_photon_no_vr(
     labeled_seg: np.ndarray,
     density_vol: np.ndarray,
     detector_plane: PlaneSurface,
+    rt_kinv_inv: np.ndarray,
     index_from_ijk: np.ndarray,
     material_ids: Dict[int, str]
 ) -> Tuple[int,int, np.float32, int]:
@@ -167,8 +188,8 @@ def track_single_photon_no_vr(
     pos = initial_pos
     direction = initial_dir
 
-    print(f"initial_pos: {initial_pos}")
-    print(f"initial_dir: {initial_dir}")
+    #print(f"initial_pos: {initial_pos}")
+    #print(f"initial_dir: {initial_dir}")
 
 
     photon_energy = initial_E # tracker variable throughout the duration of the photon history
@@ -177,9 +198,10 @@ def track_single_photon_no_vr(
 
     while True: # emulate a do-while loop
         # Get voxel (index) coord.s.  Keep in mind that IJK coord.s are voxel-centered
-        vox_x = int(np.floor(pos.data[0]))
-        vox_y = int(np.floor(pos.data[1]))
-        vox_z = int(np.floor(pos.data[2]))
+        vox_x = int(np.floor(pos.data[0] + 0.5)) # shift because volume's IJK bounds are [-0.5, {x,y,z}_len - 0.5]
+        vox_y = int(np.floor(pos.data[1] + 0.5))
+        vox_z = int(np.floor(pos.data[2] + 0.5))
+        #print(f"voxel: ({vox_x}, {vox_y}, {vox_z})")
         if (vox_x < 0) or (vox_x >= density_vol.shape[0]):
             break
         if (vox_y < 0) or (vox_y >= density_vol.shape[1]):
@@ -187,7 +209,7 @@ def track_single_photon_no_vr(
         if (vox_z < 0) or (vox_z >= density_vol.shape[2]):
             break
         #voxel_coords = (vox_x, vox_y, vox_z)
-        print(f"INSIDE VOLUME")
+        #print(f"INSIDE VOLUME")
         mat_label = labeled_seg[vox_x, vox_y, vox_z]
         mat_name = material_ids[mat_label]
 
@@ -198,12 +220,13 @@ def track_single_photon_no_vr(
         while True:
             # simulate moving the photon
             s = -1 * (10 * mfp_wc) * np.log(sample_U01()) # multiply by 10 to convert from MFP data (cm) to voxel spacing (mm)
-            pos = pos + (s * direction)
+            pos = geo.Point3D.from_any(pos + (s * direction))
 
             # Check for leaving the volume
-            vox_x = int(np.floor(pos.data[0]))
-            vox_y = int(np.floor(pos.data[1]))
-            vox_z = int(np.floor(pos.data[2]))
+            vox_x = int(np.floor(pos.data[0] + 0.5)) # shift because volume's IJK bounds are [-0.5, {x,y,z}_len - 0.5]
+            vox_y = int(np.floor(pos.data[1] + 0.5))
+            vox_z = int(np.floor(pos.data[2] + 0.5))
+            #print(f"voxel: ({vox_x}, {vox_y}, {vox_z})")
             if (vox_x < 0) or (vox_x >= density_vol.shape[0]):
                 break
             if (vox_y < 0) or (vox_y >= density_vol.shape[1]):
@@ -216,13 +239,25 @@ def track_single_photon_no_vr(
             
             mfp_Ra, mfp_Co, mfp_Tot = get_mfp_data(mfp_data[mat_name], photon_energy)
 
-            print(f"probability to accept the collision: mfp_wc / mfp_Tot == {mfp_wc / mfp_Tot}")
+            #print(f"probability to accept the collision: mfp_wc / mfp_Tot == {mfp_wc / mfp_Tot}")
 
             if sample_U01() < mfp_wc / mfp_Tot:
                 # Accept the collision.  See http://serpent.vtt.fi/mediawiki/index.php/Delta-_and_surface-tracking
                 break
-            print(f"DELTA COLLISION")
+            #print(f"DELTA COLLISION")
         
+        # might have left the volume OR had a legitimate interaction
+        vox_x = int(np.floor(pos.data[0] + 0.5)) # shift because volume's IJK bounds are [-0.5, {x,y,z}_len - 0.5]
+        vox_y = int(np.floor(pos.data[1] + 0.5))
+        vox_z = int(np.floor(pos.data[2] + 0.5))
+        #print(f"voxel: ({vox_x}, {vox_y}, {vox_z})")
+        if (vox_x < 0) or (vox_x >= density_vol.shape[0]):
+            break
+        if (vox_y < 0) or (vox_y >= density_vol.shape[1]):
+            break
+        if (vox_z < 0) or (vox_z >= density_vol.shape[2]):
+            break
+
         # Now at a legitimate photon interaction
         
         # Sample the photon interaction type
@@ -256,7 +291,7 @@ def track_single_photon_no_vr(
             return -1, -1, photon_energy, num_scatter_events
         
         num_scatter_events += 1
-        print(f"SCATTER EVENT")
+        #print(f"SCATTER EVENT")
 
         phi = 2 * np.pi * sample_U01()
         direction = get_scattered_dir(direction, cos_theta, phi)
@@ -265,24 +300,29 @@ def track_single_photon_no_vr(
     
     # final processing
 
+    print(f"pos after leaving volume: {pos}")
+    print(f"dir after leaving volume: {direction}")
+
     # Transport the photon to the detector plane
     hits_detector_dist = detector_plane.check_ray_intersection(pos, direction)
-    if hits_detector_dist is None:
+    print(f"hits_detector_dist: {hits_detector_dist}")
+    if (hits_detector_dist is None) or (hits_detector_dist < 0.0):
+        print("NO HIT")
         return -1, -1, photon_energy, num_scatter_events
     
     hit = geo.Point3D.from_any(pos + (hits_detector_dist * direction))
 
-    #print(f"hit: {hit}")
+    print(f"hit: {hit}")
 
     # NOTE: an alternative formulation would be to use (rt_kinv).inv
-    #pixel_x, pixel_y = detector_plane.get_lin_comb_coefs(hit)
-    #print(f"old pixel: {pixel_x}, {pixel_y}")
+    pixel_x, pixel_y = detector_plane.get_lin_comb_coefs(hit)
+    print(f"old pixel: {pixel_x}, {pixel_y}")
     
-    hit_x = hit.data[0]
-    hit_y = hit.data[1]
-    hit_z = hit.data[2]
-    pixel_x = index_from_ijk[0,0] * hit_x + index_from_ijk[0,1] * hit_y + index_from_ijk[0,2] * hit_z + index_from_ijk[0,3]
-    pixel_y = index_from_ijk[1,0] * hit_x + index_from_ijk[1,1] * hit_y + index_from_ijk[1,2] * hit_z + index_from_ijk[1,3]
+    #hit_x = hit.data[0]
+    #hit_y = hit.data[1]
+    #hit_z = hit.data[2]
+    #pixel_x = index_from_ijk[0,0] * hit_x + index_from_ijk[0,1] * hit_y + index_from_ijk[0,2] * hit_z + index_from_ijk[0,3]
+    #pixel_y = index_from_ijk[1,0] * hit_x + index_from_ijk[1,1] * hit_y + index_from_ijk[1,2] * hit_z + index_from_ijk[1,3]
 
     #print(f"new pixel: {pixel_x}, {pixel_y}")
     
@@ -447,8 +487,8 @@ def get_volume_surface_planes(
     return [PlaneSurface(plane_vectors[i], surface_origins[i], bases[i], bounds[i], True) for i in range(6)]
 
 def sample_initial_direction(
-    surfaces: List[PlaneSurface],
-    source_ijk: geo.Point3D
+    #surfaces: List[PlaneSurface],
+    #source_ijk: geo.Point3D
 ) -> Tuple[geo.Vector3D, geo.Point3D, int]:
     """Returns an initial direction vector for a photon that is guaranteed to hit the volume, as well as the coordinates of that initial intersection with the volume.
     Behaves by randomly sampling \\theta from [0, PI] and \\phi from [0, 2 * PI], then determining if a photon going in that direction will hit the volume.
@@ -461,6 +501,19 @@ def sample_initial_direction(
         geo.Vector3D: the initial direction unit vector (dx, dy, dz)^T
         geo.Point3D: the location where the photon first enters the volume
         int: the number of times a direction was sampled before returning
+    """
+    phi = 2 * np.pi * sample_U01() # azimuthal angle    
+    theta = np.arccos(1 - 2 * sample_U01()) # polar angle
+
+    sin_theta = np.sin(theta)
+    
+    dx = sin_theta * np.cos(phi)
+    dy = sin_theta * np.sin(phi)
+    dz = np.cos(theta)
+
+    direction = geo.Vector3D.from_array(np.array([dx, dy, dz]))
+    return direction
+
     """
     sample_count = 0
 
@@ -510,9 +563,96 @@ def sample_initial_direction(
             min_dist_idx = i
     
     return direction, intersection_points[min_dist_idx], sample_count
+    """
+
+def move_photon_to_volume(
+    pos: geo.Point3D, 
+    direction: geo.Vector3D,
+    volume_shape: Tuple[int, int, int]
+) -> Tuple[bool, geo.Point3D]:
+    """ [DESCRIPTION]
+
+    Args:
+        [ARGS]
+    
+    Returns:
+        bool: whether the photon hits the volume or not
+        geo.Point3D: where the photon hits the volume if it hits the volume, else the original position
+    """
+    pos_x = pos.data[0]
+    pos_y = pos.data[1]
+    pos_z = pos.data[2]
+
+    dir_x = direction.data[0]
+    dir_y = direction.data[1]
+    dir_z = direction.data[2]
+
+    min_x = -0.5
+    min_y = -0.5
+    min_z = -0.5
+
+    max_x = volume_shape[0] - 0.5
+    max_y = volume_shape[1] - 0.5
+    max_z = volume_shape[2] - 0.5
+
+    dist_x, dist_y, dist_z = None, None, None
+
+    # x-direction calculations
+    if dir_x > VOXEL_EPSILON:
+        if pos_x > min_x: # photon inside or past volume
+            dist_x = 0.0
+        else: # add VOXEL_EPSILON to make super sure that the photon reaches the volume
+            dist_x = VOXEL_EPSILON + (min_x - pos_x) / dir_x
+    elif dir_x < NEG_VOXEL_EPSILON:
+        if pos_x < max_x:
+            dist_x = 0.0
+        else:
+            dist_x = VOXEL_EPSILON + (max_x - pos_x) / dir_x
+    else:
+        dist_x = float("-inf")
+
+    # y-direction calculations
+    if dir_y > VOXEL_EPSILON:
+        if pos_y > min_y: # photon inside or past volume
+            dist_y = 0.0
+        else: # add VOXEL_EPSILON to make super sure that the photon reaches the volume
+            dist_y = VOXEL_EPSILON + (min_y - pos_y) / dir_y
+    elif dir_x < NEG_VOXEL_EPSILON:
+        if pos_x < max_y:
+            dist_y = 0.0
+        else:
+            dist_y = VOXEL_EPSILON + (max_y - pos_y) / dir_y
+    else:
+        dist_y = float("-inf")
+
+    # z-direction calculations
+    if dir_z > VOXEL_EPSILON:
+        if pos_z > min_z: # photon inside or past volume
+            dist_z = 0.0
+        else: # add VOXEL_EPSILON to make super sure that the photon reaches the volume
+            dist_z = VOXEL_EPSILON + (min_z - pos_z) / dir_z
+    elif dir_z < NEG_VOXEL_EPSILON:
+        if pos_z < max_z:
+            dist_z = 0.0
+        else:
+            dist_z = VOXEL_EPSILON + (max_z - pos_z) / dir_z
+    else:
+        dist_z = float("-inf")
+    
+    max_dist = max([dist_x, dist_y, dist_z])
+
+    new_pos_x = pos_x + (max_dist * dir_x)
+    new_pos_y = pos_y + (max_dist * dir_y)
+    new_pos_z = pos_z + (max_dist * dir_z)
+
+    if (new_pos_x < min_x) or (new_pos_x > max_x) or (new_pos_y < min_y) or (new_pos_y > max_y) or (new_pos_z < min_z) or (new_pos_z > max_z):
+        return False, geo.Point3D.from_array(np.array([pos_x, pos_y, pos_z]))
+    else:
+        return True, geo.Point3D.from_array(np.array([new_pos_x, new_pos_y, new_pos_z]))
 
 def get_detector_plane(
     rt_kinv: np.ndarray,
+    sdd: float,
     source_ijk: geo.Point3D,
     sensor_size: Tuple[int,int]
 ) -> PlaneSurface:
@@ -523,6 +663,7 @@ def get_detector_plane(
 
     Args:
         rt_kinv (np.ndarray): the ray transform for the projection.  Transforms pixel indices (u,v,1) to IJK offset from the X-Ray source
+        sdd (float): the distance from the X-Ray source to the detector.
         source_ijk (geo.Point3D): the IJK coordinates of the X-Ray source, relative to the IJK origin (indices [0,0,0] in the volume)
         sensor_size (Tuple[int,int]): the sensor size {width}x{height}, in pixels, of the detector
 
@@ -534,13 +675,17 @@ def get_detector_plane(
     # Based off the project_kernel.cu code:
     #   Let \hat{p} = (u,v,1)^T be the pixel coord.s on the detector plane
     #   Then, the 3D IJK coord.s of that pixel are related to (R^T K^{-1}) \hat{p} == (rt_kinv) @ \hat{p}
-    #   Specifically, (rt_kinv) @ \hat{p} is the IJK vector from the X-Ray source to the pixel (u,v) on 
-    #   the detector plane.
+    #   Specifically, (rt_kinv) @ \hat{p} is an IJK vector along the ray from the X-Ray source to the 
+    #   pixel (u,v) on the detector plane.  Since, after investigation, I found that the vector 
+    #   [(rt_kinv) @ (W/2,H/2,1)^T] always has magnitude 1.00000, the vector:
+    #       SDD * (rt_kinv) @ (u,v,1)^T
+    #   points from the X-Ray source to the pixel (u,v) on the detector plane, where SDD is the 
+    #   source-to-detector distance.
     #
     # We calculate the normal vector of the detector plane in IJK by using the three-point method:
     #   1. Let {p1, p2, p3} be three pixel coordinates of the form (u, v, 1)^T
-    #   2. Three coplanar points in IJK coordinates are r1 := (rt_kinv) @ p1, r2 := (rt_kinv) @ p2, 
-    #      r3 := (rt_kinv) @ p3
+    #   2. Three coplanar points in IJK coordinates are r1 := SDD * (rt_kinv) @ p1, r2 := SDD * (rt_kinv) @ p2, 
+    #      r3 := SDD * (rt_kinv) @ p3
     #   3. Compute two vectors that are -in- the plane: v1 := r2 - r1, v2 := r3 - r1
     #   4. The cross product v := v1 x v2 is perpendicular to both v1 and v2.  Thus, v is a normal vector to the plane
     #
@@ -549,21 +694,22 @@ def get_detector_plane(
     # means that the shift in "origin" for {r1, r2, r3} has no effect on calculating the normal vector for the detector plane.
     #
     # Simplifying the math to reduce the number of arithmetic steps:
-    #   v1 = r2 - r1 = (rt_kinv) @ p2 - (rt_kinv) @ p1 = (rt_kinv) @ (p2 - p1)
-    #   v2 = r3 - r1 = (rt_kinv) @ p3 - (rt_kinv) @ p1 = (rt_kinv) @ (p3 - p1)
+    #   v1 = r2 - r1 = SDD * (rt_kinv) @ p2 - SDD * (rt_kinv) @ p1 = SDD * (rt_kinv) @ (p2 - p1)
+    #   v2 = r3 - r1 = SDD * (rt_kinv) @ p3 - SDD * (rt_kinv) @ p1 = SDD * (rt_kinv) @ (p3 - p1)
     #
     # Choosing easy p_i's of: p1 = (0, 0, 1)^T, p2 = (1, 0, 1)^T, p3 = (0, 1, 1)^T, we get:
-    #   v1 = (rt_kinv) @ (1, 0, 0)^T = [first column of rt_kinv]        // corresponds to moving 1 pixel over in x-direction (x increases)  
-    #   v2 = (rt_kinv) @ (0, 1, 0)^T = [second column of rt_kinv]       // corresponds to moving 1 pixel down in y-direction (y increases)
+    #   v1 = SDD * (rt_kinv) @ (1, 0, 0)^T = SDD * [first column of rt_kinv]  // corresponds to moving 1 pixel over in x-direction (x increases)  
+    #   v2 = SDD * (rt_kinv) @ (0, 1, 0)^T = SDD * [second column of rt_kinv] // corresponds to moving 1 pixel down in y-direction (y increases)
     #
     # To reduce the number of characters, let M: = (rt_kinv), as a 9-element row-major ordering of the 3x3 (rt_kinv).
-    #   v := v1 x v2 = (M[0], M[3], M[6])^T x (M[1], M[4], M[7])^T
-    #       = (
+    #   v := v1 x v2 = [SDD * (M[0], M[3], M[6])^T] x [SDD * (M[1], M[4], M[7])^T]
+    #       = (SDD * SDD) * [(M[0], M[3], M[6])^T x (M[1], M[4], M[7])^T]
+    #       = SDD * SDD * (
     #           M[3] * M[7] - M[6] * M[4],
     #           M[6] * M[1] - M[0] * M[7],
     #           M[0] * M[4] - M[3] * M[1]  
     #         )^T
-    #       = (
+    #       = SDD * SDD* (
     #           rt_kinv[1,0] * rt_kinv[2,1] - rt_kinv[2,0] * rt_kinv[1,1],
     #           rt_kinv[2,0] * rt_kinv[0,1] - rt_kinv[0,0] * rt_kinv[2,1],
     #           rt_kinv[0,0] * rt_kinv[1,1] - rt_kinv[1,0] * rt_kinv[0,1]
@@ -578,17 +724,19 @@ def get_detector_plane(
     print(f"\t[{rt_kinv[2,0]} {rt_kinv[2,1]} {rt_kinv[2,2]}]")
     
     # Normal vector to the detector plane:
-    vx = rt_kinv[1,0] * rt_kinv[2,1] - rt_kinv[2,0] * rt_kinv[1,1]
-    vy = rt_kinv[2,0] * rt_kinv[0,1] - rt_kinv[0,0] * rt_kinv[2,1]
-    vz = rt_kinv[0,0] * rt_kinv[1,1] - rt_kinv[1,0] * rt_kinv[0,1]
+    sdd_sq = sdd * sdd
 
-    v_mag = np.sqrt((vx * vx) + (vy * vy) + (vz * vz))
+    vx = sdd_sq * (rt_kinv[1,0] * rt_kinv[2,1] - rt_kinv[2,0] * rt_kinv[1,1])
+    vy = sdd_sq * (rt_kinv[2,0] * rt_kinv[0,1] - rt_kinv[0,0] * rt_kinv[2,1])
+    vz = sdd_sq * (rt_kinv[0,0] * rt_kinv[1,1] - rt_kinv[1,0] * rt_kinv[0,1])
+
+    print(f"vx, vy, vz: {vx}, {vy}, {vz}")
+
+    v_mag = np.sqrt((vx* vx) + (vy * vy) + (vz * vz))
 
     vx /= v_mag
     vy /= v_mag
     vz /= v_mag
-
-    print(f"vx, vy, vz: {vx}, {vy}, {vz}")
 
     # Distance from the detector plane to the origin of the IJK coordinates
     #
@@ -650,9 +798,9 @@ def get_detector_plane(
     cv = sensor_size[1] / 2
 
     # IJK coord.s of the SC, the ray from the X-Ray source S to the center C of the detector
-    sc_x = cu * rt_kinv[0,0] + cv * rt_kinv[0,1] + rt_kinv[0,2]
-    sc_y = cu * rt_kinv[1,0] + cv * rt_kinv[1,1] + rt_kinv[1,2]
-    sc_z = cu * rt_kinv[2,0] + cv * rt_kinv[2,1] + rt_kinv[2,2]
+    sc_x = sdd * (cu * rt_kinv[0,0] + cv * rt_kinv[0,1] + rt_kinv[0,2])
+    sc_y = sdd * (cu * rt_kinv[1,0] + cv * rt_kinv[1,1] + rt_kinv[1,2])
+    sc_z = sdd * (cu * rt_kinv[2,0] + cv * rt_kinv[2,1] + rt_kinv[2,2])
 
     # Note that the IJK coord.s of vector OS are contained in source_ijk, which is obtained 
     # by calling the camera_center_in_volume method
@@ -661,13 +809,13 @@ def get_detector_plane(
 
     d = np.sqrt(sc_dot_sc) * (1 + (sc_dot_os / sc_dot_sc))
 
-    plane_vector = np.array([vx, vy, vz, np.abs(d)])
+    plane_vector = np.array([vx, vy, vz, -d])
 
     # The 'surface origin' corresponds to the pixel [0,0] on the detector.
-    # Vector source_to_surf_ori = (rt_kinv) @ (0,0,1)^T = [third column of rt_kinv]
-    surf_ori_x = rt_kinv[0,2] + source_ijk.data[0] # source_to_surf_ori + origin_to_source == origin_to_surf_ori
-    surf_ori_y = rt_kinv[1,2] + source_ijk.data[1]
-    surf_ori_z = rt_kinv[2,2] + source_ijk.data[2]
+    # Vector source_to_surf_ori = SDD * (rt_kinv) @ (0,0,1)^T = SDD * [third column of rt_kinv]
+    surf_ori_x = (sdd * rt_kinv[0,2]) + source_ijk.data[0] # source_to_surf_ori + origin_to_source == origin_to_surf_ori
+    surf_ori_y = (sdd * rt_kinv[1,2]) + source_ijk.data[1]
+    surf_ori_z = (sdd * rt_kinv[2,2]) + source_ijk.data[2]
     # SANITY CHECK: after using an inverse-of-upper-triangular-matrix formula, we get:
     # kinv[2] == (s c_y - c_x f_y) / (f_x f_y)
     # kinv[5] == c_y / f_y
@@ -679,8 +827,8 @@ def get_detector_plane(
     #
     #   intersection = surface_origin + (pixel_x_value) * v1 + (pixel_y_value) * v2
     #
-    v1 = geo.Vector3D.from_array(np.array([rt_kinv[0,0], rt_kinv[1,0], rt_kinv[2,0]]))
-    v2 = geo.Vector3D.from_array(np.array([rt_kinv[0,1], rt_kinv[1,1], rt_kinv[2,1]]))
+    v1 = geo.Vector3D.from_array(np.array([sdd * rt_kinv[0,0], sdd * rt_kinv[1,0], sdd * rt_kinv[2,0]]))
+    v2 = geo.Vector3D.from_array(np.array([sdd * rt_kinv[0,1], sdd * rt_kinv[1,1], sdd * rt_kinv[2,1]]))
 
     # Coordinate bounds correspond to the size of the detector, in pixels
     bounds = np.array([[0, sensor_size[0]],

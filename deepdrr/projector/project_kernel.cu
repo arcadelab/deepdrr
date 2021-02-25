@@ -263,28 +263,6 @@ extern "C" {
         float ry = u * rt_kinv[3] + v * rt_kinv[4] + rt_kinv[5];
         float rz = u * rt_kinv[6] + v * rt_kinv[7] + rt_kinv[8];
 
-        if ((0 == udx) && (0 == vdx)) {
-            // 'h' is for 'hypothetical'
-            float hu = ((float)out_width) / 2.f;
-            float hv = ((float)out_height) / 2.f;
-            
-            float hrx = hu * rt_kinv[0] + hv * rt_kinv[1] + rt_kinv[2];
-            float hry = hu * rt_kinv[3] + hv * rt_kinv[4] + rt_kinv[5];
-            float hrz = hu * rt_kinv[6] + hv * rt_kinv[7] + rt_kinv[8];
-            float hmag2 = (hrx * hrx) + (hry * hry) + (hrz * hrz);
-            printf(
-                "source-to-[W/2, H/2]: (rt_kinv) @ (W/2, H/2, 1) = (%f, %f, %f)\n"
-                "\t\tmagnitude: %1.10f\n", hrx, hry, hrz, sqrtf(hmag2)
-            );
-        }
-        /*if ((0 == udx) || (1 == udx)) {
-            if ((0 == vdx) || (1 == vdx)) {
-                printf(
-                    "vector in voxel-space along ray from source-point to pixel at [%d,%d] on the detector plane:\n"
-                    "\t (rt_kinv) @ (%f, %f, 1) = (%f, %f, %f)^T\n", udx, vdx, u, v, rx, ry, rz);
-            }
-        }*/
-
         // make the ray a unit vector
         float normFactor = 1.0f / (sqrt((rx * rx) + (ry * ry) + (rz * rz)));
         rx *= normFactor;

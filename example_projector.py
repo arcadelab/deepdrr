@@ -36,10 +36,11 @@ def main():
 
     ###volume[40:60, 40:60, 40:60] = 1
     volume[80:160, 80:160, 80:120] = 1
+    volume[170:200, 50:70, 160:240] = 2
     materials = {}
     materials["air"] = volume == 2#0
-    materials["soft tissue"] = volume == 2#1
-    materials["bone"] = (volume == 1) + (volume == 0)#2
+    materials["soft tissue"] = volume == 0#1
+    materials["bone"] = (volume == 1)#2
     voxel_size = np.array([1, 1, 1], dtype=np.float32)
 
     # Use the center of the volume as the "world" coordinates. The origin is the (0, 0, 0) index of the volume in the world frame.
@@ -71,9 +72,9 @@ def main():
 
     # Angles to take projections over
     min_theta = 0#30#0
-    max_theta = 120#1#31#120
+    max_theta = 1#31#120
     min_phi = 0#60#0
-    max_phi = 91#1#61#91
+    max_phi = 1#61#91
     spacing_theta = 30
     spacing_phi = 90
 
@@ -86,7 +87,7 @@ def main():
         mode='linear',
         max_block_index=200,
         spectrum='90KV_AL40',
-        photon_count=1000,
+        photon_count=100000,
         add_scatter=False,
         threads=8,
         neglog=True,
@@ -104,6 +105,8 @@ def main():
         (min_phi, max_phi, spacing_phi),
         (min_theta, max_theta, spacing_theta))
 
+    print(f"phis: {phis}, thetas: {thetas}")
+
     # save results as matplotlib plots
     output_dir = Path(f'examples')
     output_dir.mkdir(exist_ok=True)
@@ -115,7 +118,6 @@ def main():
         plt.savefig(output_path)
     
     ### BEGIN TEMP (noise testing)
-    """
     for i, image in enumerate([images_with_noise]):
         plt.imshow(image, cmap="gray")
         plt.title(f'phi, theta = {phis[i], thetas[i]}')
@@ -129,7 +131,6 @@ def main():
         output_path = output_dir / f'noise10_phi={int(phis[i])}_theta={int(thetas[i])}.png'
         logger.info(f'writing image {output_path}')
         plt.savefig(output_path)
-    """
     ### END TEMP (noise testing)
 
 

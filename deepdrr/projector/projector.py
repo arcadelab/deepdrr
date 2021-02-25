@@ -65,6 +65,7 @@ class SingleProjector(object):
         self,
         volume: vol.Volume,
         camera_intrinsics: geo.CameraIntrinsicTransform,
+        source_to_detector_distance: float = 1200, 
         step: float = 0.1,
         mode: Literal['linear'] = 'linear',
         spectrum: Union[np.ndarray, Literal['60KV_AL35', '90KV_AL40', '120KV_AL43']] = '90KV_AL40',
@@ -85,6 +86,7 @@ class SingleProjector(object):
         Args:
             volume (Volume): a volume object with materials segmented.
             camera_intrinsics (CameraIntrinsicTransform): intrinsics of the projector's camera. (used for sensor size).
+            source_to_detector_distance (float): distance from source to detector in millimeters.
             carm (Optional[CArm], optional): Optional C-arm device, for convenience which can be used to get projections from C-Arm pose. If not provided, camera pose must be defined by user. Defaults to None.
             step (float, optional): size of the step along projection ray in voxels. Defaults to 0.1.
             mode (Literal['linear']): [description].
@@ -98,6 +100,7 @@ class SingleProjector(object):
         # set variables
         self.volume = volume # spacing units defaults to mm
         self.camera_intrinsics = camera_intrinsics
+        self.source_to_detector_distance = source_to_detector_distance
         self.step = step
         self.mode = mode
         self.spectrum = _get_spectrum(spectrum)
@@ -232,11 +235,13 @@ class SingleProjector(object):
 
         if self.attenuation:
             # NOTE: this deposited_energy is actually the deposited energy PER UNIT PHOTON
-            # To convert to actual deposited energy, will need to multiply by the photon_count
+            # To convert to actual deposited energy, will need to multiply by:
+            #   [photon_count] x [solid angle of the pixel]
             deposited_energy = np.empty(self.output_shape, dtype=np.float32)
             cuda.memcpy_dtoh(deposited_energy, self.deposited_energy_gpu)
             # transpose the axes, which previously have width on the slow dimension
-            deposited_energy = np.swapaxes(deposited_energy, 0, 1).copy() * self.photon_count
+            pixel_solid_angle = 1 # placeholder
+            deposited_energy = np.swapaxes(deposited_energy, 0, 1).copy() * self.photon_count * pixel_solid_angle
 
             photon_prob = np.empty(self.output_shape, dtype=np.float32)
             cuda.memcpy_dtoh(photon_prob, self.photon_prob_gpu)
@@ -247,8 +252,6 @@ class SingleProjector(object):
             #   we were working off of self.output_shape, which basically goes off of self.sensor_shape
             #
 
-            return deposited_energy, photon_prob
-
             ### BEGIN TEMP
             index_from_ijk = camera_projection.world_from_index.inv @ self.volume.ijk_from_world.inv
             print(f"index_from_ijk transform:\n{index_from_ijk}")
@@ -257,21 +260,29 @@ class SingleProjector(object):
 
             print("camera intrinsics (K):")
             print(f"\t{self.camera_intrinsics}")
-            print("ijk_from_index:")
-            print(f"\t{ijk_from_index}")
+            rt_kinv = camera_projection.get_ray_transform(self.volume)
+            print("rt_kinv:")
+            print(f"\t{np.array(rt_kinv)}")
+            print("rt_kinv.inv")
+            print(f"\t{np.array(rt_kinv.inv)}")
             print("index_from_ijk")
             print(f"\t{index_from_ijk}")
 
-            noise = scatter.simulate_scatter_no_vr(
+            noise, hit_data = scatter.simulate_scatter_no_vr(
                 self.volume, 
-                geo.Point3D.from_any(camera_center_in_volume), 
-                ijk_from_index, 
+                geo.Point3D.from_any(camera_center_in_volume),
+                np.array(rt_kinv),
+                np.array(rt_kinv.inv),
+                self.source_to_detector_distance, 
                 index_from_ijk,
                 (camera_projection.sensor_width, camera_projection.sensor_height),
                 (camera_projection.sensor_width, camera_projection.sensor_height),
                 self.spectrum,
                 self.photon_count
             )
+            print("X-ray primary data: [pixel_x, pixel_y], deposited_energy")
+            for tup in hit_data:
+                print(f"\t[{tup[0]}, {tup[1]}], {deposited_energy[tup[1], tup[0]]}")
             noise = np.swapaxes(noise, 0, 1).copy()
             print(f"noise.shape: {noise.shape}")
             return deposited_energy, photon_prob, noise
@@ -393,6 +404,7 @@ class Projector(object):
         self,
         volume: Union[vol.Volume, List[vol.Volume]],
         camera_intrinsics: Optional[geo.CameraIntrinsicTransform] = None,
+        source_to_detector_distance: float = 1200, 
         carm: Optional[CArm] = None,
         step: float = 0.1,
         mode: Literal['linear'] = 'linear',
@@ -418,6 +430,7 @@ class Projector(object):
         Args:
             volume (Union[Volume, List[Volume]]): a volume object with materials segmented. If multiple volumes are provided, they should have mutually exclusive materials (not checked).
             camera_intrinsics (CameraIntrinsicTransform): intrinsics of the projector's camera. (used for sensor size). None is NotImplemented. Defaults to None.
+            source_to_detector_distance (float): distance from source to detector in millimeters.
             carm (Optional[CArm], optional): Optional C-arm device, for convenience which can be used to get projections from C-Arm pose. If not provided, camera pose must be defined by user. Defaults to None.
             step (float, optional): size of the step along projection ray in voxels. Defaults to 0.1.
             mode (Literal['linear']): [description].
@@ -433,6 +446,7 @@ class Projector(object):
         # set variables
         self.volumes = utils.listify(volume)
         self.camera_intrinsics = camera_intrinsics
+        self.source_to_detector_distance = source_to_detector_distance
         self.carm = carm
         self.spectrum = _get_spectrum(spectrum)
         self.add_scatter = add_scatter
@@ -448,6 +462,7 @@ class Projector(object):
             SingleProjector(
                 volume,
                 self.camera_intrinsics,
+                self.source_to_detector_distance,
                 step=step,
                 mode=mode,
                 spectrum=spectrum,
@@ -503,12 +518,12 @@ class Projector(object):
             noises = [] ###
             for i, proj in enumerate(camera_projections):
                 logger.info(f"Projecting and attenuating camera position {i+1} / {len(camera_projections)}")
-                deposited_energy, photon_prob = projector.project(proj)
-                #deposited_energy, photon_prob, noise = projector.project(proj) ###
+                ###deposited_energy, photon_prob = projector.project(proj)
+                deposited_energy, photon_prob, noise = projector.project(proj) ###
                 deposited_energies.append(deposited_energy)
                 photon_probs.append(photon_prob)
 
-                """
+                """"""
                 accentuated_noise = noise.copy()
                 accentuate_distance = 2
 
@@ -520,13 +535,13 @@ class Projector(object):
                                     if (p >= 0) and (p < accentuated_noise.shape[0]):
                                         if (q >= 0) and (q < accentuated_noise.shape[1]):
                                             accentuated_noise[p,q] = noise[i,j]
-                #noises.append(accentuated_noise)
-                noises.append(noise) ###
-                """
+                noises.append(accentuated_noise)
+                """"""
+                #noises.append(noise) ###
 
             images = np.stack(deposited_energies)
             photon_prob = np.stack(photon_probs)
-            #all_noise = np.stack(noises) ###
+            all_noise = np.stack(noises) ###
             logger.info("Completed projection and attenuation")
         else:
             # Separate the projection and mass attenuation
@@ -566,7 +581,7 @@ class Projector(object):
             images, photon_prob = mass_attenuation.calculate_intensity_from_spectrum(forward_projections, self.spectrum)
             logger.info('done.')
         
-        #images_with_noise = images + all_noise ###
+        images_with_noise = images + all_noise ###
 
         if self.add_scatter:
             # lfkj('adding scatter (may cause Nan errors)')
@@ -585,23 +600,23 @@ class Projector(object):
 
         if self.intensity_upper_bound is not None:
             images = np.clip(images, None, self.intensity_upper_bound)
-            #images_with_noise = np.clip(images_with_noise, None, self.intensity_upper_bound) ###
-            #all_noise = np.clip(all_noise, None, self.intensity_upper_bound) ###
+            images_with_noise = np.clip(images_with_noise, None, self.intensity_upper_bound) ###
+            all_noise = np.clip(all_noise, None, self.intensity_upper_bound) ###
 
         if self.neglog:
             logger.info("applying negative log transform")
             images = utils.neglog(images)
-            #images_with_noise = utils.neglog(images_with_noise) ###
-            #all_noise = utils.neglog(all_noise) ###
+            images_with_noise = utils.neglog(images_with_noise) ###
+            all_noise = utils.neglog(all_noise) ###
         
         print("Shapes:")
         print(f"\timages: {images.shape}")
-        #print(f"\timages_with_noise: {images_with_noise.shape}")
-        #print(f"\tall_noise: {all_noise.shape}")
+        print(f"\timages_with_noise: {images_with_noise.shape}")
+        print(f"\tall_noise: {all_noise.shape}")
 
         if images.shape[0] == 1:
-            return images[0]
-            #return images[0], images_with_noise[0], all_noise[0] ###
+            ###return images[0]
+            return images[0], images_with_noise[0], all_noise[0] ###
         else:
             ###return images
             return images, images_with_noise, all_noise ###
