@@ -204,6 +204,7 @@ texture<float, 3, cudaReadModeElementType> seg(13);
 texture<float, 3, cudaReadModeElementType> volume;
 
 #define PI_FLOAT  3.14159265358979323846f
+#define FOUR_PI_INV_FLOAT 0.0795774715459476678844f // 1 / (4 \pi), from Wolfram Alpha
 
 extern "C" {
     __global__  void projectKernel(
@@ -585,7 +586,7 @@ extern "C" {
         }*/
 
         // Scale up deposited_energy
-        deposited_energy[img_dx] *= ((float)photon_count) * ((numer_012 / denom_012) + (numer_023 / denom_023));
+        deposited_energy[img_dx] *= ((float)photon_count) * (solid_angle_012 + solid_angle_023) * FOUR_PI_INV_FLOAT;
 
         return;
     }
