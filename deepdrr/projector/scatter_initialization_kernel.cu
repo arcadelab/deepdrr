@@ -13,6 +13,7 @@ extern "C" {
         float sx, // coordinates of source in IJK
         float sy, // (not in a float3_t for ease of calling from Python wrapper)
         float sz,
+        float sdd, // source-to-detector distance [mm]
         int volume_shape_x, // integer size of the volume to avoid 
         int volume_shape_y, // floating-point errors with the gVolumeEdge{Min,Max}Point
         int volume_shape_z, // and gVoxelElementSize math
@@ -41,9 +42,12 @@ extern "C" {
         float *spectrum_energies, // 1-D array -- size is the n_bins
         float *spectrum_cdf, // 1-D array -- cumulative density function over the energies
         float E_abs, // the energy level below which photons are assumed to be absorbed
+        int seed_input,
         float *deposited_energy // the output.  Size is [detector_width]x[detector_height]
     ) {
-        rng_seed_t seed; // TODO: initialize
+        rng_seed_t seed;
+        int thread_id = threadIdx.x + (blockIdx.x * blockDim.x); // 1D block
+        initialize_seed(thread_id, histories_for_thread, seed_input, &seed);
 
         int3_t volume_shape = {
             .x = volume_shape_x,
@@ -82,13 +86,13 @@ extern "C" {
         rita_arr[NOM_SEG_BONE_ID] = bone_rita;
 
         for (; histories_for_thread > 0; histories_for_thread--) {
-            float energy = sample_initial_energy(n_bins, spectrum_energies, spectrum_cdf, seed);
             float3_t pos = { .x = sx, .y = sy, .z = sz };
             float3_t dir;
             sample_initial_dir(&dir, &seed);
             int is_hit;
             move_photon_to_volume(&pos, &dir, &is_hit, &gVolumeEdgeMinPoint, &gVolumeEdgeMaxPoint);
             if (is_hit) {
+                float energy = sample_initial_energy(n_bins, spectrum_energies, spectrum_cdf, seed);
                 // is_hit gets repurposed since we don't need it anymore for 'did the photon hit the volume'
                 int num_scatter_events = 0;
                 initialization_track_photon(
@@ -103,9 +107,40 @@ extern "C" {
                 if (is_hit && num_scatter_events) {
                     // The photon was scattered at least once and thus is not part of the primary
                     // 'pos' contains the IJK coord.s of collision with the detector.
+
                     // Calculate the pixel indices for the detector image
-                    int pixel_x = (int)((index_from_ijk[0] * pos->x) + (index_from_ijk[1] * pos->y) + (index_from_ijk[2] * pos->z) + index_from_ijk[3]);
-                    int pixel_y = (int)((index_from_ijk[4] * pos->x) + (index_from_ijk[5] * pos->y) + (index_from_ijk[6] * pos->z) + index_from_ijk[7]);
+
+                    // Convert the hit-location to a vector along the ray from the source to the hit-location
+                    // such that the vector has unit displacement along the source-to-detector-center line (the
+                    // vector is not necessarily a unit vector).  Vectors of this sort work with the inverse ray 
+                    // transform.
+                    pos->x = (pos->x - sx) / sdd;
+                    pos->y = (pos->y - sy) / sdd;
+                    pos->z = (pos->z - sz) / sdd;
+
+                    /* DEBUG STATEMENT
+                    float mag2 = (pos->x * pos->x) + (pos->y * pos->y) + (pos->z * pos->z);
+                    if (mag2 > 1.f) {
+                        printf("WARNING: vector to put into inverse ray transform has magnitude < 1: %1.10e\n", sqrtf(mag2));
+                    }
+                    // should also be project to unit along the detector-plane's normal 
+                    float dotprod = (pos->x * detector_plane->n.x) + (pos->y * detector_plane->n.y) + (pos->z * detector_plane->n.z);
+                    float normal_norm2 
+                        = (detector_plane->n.x * detector_plane->n.x) 
+                        + (detector_plane->n.y * detector_plane->n.y) 
+                        + (detector_plane->n.z * detector_plane->n.z);
+                    float proj = fabs(dotprod / sqrtf(normal_norm2));
+                    if (fabs(1.f - proj) > 1.0e-8f) {
+                        printf(
+                            "WARNING: vector to put into inverse ray transform does not has unit length "
+                            "ALONG source-to-detector direction. Magnitude of projection: %1.10e\n", proj
+                        );
+                    }
+                    */
+
+                    // Use the inverse ray transform.
+                    int pixel_x = (int)((index_from_ijk[0] * pos->x) + (index_from_ijk[1] * pos->y) + (index_from_ijk[2] * pos->z));
+                    int pixel_y = (int)((index_from_ijk[4] * pos->x) + (index_from_ijk[5] * pos->y) + (index_from_ijk[6] * pos->z));
                     if ((pixel_x >= 0) && (pixel_x < detector_width) && (pixel_y >= 0) && (pixel_y < detector_height)) {
                         // NOTE: atomicAdd(float *, float) only available for compute capability 2.x and higher.
                         // https://docs.nvidia.com/cuda/cuda-c-programming-guide/index.html#atomicadd
@@ -144,6 +179,7 @@ extern "C" {
     ) {
         int vox; // IJK voxel coord.s of photon, flattened for 1-D array labeled_segmentation
         float mfp_wc, mfp_Ra, mfp_Co, mfp_Tot;
+        char curr_mat_id, old_mat_id = -1;
         while (1) {
             vox = get_voxel_1D(pos, gVolumeEdgeMinPoint, gVolumeEdgeMaxPoint, gVoxelElementSize, volume_shape);
             if (vox < 0) { break; } // photon escaped volume
@@ -161,16 +197,25 @@ extern "C" {
                 vox = get_voxel_1D(pos, gVolumeEdgeMinPoint, gVolumeEdgeMaxPoint, gVoxelElementSize, volume_shape);
                 if (vox < 0) { break; } // phtoton escaped volume
 
-                char mat_id = labeled_segmentation[vox]
-                get_mat_mfp_data(mfp_data_arr[mat_id], *energy, &mfp_Ra, &mfp_Co, &mfp_Tot);
+                curr_mat_id = labeled_segmentation[vox];
+                if (curr_mat_id != old_mat_id) {
+                    // only read the mfp data when necessary
+                    get_mat_mfp_data(mfp_data_arr[mat_id], *energy, &mfp_Ra, &mfp_Co, &mfp_Tot);
+                    old_mat_id = curr_mat_id;
+                }
 
                 // Accept the collision if \xi < mfp_wc / mfp_Tot.
                 // Thus, reject the collision if \xi >= mfp_wc / mfp_Tot.
                 // See http://serpent.vtt.fi/mediawiki/index.php/Delta-_and_surface-tracking
             } while (ranecu(seed) >= mfp_wc / mfp_Tot);
 
-            char mat_id = labeled_segmentation[vox]
-            get_mat_mfp_data(mfp_data_arr[mat_id], *energy, &mfp_Ra, &mfp_Co, &mfp_Tot);
+            /*
+             * Here because one of:
+             *  1) Photon escaped volume ==> need to break out of interaction loop
+             *  2) Accepted the collision ==> already have read the MFP data
+             */
+            
+            if (vox < 0) { break; }
             
             /* 
              * Now at a legitimate photon interaction. 
@@ -444,8 +489,7 @@ extern "C" {
                 "ERROR: sample_initial_energy identified too-high interval. threshold=%.10f, spectrum_cdf[i]=%.10f\n", 
                 threshold, spectrum_cdf[i]
             );
-        }
-        if (spectrum_cdf[i+1] <= threshold) {
+        } else if (spectrum_cdf[i+1] <= threshold) {
             printf(
                 "ERROR: sample_initial_energy identified too-low interval. threshold=%.10f, spectrum_cdf[i+1]=%.10f\n", 
                 threshold, spectrum_cdf[i+1]
@@ -488,8 +532,7 @@ extern "C" {
         /* DEBUG STATEMENT
         if (sampler->y[i] > y) {
             printf("ERROR: RITA identified too-high interval. y=%.10f, y[i]=%.10f\n", y, sampler->y[i]);
-        }
-        if (sampler->y[i+1] <= y) {
+        } else if (sampler->y[i+1] <= y) {
             printf("ERROR: RITA identified too-low interval. y=%.10f, y[i+1]=%.10f\n", y, sampler->y[i+1]);
         }
         */
@@ -538,7 +581,63 @@ extern "C" {
         float *co, // output: MFP for Compton scatter. Units: [mm]
         float *tot // output: MFP (total). Units: [mm]
     ) {
-        // TODO: implement (using binary search)
+        /* DEBUG STATEMENT
+        if (nrg < data->energy[0]) {
+            printf(
+                "ERROR: photon energy (%6f) less than minimum "
+                "material MFP data energy level (%6f)\n", nrg, data->energy[0]
+            );
+        } else if (nrg > data->energy[data->n_bins - 1]) {
+            printf(
+                "ERROR: photon energy (%6f) greater than maximum "
+                "material MFP data energy level (%6f)\n", 
+                nrg, data->energy[data->n_bins - 1]
+            );
+        }
+        */
+
+        // Binary search to find the interval [E_i, E_{i+1} that contains nrg]
+        int lo_idx = 0; // inclusive
+        int hi_idx = data->n_bins; // exclusive
+        int i;
+        while (lo_idx < hi_idx) {
+            i = (lo_idx + hi_idx) / 2;
+
+            // Check if 'i' is the lower bound of the correct interval
+            if (nrg < data->energy[i]) {
+                // Need to check lower intervals
+                hi_idx = i;
+            } else if (nrg < data->energy[i+1]) {
+                // Found the correct interval
+                break;
+            } else {
+                // Need to check higher intervals
+                lo_idx = i + 1;
+            }
+        }
+
+        /* DEBUG STATEMENT
+        if (data->energy[i] > nrg) {
+            printf(
+                "ERROR: Material MFP data identified too-high energy bin. "
+                "nrg=%6e, data->energy[i]=%6e\n", nrg, data->energy[i]
+            );
+        } else if (data->energy[i+1] <= nrg) {
+            printf(
+                "ERROR: Material MFP data identified too-low energy bin. "
+                "nrg=%6e, data->energy[i+1]=%6e\n", nrg, data->energy[i+1]
+            );
+        }
+        */
+
+        // linear interpolation
+        float alpha = (nrg - data->energy[i]) / (data->energy[i+1] - data->energy[i]);
+        float one_minus_alpha = 1.f - alpha;
+        
+        *ra = (one_minus_alpha * data->mfp_Ra[i]) - (alpha * data->mfp_Ra[i+1]);
+        *co = (one_minus_alpha * data->mfp_Co[i]) - (alpha * data->mfp_Co[i+1]);
+        *tot = (one_minus_alpha * data->mfp_Tot[i]) - (alpha * data->mfp_Tot[i+1]);
+
         return;
     }
 
@@ -547,7 +646,60 @@ extern "C" {
         float nrg, // energy of the photon [eV]
         float *mfp // output: Woodcock MFP. Units: [mm]
     ) {
-        // TODO: implement (using binary search)
+        /* DEBUG STATEMENT
+        if (nrg < data->energy[0]) {
+            printf(
+                "ERROR: photon energy (%6f) less than minimum "
+                "Woodcock MFP data energy level (%6f)\n", nrg, data->energy[0]
+            );
+        } else if (nrg > data->energy[data->n_bins - 1]) {
+            printf(
+                "ERROR: photon energy (%6f) greater than maximum "
+                "Woodcock MFP data energy level (%6f)\n", 
+                nrg, data->energy[data->n_bins - 1]
+            );
+        }
+        */
+
+        // Binary search to find the interval [E_i, E_{i+1} that contains nrg]
+        int lo_idx = 0; // inclusive
+        int hi_idx = data->n_bins; // exclusive
+        int i;
+        while (lo_idx < hi_idx) {
+            i = (lo_idx + hi_idx) / 2;
+
+            // Check if 'i' is the lower bound of the correct interval
+            if (nrg < data->energy[i]) {
+                // Need to check lower intervals
+                hi_idx = i;
+            } else if (nrg < data->energy[i+1]) {
+                // Found the correct interval
+                break;
+            } else {
+                // Need to check higher intervals
+                lo_idx = i + 1;
+            }
+        }
+
+        /* DEBUG STATEMENT
+        if (data->energy[i] > nrg) {
+            printf(
+                "ERROR: Woodcock MFP data identified too-high energy bin. "
+                "nrg=%6e, data->energy[i]=%6e\n", nrg, data->energy[i]
+            );
+        } else if (data->energy[i+1] <= nrg) {
+            printf(
+                "ERROR: Woodcock MFP data identified too-low energy bin. "
+                "nrg=%6e, data->energy[i+1]=%6e\n", nrg, data->energy[i+1]
+            );
+        }
+        */
+
+        // linear interpolation
+        float alpha = (nrg - data->energy[i]) / (data->energy[i+1] - data->energy[i]);
+
+        *mfp = ((1.f - alpha) * data->mfp_wc[i]) + (alpha * data->mfp_wc[i+1]);
+
         return;
     }
 
@@ -749,7 +901,7 @@ extern "C" {
         return cos_theta;
     }
 
-    inline float ranecu(rng_seed_t *seed) {
+    __device__ inline float ranecu(rng_seed_t *seed) {
         // Implementation from PENELOPE-2006 section 1.2
         int i = (int)(seed->x / 53668); // "i1"
         seed->x = 40014 * (seed->x - (i * 53668)) - (i * 12211);
@@ -775,7 +927,7 @@ extern "C" {
         return ((float)i) * 4.65661305739e-10f;
     }
 
-    inline double ranecu_double(rng_seed_t *seed) {
+    __device__ inline double ranecu_double(rng_seed_t *seed) {
         // basically the same as ranecu(...), but converting to double at the end
         // Implementation from PENELOPE-2006 section 1.2
         int i = (int)(seed->x / 53668); // "i1"
@@ -800,5 +952,105 @@ extern "C" {
         // double uscale = 1.0 / (2.147483563e9);
         // uscale is approx. equal to 4.6566130573917692e-10
         return ((double)i) * 4.6566130573917692e-10;
+    }
+
+    /* Maximum number of random values sampled per photon */
+    #define LEAP_DISTANCE 512
+    /* RANECU values */
+    #define  a1_RANECU       40014
+    #define  m1_RANECU  2147483563
+    #define  a2_RANECU       40692
+    #define  m2_RANECU  2147483399
+    __device__ void initialize_seed(
+        int thread_id, // each CUDA thread should have a unique ID given to it
+        int histories_for_thread, 
+        int seed_input,
+        rng_seed_t *seed
+    ) {
+        /* From MC-GPU */
+        // Initialize first MLCG
+        unsigned long long int leap = ((unsigned long long int)(thread_id + 1)) * (histories_for_thread * LEAP_DISTANCE);
+        int y = 1;
+        int z = a1_RANECU;
+        // Use modular artihmetic to compute (a^leap)MOD(m)
+        while (1) {
+            if (0 != (leap & 01)) {
+                // leap is odd
+                leap >>= 1; // leap = leap/2
+                y = abMODm(m1_RANECU, z, y); // y = (z * y) MOD m
+                if (0 == leap) { break; }
+            } else {
+                // leap is even
+                leap >>= 1; // leap = leap/2
+            }
+            z = abMODm(m1_RANECU, z, z); // z = (z * z) MOD m
+        }
+        // Here, y = (a^j) MOD m
+
+        // seed(i+j) = [(a^j MOD m) * seed(i)] MOD m
+        seed->x = abMODm(m1_RANECU, seed_input, y);
+
+        // Initialize second MLCG
+        leap = ((unsigned long long int)(thread_id + 1)) * (histories_for_thread * LEAP_DISTANCE);
+        y = 1;
+        z = a2_RANECU;
+        // Use modular artihmetic to compute (a^leap)MOD(m)
+        while (1) {
+            if (0 != (leap & 01)) {
+                // leap is odd
+                leap >>= 1; // leap = leap/2
+                y = abMODm(m2_RANECU, z, y); // y = (z * y) MOD m
+                if (0 == leap) { break; }
+            } else {
+                // leap is even
+                leap >>= 1; // leap = leap/2
+            }
+            z = abMODm(m2_RANECU, z, z); // z = (z * z) MOD m
+        }
+        // Here, y = (a^j) MOD m
+        seed->y = abMODm(m2_RANECU, seed_input, y);
+
+        return;
+    }
+
+    __device__ inline int abMODm(
+        int m,
+        int a1, 
+        int a2
+    ) {
+        // COMPUTE (a1 * a2) MOD m
+        int q, k;
+        int p = -m; // negative to avoid overflow when adding
+
+        // Apply Russian peasant method until "a <= 32768"
+        while (a1 > 32768) { // 32-bit ints: 2^(('32'-2)/2) = 32768
+            if (0 != (a1 & 1)) {
+                // Store a2 when a1 is odd
+                p += a2;
+                if (p > 0) {
+                    p -= m;
+                }
+            }
+            a1 >>= 1; // a1 = a1 / 2
+            a2 = (a2 - m) + a2; // double a2 (MOD m)
+            if (a2 < 0) {
+                a2 += m; // ensure a2 is always positive
+            }
+        }
+
+        // Approximate factoring method, since a1 is small enough to avoid overflow
+        q = (int) m / a1;
+        k = (int) a2 / q;
+        a2 = a1 * (a2 - (k * q)) - k * (m - (q * a1));
+        while (a2 < 0) {
+            a2 += m;
+        }
+
+        // Final processing
+        p += a2;
+        if (p < 0) {
+            p += m;
+        }
+        return p;
     }
 }

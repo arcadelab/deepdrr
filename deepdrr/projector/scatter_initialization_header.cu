@@ -137,6 +137,19 @@ extern "C" {
         rng_seed_t *seed
     );
 
-    float ranecu(rng_seed_t *seed);
-    double ranecu_double(rng_seed_t *seed);
+    __device__ float ranecu(rng_seed_t *seed);
+    __device__ double ranecu_double(rng_seed_t *seed);
+
+    __device__ void initialize_seed(
+        int thread_id, // each CUDA thread should have a unique ID given to it
+        int histories_for_thread, 
+        int seed_input,
+        rng_seed_t *seed
+    );
+
+    __device__ int abMODm(
+        int m,
+        int a1, 
+        int a2
+    );
 }

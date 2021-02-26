@@ -201,6 +201,8 @@ def track_single_photon_no_vr(
 
     num_scatter_events = 0
 
+    vox_x, vox_y, vox_z = None, None, None
+
     while True: # emulate a do-while loop
         # Get voxel (index) coord.s.  Keep in mind that IJK coord.s are voxel-centered
         vox_x = int(np.floor(pos.data[0] + 0.5)) # shift because volume's IJK bounds are [-0.5, {x,y,z}_len - 0.5]
@@ -219,7 +221,7 @@ def track_single_photon_no_vr(
         mat_name = material_ids[mat_label]
 
         mfp_wc = get_woodcock_mfp(photon_energy)
-        mfp_Ra, mfp_Co, mfp_Tot = get_mfp_data(mfp_data[mat_name], photon_energy)
+        #mfp_Ra, mfp_Co, mfp_Tot = get_mfp_data(mfp_data[mat_name], photon_energy)
 
         # Delta interactions
         while True:
@@ -252,10 +254,6 @@ def track_single_photon_no_vr(
             #print(f"DELTA COLLISION")
         
         # might have left the volume OR had a legitimate interaction
-        vox_x = int(np.floor(pos.data[0] + 0.5)) # shift because volume's IJK bounds are [-0.5, {x,y,z}_len - 0.5]
-        vox_y = int(np.floor(pos.data[1] + 0.5))
-        vox_z = int(np.floor(pos.data[2] + 0.5))
-        #print(f"voxel: ({vox_x}, {vox_y}, {vox_z})")
         if (vox_x < 0) or (vox_x >= density_vol.shape[0]):
             break
         if (vox_y < 0) or (vox_y >= density_vol.shape[1]):
