@@ -186,6 +186,7 @@ class SingleProjector(object):
                 camera_center_in_volume[1],                        # sy
                 camera_center_in_volume[2],                        # sz
                 self.rt_kinv_gpu,                       # RT_Kinv
+                np.int32(self.photon_count),            # photon_count
                 self.deposited_energy_gpu,              # deposited_energy
                 self.photon_prob_gpu,                   # photon_prob (or NULL)
                 np.int32(self.spectrum.shape[0]),       # n_bins

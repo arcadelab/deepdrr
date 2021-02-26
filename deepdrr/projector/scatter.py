@@ -75,6 +75,7 @@ def simulate_scatter_no_vr(
     count_milestones = [int(math.pow(10, i)) for i in range(int(1 + math.ceil(math.log10(photon_count))))] # [1, 10, 100, ..., 10^7] in default case
 
     accumulator = np.zeros(output_shape).astype(np.float32)
+    #return accumulator ### for when I don't really want to do noise stuff
 
     material_ids = {}
     for i, mat_name in enumerate(volume.materials.keys()):
