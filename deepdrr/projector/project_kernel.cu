@@ -580,9 +580,9 @@ extern "C" {
             solid_angle_023 += PI_FLOAT;
         }
 
-        if ((0 == udx)) {
+        /*if ((0 == udx)) {
             printf("solid angle of pixel [%d, %d]: %1.10e\n", udx, vdx, (numer_012 / denom_012) + (numer_023 / denom_023));
-        }
+        }*/
 
         // Scale up deposited_energy
         deposited_energy[img_dx] *= ((float)photon_count) * ((numer_012 / denom_012) + (numer_023 / denom_023));

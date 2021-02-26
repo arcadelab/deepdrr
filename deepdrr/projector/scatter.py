@@ -128,6 +128,8 @@ def simulate_scatter_no_vr(
             detector_plane, 
             rt_kinv_inv,
             index_from_ijk, 
+            source_ijk,
+            source_to_detector_distance,
             material_ids
         )
 
@@ -166,6 +168,8 @@ def track_single_photon_no_vr(
     detector_plane: PlaneSurface,
     rt_kinv_inv: np.ndarray,
     index_from_ijk: np.ndarray,
+    source_ijk: geo.Point3D, 
+    source_to_detector_distance: float,
     material_ids: Dict[int, str]
 ) -> Tuple[int,int, np.float32, int]:
     """Produce a grayscale (intensity-based) image representing the photon scatter of a single photon 
@@ -301,14 +305,14 @@ def track_single_photon_no_vr(
     
     # final processing
 
-    print(f"pos after leaving volume: {pos}")
-    print(f"dir after leaving volume: {direction}")
+    #print(f"pos after leaving volume: {pos}")
+    #print(f"dir after leaving volume: {direction}")
 
     # Transport the photon to the detector plane
     hits_detector_dist = detector_plane.check_ray_intersection(pos, direction)
-    print(f"hits_detector_dist: {hits_detector_dist}")
+    #print(f"hits_detector_dist: {hits_detector_dist}")
     if (hits_detector_dist is None) or (hits_detector_dist < 0.0):
-        print("NO HIT")
+        #print("NO HIT")
         return -1, -1, photon_energy, num_scatter_events
     
     hit = geo.Point3D.from_any(pos + (hits_detector_dist * direction))
@@ -319,13 +323,13 @@ def track_single_photon_no_vr(
     pixel_x, pixel_y = detector_plane.get_lin_comb_coefs(hit)
     print(f"old pixel: {pixel_x}, {pixel_y}")
     
-    #hit_x = hit.data[0]
-    #hit_y = hit.data[1]
-    #hit_z = hit.data[2]
-    #pixel_x = index_from_ijk[0,0] * hit_x + index_from_ijk[0,1] * hit_y + index_from_ijk[0,2] * hit_z + index_from_ijk[0,3]
-    #pixel_y = index_from_ijk[1,0] * hit_x + index_from_ijk[1,1] * hit_y + index_from_ijk[1,2] * hit_z + index_from_ijk[1,3]
+    hit_x = (hit.data[0] - source_ijk.data[0]) / source_to_detector_distance
+    hit_y = (hit.data[1] - source_ijk.data[1]) / source_to_detector_distance
+    hit_z = (hit.data[2] - source_ijk.data[2]) / source_to_detector_distance
+    pixel_x = index_from_ijk[0,0] * hit_x + index_from_ijk[0,1] * hit_y + index_from_ijk[0,2] * hit_z
+    pixel_y = index_from_ijk[1,0] * hit_x + index_from_ijk[1,1] * hit_y + index_from_ijk[1,2] * hit_z
 
-    #print(f"new pixel: {pixel_x}, {pixel_y}")
+    print(f"new pixel: {pixel_x}, {pixel_y}")
     
     return int(np.floor(pixel_x)), int(np.floor(pixel_y)), photon_energy, num_scatter_events
 
