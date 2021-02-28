@@ -254,32 +254,30 @@ class SingleProjector(object):
             #
 
             ### BEGIN TEMP
-            index_from_ijk = camera_projection.world_from_index.inv @ self.volume.ijk_from_world.inv
-            print(f"index_from_ijk transform:\n{index_from_ijk}")
-            index_from_ijk = np.array(index_from_ijk).astype(np.float32)
-            print(f"index_from_ijk ndarray:\n{index_from_ijk}")
-
             print("camera intrinsics (K):")
-            print(f"\t{self.camera_intrinsics}")
+            print(f"{self.camera_intrinsics}\n")
             rt_kinv = camera_projection.get_ray_transform(self.volume)
-            print("rt_kinv:")
-            print(f"\t{np.array(rt_kinv)}")
-            print("rt_kinv.inv")
-            print(f"\t{np.array(rt_kinv.inv)}")
-            print("index_from_ijk")
-            print(f"\t{index_from_ijk}")
+            index_from_ijk = np.array(rt_kinv.inv)[0:2,0:3] # upper left 2x3
+            rt_kinv = np.array(rt_kinv) # 3x3
+
+            print(f"rt_kinv np.ndarray:")
+            print(f"{rt_kinv}\n")
+            print(f"index_from_ijk np.ndarray:")
+            print(f"{index_from_ijk}\n")
+
+            mfp_woodcock = scatter.make_woodcock_mfp(["air", "soft tissue", "bone"])
 
             noise, hit_data = scatter.simulate_scatter_no_vr(
                 self.volume, 
                 geo.Point3D.from_any(camera_center_in_volume),
-                np.array(rt_kinv),
-                np.array(rt_kinv.inv),
+                rt_kinv,
+                camera_projection.intrinsic,
                 self.source_to_detector_distance, 
                 index_from_ijk,
-                (camera_projection.sensor_width, camera_projection.sensor_height),
-                (camera_projection.sensor_width, camera_projection.sensor_height),
-                self.spectrum,
-                self.photon_count
+                camera_projection.intrinsic.sensor_size,
+                self.photon_count,
+                mfp_woodcock,
+                self.spectrum
             )
             print("X-ray primary data: [pixel_x, pixel_y], deposited_energy")
             for tup in hit_data:

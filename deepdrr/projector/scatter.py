@@ -12,7 +12,7 @@ from deepdrr import vol
 from .rita import RITA
 from .plane_surface import PlaneSurface
 
-from .mcgpu_mfp_data import mfp_data, mfp_woodcock
+from .mcgpu_mfp_data import mfp_data 
 from .mcgpu_compton_data import MAX_NSHELLS as COMPTON_MAX_NSHELLS
 from .mcgpu_compton_data import material_nshells, compton_data
 
@@ -29,29 +29,48 @@ logger = logging.getLogger(__name__)
 # USEFUL CONSTANTS
 #
 
-LIGHT_C_METERS = 2.99792458e08 # m/s
-ELECTRON_MASS_KILOS = 9.1093826e-31 # kg
-
-LIGHT_C = 2.99792458e10 # cm/s
-ELECTRON_MASS = 9.1093826e-28 # g
-
 ELECTRON_REST_ENERGY = 510998.918 # eV
 
 VOXEL_EPSILON = 0.000015
 NEG_VOXEL_EPSILON = -0.000015
 
+def make_woodcock_mfp(
+    materials: List[str]
+) -> np.ndarray:
+    """Generates and returns a table of [energy, Woodcock MFP] for each energy level, based on the provided materials
+
+    Args:
+        materials (List[str]): list of material names to generate Woodock MFP data for.  For a list of available materials, reference mcgpu_mfp_data.py
+    
+    Returns:
+        np.ndarray: a table of [energy, Woodcock MFP] for each applicable energy level
+    """
+    # See http://serpent.vtt.fi/mediawiki/index.php/Delta-_and_surface-tracking, as well
+    # as Woodcock et al. (1965) "Techniques Used in the GEM Code...", section 9.2
+    # We assume that the volume is homogenous with the largest cross section of all the materials.
+    # Accordingly, we assume that the mean free path is homogeneous with the shortest mean free 
+    # path of all materials
+
+    mfp_woodcock = np.stack(
+        (
+            mfp_data["bone"][:, 0], # the energy tables
+            np.minimum.reduce([mfp_data[mat][:, 4] for mat in materials])
+        ),
+        axis=1
+    )
+    return mfp_woodcock
 
 def simulate_scatter_no_vr(
     volume: vol.Volume,
     source_ijk: geo.Point3D,
-    rt_kinv: np.ndarray, # 4x3
-    rt_kinv_inv: np.ndarray, # 3x4 
+    rt_kinv: np.ndarray,
+    camera_intrinsics: geo.CameraIntrinsicTransform,
     source_to_detector_distance: float, 
     index_from_ijk: np.ndarray,
     sensor_size: Tuple[int, int],
-    output_shape: Tuple[int, int],
+    photon_count: int,
+    mfp_woodcock: np.ndarray,
     spectrum: Optional[np.ndarray] = spectral_data.spectrums['90KV_AL40'], 
-    photon_count: Optional[int] = 10000000, # 10^7
     E_abs: Optional[np.float32] = 5000
 ) -> np.ndarray:
     """Produce a grayscale (intensity-based) image representing the photon scatter during an X-Ray, 
@@ -64,7 +83,6 @@ def simulate_scatter_no_vr(
         source_to_detector_distance (float): distance from source to detector in millimeters.
         index_from_ijk (np.ndarray): the inverse transformation of ijk_from_index
         sensor_size (Tuple[int,int]): the sensor size {width}x{height}, in pixels, of the detector
-        output_shape (Tuple[int, int]): the {height}x{width} dimensions of the output image
         spectrum (Optional[np.ndarray], optional): spectrum array.  Defaults to 90KV_AL40 spectrum.
         photon_count (Optional[int], optional): the number of photons simulated.  Defaults to 10^7 photons.
         E_abs (Optional[np.float32], optional): the energy (in eV) at or below which photons are assumed to be absorbed by the materials.  Defaults to 1000 (eV).
@@ -74,7 +92,7 @@ def simulate_scatter_no_vr(
     """
     count_milestones = [int(math.pow(10, i)) for i in range(int(1 + math.ceil(math.log10(photon_count))))] # [1, 10, 100, ..., 10^7] in default case
 
-    accumulator = np.zeros(output_shape).astype(np.float32)
+    accumulator = np.zeros(sensor_size).astype(np.float32)
     #return accumulator ### for when I don't really want to do noise stuff
 
     material_ids = {}
@@ -90,8 +108,7 @@ def simulate_scatter_no_vr(
         labeled_seg = np.add(labeled_seg, ilabel * volume.materials[material_ids[ilabel]])
 
     # Plane data
-    vol_planes = get_volume_surface_planes(volume)
-    detector_plane = get_detector_plane(rt_kinv, source_to_detector_distance, source_ijk, sensor_size)
+    detector_plane = get_detector_plane(rt_kinv, camera_intrinsics, source_to_detector_distance, source_ijk, sensor_size)
     print(f"detector plane:")
     print(f"\t{detector_plane.plane_vector}")
     print(f"\t{detector_plane.surface_origin}")
@@ -104,6 +121,13 @@ def simulate_scatter_no_vr(
     print(f"Start time: {time.asctime()}")
     ###
 
+    volume_min_bounds = (-0.5, -0.5, 0.5)
+    volume_max_bounds = (
+        volume.data.shape[0] - 0.5,
+        volume.data.shape[1] - 0.5,
+        volume.data.shape[2] - 0.5
+    )
+
     detector_hits = 0 # counts the number of photons that hit the detector
     volume_hits = 0
     pixel_hit_data = []
@@ -111,9 +135,8 @@ def simulate_scatter_no_vr(
         if (i+1) in count_milestones:
             print(f"Simulating photon history {i+1} / {photon_count}")
             print(f"\tCurrent time: {time.asctime()}")
-        ###initial_dir, initial_pos, sample_count = sample_initial_direction(vol_planes, source_ijk)
         initial_dir = sample_initial_direction()
-        hits_volume, initial_pos = move_photon_to_volume(source_ijk, initial_dir, volume.data.shape)
+        hits_volume, initial_pos = move_photon_to_volume(source_ijk, initial_dir, volume_min_bounds, volume_max_bounds)
         if not hits_volume:
             continue
         volume_hits += 1
@@ -124,12 +147,12 @@ def simulate_scatter_no_vr(
             initial_E, 
             E_abs, 
             labeled_seg, 
-            volume.data, 
+            volume.data.shape, 
             detector_plane, 
-            rt_kinv_inv,
             index_from_ijk, 
             source_ijk,
             source_to_detector_distance,
+            mfp_woodcock,
             material_ids
         )
 
@@ -164,12 +187,12 @@ def track_single_photon_no_vr(
     initial_E: np.float32,
     E_abs: np.float32,
     labeled_seg: np.ndarray,
-    density_vol: np.ndarray,
+    volume_shape: Tuple[int, int, int],
     detector_plane: PlaneSurface,
-    rt_kinv_inv: np.ndarray,
     index_from_ijk: np.ndarray,
     source_ijk: geo.Point3D, 
     source_to_detector_distance: float,
+    mfp_woodcock: np.ndarray,
     material_ids: Dict[int, str]
 ) -> Tuple[int,int, np.float32, int]:
     """Produce a grayscale (intensity-based) image representing the photon scatter of a single photon 
@@ -209,18 +232,18 @@ def track_single_photon_no_vr(
         vox_y = int(np.floor(pos.data[1] + 0.5))
         vox_z = int(np.floor(pos.data[2] + 0.5))
         #print(f"voxel: ({vox_x}, {vox_y}, {vox_z})")
-        if (vox_x < 0) or (vox_x >= density_vol.shape[0]):
+        if (vox_x < 0) or (vox_x >= volume_shape[0]):
             break
-        if (vox_y < 0) or (vox_y >= density_vol.shape[1]):
+        if (vox_y < 0) or (vox_y >= volume_shape[1]):
             break
-        if (vox_z < 0) or (vox_z >= density_vol.shape[2]):
+        if (vox_z < 0) or (vox_z >= volume_shape[2]):
             break
         #voxel_coords = (vox_x, vox_y, vox_z)
         #print(f"INSIDE VOLUME")
         mat_label = labeled_seg[vox_x, vox_y, vox_z]
         mat_name = material_ids[mat_label]
 
-        mfp_wc = get_woodcock_mfp(photon_energy)
+        mfp_wc = get_woodcock_mfp(mfp_woodcock, photon_energy)
         #mfp_Ra, mfp_Co, mfp_Tot = get_mfp_data(mfp_data[mat_name], photon_energy)
 
         # Delta interactions
@@ -234,11 +257,11 @@ def track_single_photon_no_vr(
             vox_y = int(np.floor(pos.data[1] + 0.5))
             vox_z = int(np.floor(pos.data[2] + 0.5))
             #print(f"voxel: ({vox_x}, {vox_y}, {vox_z})")
-            if (vox_x < 0) or (vox_x >= density_vol.shape[0]):
+            if (vox_x < 0) or (vox_x >= volume_shape[0]):
                 break
-            if (vox_y < 0) or (vox_y >= density_vol.shape[1]):
+            if (vox_y < 0) or (vox_y >= volume_shape[1]):
                 break
-            if (vox_z < 0) or (vox_z >= density_vol.shape[2]):
+            if (vox_z < 0) or (vox_z >= volume_shape[2]):
                 break
 
             mat_label = labeled_seg[vox_x, vox_y, vox_z]
@@ -254,11 +277,11 @@ def track_single_photon_no_vr(
             #print(f"DELTA COLLISION")
         
         # might have left the volume OR had a legitimate interaction
-        if (vox_x < 0) or (vox_x >= density_vol.shape[0]):
+        if (vox_x < 0) or (vox_x >= volume_shape[0]):
             break
-        if (vox_y < 0) or (vox_y >= density_vol.shape[1]):
+        if (vox_y < 0) or (vox_y >= volume_shape[1]):
             break
-        if (vox_z < 0) or (vox_z >= density_vol.shape[2]):
+        if (vox_z < 0) or (vox_z >= volume_shape[2]):
             break
 
         # Now at a legitimate photon interaction
@@ -315,11 +338,11 @@ def track_single_photon_no_vr(
     
     hit = geo.Point3D.from_any(pos + (hits_detector_dist * direction))
 
-    print(f"hit: {hit}")
+    #print(f"hit: {hit}")
 
-    # NOTE: an alternative formulation would be to use (rt_kinv).inv
+    # NOTE: an alternative formulation would be to use (rt_kinv).inv == index_from_ijk
     pixel_x, pixel_y = detector_plane.get_lin_comb_coefs(hit)
-    print(f"old pixel: {pixel_x}, {pixel_y}")
+    #print(f"old pixel: {pixel_x}, {pixel_y}")
     
     hit_x = (hit.data[0] - source_ijk.data[0]) / source_to_detector_distance
     hit_y = (hit.data[1] - source_ijk.data[1]) / source_to_detector_distance
@@ -327,7 +350,7 @@ def track_single_photon_no_vr(
     pixel_x = index_from_ijk[0,0] * hit_x + index_from_ijk[0,1] * hit_y + index_from_ijk[0,2] * hit_z
     pixel_y = index_from_ijk[1,0] * hit_x + index_from_ijk[1,1] * hit_y + index_from_ijk[1,2] * hit_z
 
-    print(f"new pixel: {pixel_x}, {pixel_y}")
+    #print(f"new pixel: {pixel_x}, {pixel_y}")
     
     return int(np.floor(pixel_x)), int(np.floor(pixel_y)), photon_energy, num_scatter_events
 
@@ -383,6 +406,7 @@ def get_mfp_data(
     return mfp_Ra, mfp_Co, mfp_Tot
 
 def get_woodcock_mfp(
+    table: np.ndarray, 
     E: np.float32
 ) -> np.float32:
     """Access the Woodcock Mean Free Path at the given photon energy level.  
@@ -390,6 +414,7 @@ def get_woodcock_mfp(
     Performs linear interpolation for any energy value that isn't exactly a table entry.
 
     Args:
+        table (np.ndarray): a table of Woodcock Mean Free Path data.  See make_woodcock_mfp(...).
         E (np.float32): the energy of the photon
     
     Returns:
@@ -397,16 +422,16 @@ def get_woodcock_mfp(
     """
     # Binary search to find the proper table entry.  Want energy(lo_bin) <= E < energy(hi_bin), with (lo_bin + 1) == hi_bin
     lo_idx = 0 # inclusive
-    hi_idx = mfp_woodcock.shape[0] # exclusive
+    hi_idx = table.shape[0] # exclusive
     i = None # the index of the bin that we find E in
 
     while lo_idx < hi_idx:
         mid_idx = np.floor_divide(lo_idx + hi_idx, np.int32(2))
 
-        if E < mfp_woodcock[mid_idx, 0]:
+        if E < table[mid_idx, 0]:
             # Need to check lower intervals
             hi_idx = mid_idx
-        elif E < mfp_woodcock[mid_idx + 1, 0]:
+        elif E < table[mid_idx + 1, 0]:
             # found correct interval
             i = mid_idx
             break
@@ -414,96 +439,23 @@ def get_woodcock_mfp(
             # Need to check higher intervals
             lo_idx = mid_idx + 1
     
-    assert (mfp_woodcock[i, 0] <= E) and (E < mfp_woodcock[i + 1, 0])
+    assert (table[i, 0] <= E) and (E < table[i + 1, 0])
     
     # Linear interpolation 
-    delta_E = mfp_woodcock[i + 1, 0] - mfp_woodcock[i, 0]
-    partial = E - mfp_woodcock[i, 0]
+    delta_E = table[i + 1, 0] - table[i, 0]
+    partial = E - table[i, 0]
 
-    delta_mfp_Tot = mfp_woodcock[i + 1, 1] - mfp_woodcock[i, 1]
+    delta_mfp_Tot = table[i + 1, 1] - table[i, 1]
 
-    mfp_wc = mfp_woodcock[i, 1] + (delta_mfp_Tot * partial) / delta_E
+    mfp_wc = table[i, 1] + (delta_mfp_Tot * partial) / delta_E
 
     return mfp_wc
 
-def get_volume_surface_planes(
-    volume: vol.Volume
-) -> List[PlaneSurface]:
-    """Given a volume, returns the PlaneSurface objects for each of the six planes on the surface of the rectangular prism volume in a raw Python array.
-
-    Everything is in IJK coordinates.  In this geometry, 3D coordinates (0,0,0) is the center of the voxel referenced by indexing into the volume at [0,0,0].
-
-    Args:
-        volume (vol.Volume): the volume in question.
-    
-    Returns:
-        List[PlaneSurface]: the 6 PlaneSurface objects, where the i-th object corresponds to the i-th face of the volume (no particular ordering)
-    """
-    # Since the volume is a rectangular prism, each of the normal vectors are going to be (+/-)1 in a single direction.
-    # The "distance from the origin" is then determined by which face is under consideration
-    # NOTE: as a stylistic choice, I am choosing the normal vectors to point outward
-    x_len = volume.data.shape[0]
-    y_len = volume.data.shape[1]
-    z_len = volume.data.shape[2]
-
-    plane_vectors = [
-        np.array([-1, 0, 0, 0.5]),
-        np.array([1, 0, 0, x_len - 0.5]),
-        np.array([0, -1, 0, 0.5]),
-        np.array([0, 1, 0, y_len - 0.5]),
-        np.array([0, 0, -1, 0.5]),
-        np.array([0, 0, 1, z_len - 0.5])
-    ]
-    surface_origins = [
-        geo.Point3D.from_array(np.array([-0.5, 0, 0])),
-        geo.Point3D.from_array(np.array([x_len - 0.5, 0, 0])),
-        geo.Point3D.from_array(np.array([0, -0.5, 0])),
-        geo.Point3D.from_array(np.array([0, y_len - 0.5, 0])),
-        geo.Point3D.from_array(np.array([0, 0, -0.5])),
-        geo.Point3D.from_array(np.array([0, 0, z_len - 0.5]))
-    ]
-
-    x_dir = geo.Vector3D.from_array(np.array([1, 0, 0]))
-    y_dir = geo.Vector3D.from_array(np.array([0, 1, 0]))
-    z_dir = geo.Vector3D.from_array(np.array([0, 0, 1]))
-    bases = [
-        (geo.Vector3D.from_any(y_dir), geo.Vector3D(z_dir)),
-        (geo.Vector3D.from_any(y_dir), geo.Vector3D(z_dir)),
-        
-        (geo.Vector3D.from_any(x_dir), geo.Vector3D(z_dir)),
-        (geo.Vector3D.from_any(x_dir), geo.Vector3D(z_dir)),
-
-        (geo.Vector3D.from_any(x_dir), geo.Vector3D(y_dir)),
-        (geo.Vector3D.from_any(x_dir), geo.Vector3D(y_dir))
-    ]
-    bounds = [
-        np.array([[-0.5, y_len - 0.5], [-0.5, z_len - 0.5]]), 
-        np.array([[-0.5, y_len - 0.5], [-0.5, z_len - 0.5]]), 
-
-        np.array([[-0.5, x_len - 0.5], [-0.5, z_len - 0.5]]),
-        np.array([[-0.5, x_len - 0.5], [-0.5, z_len - 0.5]]),
-
-        np.array([[-0.5, x_len - 0.5], [-0.5, y_len - 0.5]]),
-        np.array([[-0.5, x_len - 0.5], [-0.5, y_len - 0.5]]),
-    ]
-
-    return [PlaneSurface(plane_vectors[i], surface_origins[i], bases[i], bounds[i], True) for i in range(6)]
-
-def sample_initial_direction(
-    #surfaces: List[PlaneSurface],
-    #source_ijk: geo.Point3D
-) -> Tuple[geo.Vector3D, geo.Point3D, int]:
-    """Returns an initial direction vector for a photon that is guaranteed to hit the volume, as well as the coordinates of that initial intersection with the volume.
-    Behaves by randomly sampling \\theta from [0, PI] and \\phi from [0, 2 * PI], then determining if a photon going in that direction will hit the volume.
-    
-    Args:
-        surfaces (List[PlaneSurface]): six PlaneSurface objects, one for each face of the volume
-        source_ijk (geo.point3D): the IJK coordinates of the X-Ray source, relative to the IJK origin (indices [0,0,0] in the volume)
+def sample_initial_direction() -> geo.Vector3D:
+    """Returns an initial direction vector for a photon, uniformly distributed over the unit sphere.
 
     Returns:
         geo.Vector3D: the initial direction unit vector (dx, dy, dz)^T
-        geo.Point3D: the location where the photon first enters the volume
-        int: the number of times a direction was sampled before returning
     """
     phi = 2 * np.pi * sample_U01() # azimuthal angle    
     theta = np.arccos(1 - 2 * sample_U01()) # polar angle
@@ -517,66 +469,20 @@ def sample_initial_direction(
     direction = geo.Vector3D.from_array(np.array([dx, dy, dz]))
     return direction
 
-    """
-    sample_count = 0
-
-    intersection_points = [] # since there could be multiple points that the ray intersects the volume
-    distances = []
-    direction = None
-
-    while True:
-        # Sampling explanation here: http://corysimon.github.io/articles/uniformdistn-on-sphere/
-        phi = 2 * np.pi * sample_U01() # azimuthal angle
-        theta = np.arccos(1 - 2 * sample_U01()) # polar angle
-
-        sin_theta = np.sin(theta)
-        
-        dx = sin_theta * np.cos(phi)
-        dy = sin_theta * np.sin(phi)
-        dz = np.cos(theta)
-
-        direction = geo.Vector3D.from_array(np.array([dx, dy, dz]))
-        sample_count += 1
-
-        intersection_points = [] # since there could be multiple points that the ray intersects the volume
-
-        for i in range(6):
-            distance = surfaces[i].check_ray_intersection(source_ijk, direction)
-            if distance < 0:
-                continue
-            intersection = geo.Point3D.from_any(source_ijk + (distance * direction))
-            
-            if surfaces[i].point_on_surface(intersection):
-                intersection_points.append(intersection)
-                distances.append(distance)
-        
-        if 0 < len(intersection_points):
-            break
-
-        # Othewise, re-samples the direction
-
-    assert len(intersection_points) == len(distances)
-
-    # Return the intersection point that is closest to the X-Ray source
-    min_dist_idx = 0
-    min_dist = float("inf")
-    for i in range(len(intersection_points)):
-        if distances[i] < min_dist:
-            min_dist = distances[i]
-            min_dist_idx = i
-    
-    return direction, intersection_points[min_dist_idx], sample_count
-    """
-
 def move_photon_to_volume(
     pos: geo.Point3D, 
     direction: geo.Vector3D,
-    volume_shape: Tuple[int, int, int]
+    volume_min_bounds: Tuple[float, float, float], 
+    volume_max_bounds: Tuple[float, float, float], 
 ) -> Tuple[bool, geo.Point3D]:
-    """ [DESCRIPTION]
+    """Transports a photon at the given position, travelling in the given direction, to a rectangular-prism volume of the given bounds.
+    Assumes the volume's surfaces are aligned with the major planes of the coordinate system
 
     Args:
-        [ARGS]
+        pos (geo.Point3D): the initial position of the photon.  Very likely to be the X-ray source.
+        direction (geo.Vector3D): a unit vector denoting the direction in which the photon is traveling
+        volume_min_bounds (Tuple[float, float, float]): the minimum coordinate bound for the volume in each direction
+        volume_max_bounds (Tuple[float, float, float]): the minimum coordinate bound for the volume in each direction
     
     Returns:
         bool: whether the photon hits the volume or not
@@ -590,13 +496,13 @@ def move_photon_to_volume(
     dir_y = direction.data[1]
     dir_z = direction.data[2]
 
-    min_x = -0.5
-    min_y = -0.5
-    min_z = -0.5
+    min_x = volume_min_bounds[0]
+    min_y = volume_min_bounds[1]
+    min_z = volume_min_bounds[2]
 
-    max_x = volume_shape[0] - 0.5
-    max_y = volume_shape[1] - 0.5
-    max_z = volume_shape[2] - 0.5
+    max_x = volume_max_bounds[0]
+    max_y = volume_max_bounds[1]
+    max_z = volume_max_bounds[2]
 
     dist_x, dist_y, dist_z = None, None, None
 
@@ -655,6 +561,7 @@ def move_photon_to_volume(
 
 def get_detector_plane(
     rt_kinv: np.ndarray,
+    camera_intrinsics: geo.CameraIntrinsicTransform,
     sdd: float,
     source_ijk: geo.Point3D,
     sensor_size: Tuple[int,int]
@@ -662,18 +569,20 @@ def get_detector_plane(
     """Calculates the PlaneSurface object of the detector plane in IJK coordinates.
     Note that the cosines of the plane's normal vector (n_x, n_y, n_z) are NOT normalized to be a unit vector.
 
-    The first basis vector represents
+    The first basis vector represents moving one pixel ACROSS the image (left to right).
+    The second basis vector represents moving one pixel DOWN the image (top to bottom).
 
     Args:
-        rt_kinv (np.ndarray): the ray transform for the projection.  Transforms pixel indices (u,v,1) to IJK offset from the X-Ray source
+        rt_kinv (np.ndarray): the 3x3 ray transform for the projection.  Transforms pixel indices (u,v,1) to IJK-space vector along
+                            the ray from the X-Ray source to the pixel [u,v] on the detector, such that the resulting IJK-space vector
+                            has unit projection along the vector pointing from the source to the center of the detector.
+        camera_intrinsics (geo.CameraIntrinsicTransform): the 3x3 matrix that denotes the camera's intrinsics.  Canonically represented by K.
         sdd (float): the distance from the X-Ray source to the detector.
         source_ijk (geo.Point3D): the IJK coordinates of the X-Ray source, relative to the IJK origin (indices [0,0,0] in the volume)
         sensor_size (Tuple[int,int]): the sensor size {width}x{height}, in pixels, of the detector
 
     Returns:
         PlaneSurface: a PlaneSurface object representing the detector.  
-        np.ndarray: a basis vector that represents how increasing pixel x-coordinate by 1 affects the 3D position
-        np.ndarray: a basis vector that represents how increasing pixel y-coordinate by 1 affects the 3D position
     """
     # Based off the project_kernel.cu code:
     #   Let \hat{p} = (u,v,1)^T be the pixel coord.s on the detector plane
@@ -720,26 +629,30 @@ def get_detector_plane(
     #
     # Once we have the normal vector, we need the minimum distance between the detector plane and 
     # the origin of the IJK coord.s to get the fourth entry in the 'plane vector' (n_x, n_y, n_z, d)
-
-    print("rt_kinv:")
-    print(f"\t[{rt_kinv[0,0]} {rt_kinv[0,1]} {rt_kinv[0,2]}]")
-    print(f"\t[{rt_kinv[1,0]} {rt_kinv[1,1]} {rt_kinv[1,2]}]")
-    print(f"\t[{rt_kinv[2,0]} {rt_kinv[2,1]} {rt_kinv[2,2]}]")
-    
-    # Normal vector to the detector plane:
+    #
     sdd_sq = sdd * sdd
 
-    vx = sdd_sq * (rt_kinv[1,0] * rt_kinv[2,1] - rt_kinv[2,0] * rt_kinv[1,1])
-    vy = sdd_sq * (rt_kinv[2,0] * rt_kinv[0,1] - rt_kinv[0,0] * rt_kinv[2,1])
-    vz = sdd_sq * (rt_kinv[0,0] * rt_kinv[1,1] - rt_kinv[1,0] * rt_kinv[0,1])
+    # Normal vector to the detector plane:
+    nx = sdd_sq * (rt_kinv[1,0] * rt_kinv[2,1] - rt_kinv[2,0] * rt_kinv[1,1])
+    ny = sdd_sq * (rt_kinv[2,0] * rt_kinv[0,1] - rt_kinv[0,0] * rt_kinv[2,1])
+    nz = sdd_sq * (rt_kinv[0,0] * rt_kinv[1,1] - rt_kinv[1,0] * rt_kinv[0,1])
 
-    print(f"vx, vy, vz: {vx}, {vy}, {vz}")
+    n_mag = np.sqrt((nx* nx) + (ny * ny) + (nz * nz)) 
 
-    v_mag = np.sqrt((vx* vx) + (vy * vy) + (vz * vz))
+    nx /= n_mag
+    ny /= n_mag
+    nz /= n_mag
 
-    vx /= v_mag
-    vy /= v_mag
-    vz /= v_mag
+    # The 'surface origin' corresponds to the pixel [0,0] on the detector.
+    # Vector source_to_surf_ori = SDD * (rt_kinv) @ (0,0,1)^T = SDD * [third column of rt_kinv]
+    surf_ori_x = (sdd * rt_kinv[0,2]) + source_ijk.data[0] # source_to_surf_ori + origin_to_source == origin_to_surf_ori
+    surf_ori_y = (sdd * rt_kinv[1,2]) + source_ijk.data[1]
+    surf_ori_z = (sdd * rt_kinv[2,2]) + source_ijk.data[2]
+    # SANITY CHECK: after using an inverse-of-upper-triangular-matrix formula, we get:
+    # kinv[2] == (s c_y - c_x f_y) / (f_x f_y)
+    # kinv[5] == c_y / f_y
+    # kinv[8] == 1
+    surface_origin = geo.Point3D.from_array(np.array([surf_ori_x, surf_ori_y, surf_ori_z]))
 
     # Distance from the detector plane to the origin of the IJK coordinates
     #
@@ -796,7 +709,7 @@ def get_detector_plane(
     #   = ([(SC \cdot SC) / (OS \cdot SC)] + 1) * (OS \cdot SC) / magnitude(SC)
     #   = magnitude(SC) + [(SC \cdot OS) / magitude(SC)]
     #   = magnitude(SC) * [1 + (SC \cdot OS) / (SC \cdot SC)]
-
+    #
     cu = sensor_size[0] / 2 # pixel coord.s of the center of the detector
     cv = sensor_size[1] / 2
 
@@ -810,35 +723,123 @@ def get_detector_plane(
     sc_dot_sc = (sc_x * sc_x) + (sc_y * sc_y) + (sc_z * sc_z)
     sc_dot_os = (sc_x * source_ijk.data[0]) + (sc_y * source_ijk.data[1]) + (sc_z * source_ijk.data[2])
 
-    d = np.sqrt(sc_dot_sc) * (1 + (sc_dot_os / sc_dot_sc))
+    # the distance to the detector from the origin -- the absolute value is important!
+    d = abs(np.sqrt(sc_dot_sc) * (1 + (sc_dot_os / sc_dot_sc)))
 
-    plane_vector = np.array([vx, vy, vz, -d])
+    # The normal vector (nx,ny,nz)^T points either:
+    #   1) from the detector plane TOWARD the origin
+    #   2) from the detector plane AWAY from the origin
+    #
+    # If the normal vector points TOWARD the origin, then the plane equation is:
+    #   [position] \cdot [normal vector] + [distance to detector] = 0,
+    # which suggests that the fourth component of the 'plane vector' should be positive.
+    #
+    # If the normal vector points AWAY from the origin, then the plane equation is:
+    #   [position] \cdot [normal vector] - [distance to detector] = 0,
+    # which suggests that the fourth component of the 'plane vector' should be negative.
+    #
+    # Suppose we are viewing the principal axis of the C-Arm (the line that goes from the source
+    # and hits the center of the detector at a perpendicular angle) such that the detector is on
+    # the left and the source is on the right:
+    # 
+    #      detector plane
+    #          v                                 plane perpendicular to source
+    #          |                                              v
+    #          |                                              |
+    #          |             principal axis                   |
+    #          |                   v                          |
+    #        C |--------------------------------------------- @ S (source)
+    #          |                                              |
+    #          |                                              |
+    #          |                                              |
+    #          |  
+    #
+    # There are five cases. Let P be the point resulting from projecting the origin onto the
+    # line from S to C -- {S,C,P} are three collinear points.  This point P is the same as from
+    # the above explanation from determining the origin-to-plane distance.
+    #   1. C between P and S.  Use the [-d] equation iff SC and \hat{n} are opposite directions.
+    #   2. P coincides with C.  d == (-d) == 0, so nothing needs to happen.
+    #   3. P between C and S.  Use the [-d] equation iff SC and \hat{n} are the same direction. 
+    #   4. P coincides with S.  Use the [-d] equation iff SC and \hat{n} are the same direction. 
+    #   5. S between C and P.  Use the [-d] equation iff SC and \hat{n} are the same direction. 
+    #
+    # However, these cases can be re-parameterized by SC and SP:
+    #   1. [(SC dot SP) > 0] and [mag(SP) > mag(SC)]
+    #   2. [(SC dot SP) > 0] and [mag(SP) = mag(SC)]
+    #   3. [(SC dot SP) > 0] and [mag(SP) < mag(SC)]
+    #   4. [(SC dot SP) = 0]
+    #   5. [(SC dot SP) < 0]
+    #
+    # However, since we have already calculated (SC dot OS) previously, we note that (SC dot SP)
+    # is equivalent to [-1 * (SC dot OS)].  Addtionally, we note that magnitude comparisons are
+    # the same if we compare the magnitude-squared, and:
+    #   [magnitude(SP)^2] == [magnitude(-1 * SC * (SC dot OS) / (SC dot SC))^2]
+    #                     == (SC dot OS)^2 / (SC dot SC)
+    # 
+    # Re-parameterizing again, we get:
+    #   1. [(SC dot OS) < 0] and [(SC dot OS)^2 / (SC dot SC) > (SC dot SC)]
+    #   2. [(SC dot OS) < 0] and [(SC dot OS)^2 / (SC dot SC) = (SC dot SC)]
+    #   3. [(SC dot OS) < 0] and [(SC dot OS)^2 / (SC dot SC) < (SC dot SC)]
+    #   4. [(SC dot OS) = 0]
+    #   5. [(SC dot OS) > 0]
+    # Simplifying:
+    #   1. [(SC dot OS) < 0] and [ABS(SC dot OS) > (SC dot SC)]
+    #   2. [(SC dot OS) < 0] and [ABS(SC dot OS) = (SC dot SC)]
+    #   3. [(SC dot OS) < 0] and [ABS(SC dot OS) < (SC dot SC)]
+    #   4. [(SC dot OS) = 0]
+    #   5. [(SC dot OS) > 0]
+    # where ABS(...) is the absolute value function.
+    #
+    # For the actual implementation, we recall that Case 1 has one behavior, while Cases 2-5 share
+    # the other behavior.
+    #
+    sc_dot_normal = (sc_x * nx) + (sc_y * ny) + (sc_z * nz)
+    
+    if (sc_dot_os < 0) and ((-sc_dot_os) > sc_dot_sc): # Uses ABS(sc_dot_os) == -sc_dot_os
+        # CASE 1.  Use [-d] equation iff SC and \hat{n} are opposite directions
+        if (sc_dot_normal < 0):
+            d = -d # d was previously necessarily positive semidefinite
+    else:
+        # CASES 2,3,4,5.  Use the [-d] equation iff SC and \hat{n} are the same direction. 
+        if (sc_dot_normal > 0):
+            d = -d # d was previously necessarily positive semidefinite
 
-    # The 'surface origin' corresponds to the pixel [0,0] on the detector.
-    # Vector source_to_surf_ori = SDD * (rt_kinv) @ (0,0,1)^T = SDD * [third column of rt_kinv]
-    surf_ori_x = (sdd * rt_kinv[0,2]) + source_ijk.data[0] # source_to_surf_ori + origin_to_source == origin_to_surf_ori
-    surf_ori_y = (sdd * rt_kinv[1,2]) + source_ijk.data[1]
-    surf_ori_z = (sdd * rt_kinv[2,2]) + source_ijk.data[2]
-    # SANITY CHECK: after using an inverse-of-upper-triangular-matrix formula, we get:
-    # kinv[2] == (s c_y - c_x f_y) / (f_x f_y)
-    # kinv[5] == c_y / f_y
-    # kinv[8] == 1
-    surface_origin = geo.Point3D.from_array(np.array([surf_ori_x, surf_ori_y, surf_ori_z]))
+    plane_vector = np.array([nx, ny, nz, d])
 
     # The basis is {v1, v2}, where {v1, v2} are the vectors described in the "choosing easy p_i's" section
     # That way, the point of intersection is:
     #
     #   intersection = surface_origin + (pixel_x_value) * v1 + (pixel_y_value) * v2
     #
-    v1 = geo.Vector3D.from_array(np.array([sdd * rt_kinv[0,0], sdd * rt_kinv[1,0], sdd * rt_kinv[2,0]]))
-    v2 = geo.Vector3D.from_array(np.array([sdd * rt_kinv[0,1], sdd * rt_kinv[1,1], sdd * rt_kinv[2,1]]))
+    v1 = geo.Vector3D.from_array(sdd * rt_kinv[:, 0])
+    v2 = geo.Vector3D.from_array(sdd * rt_kinv[:, 1])
 
     # Coordinate bounds correspond to the size of the detector, in pixels
     bounds = np.array([[0, sensor_size[0]],
                        [0, sensor_size[1]]])
 
-    # Not guaranteed that the basis vectors are orthogonal
-    return PlaneSurface(plane_vector, surface_origin, (v1, v2), bounds, False)
+    # Determine whether or not the basis vectors are orthogonal
+    #
+    # v1 = SDD * (rt_kinv) @ (1,0,0)^T = SDD * [R^T] @ [K.inv] @ (1,0,0)^T
+    # v2 = SDD * (rt_kinv) @ (0,1,0)^T = SDD * [R^T] @ [K.inv] @ (0,1,0)^T
+    #
+    #     [f_x  s  c_x]                     [1/f_x -s/(f_x f_y)  ...]
+    # K = [ 0  f_y c_y]     ==>    K^{-1} = [  0       1/f_y     ...]
+    #     [ 0   0   1 ]                     [  0         0        1 ]
+    #
+    # where the "..." in the third column are left incomplete because the 
+    # calculation does not involve the third column of K^{-1}.
+    #
+    # (v1)^T (v2) = [SDD * [R^T] @ [K.inv] @ (1,0,0)^T]^T [SDD * [R^T] @ [K.inv] @ (0,1,0)^T]
+    #             = (SDD^2) * [K.inv @ (1,0,0)^T]^T @ R @ R^T @ [K.inv @ (0,1,0)^T]
+    #             = (SDD^2) * [K.inv @ (1,0,0)^T]^T @ [K.inv @ (0,1,0)^T]
+    #             = (SDD^2) * (1/f_x, 0, 0)^T @ (-s/(f_x f_y), 1/f_y, 0)
+    #             = (SDD^2) * (-s / (f_x f_x f_y))
+    # 
+    # Thus, {v1,v2} are orthogonal iff 's', the pixel shear, is zero.
+    #
+    shear = camera_intrinsics.data[0,1]
+    return PlaneSurface(plane_vector, surface_origin, (v1, v2), bounds, (0 == shear))
 
 def get_scattered_dir(
     direction: geo.Vector3D,
