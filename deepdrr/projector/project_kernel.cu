@@ -225,14 +225,15 @@ extern "C" {
         float sz,
         float *rt_kinv, // (3, 3) array giving the image-to-world-ray transform.
         int photon_count, // total number of photons emitted by X-ray source
-        float *deposited_energy, // flat array, with shape (out_height, out_width).
-        float *photon_prob, // flat array, with shape (out_height, out_width).
         int n_bins, // the number of spectral bins
         float *energies, // 1-D array -- size is the n_bins
         float *pdf, // 1-D array -- probability density function over the energies
         float *absorb_coef_table, // flat [n_bins x NUM_MATERIALS] table that represents
                         // the precomputed get_absorption_coef values.
                         // index into the table as: table[bin * NUM_MATERIALS + mat]
+        float *deposited_energy, // flat array, with shape (out_height, out_width).
+        float *photon_prob, // flat array, with shape (out_height, out_width).
+        float *pixel_spherical_fraction,
         int offsetW,
         int offsetH)
     {
@@ -458,6 +459,8 @@ extern "C" {
                 beer_lambert_exp += area_density[m] * absorb_coef_table[bin * NUM_MATERIALS + m];
             }
             float photon_prob_tmp = expf(-1 * beer_lambert_exp) * p; // dimensionless value
+            // FOR TESTING
+            photon_prob_tmp = p;
 
             photon_prob[img_dx] += photon_prob_tmp;
             deposited_energy[img_dx] += energy * photon_prob_tmp; // units: [eV] per unit photon to hit the pixel
@@ -572,21 +575,19 @@ extern "C" {
         float denom_012 = (cmag[0] * cmag[1] * cmag[2]) + (c0_dot_c1 * cmag[2]) + (c0_dot_c2 * cmag[1]) + (c1_dot_c2 * cmag[0]);
         float denom_023 = (cmag[0] * cmag[2] * cmag[3]) + (c0_dot_c2 * cmag[3]) + (c0_dot_c3 * cmag[2]) + (c2_dot_c3 * cmag[0]);
 
-        float solid_angle_012 = (numer_012 / denom_012);
+        float solid_angle_012 = 2.f * atan2(numer_012, denom_012);
         if (solid_angle_012 < 0.0f) {
             solid_angle_012 += PI_FLOAT;
         }
-        float solid_angle_023 = (numer_023 / denom_023);
+        float solid_angle_023 = 2.f * atan2(numer_023, denom_023);
         if (solid_angle_023 < 0.0f) {
             solid_angle_023 += PI_FLOAT;
         }
 
-        /*if ((0 == udx)) {
-            printf("solid angle of pixel [%d, %d]: %1.10e\n", udx, vdx, (numer_012 / denom_012) + (numer_023 / denom_023));
-        }*/
-
         // Scale up deposited_energy
         deposited_energy[img_dx] *= ((float)photon_count) * (solid_angle_012 + solid_angle_023) * FOUR_PI_INV_FLOAT;
+
+        pixel_spherical_fraction[img_dx] = (solid_angle_012 + solid_angle_023) * FOUR_PI_INV_FLOAT;
 
         return;
     }

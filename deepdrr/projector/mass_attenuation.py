@@ -54,17 +54,17 @@ def calculate_attenuation_gpu(projections_gpu, energy, p, pool):
     return attenuation_gpu
 
 
-def get_absorption_coefs(x, material):
+def get_absorption_coefs(energy, material):
     """Returns the absorption coefficient for the specified material at the specified energy level (in keV)
     
     Args:
-        x: energy level of photon/ray (keV)
+        energy: energy level of photon/ray (eV)
         material (str): the material
 
     Returns:
         the absorption coefficient (in [cm^2 / g]), interpolated from the data in material_coefficients.py
     """
-    xMev = x / 1000
+    xMev = energy / 1000000
     return log_interp(xMev, material_coefficients[material][:, 0], material_coefficients[material][:, 1])
 
 

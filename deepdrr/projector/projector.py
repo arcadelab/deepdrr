@@ -187,12 +187,13 @@ class SingleProjector(object):
                 camera_center_in_volume[2],                        # sz
                 self.rt_kinv_gpu,                       # RT_Kinv
                 np.int32(self.photon_count),            # photon_count
-                self.deposited_energy_gpu,              # deposited_energy
-                self.photon_prob_gpu,                   # photon_prob (or NULL)
                 np.int32(self.spectrum.shape[0]),       # n_bins
                 self.energies_gpu,                      # energies
                 self.pdf_gpu,                           # pdf
                 self.absorption_coef_table_gpu,          # absorb_coef_table
+                self.deposited_energy_gpu,              # deposited_energy
+                self.photon_prob_gpu,                   # photon_prob (or NULL)
+                self.pixel_spherical_fractions_gpu
             ]
         else:
             args = [
@@ -241,13 +242,31 @@ class SingleProjector(object):
             deposited_energy = np.empty(self.output_shape, dtype=np.float32)
             cuda.memcpy_dtoh(deposited_energy, self.deposited_energy_gpu)
             # transpose the axes, which previously have width on the slow dimension
-            pixel_solid_angle = 1 # placeholder
-            deposited_energy = np.swapaxes(deposited_energy, 0, 1).copy() * self.photon_count * pixel_solid_angle
+            deposited_energy = np.swapaxes(deposited_energy, 0, 1).copy()
+
+            ### TEMPORARY ###
+            pixel_spherical_fractions = np.empty(self.output_shape, dtype=np.float32)
+            cuda.memcpy_dtoh(pixel_spherical_fractions, self.pixel_spherical_fractions_gpu)
+            pixel_spherical_fractions = np.swapaxes(pixel_spherical_fractions, 0, 1).copy()
+            ### TEMPORARY ###
 
             photon_prob = np.empty(self.output_shape, dtype=np.float32)
             cuda.memcpy_dtoh(photon_prob, self.photon_prob_gpu)
             photon_prob = np.swapaxes(photon_prob, 0, 1).copy()
 
+            print(f"total primary deposited energy, unattenuated:\n = {np.sum(deposited_energy)}")
+            detector_fraction_of_sphere = 0.00619523262149318900528428
+            print(f"detector fraction of sphere, calculated by hand:\n\t{detector_fraction_of_sphere}")
+            print(f"detector fraction of sphere, summed from pixels:\n\t{np.sum(pixel_spherical_fractions)}")
+            expected_unatten_energy_per_photon = 49244.88671875
+            expected_dep_nrg = expected_unatten_energy_per_photon * self.photon_count * detector_fraction_of_sphere
+            print(f"photon count: {self.photon_count}")
+            print(f"expected deposited energy, unattenuated:")
+            print(f" = E[energy per photon] * [photon count] * [fraction of sphere subtended by detector]")
+            print(f" = {expected_dep_nrg}")
+            print(f"\noff by a factor of {np.sum(deposited_energy) / expected_dep_nrg}")
+
+            return deposited_energy, photon_prob
             #
             # TODO: ask about this np.swapaxes(...) call.  It's not clear to me why it's necessary or desirable, given that
             #   we were working off of self.output_shape, which basically goes off of self.sensor_shape
@@ -337,6 +356,10 @@ class SingleProjector(object):
         self.rt_kinv_gpu = cuda.mem_alloc(3 * 3 * 4)
 
         if self.attenuation:
+            ########### TEMPORARY ###########
+            self.pixel_spherical_fractions_gpu = cuda.mem_alloc(self.output_size * 4)
+            ########### TEMPORARY ###########
+
             # allocate deposited_energy array on GPU (4 bytes to a float32)
             self.deposited_energy_gpu = cuda.mem_alloc(self.output_size * 4)
             logger.debug(f"bytes alloc'd for self.deposited_energy_gpu: {self.output_size * 4}")
@@ -347,8 +370,8 @@ class SingleProjector(object):
 
             # allocate and transfer spectrum energies (4 bytes to a float32)
             assert isinstance(self.spectrum, np.ndarray)
-            noncont_energies = self.spectrum[:,0].copy() / 1000
-            contiguous_energies = np.ascontiguousarray(noncont_energies, dtype=np.float32)
+            noncont_energies = self.spectrum[:,0].copy() # [eV]
+            contiguous_energies = np.ascontiguousarray(noncont_energies, dtype=np.float32) # [eV]
             n_bins = contiguous_energies.shape[0]
             self.energies_gpu = cuda.mem_alloc(n_bins * 4)
             cuda.memcpy_htod(self.energies_gpu, contiguous_energies)
@@ -362,6 +385,8 @@ class SingleProjector(object):
             self.pdf_gpu = cuda.mem_alloc(n_bins * 4)
             cuda.memcpy_htod(self.pdf_gpu, contiguous_pdf)
             logger.debug(f"bytes alloc'd for self.pdf_gpu {n_bins * 4}")
+
+            print(f"expected un-attenuted energy deposited per photon: {np.sum(np.dot(contiguous_energies, contiguous_pdf))}")
 
             # precompute, allocate, and transfer the get_absorption_coef(energy, material) table (4 bytes to a float32)
             absorption_coef_table = np.empty(n_bins * self.num_materials).astype(np.float32)
@@ -387,6 +412,9 @@ class SingleProjector(object):
             self.rt_kinv_gpu.free()
 
             if self.attenuation:
+                ########### TEMPORARY ###########
+                self.pixel_spherical_fractions_gpu.free()
+                ########### TEMPORARY ###########
                 self.deposited_energy_gpu.free()
                 self.photon_prob_gpu.free()
                 self.energies_gpu.free()
