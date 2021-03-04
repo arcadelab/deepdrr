@@ -132,6 +132,14 @@ class HomogeneousObject(ABC):
     def __iter__(self):
         return iter(np.array(self))
 
+    def get_data(self) -> np.ndarray:
+        return self.data
+
+
+def get_data(x: HomogeneousObject) -> np.ndarray:
+    assert issubclass(type(x), HomogeneousObject)
+    return x.get_data()
+
 
 class HomogeneousPointOrVector(HomogeneousObject):
     """A Homogeneous point or vector in any dimension."""
@@ -727,6 +735,15 @@ def frame_transform(*args) -> FrameTransform:
             raise TypeError(f'could not parse FrameTransfrom from [R, t]: [{args[0]}, {args[1]}]')
     else:
         raise TypeError(f"too many arguments: {args}")
+
+
+RAS_from_LPS = FrameTransform(np.array([
+    [-1, 0, 0, 0],
+    [0, -1, 0, 0],
+    [0, 0, 1, 0],
+    [0, 0, 0, 1]]))
+
+LPS_from_RAS = RAS_from_LPS.inv
 
 
 class CameraIntrinsicTransform(FrameTransform):
