@@ -518,7 +518,7 @@ class Projector(object):
             return images[0]
         else:
             return images
-        
+
     def project_over_carm_range(
         self,
         phi_range: Tuple[float, float, float],
@@ -526,9 +526,9 @@ class Projector(object):
         degrees: bool = True,
     ) -> np.ndarray:
         """Project over a range of angles using the included CArm.
-        
+
         Ignores the CArm's internal pose, except for its isocenter.
-        
+
         """
         if self.carm is None:
             raise RuntimeError("must provide carm device to projector")
