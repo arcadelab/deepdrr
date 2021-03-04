@@ -92,9 +92,9 @@ T = TypeVar('T')
 
 def tuplify(t: Union[Tuple[T,...], T], n: int = 1) -> Tuple[T,...]:
     """ Create a tuple with `n` copies of `t`,  if `t` is not already a tuple of length `n`."""
-    if isinstance(t, Tuple):
+    if isinstance(t, (tuple, list)):
         assert len(t) == n
-        return t
+        return tuple(t)
     else:
         return tuple(t for _ in range(n))
 

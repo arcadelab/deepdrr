@@ -943,8 +943,7 @@ class CameraProjection(Transform):
     def sensor_height(self) -> int:
         return self.intrinsic.sensor_height
 
-    @property
-    def center_in_world(self) -> Point3D:
+    def get_center_in_world(self) -> Point3D:
         """Get the center of the camera (origin of camera3d frame) in world coordinates.
 
         That is, get the translation vector of the world_from_camera3d FrameTransform
@@ -957,6 +956,10 @@ class CameraProjection(Transform):
         
         world_from_camera3d = self.camera3d_from_world.inv
         return world_from_camera3d(point(0, 0, 0))
+
+    @property
+    def center_in_world(self) -> Point3D:
+        return self.get_center_in_world()
 
     def get_center_in_volume(self, volume: vol.Volume) -> Point3D:
         """Get the camera center in IJK-space.
