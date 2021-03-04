@@ -20,7 +20,7 @@ from . import analytic_generators
 from .material_coefficients import material_coefficients
 from .. import geo
 from .. import vol
-from ..device import CArm
+from ..device import MobileCArm
 from .. import utils
 
 
@@ -336,7 +336,7 @@ class Projector(object):
         self,
         volume: Union[vol.Volume, List[vol.Volume]],
         camera_intrinsics: Optional[geo.CameraIntrinsicTransform] = None,
-        carm: Optional[CArm] = None,
+        carm: Optional[MobileCArm] = None,
         step: float = 0.1,
         mode: Literal['linear'] = 'linear',
         spectrum: Union[np.ndarray, Literal['60KV_AL35', '90KV_AL40', '120KV_AL43']] = '90KV_AL40',
@@ -360,8 +360,8 @@ class Projector(object):
 
         Args:
             volume (Union[Volume, List[Volume]]): a volume object with materials segmented. If multiple volumes are provided, they should have mutually exclusive materials (not checked).
-            camera_intrinsics (CameraIntrinsicTransform): intrinsics of the projector's camera. (used for sensor size). None is NotImplemented. Defaults to None.
-            carm (Optional[CArm], optional): Optional C-arm device, for convenience which can be used to get projections from C-Arm pose. If not provided, camera pose must be defined by user. Defaults to None.
+            camera_intrinsics (CameraIntrinsicTransform): intrinsics of the projector's camera. (used for sensor size). If None, the CArm object must be provided and have a camera_intrinsics attribute. Defaults to None.
+            carm (Optional[MobileCArm], optional): Optional C-arm device, for convenience which can be used to get projections from C-Arm pose. If not provided, camera pose must be defined by user. Defaults to None.
             step (float, optional): size of the step along projection ray in voxels. Defaults to 0.1.
             mode (Literal['linear']): [description].
             spectrum (Union[np.ndarray, Literal['60KV_AL35', '90KV_AL40', '120KV_AL43'], optional): spectrum array or name of spectrum to use for projection. Defaults to '90KV_AL40'.
@@ -386,6 +386,10 @@ class Projector(object):
         self.intensity_upper_bound = intensity_upper_bound
 
         assert len(self.volumes) > 0
+
+        if self.camera_intrinsics is None:
+            assert self.carm is not None and hasattr(self.carm, 'camera_intrinsics')
+            self.camera_intrinsics = self.carm.camera_intrinsics
 
         self.projectors = [
             SingleProjector(
@@ -414,9 +418,6 @@ class Projector(object):
             raise DeprecationWarning(f'volume is deprecated. Each projector contains multiple "SingleProjectors", which contain their own volumes.')
         return self.projectors[0].volume
 
-    def get_carm_camera_projection(self):
-        return geo.CameraProjection(self.camera_intrinsics, self.carm.camera3d_from_world)
-
     def project(
         self,
         *camera_projections: geo.CameraProjection,
@@ -435,7 +436,7 @@ class Projector(object):
         if not camera_projections and self.carm is None:
             raise ValueError('must provide a camera projection object to the projector, unless imaging device (e.g. CArm) is provided')
         elif not camera_projections and self.carm is not None:
-            camera_projections = [self.get_carm_camera_projection()]
+            camera_projections = [self.carm.get_camera_projection()]
             logger.debug(f'projecting with source at {camera_projections[0].center_in_world}, pointing toward isocenter at {self.carm.isocenter}...')
         
         logger.info("Initiating projection and attenuation...")

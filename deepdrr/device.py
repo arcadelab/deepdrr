@@ -1,8 +1,15 @@
-from typing import Optional, Tuple
+from typing import Optional, Tuple, Union
 
 import logging
 import numpy as np
+from numpy.lib.utils import source
 from scipy.spatial.transform import Rotation
+
+try:
+    import pyvista as pv
+    pv_available = True
+except ImportError:
+    pv_available = False
 
 from . import geo
 from . import utils
@@ -15,7 +22,10 @@ DEFAULT_MIN_ALPHA = -2 * PI / 3 # -120
 DEFAULT_MAX_ALPHA = 2 * PI / 3 # 120
 DEFAULT_MIN_BETA = -PI / 4 # -45
 DEFAULT_MAX_BETA = PI / 4 # 45
-
+DEFAULT_SENSOR_HEIGHT = 960
+DEFAULT_SENSOR_WIDTH = 1240
+DEFAULT_PIXEL_SIZE = 0.31
+DEFAULT_SOURCE_TO_DETECTOR_DISTANCE = 1200
 
 
 def make_detector_rotation(phi: float, theta: float, rho: float):
@@ -94,12 +104,17 @@ class MobileCArm(object):
         max_beta: Optional[float] = None,
         degrees: bool = False,
         world_from_carm: Optional[geo.FrameTransform] = None,
+        sensor_height: Optional[int] = None,
+        sensor_width: Optional[int] = None,
+        pixel_size: Optional[float] = None,
+        source_to_detector_distance: Optional[float] = None,
     ) -> None:
         """Make a CArm device.
 
         The geometry follows figure 2 in Kausch et al: https://pubmed.ncbi.nlm.nih.gov/32533315/
 
         TODO(killeen): limit the translation of the C-arm, as it would be in reality.
+        TODO(killeen): the C-Arm is really a fancy CameraProjection. Inherit from that.
 
         Args:
             isocenter_distance (float): the distance from the X-ray source to the isocenter of the CAarm. (The center of rotation).
@@ -108,6 +123,7 @@ class MobileCArm(object):
             beta (float): initial CRA/CAU angulation of the C-arm. beta > 0 is in the CAU direction.
             degrees (bool, optional): Whether given angles are in degrees. Defaults to False.
             world_from_carm: (Optional[geo.FrameTransform], optional): Transform that defines the CArm space in world coordinates. None is the identity transform. Defaults to None.
+            camera_intrinsics: (Optional[Union[geo.CameraIntrinsicTransform, dict]], optional): either a CameraIntrinsicTransform instance or kwargs for CameraIntrinsicTransform.from_sizes
         """
         self.isocenter_distance = isocenter_distance
         self.isocenter = geo.point(0, 0, 0) if isocenter is None else isocenter
@@ -118,6 +134,15 @@ class MobileCArm(object):
         self.min_beta = DEFAULT_MIN_BETA if min_beta is None else utils.radians(min_beta, degrees=degrees)
         self.max_beta = DEFAULT_MAX_BETA if max_beta is None else utils.radians(max_beta, degrees=degrees)
         self.world_from_carm = geo.frame_transform(world_from_carm)
+        self.sensor_height = sensor_height or DEFAULT_SENSOR_HEIGHT
+        self.sensor_width = sensor_width or DEFAULT_SENSOR_WIDTH
+        self.pixel_size = pixel_size or DEFAULT_PIXEL_SIZE
+        self.source_to_detector_distance = source_to_detector_distance or DEFAULT_SOURCE_TO_DETECTOR_DISTANCE
+        self.camera_intrinsics = geo.CameraIntrinsicTransform.from_sizes(
+            sensor_size=(self.sensor_width, self.sensor_height),
+            pixel_size=self.pixel_size,
+            source_to_detector_distance=self.source_to_detector_distance,
+        )
 
     def __str__(self):
         return f'MobileCArm(isocenter={np.array_str(np.array(self.isocenter))}, alpha={np.degrees(self.alpha)}, beta={np.degrees(self.beta)}, degrees=True)'
@@ -206,6 +231,48 @@ class MobileCArm(object):
         isocenter_from_carm = geo.FrameTransform.from_origin(self.isocenter)
 
         return camera3d_from_isocenter @ isocenter_from_carm @ self.carm_from_world
+
+    def get_camera_projection(self) -> geo.CameraProjection:
+        return geo.CameraProjection(self.camera_intrinsics, self.get_camera3d_from_world())
+
+    def get_surface(self) -> pv.PolyData:
+        if not pv_available:
+            raise RuntimeError(f'PyVista not available for obtaining MobileCArm surface model. Try: `pip install pyvista`')
+
+        source_height = 240
+        mesh = pv.Cylinder(
+            center=[0, 0, -self.isocenter_distance - source_height / 2],
+            direction=[0, 0, 1],
+            radius=80,
+            height=240,
+        )
+
+        mesh += pv.Line(
+            pointa=[0, 0, -self.isocenter_distance],
+            pointb=[0, 0, -self.isocenter_distance + self.source_to_detector_distance],
+        )
+
+        # TODO: switch height/width?
+        mesh += pv.Box(
+            bounds=[
+                -self.pixel_size * self.sensor_width / 2,
+                self.pixel_size * self.sensor_width / 2,
+                -self.pixel_size * self.sensor_height / 2,
+                self.pixel_size * self.sensor_height / 2,
+                -self.isocenter_distance + self.source_to_detector_distance,
+                -self.isocenter_distance + self.source_to_detector_distance + 10,
+            ],
+        )
+
+        # TODO: add arm
+
+        mesh.rotate_x(-np.degrees(self.alpha))
+        mesh.rotate_y(-np.degrees(self.beta))
+        mesh.translate(self.isocenter_in_world)
+
+
+        return mesh
+    
 
 class CArm(object):
     """C-arm device for positioning a camera in space."""
