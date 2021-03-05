@@ -260,16 +260,21 @@ class MobileCArm(object):
                 -self.pixel_size * self.sensor_height / 2,
                 self.pixel_size * self.sensor_height / 2,
                 -self.isocenter_distance + self.source_to_detector_distance,
-                -self.isocenter_distance + self.source_to_detector_distance + 10,
+                self.isocenter_distance + source_height,
             ],
         )
 
-        # TODO: add arm
+        arm = pv.ParametricTorus(
+            ringradius=self.isocenter_distance + source_height / 2,
+            crosssectionradius=source_height / 4,
+        )
+        arm.clip(normal='-y', inplace=True)
+        arm.rotate_y(90)
+        mesh += arm
 
         mesh.rotate_x(-np.degrees(self.alpha))
         mesh.rotate_y(-np.degrees(self.beta))
         mesh.translate(self.isocenter_in_world)
-
 
         return mesh
     
