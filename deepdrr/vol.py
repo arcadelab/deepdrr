@@ -11,6 +11,9 @@ import nibabel as nib
 
 from . import load_dicom
 from . import geo
+from . import utils
+
+pv, pv_available = utils.try_import_pyvista()
 
 
 logger = logging.getLogger(__name__)
@@ -319,6 +322,43 @@ class Volume(object):
         """
         x_ijk = self.ijk_from_world @ geo.point(x)
         return np.all(0 <= np.array(x_ijk) <= np.array(self.shape) - 1)
+
+    def get_mesh_in_world(self):
+        """Get a pyvista mesh representing the volume in world-space.
+
+        Returns:
+            pv.PolyData: pyvist mesh.
+        """
+
+        assert pv_available, f'PyVista not available for obtaining Volume mesh. Try: `pip install pyvista`'
+
+        x, y, z = np.array(self.shape) - 1
+        points = [
+            [0, 0, 0],
+            [0, 0, z],
+            [0, y, 0],
+            [0, y, z], 
+            [x, 0, 0],
+            [x, 0, z],
+            [x, y, 0],
+            [x, y, z], 
+        ]
+
+        points = [list(self.world_from_ijk @ geo.point(p)) for p in points]
+        mesh = pv.Line(points[0], points[1])
+        mesh += pv.Line(points[0], points[2])
+        mesh += pv.Line(points[3], points[1])
+        mesh += pv.Line(points[3], points[2])
+        mesh += pv.Line(points[4], points[5])
+        mesh += pv.Line(points[4], points[6])
+        mesh += pv.Line(points[7], points[5])
+        mesh += pv.Line(points[7], points[6])
+        mesh += pv.Line(points[0], points[4])
+        mesh += pv.Line(points[1], points[5])
+        mesh += pv.Line(points[2], points[6])
+        mesh += pv.Line(points[3], points[7])
+
+        return mesh
 
 
 class MetalVolume(Volume):

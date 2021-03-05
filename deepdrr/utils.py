@@ -184,3 +184,13 @@ def neglog(image: np.ndarray, epsilon: float = 0.01) -> np.ndarray:
         return image[0]
     else:
         return image
+
+def try_import_pyvista():
+    try:
+        import pyvista as pv
+        pv_available = True
+    except ImportError:
+        pv = None
+        pv_available = False
+
+    return pv, pv_available

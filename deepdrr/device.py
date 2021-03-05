@@ -5,14 +5,10 @@ import numpy as np
 from numpy.lib.utils import source
 from scipy.spatial.transform import Rotation
 
-try:
-    import pyvista as pv
-    pv_available = True
-except ImportError:
-    pv_available = False
-
 from . import geo
 from . import utils
+
+pv, pv_available = utils.try_import_pyvista()
 
 
 logger = logging.getLogger(__name__)
@@ -144,6 +140,9 @@ class MobileCArm(object):
             source_to_detector_distance=self.source_to_detector_distance,
         )
 
+        self.static_mesh = None
+        self.mesh = None
+
     def __str__(self):
         return f'MobileCArm(isocenter={np.array_str(np.array(self.isocenter))}, alpha={np.degrees(self.alpha)}, beta={np.degrees(self.beta)}, degrees=True)'
 
@@ -235,21 +234,21 @@ class MobileCArm(object):
     def get_camera_projection(self) -> geo.CameraProjection:
         return geo.CameraProjection(self.camera_intrinsics, self.get_camera3d_from_world())
 
-    def get_surface(self) -> pv.PolyData:
-        if not pv_available:
-            raise RuntimeError(f'PyVista not available for obtaining MobileCArm surface model. Try: `pip install pyvista`')
+    def _make_mesh(self, source_height: float = 240) -> pv.PolyData:
+        """Make the mesh of the C-arm, centered and upright.
 
-        source_height = 240
+        This DOES NOT use the current isocenter, alpha, or beta.
+
+        Returns:
+            pv.PolyData: [description]
+        """
+        assert pv_available, f'PyVista not available for obtaining MobileCArm surface model. Try: `pip install pyvista`'
+
         mesh = pv.Cylinder(
             center=[0, 0, -self.isocenter_distance - source_height / 2],
             direction=[0, 0, 1],
             radius=80,
             height=240,
-        )
-
-        mesh += pv.Line(
-            pointa=[0, 0, -self.isocenter_distance],
-            pointb=[0, 0, -self.isocenter_distance + self.source_to_detector_distance],
         )
 
         # TODO: switch height/width?
@@ -264,18 +263,40 @@ class MobileCArm(object):
             ],
         )
 
+        mesh += pv.Line(
+            pointa=[0, 0, -self.isocenter_distance],
+            pointb=[0, 0, -self.isocenter_distance + self.source_to_detector_distance],
+        )
+
+        # TODO: add labeled point at the isocenter.
+
         arm = pv.ParametricTorus(
             ringradius=self.isocenter_distance + source_height / 2,
             crosssectionradius=source_height / 4,
         )
-        arm.clip(normal='-y', inplace=True)
+
+        arm.clip(normal='y', inplace=True)
         arm.rotate_y(90)
         mesh += arm
+        return mesh
 
+    def get_mesh_in_world(self) -> pv.PolyData:
+        """Get the pyvista mesh for the C-arm, in its world-space orientation.
+
+        Raises:
+            RuntimeError: if pyvista is not available.
+
+        Returns:
+            pv.PolyData: a mesh somewhat resembling the C-arm device.
+        """
+        if self.static_mesh is None:
+            self.static_mesh = self._make_mesh()
+
+        mesh = self.static_mesh.copy()
         mesh.rotate_x(-np.degrees(self.alpha))
         mesh.rotate_y(-np.degrees(self.beta))
-        mesh.translate(self.isocenter_in_world)
-
+        mesh.translate(self.isocenter)
+        mesh.transform(geo.get_data(self.world_from_carm))
         return mesh
     
 
