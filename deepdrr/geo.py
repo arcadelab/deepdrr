@@ -32,6 +32,10 @@ from . import utils
 logger = logging.getLogger(__name__)
 
 
+# TODO:
+# [ ] decorator for methods to cast list, tuple, and numpy array inputs to the expected homogeneous object, rather than requiring the user to do it.
+
+
 def _to_homogeneous(x: np.ndarray, is_point: bool = True) -> np.ndarray:
     """Convert an array to homogeneous points or vectors.
 
@@ -166,6 +170,18 @@ class HomogeneousPointOrVector(HomogeneousObject):
 
     def __div__(self, other):
         return self * (1 / other)
+
+    @property
+    def x(self):
+        return self.data[0]
+
+    @property
+    def y(self):
+        return self.data[1]
+
+    @property
+    def z(self):
+        return self.data[2]
     
 class Point(HomogeneousPointOrVector):
     def __init__(self, data: np.ndarray) -> None:
@@ -198,7 +214,7 @@ class Point(HomogeneousPointOrVector):
         return _point_or_vector(self.data - other.data)
 
     def __add__(self, other: Vector):
-        """ Can add a vector to a point, but cannot add two points. """
+        """ Can add a vector to a point, but cannot add two points. TODO: cannot add points together? """
         if issubclass(type(other), Vector):
             return type(self)(self.data + other.data)
         elif issubclass(type(other), Point):
@@ -292,6 +308,38 @@ class Vector(HomogeneousPointOrVector):
 
     def hat(self) -> Vector:
         return self * (1 / self.norm())
+
+    def cross(self, other) -> Vector:
+        if issubclass(type(other), Vector) and self.dim == other.dim:
+            return vector(np.cross(self, other))
+        else:
+            return NotImplemented
+
+    def perpendicular(self) -> Vector3D:
+        """Find an arbitrary perpendicular vector to self.
+        
+        Borrowed from https://codereview.stackexchange.com/questions/43928/algorithm-to-get-an-arbitrary-perpendicular-vector
+
+        TODO: if the vector is 2D, return one of the other vectors in the plane, to keep it 2D.
+
+        """
+        if self.x == self.y == self.z == 0:
+            raise ValueError('zero-vector')
+
+        # If one dimension is zero, this can be solved by setting that to
+        # non-zero and the others to zero. Example: (4, 2, 0) lies in the
+        # x-y-Plane, so (0, 0, 1) is orthogonal to the plane.
+        if self.x == 0:
+            return vector(1, 0, 0)
+        if self.y == 0:
+            return vector(0, 1, 0)
+        if self.z == 0:
+            return vector(0, 0, 1)
+
+        # arbitrarily set a = b = 1
+        # then the equation simplifies to
+        #     c = -(x + y)/z
+        return vector(1, 1, -1.0 * (self.x + self.y) / self.z).hat()
 
     def cosine_distance(self, other: Vector) -> float:
         """Get the cosine distance between the angles.
