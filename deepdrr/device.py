@@ -264,8 +264,14 @@ class MobileCArm(object):
         )
 
         mesh += pv.Line(
-            pointa=[0, 0, -self.isocenter_distance],
-            pointb=[0, 0, -self.isocenter_distance + self.source_to_detector_distance],
+            [0, 0, -self.isocenter_distance],
+            [0, 0, -self.isocenter_distance + self.source_to_detector_distance],
+        ) + pv.Line(
+            [-100, 0, 0],
+            [100, 0, 0],
+        ) + pv.Line(
+            [0, -100, 0],
+            [0, 100, 0],
         )
 
         # TODO: add labeled point at the isocenter.
