@@ -104,14 +104,14 @@ class SingleProjector(object):
             camera_intrinsics (CameraIntrinsicTransform): intrinsics of the projector's camera. (used for sensor size).
             source_to_detector_distance (float): distance from source to detector in millimeters.
             step (float, optional): size of the step along projection ray in voxels.
-            photon_count (int): the number of photons that hit each pixel. TODO: this could be the same for all pixels on a curved detector, but this simulates a flat-panel-detector. How to account for the difference?
+            photon_count (int, optional): the average number of photons that hit each pixel. (The expected number of photons that hit each pixel is not uniform over each pixel because the detector is a flat panel.)
             mode (Literal['linear']): [description].
             spectrum (Union[np.ndarray, Literal['60KV_AL35', '90KV_AL40', '120KV_AL43'], optional): spectrum array or name of spectrum to use for projection. Defaults to '90KV_AL40'.
             add_scatter (bool, optional): whether to add scatter noise. Defaults to False.
             threads (int, optional): number of threads per "side" in a 2-D GPU block. Defaults to 8.
             max_block_index (int, optional): maximum GPU block. Defaults to 1024.
             attenuation (bool, optional): whether the mass-attenuation calculation is performed in the CUDA kernel. Defaults to True.
-            collected_energy (bool, optional): Whether to return data of "integrated radiant intensity" (energy deposited per unit solid angle, [keV / sr]) or "collected energy" (energy deposited on pixel, [keV / mm^2]). Defaults to False (radiant intensity).
+            collected_energy (bool, optional): Whether to return data of "intensity" (energy deposited per photon, [keV]) or "collected energy" (energy deposited on pixel, [keV / mm^2]). Defaults to False ("intensity").
             add_scatter (bool, optional): whether to add scatter noise from artifacts. Defaults to False.
         """
                     
@@ -209,12 +209,11 @@ class SingleProjector(object):
                 camera_center_in_volume[1],                        # sy
                 camera_center_in_volume[2],                        # sz
                 self.rt_kinv_gpu,                       # RT_Kinv
-                np.int32(self.photon_count),            # photon_count
                 np.int32(self.spectrum.shape[0]),       # n_bins
                 self.energies_gpu,                      # energies
                 self.pdf_gpu,                           # pdf
                 self.absorption_coef_table_gpu,          # absorb_coef_table
-                self.deposited_energy_gpu,              # deposited_energy
+                self.intensity_gpu,              # intensity
                 self.photon_prob_gpu,                   # photon_prob
                 self.solid_angle_gpu,                   # solid_angle
             ]
@@ -259,14 +258,26 @@ class SingleProjector(object):
                     context.synchronize()
 
         if self.attenuation:
-            deposited_energy = np.empty(self.output_shape, dtype=np.float32)
-            cuda.memcpy_dtoh(deposited_energy, self.deposited_energy_gpu)
+            intensity = np.empty(self.output_shape, dtype=np.float32)
+            cuda.memcpy_dtoh(intensity, self.intensity_gpu)
             # transpose the axes, which previously have width on the slow dimension
-            deposited_energy = np.swapaxes(deposited_energy, 0, 1).copy()
+            intensity = np.swapaxes(intensity, 0, 1).copy()
 
             photon_prob = np.empty(self.output_shape, dtype=np.float32)
             cuda.memcpy_dtoh(photon_prob, self.photon_prob_gpu)
             photon_prob = np.swapaxes(photon_prob, 0, 1).copy()
+
+            # In case we need to do things with collected energy
+            deposited_energy = None
+            solid_angle = None
+
+            if self.collected_energy or self.add_scatter:
+                assert np.int32(0) != self.solid_angle_gpu
+                solid_angle = np.empty(self.output_shape, dtype=np.float32)
+                cuda.memcpy_dtoh(solid_angle, self.solid_angle_gpu)
+                solid_angle = np.swapaxes(solid_angle, 0, 1).copy()
+
+                deposited_energy = np.multiply(intensity, solid_angle) * self.photon_count / np.average(solid_angle)
 
             if self.add_scatter:
                 scatter_img, num_scattered_hits, num_unscattered_hits = cuda_scatter.simulate_scatter_gpu(self, camera_projection)
@@ -278,16 +289,15 @@ class SingleProjector(object):
                 pixel_size_x = self.source_to_detector_distance / camera_projection.index_from_camera2d.fx
                 pixel_size_y = self.source_to_detector_distance / camera_projection.index_from_camera2d.fy
                 deposited_energy /= (pixel_size_x * pixel_size_y)
+                return deposited_energy, photon_prob
+            elif self.add_scatter:
+                # have converted to collected energy to add scatter. Now, need to convert back to 'intensity'
+                assert solid_angle is not None
+                intensity = np.divide(deposited_energy, solid_angle) * np.average(solid_angle) / self.photon_count
             else:
-                # Radiant intensity is [radiant energy per unit time] per [unit solid angle].
-                # The [per unit time] part doesn't matter because we assume the pixels read the photons
-                # over the same time period.
-                solid_angle = np.empty(self.output_shape, dtype=np.float32)
-                cuda.memcpy_dtoh(solid_angle, self.solid_angle_gpu)
-                solid_angle = np.swapaxes(solid_angle, 0, 1).copy()
-                deposited_energy = deposited_energy / solid_angle
+                assert solid_angle is None
 
-            return deposited_energy, photon_prob
+            return intensity, photon_prob
         else:
             # copy the output to CPU
             output = np.empty(self.output_shape, np.float32)
@@ -337,21 +347,19 @@ class SingleProjector(object):
 
         if self.attenuation:
             # allocate deposited_energy array on GPU (4 bytes to a float32)
-            self.deposited_energy_gpu = cuda.mem_alloc(self.output_size * 4)
-            logger.debug(f"bytes alloc'd for self.deposited_energy_gpu: {self.output_size * 4}")
+            self.intensity_gpu = cuda.mem_alloc(self.output_size * 4)
+            logger.debug(f"bytes alloc'd for self.intensity_gpu: {self.output_size * 4}")
 
             # allocate photon_prob array on GPU (4 bytes to a float32)
             self.photon_prob_gpu = cuda.mem_alloc(self.output_size * 4)
             logger.debug(f"bytes alloc'd for self.photon_prob_gpu: {self.output_size * 4}")
 
             # allocate solid_angle array on GPU as needed (4 bytes to a float32)
-            if self.collected_energy:
-                # Don't need to do solid angle calculation, since just dividing by pixel area
-                self.solid_angle_gpu = np.int32(0) # NULL
-            else:
-                # Need to do solid angle calculation
+            if self.collected_energy or self.add_scatter:
                 self.solid_angle_gpu = cuda.mem_alloc(self.output_size * 4)
                 logger.debug(f"bytes alloc'd for self.solid_angle_gpu: {self.output_size * 4}")
+            else:
+                self.solid_angle_gpu = np.int32(0) # NULL. Don't need to do solid angle calculation
 
             # allocate and transfer spectrum energies (4 bytes to a float32)
             assert isinstance(self.spectrum, np.ndarray)
@@ -452,12 +460,12 @@ class SingleProjector(object):
             self.rt_kinv_gpu.free()
 
             if self.attenuation:
-                self.deposited_energy_gpu.free()
+                self.intensity_gpu.free()
                 self.photon_prob_gpu.free()
-                if self.collected_energy:
-                    assert np.int32(0) == self.solid_angle_gpu
-                else:
+                if self.collected_energy or self.add_scatter:
                     self.solid_angle_gpu.free()
+                else:
+                    assert np.int32(0) == self.solid_angle_gpu
                 self.energies_gpu.free()
                 self.pdf_gpu.free()
                 self.absorption_coef_table_gpu.free()
@@ -518,10 +526,10 @@ class Projector(object):
             spectrum (Union[np.ndarray, Literal['60KV_AL35', '90KV_AL40', '120KV_AL43'], optional): spectrum array or name of spectrum to use for projection. Defaults to '90KV_AL40'.
             add_scatter (bool, optional): whether to add scatter noise from artifacts. Defaults to False.
             add_noise (bool, optional): whether to add Poisson noise. Defaults to False.
-            photon_count (int, optional): the number of photons that hit each pixel. Defaults to 10^4. TODO: this could be the same for all pixels on a curved detector, but this simulates a flat-panel-detector. How to account for the difference?
+            photon_count (int, optional): the average number of photons that hit each pixel. (The expected number of photons that hit each pixel is not uniform over each pixel because the detector is a flat panel.) Defaults to 10^4.
             threads (int, optional): number of threads per "side" in a 2-D GPU block. Defaults to 8.
             max_block_index (int, optional): maximum GPU block. Defaults to 1024. TODO: determine from compute capability.
-            collected_energy (bool, optional): Whether to return data of "integrated radiant intensity" (energy deposited per unit solid angle, [keV / sr]) or "collected energy" (energy deposited on pixel, [keV / mm^2]). Defaults to False (radiant intensity).
+            collected_energy (bool, optional): Whether to return data of "intensity" (energy deposited per photon, [keV]) or "collected energy" (energy deposited on pixel, [keV / mm^2]). Defaults to False ("intensity").
             neglog (bool, optional): whether to apply negative log transform to intensity images. If True, outputs are in range [0, 1]. Recommended for easy viewing. Defaults to False.
             intensity_upper_bound (Optional[float], optional): Maximum intensity, clipped before neglog, after noise and scatter. Defaults to 40 keV / sr.
         """

@@ -231,7 +231,7 @@ extern "C" {
         float *absorb_coef_table, // flat [n_bins x NUM_MATERIALS] table that represents
                         // the precomputed get_absorption_coef values.
                         // index into the table as: table[bin * NUM_MATERIALS + mat]
-        float *deposited_energy, // flat array, with shape (out_height, out_width).
+        float *intensity, // flat array, with shape (out_height, out_width).
         float *photon_prob, // flat array, with shape (out_height, out_width).
         float *solid_angle, // flat array, with shape (out_height, out_width). Could be NULL pointer
         int offsetW,
@@ -405,11 +405,11 @@ extern "C" {
 
         // forward_projections dictionary-ization is implicit.
 
-        // flat index to pixel in *deposited_energy and *photon_prob
+        // flat index to pixel in *intensity and *photon_prob
         int img_dx = (udx * out_height) + vdx;
 
-        // zero-out deposited_energy and photon_prob
-        deposited_energy[img_dx] = 0;
+        // zero-out intensity and photon_prob
+        intensity[img_dx] = 0;
         photon_prob[img_dx] = 0;
 
         // MASS ATTENUATION COMPUTATION
@@ -448,7 +448,7 @@ extern "C" {
          * related to the power transmitted through [unit area perpendicular to the direction of travel].
          * Since the intensities mentioned in the Beer-Lambert law are proportional to 1/[unit area], we
          * can replace the "intensity" calcuation with simply the energies involved.  Later conversion to 
-         * true (physical) intensity, by dividing by the pixel area, can be done outside of the kernel.
+         * other physical quanities can be done outside of the kernel.
          */
         for (int bin = 0; bin < n_bins; bin++) {
             float energy = energies[bin];
@@ -461,18 +461,8 @@ extern "C" {
             float photon_prob_tmp = expf(-1 * beer_lambert_exp) * p; // dimensionless value
 
             photon_prob[img_dx] += photon_prob_tmp;
-            deposited_energy[img_dx] += energy * photon_prob_tmp; // units: [eV] per unit photon to hit the pixel
+            intensity[img_dx] += energy * photon_prob_tmp; // units: [eV] per unit photon to hit the pixel
         }
-
-        /**
-         * At this point, deposited_energy contains the quantity:
-         * [energy deposited on the pixel per unit photon that hits the pixel]
-         * 
-         * To get the true energy deposited on the pixel, we need to scale up by the factor:
-         *      [photon_count]
-         * because [photon_count] is the number of photons hitting each pixel
-         */
-        deposited_energy[img_dx] *= ((float)photon_count);
 
         if (NULL != solid_angle) {
             /**

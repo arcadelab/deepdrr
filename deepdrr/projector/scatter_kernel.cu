@@ -135,12 +135,20 @@ extern "C" {
                     }
                 }
             } else {
-                /*
-                 * Do not need to check if the photon hits the detector here since
-                 * that photon would be considered part of the primary X-ray image
-                 */
+                // Check if the photon would travel from the source to hit the detector. 
+                // Then, if it does, add to num_unscattered_hits since it's part of the X-ray primary
+                float dist_to_detector = psurface_check_ray_intersection(&pos, &dir, detector_plane);
+                if (dist_to_detector >= 0.0f) {
+                    pos->x += dist_to_detector * dir->x;
+                    pos->y += dist_to_detector * dir->y;
+                    pos->z += dist_to_detector * dir->z;
 
-                // TODO: check if the photon would travel from the source to hit the detector. Then, if it does, add to num_unscattered_hits
+                    int pixel_x = (int)((index_from_ijk[0] * pos->x) + (index_from_ijk[1] * pos->y) + (index_from_ijk[2] * pos->z));
+                    int pixel_y = (int)((index_from_ijk[4] * pos->x) + (index_from_ijk[5] * pos->y) + (index_from_ijk[6] * pos->z));
+                    if ((pixel_x >= 0) && (pixel_x < detector_width) && (pixel_y >= 0) && (pixel_y < detector_height)) {
+                        atomicAdd(num_unscattered_hits, 1);
+                    }
+                }
             }
         }
 
