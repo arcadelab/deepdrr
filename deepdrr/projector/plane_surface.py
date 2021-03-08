@@ -5,6 +5,7 @@ import numpy as np
 
 class PlaneSurface:
     plane_vector: np.ndarray
+    surface_origin: np.ndarray
     basis_1: np.ndarray
     basis_2: np.ndarray
     bounds: np.ndarray

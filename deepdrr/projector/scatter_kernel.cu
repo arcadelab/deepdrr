@@ -2,14 +2,14 @@
  * Based on Sisniega et al. (2015), "High-fidelity artifact correction for cone-beam CT imaging of the brain"
  */
 
-#include "scatter_initialization_header.cu"
+#include "scatter_header.cu"
 
 extern "C" {
-    __global__ void initialization_stage(
+    __global__ void simulate_scatter(
         int detector_width, // size of detector in pixels 
         int detector_height,
         int histories_for_thread, // number of photons for -this- thread to track
-        char *nominal_segmentation, // [0..2]-labeled segmentation obtained by thresholding: [-infty, -500, 300, infty]
+        char *labeled_segmentation, // [0..NUM_MATERIALS-1]-labeled segmentation
         float sx, // coordinates of source in IJK
         float sy, // (not in a float3_t for ease of calling from Python wrapper)
         float sz,
@@ -26,24 +26,20 @@ extern "C" {
         float gVoxelElementSizeX, // voxel size in IJK
         float gVoxelElementSizeY,
         float gVoxelElementSizeZ,
-        float *index_from_ijk, // (2, 4) array giving the IJK-homogeneous-coord.s-to-pixel-coord.s transformation
-        mat_mfp_data_t *air_mfp,
-        mat_mfp_data_t *soft_mfp,
-        mat_mfp_data_t *bone_mfp,
+        float *index_from_ijk, // (2, 3) array giving the IJK-homogeneous-coord.s-to-pixel-coord.s transformation
+        mat_mfp_data_t *mfp_data_arr,
         wc_mfp_data_t *woodcock_mfp,
-        compton_data_t *air_Co_data,
-        compton_data_t *soft_Co_data,
-        compton_data_t *bone_Co_data,
-        rita_t *air_rita,
-        rita_t *soft_rita,
-        rita_t *bone_rita,
+        compton_data_t *compton_arr,
+        rita_t *rita_arr,
         plane_surface_t *detector_plane,
         int n_bins, // the number of spectral bins
-        float *spectrum_energies, // 1-D array -- size is the n_bins
+        float *spectrum_energies, // 1-D array -- size is the n_bins. Units: [keV]
         float *spectrum_cdf, // 1-D array -- cumulative density function over the energies
-        float E_abs, // the energy level below which photons are assumed to be absorbed
+        float E_abs, // the energy level below which photons are assumed to be absorbed [keV]
         int seed_input,
-        float *deposited_energy // the output.  Size is [detector_width]x[detector_height]
+        float *deposited_energy, // the output.  Size is [detector_width]x[detector_height]
+        int *num_scattered_hits, // number of scattered photons that hit the detector
+        int *num_unscattered_hits // number of unscattered photons that hit the detector
     ) {
         rng_seed_t seed;
         int thread_id = threadIdx.x + (blockIdx.x * blockDim.x); // 1D block
@@ -70,21 +66,6 @@ extern "C" {
             .z = gVoxelElementSizeZ
         };
 
-        mat_mfp_data_t *mfp_data_arr[3];
-        mfp_data_arr[NOM_SEG_AIR_ID] = air_mfp;
-        mfp_data_arr[NOM_SEG_SOFT_ID] = soft_mfp;
-        mfp_data_arr[NOM_SEG_BONE_ID] = bone_mfp;
-
-        compton_data_t *compton_arr[3];
-        compton_arr[NOM_SEG_AIR_ID] = air_Co_data;
-        compton_arr[NOM_SEG_SOFT_ID] = soft_Co_data;
-        compton_arr[NOM_SEG_BONE_ID] = bone_Co_data;
-
-        rita_t *rita_arr[3];
-        rita_arr[NOM_SEG_AIR_ID] = air_rita;
-        rita_arr[NOM_SEG_SOFT_ID] = soft_rita;
-        rita_arr[NOM_SEG_BONE_ID] = bone_rita;
-
         for (; histories_for_thread > 0; histories_for_thread--) {
             float3_t pos = { .x = sx, .y = sy, .z = sz };
             float3_t dir;
@@ -97,7 +78,7 @@ extern "C" {
                 int num_scatter_events = 0;
                 initialization_track_photon(
                     &pos, &dir, &energy, &is_hit, &num_scatter_events,
-                    E_abs, nominal_segmentation, 
+                    E_abs, labeled_segmentation, 
                     mfp_data_arr, woodcock_mfp, compton_arr, rita_arr,
                     &volume_shape, 
                     &gVolumeEdgeMinPoint, &gVolumeEdgeMaxPoint, &gVoxelElementSize,
@@ -105,7 +86,6 @@ extern "C" {
                 );
 
                 if (is_hit && num_scatter_events) {
-                    // The photon was scattered at least once and thus is not part of the primary
                     // 'pos' contains the IJK coord.s of collision with the detector.
 
                     // Calculate the pixel indices for the detector image
@@ -142,9 +122,16 @@ extern "C" {
                     int pixel_x = (int)((index_from_ijk[0] * pos->x) + (index_from_ijk[1] * pos->y) + (index_from_ijk[2] * pos->z));
                     int pixel_y = (int)((index_from_ijk[4] * pos->x) + (index_from_ijk[5] * pos->y) + (index_from_ijk[6] * pos->z));
                     if ((pixel_x >= 0) && (pixel_x < detector_width) && (pixel_y >= 0) && (pixel_y < detector_height)) {
-                        // NOTE: atomicAdd(float *, float) only available for compute capability 2.x and higher.
-                        // https://docs.nvidia.com/cuda/cuda-c-programming-guide/index.html#atomicadd
-                        atomicAdd(&deposited_energy[(pixel_y * detector_width) + pixel_x], energy);
+                        if (num_scatter_events) {
+                            // The photon was scattered at least once and thus is not part of the primary
+                            atomicAdd(num_scattered_hits, 1);
+                            // NOTE: atomicAdd(float *, float) only available for compute capability 2.x and higher.
+                            // https://docs.nvidia.com/cuda/cuda-c-programming-guide/index.html#atomicadd
+                            atomicAdd(&deposited_energy[(pixel_y * detector_width) + pixel_x], energy);
+                        } else {
+                            // The photon was not scattered and thus is part of the primary
+                            atomicAdd(num_unscattered_hits, 1);
+                        }
                     }
                 }
             } else {
@@ -152,6 +139,8 @@ extern "C" {
                  * Do not need to check if the photon hits the detector here since
                  * that photon would be considered part of the primary X-ray image
                  */
+
+                // TODO: check if the photon would travel from the source to hit the detector. Then, if it does, add to num_unscattered_hits
             }
         }
 
@@ -165,11 +154,11 @@ extern "C" {
         int *hits_detector, // Boolean output.  Does the photon actually reach the detector plane?
         int *num_scatter_events, // should be passed a pointer to an int initialized to zero.  Returns the number of scatter events experienced by the photon
         float E_abs, // the energy level below which the photon is assumed to be absorbed
-        char *labeled_segmentation, // [0..2]-labeled segmentation obtained by thresholding: [-infty, -500, 300, infty]
-        mat_mfp_data_t **mfp_data_arr, // 3-element array of pointers to mat_mfp_data_t structs. Idx NOM_SEG_AIR_ID associated with air, etc
+        char *labeled_segmentation, // [0..NUM_MATERIALS-1]-labeled segmentation
+        mat_mfp_data_t *mfp_data_arr, // NUM_MATERIALS-element array of pointers to mat_mfp_data_t structs. Material associations based on labeled_segmentation
         wc_mfp_data_t *wc_data,
-        compton_data_t **compton_arr, // 3-element array of pointers to compton_data_t.  Material associations as with mfp_data_arr
-        rita_t **rita_arr, // 3-element array of pointers to rita_t.  Material associations as with mfp_data_arr
+        compton_data_t *compton_arr, // NUM_MATERIALS-element array of pointers to compton_data_t.  Material associations as with mfp_data_arr
+        rita_t *rita_arr, // NUM_MATERIALS-element array of pointers to rita_t.  Material associations as with mfp_data_arr
         int3_t *volume_shape, // number of voxels in each direction IJK
         float3_t *gVolumeEdgeMinPoint, // IJK coordinate of minimum bounds of volume
         float3_t *gVolumeEdgeMaxPoint, // IJK coordinate of maximum bounds of volume
@@ -200,7 +189,7 @@ extern "C" {
                 curr_mat_id = labeled_segmentation[vox];
                 if (curr_mat_id != old_mat_id) {
                     // only read the mfp data when necessary
-                    get_mat_mfp_data(mfp_data_arr[mat_id], *energy, &mfp_Ra, &mfp_Co, &mfp_Tot);
+                    get_mat_mfp_data(&mfp_data_arr[mat_id], *energy, &mfp_Ra, &mfp_Co, &mfp_Tot);
                     old_mat_id = curr_mat_id;
                 }
 
@@ -239,9 +228,9 @@ extern "C" {
             float rnd = ranecu(seed);
             float prob_Co = mfp_Tot / mfp_Co;
             if (rnd < prob_Co) {
-                cos_theta = sample_Compton(energy, compton_arr[mat_id], seed);
+                cos_theta = sample_Compton(energy, &compton_arr[mat_id], seed);
             } else if (rnd < (prob_Co + (mfp_Tot / mfp_Ra))) {
-                cos_theta = sample_Rayleigh(*energy, rita_arr[mat_id], seed);
+                cos_theta = sample_Rayleigh(*energy, &rita_arr[mat_id], seed);
             } else {
                 *hits_detector = 0;
                 return;

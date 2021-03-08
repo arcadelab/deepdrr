@@ -78,17 +78,19 @@ def simulate_scatter_no_vr(
 
     Args:
         volume (np.ndarray): the volume density data.
-        source (geo.Point3D): the source point for rays in the camera's IJK space
+        source_ijk (geo.Point3D): the source point for rays in the camera's IJK space
         rt_kinv (np.ndarray): the ray transform for the projection.  Transforms pixel indices (u,v,1) to IJK vector along ray from from the X-Ray source to the detector pixel [u,v].
+        camera_intrinsics (geo.CameraIntrinsicTransform): the C-Arm "camera" intrinsic transform.  Used to calculate the detector plane.
         source_to_detector_distance (float): distance from source to detector in millimeters.
-        index_from_ijk (np.ndarray): the inverse transformation of ijk_from_index
+        index_from_ijk (np.ndarray): the inverse transformation of ijk_from_index.  Takes 3D IJK coordinates and transforms to 2D pixel coordinates
         sensor_size (Tuple[int,int]): the sensor size {width}x{height}, in pixels, of the detector
+        photon_count (int): the number of photons simulated.
+        mfp_woodcock (np.ndarray): the Woodcock MFP data for the materials being simulated.  See make_woodock_mfp(...).
         spectrum (Optional[np.ndarray], optional): spectrum array.  Defaults to 90KV_AL40 spectrum.
-        photon_count (Optional[int], optional): the number of photons simulated.  Defaults to 10^7 photons.
-        E_abs (Optional[np.float32], optional): the energy (in eV) at or below which photons are assumed to be absorbed by the materials.  Defaults to 1000 (eV).
+        E_abs (Optional[np.float32], optional): the energy (in eV) at or below which photons are assumed to be absorbed by the materials.  Defaults to 5000 (eV).
 
     Returns:
-        np.ndarray: intensity image of the photon scatter
+        np.ndarray: deposited-energy image of the photon scatter
     """
     count_milestones = [int(math.pow(10, i)) for i in range(int(1 + math.ceil(math.log10(photon_count))))] # [1, 10, 100, ..., 10^7] in default case
 
@@ -159,9 +161,10 @@ def simulate_scatter_no_vr(
         # Only keep track of photons that were scattered
         if 0 == num_scatter_events:
             continue
-        else:
-            print(f"photon history {i+1} / {photon_count}: {num_scatter_events} scatter events")
-            print(f"\tpixel: [{pixel_x}, {pixel_y}]\n")
+        #else:
+            #print(f"photon history {i+1} / {photon_count}: {num_scatter_events} scatter events")
+            #print(f"\tpixel: [{pixel_x}, {pixel_y}]\n")
+
         
         # Model for detector: ideal image formation
         # Each pixel counts the total energy of the X-rays that enter the pixel (100% efficient pixels)
@@ -866,6 +869,11 @@ def get_scattered_dir(
     sin_phi = np.sin(phi)
 
     tmp = np.sqrt(1 - dz * dz)
+    if (tmp < 0.000001):
+        print(f"In get_scattered_dir(...)")
+        print(f"\tinput direction: ({dx}, {dy}, {dz})")
+        print(f"1 - dz*dz = {tmp} < 0.000001")
+        tmp = 0.0000001
 
     # See PENELOPE-2006 Eqn 1.131
     new_dx = dx * cos_theta + sin_theta * (dx * dz * cos_phi - dy * sin_phi) / tmp

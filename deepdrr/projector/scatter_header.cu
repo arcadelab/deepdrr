@@ -7,14 +7,15 @@
 extern "C" {
     /*** FUNCTION DECLARATIONS ***/
 
-    __global__ void initialization_stage(
+    __global__ void simulate_scatter(
         int detector_width, // size of detector in pixels 
         int detector_height,
         int histories_for_thread, // number of photons for -this- thread to track
-        char *nominal_segmentation, // [0..2]-labeled segmentation obtained by thresholding: [-infty, -500, 300, infty]
+        char *labeled_segmentation, // [0..NUM_MATERIALS-1]-labeled segmentation
         float sx, // coordinates of source in IJK
         float sy, // (not in a float3_t for ease of calling from Python wrapper)
         float sz,
+        float sdd, // source-to-detector distance [mm]
         int volume_shape_x, // integer size of the volume to avoid 
         int volume_shape_y, // floating-point errors with the gVolumeEdge{Min,Max}Point
         int volume_shape_z, // and gVoxelElementSize math
@@ -27,23 +28,20 @@ extern "C" {
         float gVoxelElementSizeX, // voxel size in IJK
         float gVoxelElementSizeY,
         float gVoxelElementSizeZ,
-        float *index_from_ijk, // (2, 4) array giving the IJK-homogeneous-coord.s-to-pixel-coord.s transformation
-        mat_mfp_data_t *air_mfp,
-        mat_mfp_data_t *soft_mfp,
-        mat_mfp_data_t *bone_mfp,
+        float *index_from_ijk, // (2, 3) array giving the IJK-homogeneous-coord.s-to-pixel-coord.s transformation
+        mat_mfp_data_t *mfp_data_arr,
         wc_mfp_data_t *woodcock_mfp,
-        compton_data_t *air_Co_data,
-        compton_data_t *soft_Co_data,
-        compton_data_t *bone_Co_data,
-        rita_t *air_rita,
-        rita_t *soft_rita,
-        rita_t *bone_rita,
+        compton_data_t *compton_arr,
+        rita_t *rita_arr,
         plane_surface_t *detector_plane,
         int n_bins, // the number of spectral bins
-        float *spectrum_energies, // 1-D array -- size is the n_bins
+        float *spectrum_energies, // 1-D array -- size is the n_bins. Units: [keV]
         float *spectrum_cdf, // 1-D array -- cumulative density function over the energies
-        float E_abs, // the energy level below which photons are assumed to be absorbed
-        float *deposited_energy // the output.  Size is [detector_width]x[detector_height]
+        float E_abs, // the energy level below which photons are assumed to be absorbed [keV]
+        int seed_input,
+        float *deposited_energy, // the output.  Size is [detector_width]x[detector_height]
+        int *scattered_hits, // number of scattered photons that hit the detector
+        int *unscattered_hits // number of unscattered photons that hit the detector
     );
 
     __device__ void initialization_track_photon(

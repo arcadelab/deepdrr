@@ -16,12 +16,17 @@ except ImportError:
 from . import spectral_data
 from . import mass_attenuation
 from . import scatter
+from . import cuda_scatter
 from . import analytic_generators
 from .material_coefficients import material_coefficients
+from .mcgpu_mfp_data import MFP_DATA
+from .mcgpu_compton_data import COMPTON_DATA
+from .mcgpu_rita_samplers import rita_samplers
 from .. import geo
 from .. import vol
 from ..device import CArm
 from .. import utils
+from .cuda_scatter_structs import CudaPlaneSurfaceStruct, CudaRitaStruct, CudaComptonStruct, CudaMatMfpStruct, CudaWoodcockStruct
 
 
 logger = logging.getLogger(__name__)
@@ -57,6 +62,22 @@ def _get_kernel_projector_module(num_materials, attenuation = True) -> SourceMod
     # TODO: replace the NUM_MATERIALS junk with some elegant meta-programming.
     return SourceModule(source, include_dirs=[bicubic_path], no_extern_c=True, options=['-D', f'NUM_MATERIALS={num_materials}'])
 
+def _get_kernel_scatter_module(num_materials) -> SourceModule:
+    """Compile the cuda code for the scatter simulation.
+
+    Assumes 'scatter_kernel.cu' and 'scatter_header.cu' are in the same directory as THIS file.
+
+    Returns:
+        SourceModule: pycuda SourceModule object.
+    """
+    d = Path(__file__).resolve().parent
+    source_path = str(d / 'scatter_kernel.cu')
+
+    with open(source_path, 'r') as file:
+        source = file.read()
+
+    logger.debug(f"compiling {source_path} with NUM_MATERIALS={num_materials}")
+    return SourceModule(source, include_dirs=str(d), no_extern_c=True, options=['-D', f'NUM_MATERIALS={num_materials}'])
 
 class SingleProjector(object):
     initialized: bool = False
@@ -65,36 +86,33 @@ class SingleProjector(object):
         self,
         volume: vol.Volume,
         camera_intrinsics: geo.CameraIntrinsicTransform,
-        source_to_detector_distance: float = 1200, 
-        step: float = 0.1,
+        source_to_detector_distance: float, 
+        step: float,
+        photon_count: int,
         mode: Literal['linear'] = 'linear',
         spectrum: Union[np.ndarray, Literal['60KV_AL35', '90KV_AL40', '120KV_AL43']] = '90KV_AL40',
-        photon_count: int = 100000,
         threads: int = 8,
         max_block_index: int = 1024,
         attenuation: bool = True,
+        collected_energy: bool = False,
+        add_scatter: bool = False
     ) -> None:
-        """Create the projector, which has info for simulating the DRR.
-
-        Usage:
-        ```
-        with Projector(volume, materials, ...) as projector:
-            for projection in projections:
-                yield projector(projection)
-        ```
+        """Create the projector, which has info for simulating the DRR, for a single projection angle.
 
         Args:
             volume (Volume): a volume object with materials segmented.
             camera_intrinsics (CameraIntrinsicTransform): intrinsics of the projector's camera. (used for sensor size).
             source_to_detector_distance (float): distance from source to detector in millimeters.
-            carm (Optional[CArm], optional): Optional C-arm device, for convenience which can be used to get projections from C-Arm pose. If not provided, camera pose must be defined by user. Defaults to None.
-            step (float, optional): size of the step along projection ray in voxels. Defaults to 0.1.
+            step (float, optional): size of the step along projection ray in voxels.
+            photon_count (int): the number of photons that hit each pixel. TODO: this could be the same for all pixels on a curved detector, but this simulates a flat-panel-detector. How to account for the difference?
             mode (Literal['linear']): [description].
             spectrum (Union[np.ndarray, Literal['60KV_AL35', '90KV_AL40', '120KV_AL43'], optional): spectrum array or name of spectrum to use for projection. Defaults to '90KV_AL40'.
             add_scatter (bool, optional): whether to add scatter noise. Defaults to False.
-            threads (int, optional): number of threads to use. Defaults to 8.
+            threads (int, optional): number of threads per "side" in a 2-D GPU block. Defaults to 8.
             max_block_index (int, optional): maximum GPU block. Defaults to 1024.
-            neglog (bool, optional): whether to apply negative log transform to output images. Recommended for easy viewing. Defaults to False.
+            attenuation (bool, optional): whether the mass-attenuation calculation is performed in the CUDA kernel. Defaults to True.
+            collected_energy (bool, optional): Whether to return data of "integrated radiant intensity" (energy deposited per unit solid angle, [keV / sr]) or "collected energy" (energy deposited on pixel, [keV / mm^2]). Defaults to False (radiant intensity).
+            add_scatter (bool, optional): whether to add scatter noise from artifacts. Defaults to False.
         """
                     
         # set variables
@@ -102,12 +120,14 @@ class SingleProjector(object):
         self.camera_intrinsics = camera_intrinsics
         self.source_to_detector_distance = source_to_detector_distance
         self.step = step
+        self.photon_count = photon_count
         self.mode = mode
         self.spectrum = _get_spectrum(spectrum)
-        self.photon_count = photon_count
         self.threads = threads
         self.max_block_index = max_block_index
         self.attenuation = attenuation
+        self.collected_energy = collected_energy
+        self.add_scatter = add_scatter
 
         self.num_materials = len(self.volume.materials)
 
@@ -115,6 +135,9 @@ class SingleProjector(object):
         # TODO: fix attenuation vs no-attenuation ugliness.
         self.mod = _get_kernel_projector_module(self.num_materials, attenuation=self.attenuation)
         self.project_kernel = self.mod.get_function("projectKernel")
+
+        self.scatter_mod = _get_kernel_scatter_module(self.num_materials)
+        self.simulate_scatter = self.scatter_mod.get_function("simulate_scatter")
 
         # assertions
         for mat in self.volume.materials:
@@ -144,7 +167,7 @@ class SingleProjector(object):
             RuntimeError: if the projector has not been initialized.
 
         Returns:
-            np.ndarray: the deposited-energy image
+            np.ndarray: the intensity image
             np.ndarray: the photon probability field
         """
         if not self.initialized:
@@ -192,8 +215,8 @@ class SingleProjector(object):
                 self.pdf_gpu,                           # pdf
                 self.absorption_coef_table_gpu,          # absorb_coef_table
                 self.deposited_energy_gpu,              # deposited_energy
-                self.photon_prob_gpu,                   # photon_prob (or NULL)
-                self.pixel_spherical_fractions_gpu
+                self.photon_prob_gpu,                   # photon_prob
+                self.solid_angle_gpu,                   # solid_angle
             ]
         else:
             args = [
@@ -236,78 +259,35 @@ class SingleProjector(object):
                     context.synchronize()
 
         if self.attenuation:
-            # NOTE: this deposited_energy is actually the deposited energy PER UNIT PHOTON
-            # To convert to actual deposited energy, will need to multiply by:
-            #   [photon_count] x [solid angle of the pixel]
             deposited_energy = np.empty(self.output_shape, dtype=np.float32)
             cuda.memcpy_dtoh(deposited_energy, self.deposited_energy_gpu)
             # transpose the axes, which previously have width on the slow dimension
             deposited_energy = np.swapaxes(deposited_energy, 0, 1).copy()
 
-            ### TEMPORARY ###
-            pixel_spherical_fractions = np.empty(self.output_shape, dtype=np.float32)
-            cuda.memcpy_dtoh(pixel_spherical_fractions, self.pixel_spherical_fractions_gpu)
-            pixel_spherical_fractions = np.swapaxes(pixel_spherical_fractions, 0, 1).copy()
-            ### TEMPORARY ###
-
             photon_prob = np.empty(self.output_shape, dtype=np.float32)
             cuda.memcpy_dtoh(photon_prob, self.photon_prob_gpu)
             photon_prob = np.swapaxes(photon_prob, 0, 1).copy()
 
-            print(f"total primary deposited energy, unattenuated:\n = {np.sum(deposited_energy)}")
-            detector_fraction_of_sphere = 0.00619523262149318900528428
-            print(f"detector fraction of sphere, calculated by hand:\n\t{detector_fraction_of_sphere}")
-            print(f"detector fraction of sphere, summed from pixels:\n\t{np.sum(pixel_spherical_fractions)}")
-            expected_unatten_energy_per_photon = 49244.88671875
-            expected_dep_nrg = expected_unatten_energy_per_photon * self.photon_count * detector_fraction_of_sphere
-            print(f"photon count: {self.photon_count}")
-            print(f"expected deposited energy, unattenuated:")
-            print(f" = E[energy per photon] * [photon count] * [fraction of sphere subtended by detector]")
-            print(f" = {expected_dep_nrg}")
-            print(f"\noff by a factor of {np.sum(deposited_energy) / expected_dep_nrg}")
+            if self.add_scatter:
+                scatter_img, num_scattered_hits, num_unscattered_hits = cuda_scatter.simulate_scatter_gpu(self, camera_projection)
+
+                photon_prob *= (1 + scatter_img / deposited_energy) # probability for a photon to hit each given pixel TODO: check this math
+                deposited_energy = ((num_unscattered_hits * deposited_energy) + (num_scattered_hits * scatter_img)) / (num_unscattered_hits + num_scattered_hits) # TODO: check this math
+            
+            if self.collected_energy:
+                pixel_size_x = self.source_to_detector_distance / camera_projection.index_from_camera2d.fx
+                pixel_size_y = self.source_to_detector_distance / camera_projection.index_from_camera2d.fy
+                deposited_energy /= (pixel_size_x * pixel_size_y)
+            else:
+                # Radiant intensity is [radiant energy per unit time] per [unit solid angle].
+                # The [per unit time] part doesn't matter because we assume the pixels read the photons
+                # over the same time period.
+                solid_angle = np.empty(self.output_shape, dtype=np.float32)
+                cuda.memcpy_dtoh(solid_angle, self.solid_angle_gpu)
+                solid_angle = np.swapaxes(solid_angle, 0, 1).copy()
+                deposited_energy = deposited_energy / solid_angle
 
             return deposited_energy, photon_prob
-            #
-            # TODO: ask about this np.swapaxes(...) call.  It's not clear to me why it's necessary or desirable, given that
-            #   we were working off of self.output_shape, which basically goes off of self.sensor_shape
-            #
-
-            ### BEGIN TEMP
-            print("camera intrinsics (K):")
-            print(f"{self.camera_intrinsics}\n")
-            rt_kinv = camera_projection.get_ray_transform(self.volume)
-            index_from_ijk = np.array(rt_kinv.inv)[0:2,0:3] # upper left 2x3
-            rt_kinv = np.array(rt_kinv) # 3x3
-
-            print(f"rt_kinv np.ndarray:")
-            print(f"{rt_kinv}\n")
-            print(f"index_from_ijk np.ndarray:")
-            print(f"{index_from_ijk}\n")
-
-            mfp_woodcock = scatter.make_woodcock_mfp(["air", "soft tissue", "bone"])
-
-            noise, hit_data = scatter.simulate_scatter_no_vr(
-                self.volume, 
-                geo.Point3D.from_any(camera_center_in_volume),
-                rt_kinv,
-                camera_projection.intrinsic,
-                self.source_to_detector_distance, 
-                index_from_ijk,
-                camera_projection.intrinsic.sensor_size,
-                self.photon_count,
-                mfp_woodcock,
-                self.spectrum
-            )
-            print("X-ray primary data: [pixel_x, pixel_y], deposited_energy")
-            for tup in hit_data:
-                print(f"\t[{tup[0]}, {tup[1]}], {deposited_energy[tup[1], tup[0]]}")
-            noise = np.swapaxes(noise, 0, 1).copy()
-            print(f"noise.shape: {noise.shape}")
-            return deposited_energy, photon_prob, noise
-            ###return deposited_energy, photon_prob
-            ### END TEMP
-
-
         else:
             # copy the output to CPU
             output = np.empty(self.output_shape, np.float32)
@@ -356,10 +336,6 @@ class SingleProjector(object):
         self.rt_kinv_gpu = cuda.mem_alloc(3 * 3 * 4)
 
         if self.attenuation:
-            ########### TEMPORARY ###########
-            self.pixel_spherical_fractions_gpu = cuda.mem_alloc(self.output_size * 4)
-            ########### TEMPORARY ###########
-
             # allocate deposited_energy array on GPU (4 bytes to a float32)
             self.deposited_energy_gpu = cuda.mem_alloc(self.output_size * 4)
             logger.debug(f"bytes alloc'd for self.deposited_energy_gpu: {self.output_size * 4}")
@@ -368,10 +344,19 @@ class SingleProjector(object):
             self.photon_prob_gpu = cuda.mem_alloc(self.output_size * 4)
             logger.debug(f"bytes alloc'd for self.photon_prob_gpu: {self.output_size * 4}")
 
+            # allocate solid_angle array on GPU as needed (4 bytes to a float32)
+            if self.collected_energy:
+                # Don't need to do solid angle calculation, since just dividing by pixel area
+                self.solid_angle_gpu = np.int32(0) # NULL
+            else:
+                # Need to do solid angle calculation
+                self.solid_angle_gpu = cuda.mem_alloc(self.output_size * 4)
+                logger.debug(f"bytes alloc'd for self.solid_angle_gpu: {self.output_size * 4}")
+
             # allocate and transfer spectrum energies (4 bytes to a float32)
             assert isinstance(self.spectrum, np.ndarray)
-            noncont_energies = self.spectrum[:,0].copy() # [eV]
-            contiguous_energies = np.ascontiguousarray(noncont_energies, dtype=np.float32) # [eV]
+            noncont_energies = self.spectrum[:,0].copy() / 1000 # [keV]
+            contiguous_energies = np.ascontiguousarray(noncont_energies, dtype=np.float32) # [keV]
             n_bins = contiguous_energies.shape[0]
             self.energies_gpu = cuda.mem_alloc(n_bins * 4)
             cuda.memcpy_htod(self.energies_gpu, contiguous_energies)
@@ -386,8 +371,6 @@ class SingleProjector(object):
             cuda.memcpy_htod(self.pdf_gpu, contiguous_pdf)
             logger.debug(f"bytes alloc'd for self.pdf_gpu {n_bins * 4}")
 
-            print(f"expected un-attenuted energy deposited per photon: {np.sum(np.dot(contiguous_energies, contiguous_pdf))}")
-
             # precompute, allocate, and transfer the get_absorption_coef(energy, material) table (4 bytes to a float32)
             absorption_coef_table = np.empty(n_bins * self.num_materials).astype(np.float32)
             for bin in range(n_bins): #, energy in enumerate(energies):
@@ -400,6 +383,63 @@ class SingleProjector(object):
             # allocate output image array on GPU (4 bytes to a float32)
             self.output_gpu = cuda.mem_alloc(self.output_size * 4)
             logger.debug(f"bytes alloc'd for self.output_gpu {self.output_size * 4}")
+        
+        if self.add_scatter:
+            my_materials = list(self.volume.materials.dict_keys())
+            print(f"my_materials: {my_materials}")
+
+            # Material MFP structs
+            self.mat_mfp_struct_dict = dict()
+            self.mat_mfp_structs_gpu = cuda.mem_alloc(self.num_materials * CudaMatMfpStruct.MEMSIZE)
+            for i, mat in enumerate(my_materials):
+                struct_gpu_ptr = int(self.mat_mfp_structs_gpu) + (i * CudaMatMfpStruct.MEMSIZE)
+                self.mat_mfp_struct_dict[mat] = CudaMatMfpStruct(MFP_DATA[mat], struct_gpu_ptr)
+
+            # Woodcock MFP struct
+            wc_np_arr = scatter.make_woodcock_mfp(my_materials)
+            self.woodcock_struct_gpu = cuda.mem_alloc(CudaWoodcockStruct.MEMSIZE)
+            self.woodcock_struct = CudaWoodcockStruct(wc_np_arr, int(self.woodcock_struct_gpu))
+
+            # Material Compton structs
+            self.compton_struct_dict = dict()
+            self.compton_structs_gpu = cuda.mem_alloc(self.num_materials * CudaComptonStruct.MEMSIZE)
+            for i, mat in enumerate(my_materials):
+                struct_gpu_ptr = int(self.compton_structs_gpu) + (i * CudaComptonStruct.MEMSIZE)
+                self.compton_struct_dict[mat] = CudaComptonStruct(COMPTON_DATA[mat], struct_gpu_ptr)
+            
+            # Material RITA structs
+            self.rita_struct_dict = dict()
+            self.rita_structs_gpu = cuda.mem_alloc(self.num_materials * CudaRitaStruct.MEMSIZE)
+            for i, mat in enumerate(my_materials):
+                struct_gpu_ptr = int(self.rita_structs_gpu) + (i * CudaRitaStruct.MEMSIZE)
+                self.rita_struct_dict[mat] = CudaRitaStruct(rita_samplers[mat], struct_gpu_ptr)
+            
+            # Labeled segmentation
+            num_voxels = self.volume.shape[0] * self.volume.shape[1] * self.volume.shape[2]
+            labeled_seg = np.zeros(self.volume.shape).astype(np.int8)
+            for i, mat in enumerate(my_materials):
+                labeled_seg = np.add(labeled_seg, i * self.volume.materials[mat]).astype(np.int8)
+            self.labeled_segmentation_gpu = cuda.mem_alloc(num_voxels)
+            cuda.memcpy_htod(self.labeled_segmentation_gpu, labeled_seg)
+
+            # Detector plane
+            self.detector_plane_gpu = cuda.mem_alloc(CudaPlaneSurfaceStruct.MEMSIZE)
+
+            # index_from_ijk
+            self.index_from_ijk_gpu = cuda.mem_alloc(2 * 3 * 4) # (2, 3) array of floats
+
+            # spectrum cdf
+            n_bins = self.spectrum.shape[0]
+            spectrum_cdf = np.array([np.sum(self.spectrum[0:i+1, 1]) for i in range(n_bins)])
+            spectrum_cdf = spectrum_cdf / np.sum(spectrum_cdf)
+            print(f"spectrum CDF:\n{spectrum_cdf}")
+            self.cdf_gpu = cuda.mem_alloc(n_bins * 4)
+            cuda.memcpy_htod(self.cdf_gpu, spectrum_cdf)
+
+            # output
+            self.scatter_deposits_gpu = cuda.mem_alloc(self.output_size * 4)
+            self.num_scattered_hits_gpu = cuda.mem_alloc(self.output_size * 4)
+            self.num_unscattered_hits_gpu = cuda.mem_alloc(self.output_size * 4)
 
         # Mark self as initialized.
         self.initialized = True
@@ -412,16 +452,30 @@ class SingleProjector(object):
             self.rt_kinv_gpu.free()
 
             if self.attenuation:
-                ########### TEMPORARY ###########
-                self.pixel_spherical_fractions_gpu.free()
-                ########### TEMPORARY ###########
                 self.deposited_energy_gpu.free()
                 self.photon_prob_gpu.free()
+                if self.collected_energy:
+                    assert np.int32(0) == self.solid_angle_gpu
+                else:
+                    self.solid_angle_gpu.free()
                 self.energies_gpu.free()
                 self.pdf_gpu.free()
                 self.absorption_coef_table_gpu.free()
             else:
                 self.output_gpu.free()
+            
+            if self.add_scatter:
+                self.mat_mfp_structs_gpu.free()
+                self.woodcock_struct_gpu.free()
+                self.compton_structs_gpu.free()
+                self.rita_structs_gpu.free()
+                self.labeled_segmentation_gpu.free()
+                self.detector_plane_gpu.free()
+                self.index_from_ijk_gpu.free()
+                self.cdf_gpu.free()
+                self.scatter_deposits_gpu.free()
+                self.num_scattered_hits_gpu.free()
+                self.num_unscattered_hits_gpu.free()
 
         self.initialized = False
 
@@ -438,10 +492,10 @@ class Projector(object):
         spectrum: Union[np.ndarray, Literal['60KV_AL35', '90KV_AL40', '120KV_AL43']] = '90KV_AL40',
         add_scatter: bool = False,
         add_noise: bool = False,
-        photon_count: int = 100000,
+        photon_count: int = 10000,
         threads: int = 8,
         max_block_index: int = 1024,
-        collected_energy: bool = False, # convert to keV / cm^2 or keV / mm^2
+        collected_energy: bool = False,
         neglog: bool = True,
         intensity_upper_bound: Optional[float] = None,
     ) -> None:
@@ -463,11 +517,13 @@ class Projector(object):
             mode (Literal['linear']): [description].
             spectrum (Union[np.ndarray, Literal['60KV_AL35', '90KV_AL40', '120KV_AL43'], optional): spectrum array or name of spectrum to use for projection. Defaults to '90KV_AL40'.
             add_scatter (bool, optional): whether to add scatter noise from artifacts. Defaults to False.
-            add_noise: (bool, optional): whether to add Poisson noise. Defaults to False.
-            threads (int, optional): number of threads to use. Defaults to 8.
+            add_noise (bool, optional): whether to add Poisson noise. Defaults to False.
+            photon_count (int, optional): the number of photons that hit each pixel. Defaults to 10^4. TODO: this could be the same for all pixels on a curved detector, but this simulates a flat-panel-detector. How to account for the difference?
+            threads (int, optional): number of threads per "side" in a 2-D GPU block. Defaults to 8.
             max_block_index (int, optional): maximum GPU block. Defaults to 1024. TODO: determine from compute capability.
+            collected_energy (bool, optional): Whether to return data of "integrated radiant intensity" (energy deposited per unit solid angle, [keV / sr]) or "collected energy" (energy deposited on pixel, [keV / mm^2]). Defaults to False (radiant intensity).
             neglog (bool, optional): whether to apply negative log transform to intensity images. If True, outputs are in range [0, 1]. Recommended for easy viewing. Defaults to False.
-            intensity_upper_bound (Optional[float], optional): Maximum intensity, clipped before neglog, after noise and scatter. Defaults to 40.
+            intensity_upper_bound (Optional[float], optional): Maximum intensity, clipped before neglog, after noise and scatter. Defaults to 40 keV / sr.
         """
                     
         # set variables
@@ -482,6 +538,7 @@ class Projector(object):
         self.collected_energy = collected_energy
         self.neglog = neglog
         self.intensity_upper_bound = intensity_upper_bound
+        # TODO: handle intensity_upper_bound when [collected_energy is True]
 
         assert len(self.volumes) > 0
 
@@ -491,12 +548,14 @@ class Projector(object):
                 self.camera_intrinsics,
                 self.source_to_detector_distance,
                 step=step,
+                photon_count=photon_count,
                 mode=mode,
                 spectrum=spectrum,
-                photon_count=photon_count,
                 threads=threads,
                 max_block_index=max_block_index,
-                attenuation=len(self.volumes) == 1,
+                attenuation=(1 == len(self.volumes)),
+                collected_energy=self.collected_energy,
+                add_scatter=self.add_scatter
             ) for volume in self.volumes
         ]
 
@@ -540,35 +599,22 @@ class Projector(object):
         # TODO: handle multiple volumes more elegantly, i.e. in the kernel. (!)
         if len(self.projectors) == 1:
             projector = self.projectors[0]
-            deposited_energies = []
+            images = []
             photon_probs = []
-            noises = [] ###
             for i, proj in enumerate(camera_projections):
                 logger.info(f"Projecting and attenuating camera position {i+1} / {len(camera_projections)}")
-                ###deposited_energy, photon_prob = projector.project(proj)
-                deposited_energy, photon_prob, noise = projector.project(proj) ###
-                deposited_energies.append(deposited_energy)
+                image, photon_prob = projector.project(proj)
+                if self.add_scatter:
+                    image, photon_prob, noise = projector.project(proj)
+                    image = image + noise
+                    photon_prob *= (1 + noise / image) # probability for a photon to each given pixel
+                else:
+                    image, photon_prob = projector.project(proj)
+                images.append(image)
                 photon_probs.append(photon_prob)
 
-                """"""
-                accentuated_noise = noise.copy()
-                accentuate_distance = 2
-
-                for i in range(noise.shape[0]):
-                    for j in range(noise.shape[1]):
-                        if noise[i,j] > 0:
-                            for p in range(i - accentuate_distance, i + accentuate_distance + 1):
-                                for q in range(j - accentuate_distance, j + accentuate_distance + 1):
-                                    if (p >= 0) and (p < accentuated_noise.shape[0]):
-                                        if (q >= 0) and (q < accentuated_noise.shape[1]):
-                                            accentuated_noise[p,q] = noise[i,j]
-                noises.append(accentuated_noise)
-                """"""
-                #noises.append(noise) ###
-
-            images = np.stack(deposited_energies)
+            images = np.stack(image)
             photon_prob = np.stack(photon_probs)
-            all_noise = np.stack(noises) ###
             logger.info("Completed projection and attenuation")
         else:
             # Separate the projection and mass attenuation
@@ -607,19 +653,6 @@ class Projector(object):
             logger.info(f'performing mass attenuation...')
             images, photon_prob = mass_attenuation.calculate_intensity_from_spectrum(forward_projections, self.spectrum)
             logger.info('done.')
-        
-        images_with_noise = images + all_noise ###
-
-        if self.add_scatter:
-            # lfkj('adding scatter (may cause Nan errors)')
-            noise = self.scatter_net.add_scatter(images, self.camera)
-            photon_prob *= 1 + noise / images
-            images += noise
-
-        # transform to collected energy in keV per cm^2 (or keV per mm^2)
-        if self.collected_energy:
-            logger.info("converting image to collected energy")
-            images = images * (self.photon_count / (self.camera.pixel_size[0] * self.camera.pixel_size[1]))
 
         if self.add_noise:
             logger.info("adding Poisson noise")
@@ -627,26 +660,12 @@ class Projector(object):
 
         if self.intensity_upper_bound is not None:
             images = np.clip(images, None, self.intensity_upper_bound)
-            images_with_noise = np.clip(images_with_noise, None, self.intensity_upper_bound) ###
-            all_noise = np.clip(all_noise, None, self.intensity_upper_bound) ###
 
         if self.neglog:
             logger.info("applying negative log transform")
             images = utils.neglog(images)
-            images_with_noise = utils.neglog(images_with_noise) ###
-            all_noise = utils.neglog(all_noise) ###
-        
-        print("Shapes:")
-        print(f"\timages: {images.shape}")
-        print(f"\timages_with_noise: {images_with_noise.shape}")
-        print(f"\tall_noise: {all_noise.shape}")
 
-        if images.shape[0] == 1:
-            ###return images[0]
-            return images[0], images_with_noise[0], all_noise[0] ###
-        else:
-            ###return images
-            return images, images_with_noise, all_noise ###
+        return images
         
     def project_over_carm_range(
         self,

@@ -44,7 +44,7 @@ from .mcgpu_incoherent_scatter_data.water_compton_data import water_compton_data
 
 MAX_NSHELLS = 30
 
-material_nshells = {
+MATERIAL_NSHELLS = {
     "adipose": ADIPOSE_NUM_SHELLS,
     "air": AIR_NUM_SHELLS,
     "blood": BLOOD_NUM_SHELLS,
@@ -66,7 +66,7 @@ material_nshells = {
     "water": WATER_NUM_SHELLS
 }
 
-compton_data = {
+COMPTON_DATA = {
     "adipose": ADIPOSE_COMPTON_DATA,
     "air": AIR_COMPTON_DATA,
     "blood": BLOOD_COMPTON_DATA,
@@ -89,7 +89,7 @@ compton_data = {
 }
 
 def sanity_check_compton_data():
-    for mat in list(compton_data.keys()):
-        assert material_nshells[mat] == compton_data[mat].shape[0]
+    for mat in list(COMPTON_DATA.keys()):
+        assert MATERIAL_NSHELLS[mat] == COMPTON_DATA[mat].shape[0]
 
     print("Compton data sanity has been checked!")

@@ -20,35 +20,42 @@ from .mcgpu_mean_free_path_data.water_mfp import water_MFP as WATER_MFP
 
 import numpy as np
 
-mfp_data = {
-    "adipose": ADIPOSE_MFP,
-    "air": AIR_MFP,
-    "blood": BLOOD_MFP,
-    "bone": BONE_MFP,
-    "brain": BRAIN_MFP,
-    "breast": BREAST_MFP,
-    "cartilage": CARTILAGE_MFP,
-    "connective tissue": CONNECTIVE_MFP,
-    "glands": GLANDS_OTHERS_MFP,
-    "liver": LIVER_MFP,
-    "lung": LUNG_MFP,
-    "muscle": MUSCLE_MFP,
-    "PMMA": PMMA_MFP,
-    "red marrow": RED_MARROW_MFP,
-    "skin": SKIN_MFP,
-    "soft tissue": SOFT_TISSUE_MFP,
-    "stomach intestines": STOMACH_INTESTINES_MFP,
-    "titanium": TITANIUM_MFP,
-    "water": WATER_MFP
+def _convert_to_millimeters(mfp_data_cm: np.ndarray) -> np.ndarray:
+    """Transforms the MFP data, given in centimeters, to millimeters
+    """
+    mfp_data_mm = np.copy(mfp_data_cm)
+    mfp_data_mm[:, 1:5] /= 10
+    return mfp_data_mm
+
+MFP_DATA = {
+    "adipose": _convert_to_millimeters(ADIPOSE_MFP),
+    "air": _convert_to_millimeters(AIR_MFP),
+    "blood": _convert_to_millimeters(BLOOD_MFP),
+    "bone": _convert_to_millimeters(BONE_MFP),
+    "brain": _convert_to_millimeters(BRAIN_MFP),
+    "breast": _convert_to_millimeters(BREAST_MFP),
+    "cartilage": _convert_to_millimeters(CARTILAGE_MFP),
+    "connective tissue": _convert_to_millimeters(CONNECTIVE_MFP),
+    "glands": _convert_to_millimeters(GLANDS_OTHERS_MFP),
+    "liver": _convert_to_millimeters(LIVER_MFP),
+    "lung": _convert_to_millimeters(LUNG_MFP),
+    "muscle": _convert_to_millimeters(MUSCLE_MFP),
+    "PMMA": _convert_to_millimeters(PMMA_MFP),
+    "red marrow": _convert_to_millimeters(RED_MARROW_MFP),
+    "skin": _convert_to_millimeters(SKIN_MFP),
+    "soft tissue": _convert_to_millimeters(SOFT_TISSUE_MFP),
+    "stomach intestines": _convert_to_millimeters(STOMACH_INTESTINES_MFP),
+    "titanium": _convert_to_millimeters(TITANIUM_MFP),
+    "water": _convert_to_millimeters(WATER_MFP)
 }
 
 def sanity_check_mfps():
-    mats = list(mfp_data.keys())
+    mats = list(MFP_DATA.keys())
     NUM_MATS = len(mats)
     for i in range(NUM_MATS - 1):
         for j in range(i + 1, NUM_MATS):
-            data_1 = mfp_data[mats[i]]
-            data_2 = mfp_data[mats[j]]
+            data_1 = MFP_DATA[mats[i]]
+            data_2 = MFP_DATA[mats[j]]
 
             assert 2 == data_1.ndims
             assert 2 == data_2.ndims
@@ -69,7 +76,7 @@ def sanity_check_mfps():
                 assert np.all(np.not_equal(data_1[:,0], data_2[:,0]))
 
     for i in range(NUM_MATS):
-        data = mfp_data[mats[i]]
+        data = MFP_DATA[mats[i]]
         # Check the inverse-MFP sum equation: \sum_{interaction type i} (MFP_{i})^{-1} = MFP_{total}
         for energy_bin in range(data.shape[0]):
             Ra_inv = 1 / data[energy_bin, 1]
