@@ -40,8 +40,8 @@ extern "C" {
         float E_abs, // the energy level below which photons are assumed to be absorbed [keV]
         int seed_input,
         float *deposited_energy, // the output.  Size is [detector_width]x[detector_height]
-        int *scattered_hits, // number of scattered photons that hit the detector
-        int *unscattered_hits // number of unscattered photons that hit the detector
+        short *num_scattered_hits, // number of scattered photons that hit the detector at each pixel. Same size as deposited_energy.
+        short *num_unscattered_hits // number of unscattered photons that hit the detector at each pixel. Same size as deposited_energy.
     );
 
     __device__ void initialization_track_photon(

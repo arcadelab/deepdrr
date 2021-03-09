@@ -38,8 +38,8 @@ extern "C" {
         float E_abs, // the energy level below which photons are assumed to be absorbed [keV]
         int seed_input,
         float *deposited_energy, // the output.  Size is [detector_width]x[detector_height]
-        int *num_scattered_hits, // number of scattered photons that hit the detector
-        int *num_unscattered_hits // number of unscattered photons that hit the detector
+        int *num_scattered_hits, // number of scattered photons that hit the detector at each pixel. Same size as deposited_energy.
+        int *num_unscattered_hits // number of unscattered photons that hit the detector at each pixel. Same size as deposited_energy.
     ) {
         rng_seed_t seed;
         int thread_id = threadIdx.x + (blockIdx.x * blockDim.x); // 1D block
@@ -122,15 +122,16 @@ extern "C" {
                     int pixel_x = (int)((index_from_ijk[0] * pos->x) + (index_from_ijk[1] * pos->y) + (index_from_ijk[2] * pos->z));
                     int pixel_y = (int)((index_from_ijk[4] * pos->x) + (index_from_ijk[5] * pos->y) + (index_from_ijk[6] * pos->z));
                     if ((pixel_x >= 0) && (pixel_x < detector_width) && (pixel_y >= 0) && (pixel_y < detector_height)) {
+                        int pixel_index = (pixel_y * detector_width) + pixel_x;
                         if (num_scatter_events) {
                             // The photon was scattered at least once and thus is not part of the primary
-                            atomicAdd(num_scattered_hits, 1);
+                            atomicAdd(&num_scattered_hits[pixel_index], 1);
                             // NOTE: atomicAdd(float *, float) only available for compute capability 2.x and higher.
                             // https://docs.nvidia.com/cuda/cuda-c-programming-guide/index.html#atomicadd
-                            atomicAdd(&deposited_energy[(pixel_y * detector_width) + pixel_x], energy);
+                            atomicAdd(&deposited_energy[pixel_index], energy);
                         } else {
                             // The photon was not scattered and thus is part of the primary
-                            atomicAdd(num_unscattered_hits, 1);
+                            atomicAdd(&num_unscattered_hits[pixel_index], 1);
                         }
                     }
                 }
@@ -146,7 +147,7 @@ extern "C" {
                     int pixel_x = (int)((index_from_ijk[0] * pos->x) + (index_from_ijk[1] * pos->y) + (index_from_ijk[2] * pos->z));
                     int pixel_y = (int)((index_from_ijk[4] * pos->x) + (index_from_ijk[5] * pos->y) + (index_from_ijk[6] * pos->z));
                     if ((pixel_x >= 0) && (pixel_x < detector_width) && (pixel_y >= 0) && (pixel_y < detector_height)) {
-                        atomicAdd(num_unscattered_hits, 1);
+                        atomicAdd(&num_unscattered_hits[(pixel_y * detector_width) + pixel_x], 1);
                     }
                 }
             }

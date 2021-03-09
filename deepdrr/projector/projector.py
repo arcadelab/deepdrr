@@ -95,7 +95,8 @@ class SingleProjector(object):
         max_block_index: int = 1024,
         attenuation: bool = True,
         collected_energy: bool = False,
-        add_scatter: bool = False
+        add_scatter: bool = False,
+        scatter_num: int = 0
     ) -> None:
         """Create the projector, which has info for simulating the DRR, for a single projection angle.
 
@@ -107,12 +108,12 @@ class SingleProjector(object):
             photon_count (int, optional): the average number of photons that hit each pixel. (The expected number of photons that hit each pixel is not uniform over each pixel because the detector is a flat panel.)
             mode (Literal['linear']): [description].
             spectrum (Union[np.ndarray, Literal['60KV_AL35', '90KV_AL40', '120KV_AL43'], optional): spectrum array or name of spectrum to use for projection. Defaults to '90KV_AL40'.
-            add_scatter (bool, optional): whether to add scatter noise. Defaults to False.
             threads (int, optional): number of threads per "side" in a 2-D GPU block. Defaults to 8.
             max_block_index (int, optional): maximum GPU block. Defaults to 1024.
             attenuation (bool, optional): whether the mass-attenuation calculation is performed in the CUDA kernel. Defaults to True.
             collected_energy (bool, optional): Whether to return data of "intensity" (energy deposited per photon, [keV]) or "collected energy" (energy deposited on pixel, [keV / mm^2]). Defaults to False ("intensity").
-            add_scatter (bool, optional): whether to add scatter noise from artifacts. Defaults to False.
+            add_scatter (bool, optional): whether to add scatter noise from artifacts. Defaults to False. DEPRECATED: use scatter_num instead.  If add_scatter is True, and scatter_num is unspecified, uses 10^6
+            scatter_num (int, optional): the number of photons to sue in the scatter simulation.  If zero, scatter is not simulated.
         """
                     
         # set variables
@@ -127,7 +128,11 @@ class SingleProjector(object):
         self.max_block_index = max_block_index
         self.attenuation = attenuation
         self.collected_energy = collected_energy
-        self.add_scatter = add_scatter
+
+        if (scatter_num == 0) and add_scatter:
+            self.scatter_num = 1000000 # 10^6
+        else:
+            self.scatter_num = max(scatter_num, 0) # in case scatter_num < 0
 
         self.num_materials = len(self.volume.materials)
 
@@ -267,36 +272,37 @@ class SingleProjector(object):
             cuda.memcpy_dtoh(photon_prob, self.photon_prob_gpu)
             photon_prob = np.swapaxes(photon_prob, 0, 1).copy()
 
-            # In case we need to do things with collected energy
-            deposited_energy = None
-            solid_angle = None
+            if (self.scatter_num > 0):
+                scatter_intensity, n_sc, n_pri = cuda_scatter.simulate_scatter_gpu(self, camera_projection)
 
-            if self.collected_energy or self.add_scatter:
+                hits_sc = np.sum(n_sc) # total number of recorded scatter hits
+                hits_pri = np.sum(n_pri) # total number of recorded primary hits
+
+                f_sc = hits_sc / (hits_pri + hits_sc)
+                f_pri = hits_pri / (hits_pri + hits_sc)
+
+                # prob_tot = (f_pri * prob_pri) + (f_sc * prob_sc)
+                # prob_tot / prob_pri = f_pri + f_sc * (prob_sc / prob_pri)
+                photon_prob *= (f_pri + f_sc * (n_sc / n_pri))
+
+                # total intensity = (f_pri * intensity_pri) * (f_sc * intensity_sc)
+                intensity = (f_pri * intensity) + (f_sc * scatter_intensity)
+
+            if self.collected_energy:
                 assert np.int32(0) != self.solid_angle_gpu
                 solid_angle = np.empty(self.output_shape, dtype=np.float32)
                 cuda.memcpy_dtoh(solid_angle, self.solid_angle_gpu)
                 solid_angle = np.swapaxes(solid_angle, 0, 1).copy()
 
-                deposited_energy = np.multiply(intensity, solid_angle) * self.photon_count / np.average(solid_angle)
-
-            if self.add_scatter:
-                scatter_img, num_scattered_hits, num_unscattered_hits = cuda_scatter.simulate_scatter_gpu(self, camera_projection)
-
-                photon_prob *= (1 + scatter_img / deposited_energy) # probability for a photon to hit each given pixel TODO: check this math
-                deposited_energy = ((num_unscattered_hits * deposited_energy) + (num_scattered_hits * scatter_img)) / (num_unscattered_hits + num_scattered_hits) # TODO: check this math
-            
-            if self.collected_energy:
                 pixel_size_x = self.source_to_detector_distance / camera_projection.index_from_camera2d.fx
                 pixel_size_y = self.source_to_detector_distance / camera_projection.index_from_camera2d.fy
+
+                # get energy deposited by multiplying [intensity] with [number of photons to hit each pixel]
+                deposited_energy = np.multiply(intensity, solid_angle) * self.photon_count / np.average(solid_angle)
+                # convert to keV / mm^2
                 deposited_energy /= (pixel_size_x * pixel_size_y)
                 return deposited_energy, photon_prob
-            elif self.add_scatter:
-                # have converted to collected energy to add scatter. Now, need to convert back to 'intensity'
-                assert solid_angle is not None
-                intensity = np.divide(deposited_energy, solid_angle) * np.average(solid_angle) / self.photon_count
-            else:
-                assert solid_angle is None
-
+            
             return intensity, photon_prob
         else:
             # copy the output to CPU
@@ -355,7 +361,7 @@ class SingleProjector(object):
             logger.debug(f"bytes alloc'd for self.photon_prob_gpu: {self.output_size * 4}")
 
             # allocate solid_angle array on GPU as needed (4 bytes to a float32)
-            if self.collected_energy or self.add_scatter:
+            if self.collected_energy:
                 self.solid_angle_gpu = cuda.mem_alloc(self.output_size * 4)
                 logger.debug(f"bytes alloc'd for self.solid_angle_gpu: {self.output_size * 4}")
             else:
@@ -392,7 +398,7 @@ class SingleProjector(object):
             self.output_gpu = cuda.mem_alloc(self.output_size * 4)
             logger.debug(f"bytes alloc'd for self.output_gpu {self.output_size * 4}")
         
-        if self.add_scatter:
+        if self.scatter_num > 0:
             my_materials = list(self.volume.materials.dict_keys())
             print(f"my_materials: {my_materials}")
 
@@ -462,7 +468,7 @@ class SingleProjector(object):
             if self.attenuation:
                 self.intensity_gpu.free()
                 self.photon_prob_gpu.free()
-                if self.collected_energy or self.add_scatter:
+                if self.collected_energy:
                     self.solid_angle_gpu.free()
                 else:
                     assert np.int32(0) == self.solid_angle_gpu
@@ -472,7 +478,7 @@ class SingleProjector(object):
             else:
                 self.output_gpu.free()
             
-            if self.add_scatter:
+            if self.scatter_num > 0:
                 self.mat_mfp_structs_gpu.free()
                 self.woodcock_struct_gpu.free()
                 self.compton_structs_gpu.free()
@@ -499,6 +505,7 @@ class Projector(object):
         mode: Literal['linear'] = 'linear',
         spectrum: Union[np.ndarray, Literal['60KV_AL35', '90KV_AL40', '120KV_AL43']] = '90KV_AL40',
         add_scatter: bool = False,
+        scatter_num: int = 0,
         add_noise: bool = False,
         photon_count: int = 10000,
         threads: int = 8,
@@ -524,7 +531,8 @@ class Projector(object):
             step (float, optional): size of the step along projection ray in voxels. Defaults to 0.1.
             mode (Literal['linear']): [description].
             spectrum (Union[np.ndarray, Literal['60KV_AL35', '90KV_AL40', '120KV_AL43'], optional): spectrum array or name of spectrum to use for projection. Defaults to '90KV_AL40'.
-            add_scatter (bool, optional): whether to add scatter noise from artifacts. Defaults to False.
+            add_scatter (bool, optional): whether to add scatter noise from artifacts. Defaults to False. DEPRECATED: use scatter_num instead.  If add_scatter is True, and scatter_num is unspecified, uses 10^6
+            scatter_num (int, optional): the number of photons to sue in the scatter simulation.  If zero, scatter is not simulated.
             add_noise (bool, optional): whether to add Poisson noise. Defaults to False.
             photon_count (int, optional): the average number of photons that hit each pixel. (The expected number of photons that hit each pixel is not uniform over each pixel because the detector is a flat panel.) Defaults to 10^4.
             threads (int, optional): number of threads per "side" in a 2-D GPU block. Defaults to 8.
@@ -540,13 +548,18 @@ class Projector(object):
         self.source_to_detector_distance = source_to_detector_distance
         self.carm = carm
         self.spectrum = _get_spectrum(spectrum)
-        self.add_scatter = add_scatter
+
+        if (scatter_num == 0) and add_scatter:
+            self.scatter_num = 1000000 # 10^6
+        else:
+            self.scatter_num = max(scatter_num, 0) # in case scatter_num < 0
+
         self.add_noise = add_noise
         self.photon_count = photon_count
         self.collected_energy = collected_energy
         self.neglog = neglog
         self.intensity_upper_bound = intensity_upper_bound
-        # TODO: handle intensity_upper_bound when [collected_energy is True]
+        # TODO: handle intensity_upper_bound when [collected_energy is True] -- I think this should be handled in the SingleProjector.project(...) method right after the solid-angle calculation?
 
         assert len(self.volumes) > 0
 
@@ -563,7 +576,8 @@ class Projector(object):
                 max_block_index=max_block_index,
                 attenuation=(1 == len(self.volumes)),
                 collected_energy=self.collected_energy,
-                add_scatter=self.add_scatter
+                add_scatter=add_scatter,
+                scatter_num=self.scatter_num
             ) for volume in self.volumes
         ]
 
@@ -612,12 +626,6 @@ class Projector(object):
             for i, proj in enumerate(camera_projections):
                 logger.info(f"Projecting and attenuating camera position {i+1} / {len(camera_projections)}")
                 image, photon_prob = projector.project(proj)
-                if self.add_scatter:
-                    image, photon_prob, noise = projector.project(proj)
-                    image = image + noise
-                    photon_prob *= (1 + noise / image) # probability for a photon to each given pixel
-                else:
-                    image, photon_prob = projector.project(proj)
                 images.append(image)
                 photon_probs.append(photon_prob)
 

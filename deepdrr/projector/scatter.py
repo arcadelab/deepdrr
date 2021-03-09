@@ -12,9 +12,9 @@ from deepdrr import vol
 from .rita import RITA
 from .plane_surface import PlaneSurface
 
-from .mcgpu_mfp_data import mfp_data 
+from .mcgpu_mfp_data import MFP_DATA
 from .mcgpu_compton_data import MAX_NSHELLS as COMPTON_MAX_NSHELLS
-from .mcgpu_compton_data import material_nshells, compton_data
+from .mcgpu_compton_data import MATERIAL_NSHELLS, COMPTON_DATA
 
 from .mcgpu_rita_samplers import rita_samplers
 
@@ -53,8 +53,8 @@ def make_woodcock_mfp(
 
     mfp_woodcock = np.stack(
         (
-            mfp_data["bone"][:, 0], # the energy tables
-            np.minimum.reduce([mfp_data[mat][:, 4] for mat in materials])
+            MFP_DATA["bone"][:, 0], # the energy tables
+            np.minimum.reduce([MFP_DATA[mat][:, 4] for mat in materials])
         ),
         axis=1
     )
@@ -270,7 +270,7 @@ def track_single_photon_no_vr(
             mat_label = labeled_seg[vox_x, vox_y, vox_z]
             mat_name = material_ids[mat_label]
             
-            mfp_Ra, mfp_Co, mfp_Tot = get_mfp_data(mfp_data[mat_name], photon_energy)
+            mfp_Ra, mfp_Co, mfp_Tot = get_mfp_data(MFP_DATA[mat_name], photon_energy)
 
             #print(f"probability to accept the collision: mfp_wc / mfp_Tot == {mfp_wc / mfp_Tot}")
 
@@ -307,7 +307,7 @@ def track_single_photon_no_vr(
         cos_theta, E_prime = None, None
         rnd = sample_U01()
         if rnd < (mfp_Tot / mfp_Co):
-            cos_theta, E_prime = sample_Compton_theta_E_prime(photon_energy, material_nshells[mat_name], compton_data[mat_name])
+            cos_theta, E_prime = sample_Compton_theta_E_prime(photon_energy, MATERIAL_NSHELLS[mat_name], COMPTON_DATA[mat_name])
         elif rnd < mfp_Tot * ((1 / mfp_Co) + (1 / mfp_Ra)):
             cos_theta = sample_Rayleigh_theta(photon_energy, rita_samplers[mat_name])
             E_prime = photon_energy
