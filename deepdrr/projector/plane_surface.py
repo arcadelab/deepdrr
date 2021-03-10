@@ -39,7 +39,7 @@ class PlaneSurface:
         # Check that the basis is orthogonal if it is purported to be:
         if self.orthogonal:
             b1_dot_b2 = (self.basis_1[0] * self.basis_2[0]) + (self.basis_1[1] * self.basis_2[1]) + (self.basis_1[2] * self.basis_2[2])
-            assert 0 == b1_dot_b2
+            assert np.isclose(0, b1_dot_b2)
 
     def check_ray_intersection(
         self,

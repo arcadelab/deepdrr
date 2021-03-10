@@ -89,8 +89,10 @@ def main():
         spectrum='90KV_AL40',
         photon_count=10000, # 10^4
         add_scatter=False,
+        scatter_num=(10**6),
         threads=8,
         neglog=True,
+        collected_energy=False
     ) as projector:
         images = projector.project_over_carm_range(
             (min_phi, max_phi, spacing_phi),

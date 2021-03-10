@@ -2,11 +2,100 @@
  * Based on Sisniega et al. (2015), "High-fidelity artifact correction for cone-beam CT imaging of the brain"
  */
 
- #include "scatter.h"
+#include <vector_types.h>
+
+// Some typedefs for my personal preference
+typedef int2 int2_t;
+typedef int3 int3_t;
+typedef float2 float2_t;
+typedef float3 float3_t;
 
 extern "C" {
-    /*** FUNCTION DECLARATIONS ***/
+    /*** DEFINES ***/
+    #define ELECTRON_REST_ENERGY 510998.918f // [eV]
+    #define INV_ELECTRON_REST_ENERGY 1.956951306108245e-6f // [eV]^{-1}
 
+    /* Material IDs for the nominal segmentation */
+    #define NOM_SEG_AIR_ID ((char) 0)
+    #define NOM_SEG_SOFT_ID ((char) 1)
+    #define NOM_SEG_BONE_ID ((char) 2)
+
+    /* Nominal density values, [g/cm^3] */
+    #define NOM_DENSITY_AIR 0.0f
+    #define NOM_DENSITY_SOFT 1.0f
+    #define NOM_DENSITY_BONE 1.92f
+
+    /* Data meta-constants */
+    #define MAX_NSHELLS 30
+    #define MAX_MFP_BINS 25005
+    #define MAX_RITA_N_PTS 128
+
+    /* Numerically necessary evils */
+    #define VOXEL_EPS      0.000015f // epsilon (small distance) that we use to ensure that 
+    #define NEG_VOXEL_EPS -0.000015f // the particle fully inside a voxel. Value from MC-GPU
+
+    /* Mathematical constants -- credit to Wolfram Alpha */
+    #define PI_FLOAT  3.14159265358979323846f
+    #define PI_DOUBLE 3.14159265358979323846
+    #define TWO_PI_FLOAT  6.28318530717958647693f
+    #define TWO_PI_DOUBLE 6.28318530717958647693
+
+    #define INFTY 500000.0f // inspired by MC-GPU :)
+    #define NEG_INFTY -500000.0f
+
+    /* Useful macros */
+    #define MAX_VAL(a, b) (((a) > (b)) ? (a) : (b))
+    #define MIN_VAL(a, b) (((a) < (b)) ? (a) : (b))
+
+    /*** STRUCT DEFINITIONS ***/
+    typedef struct plane_surface {
+        // plane vector (nx, ny, nz, d), where \vec{n} is the normal vector and d is the distance to the origin
+        float3_t n;
+        float d;
+        // 'surface origin': a point on the plane that is used as the reference point for the plane's basis vectors 
+        float3_t ori;
+        // the two basis vectors
+        float3_t b1, b2;
+        // the bounds for the basis vector multipliers to stay within the surface's region on the plane
+        float2_t bound1, bound2; // .x is lower bound, .y is upper bound
+        // can we assume that the basis vectors orthogonal?
+        int orthogonal;
+    } plane_surface_t;
+    
+    typedef struct rng_seed {
+        int x, y;
+    } rng_seed_t;
+    
+    typedef struct rita {
+        int n_gridpts;
+        double x[MAX_RITA_N_PTS];
+        double y[MAX_RITA_N_PTS];
+        double a[MAX_RITA_N_PTS];
+        double b[MAX_RITA_N_PTS];
+    } rita_t;
+    
+    typedef struct compton_data {
+        int nshells;
+        float f[MAX_NSHELLS]; // number of electrons in each shell
+        float ui[MAX_NSHELLS]; // ionization energy for each shell, in [eV]
+        float jmc[MAX_NSHELLS]; // (J_{i,0} m_{e} c) for each shell i. Dimensionless.
+    } compton_data_t;
+    
+    typedef struct mat_mfp_data {
+        int n_bins;
+        float energy[MAX_MFP_BINS]; // Units: [eV]
+        float mfp_Ra[MAX_MFP_BINS]; // Units: [mm]
+        float mfp_Co[MAX_MFP_BINS]; // Units: [mm]
+        float mfp_Tot[MAX_MFP_BINS]; // Units: [mm]
+    } mat_mfp_data_t;
+    
+    typedef struct wc_mfp_data {
+        int n_bins;
+        float energy[MAX_MFP_BINS]; // Units: [eV]
+        float mfp_wc[MAX_MFP_BINS]; // Units: [mm]
+    } wc_mfp_data_t;    
+
+    /*** FUNCTION DECLARATIONS ***/
     __global__ void simulate_scatter(
         int detector_width, // size of detector in pixels 
         int detector_height,
@@ -40,22 +129,22 @@ extern "C" {
         float E_abs, // the energy level below which photons are assumed to be absorbed [keV]
         int seed_input,
         float *deposited_energy, // the output.  Size is [detector_width]x[detector_height]
-        short *num_scattered_hits, // number of scattered photons that hit the detector at each pixel. Same size as deposited_energy.
-        short *num_unscattered_hits // number of unscattered photons that hit the detector at each pixel. Same size as deposited_energy.
+        int *num_scattered_hits, // number of scattered photons that hit the detector at each pixel. Same size as deposited_energy.
+        int *num_unscattered_hits // number of unscattered photons that hit the detector at each pixel. Same size as deposited_energy.
     );
 
-    __device__ void initialization_track_photon(
+    __device__ void track_photon(
         float3_t *pos, // input: initial position in volume. output: end position of photon history
         float3_t *dir, // input: initial direction
-        float *energy, // input: initial energy. output: energy at end of photon history
+        float *energy, // input: initial energy. output: energy at end of photon history. Units: [eV]
         int *hits_detector, // Boolean output.  Does the photon actually reach the detector plane?
         int *num_scatter_events, // should be passed a pointer to an int initialized to zero.  Returns the number of scatter events experienced by the photon
-        float E_abs, // the energy level below which the photon is assumed to be absorbed
+        float E_abs, // the energy level below which the photon is assumed to be absorbed. Units: [eV]
         char *labeled_segmentation, // [0..2]-labeled segmentation obtained by thresholding: [-infty, -500, 300, infty]
-        mat_mfp_data_t **mfp_data_arr, // 3-element array of pointers to mat_mfp_data_t structs. Idx NOM_SEG_AIR_ID associated with air, etc
+        mat_mfp_data_t *mfp_data_arr, // 3-element array of pointers to mat_mfp_data_t structs. Idx NOM_SEG_AIR_ID associated with air, etc
         wc_mfp_data_t *wc_data,
-        compton_data_t **compton_arr, // 3-element array of pointers to compton_data_t.  Material associations as with mfp_data_arr
-        rita_t **rita_arr, // 3-element array of pointers to rita_t.  Material associations as with mfp_data_arr
+        compton_data_t *compton_arr, // 3-element array of pointers to compton_data_t.  Material associations as with mfp_data_arr
+        rita_t *rita_arr, // 3-element array of pointers to rita_t.  Material associations as with mfp_data_arr
         int3_t *volume_shape, // number of voxels in each direction IJK
         float3_t *gVolumeEdgeMinPoint, // IJK coordinate of minimum bounds of volume
         float3_t *gVolumeEdgeMaxPoint, // IJK coordinate of maximum bounds of volume
@@ -83,7 +172,7 @@ extern "C" {
         float3_t *dir, // input: direction of photon travel
         int *hits_volume, // Boolean output.  Does the photon actually hit the volume?
         float3_t *gVolumeEdgeMinPoint, // IJK coordinate of minimum bounds of volume
-        float3_t *gVolumeEdgeMaxPoint, // IJK coordinate of maximum bounds of volume
+        float3_t *gVolumeEdgeMaxPoint  // IJK coordinate of maximum bounds of volume
     );
 
     __device__ void sample_initial_dir(

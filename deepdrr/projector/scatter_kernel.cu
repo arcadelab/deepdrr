@@ -45,47 +45,129 @@ extern "C" {
         int thread_id = threadIdx.x + (blockIdx.x * blockDim.x); // 1D block
         initialize_seed(thread_id, histories_for_thread, seed_input, &seed);
 
-        int3_t volume_shape = {
-            .x = volume_shape_x,
-            .y = volume_shape_y,
-            .z = volume_shape_z
-        };
-        float3_t gVolumeEdgeMinPoint = {
-            .x = gVolumeEdgeMinPointX,
-            .y = gVolumeEdgeMinPointY,
-            .z = gVolumeEdgeMinPointZ
-        };
-        float3_t gVolumeEdgeMaxPoint = {
-            .x = gVolumeEdgeMaxPointX,
-            .y = gVolumeEdgeMaxPointY,
-            .z = gVolumeEdgeMaxPointZ
-        };
-        float3_t gVoxelElementSize = {
-            .x = gVoxelElementSizeX,
-            .y = gVoxelElementSizeY,
-            .z = gVoxelElementSizeZ
-        };
+        int3_t volume_shape;
+        volume_shape.x = volume_shape_x;
+        volume_shape.y = volume_shape_y;
+        volume_shape.z = volume_shape_z;
+
+        float3_t gVolumeEdgeMinPoint;
+        gVolumeEdgeMinPoint.x = gVolumeEdgeMinPointX;
+        gVolumeEdgeMinPoint.y = gVolumeEdgeMinPointY;
+        gVolumeEdgeMinPoint.z = gVolumeEdgeMinPointZ;
+
+        float3_t gVolumeEdgeMaxPoint;
+        gVolumeEdgeMaxPoint.x = gVolumeEdgeMaxPointX;
+        gVolumeEdgeMaxPoint.y = gVolumeEdgeMaxPointY;
+        gVolumeEdgeMaxPoint.z = gVolumeEdgeMaxPointZ;
+
+        float3_t gVoxelElementSize;
+        gVoxelElementSize.x = gVoxelElementSizeX;
+        gVoxelElementSize.y = gVoxelElementSizeY;
+        gVoxelElementSize.z = gVoxelElementSizeZ;
+
+        if (0 == thread_id) {
+            /*printf("volume_shape: {%d, %d, %d}\n", volume_shape.x, volume_shape.y, volume_shape.z);
+            printf("gVolumeEdgeMinPoint: {%f, %f, %f}\n", gVolumeEdgeMinPoint.x, gVolumeEdgeMinPoint.y, gVolumeEdgeMinPoint.z);
+            printf("gVolumeEdgeMaxPoint: {%f, %f, %f}\n", gVolumeEdgeMaxPoint.x, gVolumeEdgeMaxPoint.y, gVolumeEdgeMaxPoint.z);
+            printf("source: {%f, %f, %f}\n", sx, sy, sz);
+            printf(
+                "index_from_ijk:\n\t[%f, %f, %f]\n\t[%f, %f, %f]\n", 
+                index_from_ijk[0], index_from_ijk[1], index_from_ijk[2], 
+                index_from_ijk[3], index_from_ijk[4], index_from_ijk[5]
+            );
+            printf(
+                "detector_plane:\n"
+                "\t.n={%f, %f, %f}, .d=%f\n"
+                "\t.ori={%f, %f, %f}\n"
+                "\t.b1={%f, %f, %f}\n"
+                "\t.b2={%f, %f, %f}\n"
+                "\t.bound1=[%f, %f]\n"
+                "\t.bound2=[%f, %f]\n",
+                detector_plane->n.x, detector_plane->n.y, detector_plane->n.z, detector_plane->d,
+                detector_plane->ori.x, detector_plane->ori.y, detector_plane->ori.z,
+                detector_plane->b1.x, detector_plane->b1.y, detector_plane->b1.z,
+                detector_plane->b2.x, detector_plane->b2.y, detector_plane->b2.z,
+                detector_plane->bound1.x, detector_plane->bound1.y,
+                detector_plane->bound2.x, detector_plane->bound1.y
+            );
+            printf("WOODCOCK MFP: n_bins=%d\n", woodcock_mfp->n_bins);
+            for (int i = 0; i < NUM_MATERIALS; i++) {
+                printf(
+                    "MATERIAL MFP #%d: n_bins=%d\n"
+                    "MATERIAL RITA #%d: n_gridpts=%d\n"
+                    "MATERIAL COMPTON #%d: nshells=%d\n",
+                    i, mfp_data_arr[i].n_bins,
+                    i, rita_arr[i].n_gridpts,
+                    i, compton_arr[i].nshells
+                );
+            }*/
+
+            // printf("STRUCTURE SIZES:\n");
+            // printf("\tplane_surface_t: %llu\n", sizeof(plane_surface_t));
+            // printf("\trng_seed_t: %llu\n", sizeof(rng_seed_t));
+            // printf("\trita_t: %llu\n", sizeof(rita_t));
+            // printf("\tmat_mfp_data_t: %llu\n", sizeof(mat_mfp_data_t));
+            // printf("\twc_mfp_data_t: %llu\n", sizeof(wc_mfp_data_t));
+            // printf("\tcompton_data_t: %llu\n", sizeof(compton_data_t));
+
+            /*for (int i = 0; i < NUM_MATERIALS; i++) {
+                printf("RITA PARAMS #%d: n_gridpts=%d. memloc: %llu\n", i, rita_arr[i].n_gridpts, &rita_arr[i]);
+                printf("&rita_arr[i].x[0]: %llu, &(...).y[0]: %llu\n", &rita_arr[i].x[0], &rita_arr[i].y[0]);
+                printf("&rita_arr[i].a[0]: %llu, &(...).b[0]: %llu\n", &rita_arr[i].a[0], &rita_arr[i].b[0]);
+                for (int g = 0; g < rita_arr[i].n_gridpts; g++) {
+                    printf(
+                        "\t[%8f, %8f, %8f, %8f]\n",
+                        rita_arr[i].x[g], 
+                        rita_arr[i].y[g], 
+                        rita_arr[i].a[g], 
+                        rita_arr[i].b[g]
+                    );
+                }
+            }*/
+
+            /*for (int i = 0; i < NUM_MATERIALS; i++) {
+                printf("MATERIAL MFP #%d: n_bins=%d\n", i, mfp_data_arr[i].n_bins);
+                for (int b = 0; b < mfp_data_arr[i].n_bins; b++) {
+                    printf("\t[%8f, %8f, %8f, %8f]\n", mfp_data_arr[i].energy[b], mfp_data_arr[i].mfp_Ra[b], mfp_data_arr[i].mfp_Co[b], mfp_data_arr[i].mfp_Tot[b]);
+                }
+            }*/
+        }
+
+        int histories_printing = 0; // TODO: this is ugly
+
+        if (histories_printing) printf("thread #%d has started tracking, seed={%d, %d}\n", thread_id, seed.x, seed.y);
+        //printf("histories_for_thread: %d\n", histories_for_thread);
 
         for (; histories_for_thread > 0; histories_for_thread--) {
-            float3_t pos = { .x = sx, .y = sy, .z = sz };
+            if (histories_printing) printf("%d histories left in thread #%d\n", histories_for_thread, thread_id);
+            float3_t pos;
+            pos.x = sx;
+            pos.y = sy;
+            pos.z = sz;
+
             float3_t dir;
             sample_initial_dir(&dir, &seed);
             int is_hit;
             move_photon_to_volume(&pos, &dir, &is_hit, &gVolumeEdgeMinPoint, &gVolumeEdgeMaxPoint);
             if (is_hit) {
-                float energy = sample_initial_energy(n_bins, spectrum_energies, spectrum_cdf, seed);
+                //printf("hit volume\n"); // many of these get printed out
+                float energy = 1000.f * sample_initial_energy(n_bins, spectrum_energies, spectrum_cdf, &seed); // [eV]
                 // is_hit gets repurposed since we don't need it anymore for 'did the photon hit the volume'
                 int num_scatter_events = 0;
-                initialization_track_photon(
+                track_photon(
                     &pos, &dir, &energy, &is_hit, &num_scatter_events,
-                    E_abs, labeled_segmentation, 
+                    (1000.f * E_abs), labeled_segmentation,             // Pass in E_abs in [eV]
                     mfp_data_arr, woodcock_mfp, compton_arr, rita_arr,
                     &volume_shape, 
                     &gVolumeEdgeMinPoint, &gVolumeEdgeMaxPoint, &gVoxelElementSize,
                     detector_plane, &seed
                 );
 
-                if (is_hit && num_scatter_events) {
+                if (is_hit) {
+                    if (num_scatter_events > 0) {
+                        //printf("scattered photon ended up here: {%f, %f, %f}\n", pos.x, pos.y, pos.z);
+                    }
+                    ///////////////printf("hit detector\n");
                     // 'pos' contains the IJK coord.s of collision with the detector.
 
                     // Calculate the pixel indices for the detector image
@@ -94,33 +176,34 @@ extern "C" {
                     // such that the vector has unit displacement along the source-to-detector-center line (the
                     // vector is not necessarily a unit vector).  Vectors of this sort work with the inverse ray 
                     // transform.
-                    pos->x = (pos->x - sx) / sdd;
-                    pos->y = (pos->y - sy) / sdd;
-                    pos->z = (pos->z - sz) / sdd;
+                    pos.x = (pos.x - sx) / sdd;
+                    pos.y = (pos.y - sy) / sdd;
+                    pos.z = (pos.z - sz) / sdd;
 
-                    /* DEBUG STATEMENT
-                    float mag2 = (pos->x * pos->x) + (pos->y * pos->y) + (pos->z * pos->z);
-                    if (mag2 > 1.f) {
+                    /* DEBUG STATEMENT *
+                    float mag2 = (pos.x * pos.x) + (pos.y * pos.y) + (pos.z * pos.z);
+                    if (mag2 < 1.f) {
                         printf("WARNING: vector to put into inverse ray transform has magnitude < 1: %1.10e\n", sqrtf(mag2));
                     }
                     // should also be project to unit along the detector-plane's normal 
-                    float dotprod = (pos->x * detector_plane->n.x) + (pos->y * detector_plane->n.y) + (pos->z * detector_plane->n.z);
+                    float dotprod = (pos.x * detector_plane->n.x) + (pos.y * detector_plane->n.y) + (pos.z * detector_plane->n.z);
                     float normal_norm2 
                         = (detector_plane->n.x * detector_plane->n.x) 
                         + (detector_plane->n.y * detector_plane->n.y) 
                         + (detector_plane->n.z * detector_plane->n.z);
                     float proj = fabs(dotprod / sqrtf(normal_norm2));
-                    if (fabs(1.f - proj) > 1.0e-8f) {
+                    if (fabs(1.f - proj) > 1.0e-6f) {
                         printf(
                             "WARNING: vector to put into inverse ray transform does not has unit length "
                             "ALONG source-to-detector direction. Magnitude of projection: %1.10e\n", proj
                         );
                     }
-                    */
+                    /**/
 
                     // Use the inverse ray transform.
-                    int pixel_x = (int)((index_from_ijk[0] * pos->x) + (index_from_ijk[1] * pos->y) + (index_from_ijk[2] * pos->z));
-                    int pixel_y = (int)((index_from_ijk[4] * pos->x) + (index_from_ijk[5] * pos->y) + (index_from_ijk[6] * pos->z));
+                    int pixel_x = (int)((index_from_ijk[0] * pos.x) + (index_from_ijk[1] * pos.y) + (index_from_ijk[2] * pos.z));
+                    int pixel_y = (int)((index_from_ijk[4] * pos.x) + (index_from_ijk[5] * pos.y) + (index_from_ijk[6] * pos.z));
+                    //////////printf("pixel: [%d,%d]. num_scatter_events: %d\n", pixel_x, pixel_y, num_scatter_events);
                     if ((pixel_x >= 0) && (pixel_x < detector_width) && (pixel_y >= 0) && (pixel_y < detector_height)) {
                         int pixel_index = (pixel_y * detector_width) + pixel_x;
                         if (num_scatter_events) {
@@ -140,29 +223,31 @@ extern "C" {
                 // Then, if it does, add to num_unscattered_hits since it's part of the X-ray primary
                 float dist_to_detector = psurface_check_ray_intersection(&pos, &dir, detector_plane);
                 if (dist_to_detector >= 0.0f) {
-                    pos->x += dist_to_detector * dir->x;
-                    pos->y += dist_to_detector * dir->y;
-                    pos->z += dist_to_detector * dir->z;
+                    pos.x += dist_to_detector * dir.x;
+                    pos.y += dist_to_detector * dir.y;
+                    pos.z += dist_to_detector * dir.z;
 
-                    int pixel_x = (int)((index_from_ijk[0] * pos->x) + (index_from_ijk[1] * pos->y) + (index_from_ijk[2] * pos->z));
-                    int pixel_y = (int)((index_from_ijk[4] * pos->x) + (index_from_ijk[5] * pos->y) + (index_from_ijk[6] * pos->z));
+                    int pixel_x = (int)((index_from_ijk[0] * pos.x) + (index_from_ijk[1] * pos.y) + (index_from_ijk[2] * pos.z));
+                    int pixel_y = (int)((index_from_ijk[4] * pos.x) + (index_from_ijk[5] * pos.y) + (index_from_ijk[6] * pos.z));
+                    //printf("didn't hit volume, but hit detector. pixel: [%d, %d]\n", pixel_x, pixel_y);
                     if ((pixel_x >= 0) && (pixel_x < detector_width) && (pixel_y >= 0) && (pixel_y < detector_height)) {
                         atomicAdd(&num_unscattered_hits[(pixel_y * detector_width) + pixel_x], 1);
                     }
                 }
             }
         }
+        if (histories_printing) printf("thread #%d has finished tracking\n", thread_id);
 
         return;
     }
 
-    __device__ void initialization_track_photon(
+    __device__ void track_photon(
         float3_t *pos, // input: initial position in volume. output: end position of photon history
         float3_t *dir, // input: initial direction
-        float *energy, // input: initial energy. output: energy at end of photon history
+        float *energy, // input: initial energy. output: energy at end of photon history. Units: [eV]
         int *hits_detector, // Boolean output.  Does the photon actually reach the detector plane?
         int *num_scatter_events, // should be passed a pointer to an int initialized to zero.  Returns the number of scatter events experienced by the photon
-        float E_abs, // the energy level below which the photon is assumed to be absorbed
+        float E_abs, // the energy level below which the photon is assumed to be absorbed. Units: [eV]
         char *labeled_segmentation, // [0..NUM_MATERIALS-1]-labeled segmentation
         mat_mfp_data_t *mfp_data_arr, // NUM_MATERIALS-element array of pointers to mat_mfp_data_t structs. Material associations based on labeled_segmentation
         wc_mfp_data_t *wc_data,
@@ -178,29 +263,38 @@ extern "C" {
         int vox; // IJK voxel coord.s of photon, flattened for 1-D array labeled_segmentation
         float mfp_wc, mfp_Ra, mfp_Co, mfp_Tot;
         char curr_mat_id, old_mat_id = -1;
+        //printf("dir on entry: {%f, %f, %f}\n", dir->x, dir->y, dir->z);
         while (1) {
             vox = get_voxel_1D(pos, gVolumeEdgeMinPoint, gVolumeEdgeMaxPoint, gVoxelElementSize, volume_shape);
+            //printf("pos: {%f, %f, %f}. vox: %d\n", pos->x, pos->y, pos->z, vox);
             if (vox < 0) { break; } // photon escaped volume
 
-            mfp_wc = get_wc_mfp_data(wc_data, *energy, &mfp_wc);
+            get_wc_mfp_data(wc_data, *energy, &mfp_wc);
 
             // Delta interactions
             do {
                 // simulate moving the photon
                 float s = -mfp_wc * logf(ranecu(seed));
+                //////////////printf("s: %f -- mfp_wc: %f\n", s, mfp_wc);
                 pos->x += s * dir->x;
                 pos->y += s * dir->y;
                 pos->z += s * dir->z;
 
                 vox = get_voxel_1D(pos, gVolumeEdgeMinPoint, gVolumeEdgeMaxPoint, gVoxelElementSize, volume_shape);
+                //printf("pos: {%f, %f, %f}. vox: %d\n", pos->x, pos->y, pos->z, vox);
                 if (vox < 0) { break; } // phtoton escaped volume
 
                 curr_mat_id = labeled_segmentation[vox];
                 if (curr_mat_id != old_mat_id) {
                     // only read the mfp data when necessary
-                    get_mat_mfp_data(&mfp_data_arr[mat_id], *energy, &mfp_Ra, &mfp_Co, &mfp_Tot);
+                    get_mat_mfp_data(&mfp_data_arr[curr_mat_id], *energy, &mfp_Ra, &mfp_Co, &mfp_Tot);
                     old_mat_id = curr_mat_id;
                 }
+                
+                // printf(
+                //     "mat_id: %d. E: %f, mfp_wc: %f, mfp_Tot:%f, mfp_wc / mfp_Tot: %f\n", 
+                //     curr_mat_id, *energy, mfp_wc, mfp_Tot, mfp_wc / mfp_Tot
+                // );
 
                 // Accept the collision if \xi < mfp_wc / mfp_Tot.
                 // Thus, reject the collision if \xi >= mfp_wc / mfp_Tot.
@@ -233,13 +327,21 @@ extern "C" {
              * else:
              *   OTHER INTERACTION (photoelectric for pair production) ==> photon absorbed
              */
+            // printf(
+            //     "Scatter event at pos: {%f, %f, %f}\n"
+            //     "\tMFPs>>> Ra: [%f], Co: [%f], Tot: [%f]\n"
+            //     "\tprob_Co: [%f], (prob_Co + prob_Ra): [%f]\n",
+            //     pos->x, pos->y, pos->z,
+            //     mfp_Ra, mfp_Co, mfp_Tot,
+            //     mfp_Tot / mfp_Co, (mfp_Tot / mfp_Co) + (mfp_Tot / mfp_Ra)
+            // );
             double cos_theta;
             float rnd = ranecu(seed);
             float prob_Co = mfp_Tot / mfp_Co;
             if (rnd < prob_Co) {
-                cos_theta = sample_Compton(energy, &compton_arr[mat_id], seed);
+                cos_theta = sample_Compton(energy, &compton_arr[curr_mat_id], seed);
             } else if (rnd < (prob_Co + (mfp_Tot / mfp_Ra))) {
-                cos_theta = sample_Rayleigh(*energy, &rita_arr[mat_id], seed);
+                cos_theta = sample_Rayleigh(*energy, &rita_arr[curr_mat_id], seed);
             } else {
                 *hits_detector = 0;
                 return;
@@ -252,8 +354,9 @@ extern "C" {
 
             (*num_scatter_events)++;
 
-            phi = TWO_PI_DOUBLE * ranecu_double(seed);
+            double phi = TWO_PI_DOUBLE * ranecu_double(seed);
             get_scattered_dir(dir, cos_theta, phi);
+            //printf("dir has chnaged to: {%f, %f, %f}\n", dir->x, dir->y, dir->z);
         }
 
         /* Final processing once the photon has left the volume */
@@ -284,9 +387,9 @@ extern "C" {
          *
          * volume_arr_3D[x, y, z] == volume_arr_1D[z * x_len * y_len + y * x_len + x]
          */
-        if ((pos->x < gVolumeEdgeMinPoint->x + VOXEL_EPS) || (pos->x > gVolumeEdgeMaxPoint->x - VOXEL_EPS) ||
-                (pos->y < gVolumeEdgeMinPoint->y + VOXEL_EPS) || (pos->y > gVolumeEdgeMaxPoint->y - VOXEL_EPS) ||
-                (pos->z < gVolumeEdgeMinPoint->z + VOXEL_EPS) || (pos->z > gVolumeEdgeMaxPoint->z - VOXEL_EPS) ) {
+        if ((pos->x < gVolumeEdgeMinPoint->x /*+ VOXEL_EPS*/) || (pos->x > gVolumeEdgeMaxPoint->x /*- VOXEL_EPS*/) ||
+                (pos->y < gVolumeEdgeMinPoint->y /*+ VOXEL_EPS*/) || (pos->y > gVolumeEdgeMaxPoint->y /*- VOXEL_EPS*/) ||
+                (pos->z < gVolumeEdgeMinPoint->z /*+ VOXEL_EPS*/) || (pos->z > gVolumeEdgeMaxPoint->z /*- VOXEL_EPS*/) ) {
             // Photon outside volume
             return -1;
         }
@@ -309,7 +412,15 @@ extern "C" {
         float cos_phi = (float)cos(phi);
         float sin_phi = (float)sin(phi);
 
+        if ((cos_th < -1.f) || (cos_th > 1.f)) {
+            printf("cos_th outside valid range of [-1,1]. cos_th=%f\n", cos_th);
+        }
+
         float tmp = sqrtf(1.f - dir->z * dir->z);
+
+        if (tmp < 1.0e-8f) {
+            tmp = 1.0e-8f; // to avoid divide-by-zero errors
+        }
 
         float orig_x = dir->x;
 
@@ -334,7 +445,7 @@ extern "C" {
         float3_t *dir, // input: direction of photon travel
         int *hits_volume, // Boolean output.  Does the photon actually hit the volume?
         float3_t *gVolumeEdgeMinPoint, // IJK coordinate of minimum bounds of volume
-        float3_t *gVolumeEdgeMaxPoint, // IJK coordinate of maximum bounds of volume
+        float3_t *gVolumeEdgeMaxPoint  // IJK coordinate of maximum bounds of volume
     ) {
         /*
          * Strategy: calculate the which direction out of {x,y,z} needs to travel the most to get
@@ -481,7 +592,7 @@ extern "C" {
             }
         }
 
-        /* DEBUG STATEMENT
+        /* DEBUG STATEMENT *
         if (spectrum_cdf[i] > threshold) {
             printf(
                 "ERROR: sample_initial_energy identified too-high interval. threshold=%.10f, spectrum_cdf[i]=%.10f\n", 
@@ -493,10 +604,10 @@ extern "C" {
                 threshold, spectrum_cdf[i+1]
             );
         }
-        */
+        /**/
 
         // Final interpolation within the spectral bin
-        float slope = (spectrum_energies[i+1] - spectrum_energies[i]) / (spectrum_cdf[i+1] - spectrum_cdf[i])
+        float slope = (spectrum_energies[i+1] - spectrum_energies[i]) / (spectrum_cdf[i+1] - spectrum_cdf[i]);
 
         return spectrum_energies[i] + (slope * (threshold - spectrum_cdf[i]));
     }
@@ -527,13 +638,13 @@ extern "C" {
             }
         }
 
-        /* DEBUG STATEMENT
+        /* DEBUG STATEMENT *
         if (sampler->y[i] > y) {
-            printf("ERROR: RITA identified too-high interval. y=%.10f, y[i]=%.10f\n", y, sampler->y[i]);
+            printf("ERROR: RITA identified too-high interval. y=%.10f, y[i=%d]=%.10f\n", y, i, sampler->y[i]);
         } else if (sampler->y[i+1] <= y) {
-            printf("ERROR: RITA identified too-low interval. y=%.10f, y[i+1]=%.10f\n", y, sampler->y[i+1]);
+            printf("ERROR: RITA identified too-low interval. y=%.10f, y[i+1=%d]=%.10f\n", y, i+1, sampler->y[i+1]);
         }
-        */
+        /**/
 
         double nu = y - sampler->y[i];
         double delta_i = sampler->y[i+1] - sampler->y[i];
@@ -579,7 +690,7 @@ extern "C" {
         float *co, // output: MFP for Compton scatter. Units: [mm]
         float *tot // output: MFP (total). Units: [mm]
     ) {
-        /* DEBUG STATEMENT
+        /* DEBUG STATEMENT *
         if (nrg < data->energy[0]) {
             printf(
                 "ERROR: photon energy (%6f) less than minimum "
@@ -592,7 +703,7 @@ extern "C" {
                 nrg, data->energy[data->n_bins - 1]
             );
         }
-        */
+        /**/
 
         // Binary search to find the interval [E_i, E_{i+1} that contains nrg]
         int lo_idx = 0; // inclusive
@@ -613,8 +724,9 @@ extern "C" {
                 lo_idx = i + 1;
             }
         }
+        //printf("i=%d. energy[i]=%f, nrg=%f, energy[i+1]=%f\n", i, data->energy[i], nrg, data->energy[i+1]);
 
-        /* DEBUG STATEMENT
+        /* DEBUG STATEMENT *
         if (data->energy[i] > nrg) {
             printf(
                 "ERROR: Material MFP data identified too-high energy bin. "
@@ -626,15 +738,22 @@ extern "C" {
                 "nrg=%6e, data->energy[i+1]=%6e\n", nrg, data->energy[i+1]
             );
         }
-        */
+        /**/
 
         // linear interpolation
         float alpha = (nrg - data->energy[i]) / (data->energy[i+1] - data->energy[i]);
         float one_minus_alpha = 1.f - alpha;
         
-        *ra = (one_minus_alpha * data->mfp_Ra[i]) - (alpha * data->mfp_Ra[i+1]);
-        *co = (one_minus_alpha * data->mfp_Co[i]) - (alpha * data->mfp_Co[i+1]);
-        *tot = (one_minus_alpha * data->mfp_Tot[i]) - (alpha * data->mfp_Tot[i+1]);
+        *ra = (one_minus_alpha * data->mfp_Ra[i]) + (alpha * data->mfp_Ra[i+1]);
+        *co = (one_minus_alpha * data->mfp_Co[i]) + (alpha * data->mfp_Co[i+1]);
+        *tot = (one_minus_alpha * data->mfp_Tot[i]) + (alpha * data->mfp_Tot[i+1]);
+
+        // printf(
+        //     "alpha: %f, i: %d. mfp_Tot[i]=%f, mfp_Tot[i+1]=%f"
+        //     "Ra: %f, Co: %f, Tot: %f\n", 
+        //     alpha, i, data->mfp_Tot[i], data->mfp_Tot[i+1],
+        //     *ra, *co, *tot
+        // );
 
         return;
     }
@@ -644,7 +763,7 @@ extern "C" {
         float nrg, // energy of the photon [eV]
         float *mfp // output: Woodcock MFP. Units: [mm]
     ) {
-        /* DEBUG STATEMENT
+        /* DEBUG STATEMENT *
         if (nrg < data->energy[0]) {
             printf(
                 "ERROR: photon energy (%6f) less than minimum "
@@ -657,7 +776,7 @@ extern "C" {
                 nrg, data->energy[data->n_bins - 1]
             );
         }
-        */
+        /**/
 
         // Binary search to find the interval [E_i, E_{i+1} that contains nrg]
         int lo_idx = 0; // inclusive
@@ -679,7 +798,7 @@ extern "C" {
             }
         }
 
-        /* DEBUG STATEMENT
+        /* DEBUG STATEMENT *
         if (data->energy[i] > nrg) {
             printf(
                 "ERROR: Woodcock MFP data identified too-high energy bin. "
@@ -691,7 +810,7 @@ extern "C" {
                 "nrg=%6e, data->energy[i+1]=%6e\n", nrg, data->energy[i+1]
             );
         }
-        */
+        /**/
 
         // linear interpolation
         float alpha = (nrg - data->energy[i]) / (data->energy[i+1] - data->energy[i]);
@@ -738,7 +857,7 @@ extern "C" {
         float tau_min = 1.f / one_p2k;
 
         float a_1 = logf(one_p2k);
-        float a_1 = 2.f * kappa * (1.f * kappa) / (one_p2k * one_p2k);
+        float a_2 = 2.f * kappa * (1.f * kappa) / (one_p2k * one_p2k);
 
         /* Sample cos_theta */
 
@@ -767,15 +886,15 @@ extern "C" {
             }
         }
 
-        double cos_theta;
         // local storage for the results of calculating n_{i}(p_{i,max})
         float n_pimax_vals[MAX_NSHELLS];
         float tau;
         double one_minus_cos;
+        float T_tau_term, s_theta;
 
         do {
             /* Sample tau */
-            if (ranecu(seed) < (a1 / (a1 + a2))) {
+            if (ranecu(seed) < (a_1 / (a_1 + a_2))) {
                 // i == 1
                 tau = powf(tau_min, ranecu(seed));
             } else {
@@ -792,7 +911,7 @@ extern "C" {
             }
             one_minus_cos = (1.0 - (double)tau) / ((double)kappa * (double)tau);
 
-            float s_theta = 0.0f;
+            s_theta = 0.0f;
             for (int shell = 0; shell < compton_data->nshells; shell++) {
                 float tmp = compton_data->ui[shell];
                 if (*energy > tmp) { // this serves as the Heaviside function
@@ -812,13 +931,13 @@ extern "C" {
                     }
                     // 'tmp' now holds PENELOPE n_{i}(p_{i,max})
 
-                    s_pi += (compton_data->f[shell] * tmp); // Equivalent to: s_pi += f_{i} n_{i}(p_{i,max})
+                    s_theta += (compton_data->f[shell] * tmp); // Equivalent to: s_pi += f_{i} n_{i}(p_{i,max})
                     n_pimax_vals[shell] = tmp;
                 }
             }
             
             // Compute the term of T(cos_theta) that does not involve S(E, \theta)
-            float T_tau_term = kappa * kappa * tau * (1.f + tau * tau); // the denominator
+            T_tau_term = kappa * kappa * tau * (1.f + tau * tau); // the denominator
             T_tau_term = (T_tau_term - (1.f - tau) * (one_p2k * tau - 1.f)) / T_tau_term; // the whole expression
 
             // Reject and re-sample if \xi > T(cos_theta)
@@ -830,6 +949,7 @@ extern "C" {
 
         /* Choose the active shell */
         float pzomc; // "P_Z Over M_{e} C" == p_z / (m_{e} c)
+        float F_p_z, F_max;
 
         do {
             /*
@@ -857,7 +977,7 @@ extern "C" {
                 }
             }
 
-            two_A = ranecu(seed) * (2.f * n_pimax_vals[shell]);
+            float two_A = ranecu(seed) * (2.f * n_pimax_vals[shell]);
             if (two_A < 1) {
                 pzomc = 0.5f - sqrtf(0.25f - 0.5f * logf(two_A));
             } else {
@@ -873,8 +993,8 @@ extern "C" {
             // Calculate F(p_z) from PENELOPE-2006
             float tmp = 1.f + (tau * tau) - (2.f * tau * cos_theta); // tmp = (\beta)^2, where \beta := (c q_{C}) / E
             tmp = sqrtf(tmp) * (1.f + tau * (tau - cos_theta) / tmp);
-            float F_p_z = 1.f + (tmp * pzomc);
-            float F_max = 1.f + (tmp * 0.2f);
+            F_p_z = 1.f + (tmp * pzomc);
+            F_max = 1.f + (tmp * 0.2f);
             if (pzomc < 0) {
                 F_max = -1.f * F_max;
             }

@@ -24,7 +24,7 @@ def _convert_to_millimeters(mfp_data_cm: np.ndarray) -> np.ndarray:
     """Transforms the MFP data, given in centimeters, to millimeters
     """
     mfp_data_mm = np.copy(mfp_data_cm)
-    mfp_data_mm[:, 1:5] /= 10
+    mfp_data_mm[:, 1:5] *= 10
     return mfp_data_mm
 
 MFP_DATA = {

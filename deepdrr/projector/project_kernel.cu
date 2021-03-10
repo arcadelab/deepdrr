@@ -224,7 +224,6 @@ extern "C" {
         float sy,
         float sz,
         float *rt_kinv, // (3, 3) array giving the image-to-world-ray transform.
-        int photon_count, // total number of photons emitted by X-ray source
         int n_bins, // the number of spectral bins
         float *energies, // 1-D array -- size is the n_bins. Units: keV
         float *pdf, // 1-D array -- probability density function over the energies
@@ -575,7 +574,6 @@ extern "C" {
             }
 
             solid_angle[img_dx] = solid_angle_012 + solid_angle_023;
-            printf("pixel [%d,%d]: computed solid angle: %.10e\n", udx, vdx, solid_angle[img_dx]);
         }
 
         return;
