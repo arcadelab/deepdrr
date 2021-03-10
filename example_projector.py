@@ -71,10 +71,10 @@ def main():
     )
 
     # Angles to take projections over
-    min_theta = 30#0
-    max_theta = 31#120
-    min_phi = 60#0
-    max_phi = 61#91
+    min_theta = 0#30#0
+    max_theta = 121#31#120
+    min_phi = 0#60#0
+    max_phi = 91#61#91
     spacing_theta = 30
     spacing_phi = 90
 
@@ -89,7 +89,7 @@ def main():
         spectrum='90KV_AL40',
         photon_count=10000, # 10^4
         add_scatter=False,
-        scatter_num=(10**6),
+        scatter_num=(10**7),
         threads=8,
         neglog=True,
         collected_energy=False
@@ -111,7 +111,7 @@ def main():
     # save results as matplotlib plots
     output_dir = Path(f'examples')
     output_dir.mkdir(exist_ok=True)
-    for i, image in enumerate([images]):
+    for i, image in enumerate(images):
         plt.imshow(image, cmap="gray")
         plt.title(f'phi, theta = {phis[i], thetas[i]}')
         output_path = output_dir / f'image_phi={int(phis[i])}_theta={int(thetas[i])}.png'

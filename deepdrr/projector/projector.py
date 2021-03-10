@@ -741,7 +741,7 @@ class Projector(object):
                 images.append(image)
                 photon_probs.append(photon_prob)
 
-            images = np.stack(image)
+            images = np.stack(images)
             photon_prob = np.stack(photon_probs)
             logger.info("Completed projection and attenuation")
         else:

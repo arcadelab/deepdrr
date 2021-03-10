@@ -587,7 +587,6 @@ def get_detector_plane(
     Returns:
         PlaneSurface: a PlaneSurface object representing the detector.  
     """
-    print(f"rt_kinv:\n{rt_kinv}")
     # Based off the project_kernel.cu code:
     #   Let \hat{p} = (u,v,1)^T be the pixel coord.s on the detector plane
     #   Then, the 3D IJK coord.s of that pixel are related to (R^T K^{-1}) \hat{p} == (rt_kinv) @ \hat{p}
