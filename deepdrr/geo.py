@@ -121,7 +121,7 @@ class HomogeneousObject(ABC):
         return self.to_array()
     
     def __str__(self):
-        return np.array_str(self.data, suppress_small=True, precision=1)
+        return np.array_str(self.data, suppress_small=True)
 
     def __repr__(self):
         s = '  ' + str(np.array_str(self.data)).replace('\n', '\n  ')
