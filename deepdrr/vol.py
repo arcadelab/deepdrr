@@ -323,14 +323,19 @@ class Volume(object):
         x_ijk = self.ijk_from_world @ geo.point(x)
         return np.all(0 <= np.array(x_ijk) <= np.array(self.shape) - 1)
 
-    def get_mesh_in_world(self):
+    def get_mesh_in_world(self, full: bool = False):
         """Get a pyvista mesh representing the volume in world-space.
+
+        Args:
+            simple (bool, optional): whether to return a simple outline of the volume. Defaults to True.
 
         Returns:
             pv.PolyData: pyvist mesh.
         """
 
         assert pv_available, f'PyVista not available for obtaining Volume mesh. Try: `pip install pyvista`'
+        if full:
+            logger.warning(f'full volume rendering not supported. Rendering volume outline')
 
         x, y, z = np.array(self.shape) - 1
         points = [

@@ -234,7 +234,7 @@ class MobileCArm(object):
     def get_camera_projection(self) -> geo.CameraProjection:
         return geo.CameraProjection(self.camera_intrinsics, self.get_camera3d_from_world())
 
-    def _make_mesh(self, source_height: float = 240) -> pv.PolyData:
+    def _make_mesh(self, full=True, source_height: float = 240) -> pv.PolyData:
         """Make the mesh of the C-arm, centered and upright.
 
         This DOES NOT use the current isocenter, alpha, or beta.
@@ -244,26 +244,7 @@ class MobileCArm(object):
         """
         assert pv_available, f'PyVista not available for obtaining MobileCArm surface model. Try: `pip install pyvista`'
 
-        mesh = pv.Cylinder(
-            center=[0, 0, -self.isocenter_distance - source_height / 2],
-            direction=[0, 0, 1],
-            radius=80,
-            height=240,
-        )
-
-        # TODO: switch height/width?
-        mesh += pv.Box(
-            bounds=[
-                -self.pixel_size * self.sensor_width / 2,
-                self.pixel_size * self.sensor_width / 2,
-                -self.pixel_size * self.sensor_height / 2,
-                self.pixel_size * self.sensor_height / 2,
-                -self.isocenter_distance + self.source_to_detector_distance,
-                self.isocenter_distance + source_height,
-            ],
-        )
-
-        mesh += pv.Line(
+        mesh = pv.Line(
             [0, 0, -self.isocenter_distance],
             [0, 0, -self.isocenter_distance + self.source_to_detector_distance],
         ) + pv.Line(
@@ -274,19 +255,39 @@ class MobileCArm(object):
             [0, 100, 0],
         )
 
-        # TODO: add labeled point at the isocenter.
+        if full:
+            # Source
+            mesh += pv.Cylinder(
+                center=[0, 0, -self.isocenter_distance - source_height / 2],
+                direction=[0, 0, 1],
+                radius=80,
+                height=240,
+            )
 
-        arm = pv.ParametricTorus(
-            ringradius=self.isocenter_distance + source_height / 2,
-            crosssectionradius=source_height / 4,
-        )
+            # Sensor
+            mesh += pv.Box(
+                bounds=[
+                    -self.pixel_size * self.sensor_width / 2,
+                    self.pixel_size * self.sensor_width / 2,
+                    -self.pixel_size * self.sensor_height / 2,
+                    self.pixel_size * self.sensor_height / 2,
+                    -self.isocenter_distance + self.source_to_detector_distance,
+                    self.isocenter_distance + source_height,
+                ],
+            )
 
-        arm.clip(normal='y', inplace=True)
-        arm.rotate_y(90)
-        mesh += arm
+            # Arm
+            arm = pv.ParametricTorus(
+                ringradius=self.isocenter_distance + source_height / 2,
+                crosssectionradius=source_height / 4,
+            )
+            arm.clip(normal='y', inplace=True)
+            arm.rotate_y(90)
+            mesh += arm
+
         return mesh
 
-    def get_mesh_in_world(self) -> pv.PolyData:
+    def get_mesh_in_world(self, full=False) -> pv.PolyData:
         """Get the pyvista mesh for the C-arm, in its world-space orientation.
 
         Raises:
@@ -296,7 +297,7 @@ class MobileCArm(object):
             pv.PolyData: a mesh somewhat resembling the C-arm device.
         """
         if self.static_mesh is None:
-            self.static_mesh = self._make_mesh()
+            self.static_mesh = self._make_mesh(full=full)
 
         mesh = self.static_mesh.copy()
         mesh.rotate_x(-np.degrees(self.alpha))
