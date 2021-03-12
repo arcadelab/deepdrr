@@ -91,40 +91,43 @@ def pose_vector_angles(pose: geo.Vector3D) -> Tuple[float, float]:
 
 class MobileCArm(object):
 
-    # Default values. Actual limits are likely more constrained, but anything more than these 
-    min_alpha = np.radians(-110)
-    max_alpha = np.radians(40)
-    min_beta = np.radians(-225)
-    max_beta = np.radians(225)
-
+    isocenter: geo.Point3D # the isocenter point in the device frame
+    alpha: float # alpha angle in radians
+    beta: float # beta angle in radians
 
     def __init__(
         self,
         isocenter: geo.Point3D = [0, 0, 0],
         alpha: float = 0,
         beta: float = 0,
-        world_from_carm: Optional[geo.FrameTransform] = None,
-        isocenter_distance: float = None,
+        world_from_device: Optional[geo.FrameTransform] = None,
         horizontal_movement: float = 200, # width of window in X and Y planes.
         vertical_travel: float = 430, # width of window in Z plane.
-        min_alpha: float = -110,
-        max_alpha: float = 40,
-        min_beta: float = -45,
-        max_beta: float = 45,
+        min_alpha: float = -40,
+        max_alpha: float = 110,
+        min_beta: float = -225, # note that this would collide with the patient. Suggested to limit to +/- 45
+        max_beta: float = 225,
         degrees: bool = True,
+        source_to_detector_distance: float = 1020,
+        source_to_isocenter_vertical_distance: float = 530, # vertical component of the source point offset from the isocenter of rotation, in -Z. Previously called `isocenter_distance`
+        source_to_isocenter_horizontal_offset: float = 200, # horizontal offset of the principle ray from the isocenter of rotation, in +Y
+        immersion_depth: float = 730, # horizontal distance from principle ray to inner C-arm circumference. Used for visualization
+        free_space: float = 820, # distance from central ray to edge of arm. Used for visualization
         sensor_height: int = 1536,
         sensor_width: int = 1536,
         pixel_size: float = 0.194,
-        source_to_detector_distance: float = 1020,
-        immersion_depth: float = 730,
-        free_space: float = 820, # distance from central ray to edge of arm.
     ) -> None:
         """Make a CArm device.
 
-        The geometry follows figure 2 in Kausch et al: https://pubmed.ncbi.nlm.nih.gov/32533315/
+        All units in mm.
 
-        TODO(killeen): limit the translation of the C-arm, as it would be in reality.
-        TODO(killeen): the C-Arm is really a fancy CameraProjection. Inherit from that.
+        The C-arm frame is centered in the isocenter movement window, with -Y pointed toward the "Arm" and Z pointing up.
+        
+        The actual point being visualized is offset from the isocenter.
+
+        The angulation and orbital angles are reversed from figure 2 in Kausch et al: https://pubmed.ncbi.nlm.nih.gov/32533315/
+
+        TODO(killeen): the C-Arm is really a fancy CameraProjection. Inherit from that?
 
         Rather than incorporating a swivel, the device allows for horizontal translations, based on += 12 degrees (by default).
         
@@ -137,54 +140,61 @@ class MobileCArm(object):
             alpha (float): initial LAO/RAO angle of the C-Arm. alpha > 0 is in the RAO direction. This is the angle along arm of the C-arm.
             beta (float): initial CRA/CAU angulation of the C-arm. beta > 0 is in the CAU direction.
             degrees (bool, optional): Whether given angles are in degrees. Defaults to False.
-            world_from_carm: (Optional[geo.FrameTransform], optional): Transform that defines the CArm coordinate space in world coordinates. None is the identity transform. Defaults to None.
+            world_from_device: (Optional[geo.FrameTransform], optional): Transform that defines the device coordinate space in world coordinates. None is the identity transform. Defaults to None.
             camera_intrinsics: (Optional[Union[geo.CameraIntrinsicTransform, dict]], optional): either a CameraIntrinsicTransform instance or kwargs for CameraIntrinsicTransform.from_sizes
         """
         self.isocenter = geo.point(isocenter)
         self.alpha = utils.radians(alpha, degrees=degrees)
         self.beta = utils.radians(beta, degrees=degrees)
-        self.min_isocenter = np.array(DEFAULT_MIN_ISOCENTER) if min_isocenter is None else np.array(min_isocenter) 
-        self.max_isocenter = np.array(DEFAULT_MAX_ISOCENTER) if max_isocenter is None else np.array(max_isocenter)
-        self.min_alpha = DEFAULT_MIN_ALPHA if min_alpha is None else utils.radians(min_alpha, degrees=degrees)
-        self.max_alpha = DEFAULT_MAX_ALPHA if max_alpha is None else utils.radians(max_alpha, degrees=degrees)
-        self.min_beta = DEFAULT_MIN_BETA if min_beta is None else utils.radians(min_beta, degrees=degrees)
-        self.max_beta = DEFAULT_MAX_BETA if max_beta is None else utils.radians(max_beta, degrees=degrees)
-        self.world_from_carm = geo.frame_transform(world_from_carm)
-        self.sensor_height = sensor_height or DEFAULT_SENSOR_HEIGHT
-        self.sensor_width = sensor_width or DEFAULT_SENSOR_WIDTH
-        self.pixel_size = pixel_size or DEFAULT_PIXEL_SIZE
-        self.source_to_detector_distance = source_to_detector_distance or DEFAULT_SOURCE_TO_DETECTOR_DISTANCE
-        self.isocenter_distance = isocenter_distance
+        self.world_from_device = geo.frame_transform(world_from_device)
+        self.horizontal_movement = horizontal_movement
+        self.vertical_travel = vertical_travel
+        self.min_alpha = utils.radians(min_alpha, degrees=degrees)
+        self.max_alpha = utils.radians(max_alpha, degrees=degrees)
+        self.min_beta = utils.radians(min_beta, degrees=degrees)
+        self.max_beta = utils.radians(max_beta, degrees=degrees)
+        self.source_to_detector_distance = source_to_detector_distance
+        self.source_to_isocenter_vertical_distance = source_to_isocenter_vertical_distance
+        self.source_to_isocenter_horizontal_offset = source_to_isocenter_horizontal_offset
+        self.immersion_depth = immersion_depth
+        self.free_space = free_space
         self.camera_intrinsics = geo.CameraIntrinsicTransform.from_sizes(
-            sensor_size=(self.sensor_width, self.sensor_height),
-            pixel_size=self.pixel_size,
+            sensor_size=(sensor_width, sensor_height),
+            pixel_size=pixel_size,
             source_to_detector_distance=self.source_to_detector_distance,
         )
 
-        assert self.min_isocenter.shape == self.max_isocenter.shape == (3,), 'isocenter bounds are not valid'
-
-        self.static_mesh = None
-        self.mesh = None
+        self._static_mesh = None
 
     def __str__(self):
         return f'MobileCArm(isocenter={np.array_str(np.array(self.isocenter))}, alpha={np.degrees(self.alpha)}, beta={np.degrees(self.beta)}, degrees=True)'
 
     @property
-    def carm_from_world(self) -> geo.FrameTransform:
-        return self.world_from_carm.inv
+    def max_isocenter(self) -> np.ndarray:
+        return np.array([self.horizontal_movement, self.horizontal_movement, self.vertical_travel]) / 2
+
+    @property
+    def min_isocenter(self) -> np.ndarray:
+        return -self.max_isocenter
+
+    @property
+    def device_from_world(self) -> geo.FrameTransform:
+        return self.world_from_device.inv
 
     @property
     def isocenter_in_world(self) -> geo.Point3D:
-        return self.world_from_carm @ self.isocenter
+        return self.world_from_device @ self.isocenter
 
     def move_by(
         self,
         delta_isocenter: Optional[geo.Vector3D] = None,
         delta_alpha: Optional[float] = None,
         delta_beta: Optional[float] = None,
-        degrees: bool = False,
+        degrees: bool = True,
     ) -> None:
         """Move the C-arm to the specified pose.
+
+        TODO: don't let out-of-bounds movement pass silently.
 
         Args:
             delta_isocenter (Optional[geo.Vector3D], optional): isocenter (Point3D): isocenter of the C-arm in C-arm-space. This is the center about which rotations are performed. Defaults to None.
@@ -195,6 +205,7 @@ class MobileCArm(object):
         """
         if delta_isocenter is not None:
             self.isocenter += geo.vector(delta_isocenter)
+            self.isocenter = geo.point(np.clip(self.isocenter, self.min_isocenter, self.max_isocenter))
 
         if delta_alpha is not None:
             assert np.isscalar(delta_alpha)
@@ -211,7 +222,7 @@ class MobileCArm(object):
         isocenter: Optional[geo.Point3D] = None,
         alpha: Optional[geo.Point3D] = None,
         beta: Optional[geo.Point3D] = None,
-        degrees: bool = False,
+        degrees: bool = True,
     ) -> None:
         """Move to the specified point.
 
@@ -223,6 +234,7 @@ class MobileCArm(object):
         """
         if isocenter is not None:
             self.isocenter = geo.point(isocenter)
+            self.isocenter = geo.point(np.clip(self.isocenter, self.min_isocenter, self.max_isocenter))
         if alpha is not None:
             self.alpha = utils.radians(float(alpha), degrees=degrees)
             self.alpha = np.clip(self.alpha, self.min_alpha, self.max_alpha)
@@ -231,33 +243,66 @@ class MobileCArm(object):
             self.beta = np.clip(self.beta, self.min_beta, self.max_beta)
 
     @property
+    def device_from_arm(self) -> geo.FrameTransform:
+        # First, rotate points, then translate back by the isocenter.
+        rot = Rotation.from_euler('xy', [self.alpha, self.beta]).as_matrix()
+        return geo.FrameTransform.from_rt(rot, self.isocenter)
+
+    @property
+    def arm_from_device(self) -> geo.FrameTransform:
+        """Transformation from the device frame (which doesn't move) to the arm frame (which rotates and translates with the arm, origin at the isocenter).
+        """
+        return self.device_from_arm.inv
+
+    @property
+    def camera3d_from_device(self) -> geo.FrameTransform:
+        camera3d_from_arm = geo.FrameTransform.from_rt(translation=geo.point(
+            0, -self.source_to_isocenter_horizontal_offset, self.source_to_isocenter_vertical_distance))
+        return camera3d_from_arm @ self.arm_from_device
+
+    @property
     def camera3d_from_world(self) -> geo.FrameTransform:
-        return self.get_camera3d_from_world()
-
-    def get_pose_vector(self) -> geo.Vector3D:
-        """Get the unit vector pointing toward the detector of the C-arm from its isocenter, in the carm space."""
-        rot = Rotation.from_euler('xy', [-self.alpha, -self.beta])
-        x = rot.apply([0, 0, 1])
-        return geo.vector(x)
-
-    def get_pose_vector_in_world(self) -> geo.Vector3D:
-        return (self.world_from_carm @ self.get_pose_vector()).hat()
+        """Rigid transformation of the C-arm camera pose."""
+        return self.camera3d_from_device @ self.device_from_world
 
     def get_camera3d_from_world(self) -> geo.FrameTransform:
-        """Rigid transformation of the C-arm camera pose."""
-        # get the rotation corresponding to the c-arm, then translate to the camera-center frame, along z-axis.
-        # Note the difference between this rotation and the one to get the pose vector. This is going the opposite way.
-        rot = Rotation.from_euler('xy', [self.alpha, self.beta]).as_matrix()
-        t = np.array([0, 0, self.isocenter_distance])
-        camera3d_from_isocenter = geo.FrameTransform.from_rt(rot, t)
-        isocenter_from_carm = geo.FrameTransform.from_origin(self.isocenter)
-
-        return camera3d_from_isocenter @ isocenter_from_carm @ self.carm_from_world
+        return self.camera3d_from_world
 
     def get_camera_projection(self) -> geo.CameraProjection:
         return geo.CameraProjection(self.camera_intrinsics, self.get_camera3d_from_world())
 
-    def _make_mesh(self, full=True, source_height: float = 240) -> pv.PolyData:
+    @property
+    def viewpoint(self) -> geo.Point3D:
+        """Get the point along the principle ray, where objects of interest should ideally be placed.
+
+        Returns:
+            geo.Point3D: the viewpoint in the device frame.
+        """
+        return self.device_from_arm @ geo.point(0, self.source_to_isocenter_horizontal_offset, 0)
+
+    @property
+    def viewpoint_in_world(self) -> geo.Point3D:
+        return self.world_from_device @ self.viewpoint
+
+    @property
+    def principle_ray(self) -> geo.Vector3D:
+        """Unit vector along principle ray."""
+        return self.device_from_arm @ geo.vector(0, 0, 1)
+
+    @property
+    def principle_ray_in_world(self) -> geo.Vector3D:
+        return self.world_from_device @ self.principle_ray
+
+    # shape parameters
+    source_height = 200
+    source_radius = 200
+    detector_height = 100
+    arm_width = 100
+    def _make_mesh(
+        self,
+        full=True,
+        include_labels: bool = False
+    ) -> pv.PolyData:
         """Make the mesh of the C-arm, centered and upright.
 
         This DOES NOT use the current isocenter, alpha, or beta.
@@ -266,25 +311,30 @@ class MobileCArm(object):
             pv.PolyData: [description]
         """
         assert pv_available, f'PyVista not available for obtaining MobileCArm surface model. Try: `pip install pyvista`'
+        if include_labels:
+            logger.warning(f'C-arm mesh labels not supported yet')
+
+        source_point = geo.point(0, self.source_to_isocenter_horizontal_offset, -self.source_to_isocenter_horizontal_offset)
+        center_point = geo.point(0, self.source_to_isocenter_horizontal_offset, 0)
 
         mesh = pv.Line(
-            [0, 0, -self.isocenter_distance],
-            [0, 0, -self.isocenter_distance + self.source_to_detector_distance],
+            list(source_point),
+            list(source_point + geo.vector(0, 0, self.source_to_detector_distance)),
         ) + pv.Line(
-            [-100, 0, 0],
-            [100, 0, 0],
+            list(center_point + geo.vector(-100, 0, 0)),
+            list(center_point + geo.vector(100, 0, 0)),
         ) + pv.Line(
-            [0, -100, 0],
-            [0, 100, 0],
+            list(center_point + geo.vector(0, -100, 0, 0)),
+            list(center_point + geo.vector(0, 100, 0)),
         )
 
         if full:
             # Source
             mesh += pv.Cylinder(
-                center=[0, 0, -self.isocenter_distance - source_height / 2],
+                center=source_point,
                 direction=[0, 0, 1],
-                radius=80,
-                height=240,
+                radius=self.source_radius,
+                height=self.source_height,
             )
 
             # Sensor
@@ -292,17 +342,17 @@ class MobileCArm(object):
                 bounds=[
                     -self.pixel_size * self.sensor_width / 2,
                     self.pixel_size * self.sensor_width / 2,
-                    -self.pixel_size * self.sensor_height / 2,
-                    self.pixel_size * self.sensor_height / 2,
-                    -self.isocenter_distance + self.source_to_detector_distance,
-                    self.isocenter_distance + source_height,
+                    -self.pixel_size * self.sensor_height / 2 + self.source_to_isocenter_horizontal_offset,
+                    self.pixel_size * self.sensor_height / 2 + self.source_to_isocenter_horizontal_offset,
+                    -self.source_to_isocenter_vertical_distance + self.source_to_detector_distance,
+                    -self.source_to_isocenter_vertical_distance + self.source_to_detector_distance + self.detector_height,
                 ],
             )
 
             # Arm
             arm = pv.ParametricTorus(
-                ringradius=self.isocenter_distance + source_height / 2,
-                crosssectionradius=source_height / 4,
+                ringradius=self.source_to_isocenter_vertical_distance,
+                crosssectionradius=self.arm_width / 2,
             )
             arm.clip(normal='y', inplace=True)
             arm.rotate_y(90)
@@ -319,8 +369,8 @@ class MobileCArm(object):
         Returns:
             pv.PolyData: a mesh somewhat resembling the C-arm device.
         """
-        if self.static_mesh is None:
-            self.static_mesh = self._make_mesh(full=full)
+        if self._static_mesh is None:
+            self._static_mesh = self._make_mesh(full=full)
 
         mesh = self.static_mesh.copy()
         mesh.rotate_x(-np.degrees(self.alpha))
