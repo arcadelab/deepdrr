@@ -256,7 +256,7 @@ class Vector(HomogeneousPointOrVector):
     def __init__(self, data: np.ndarray) -> None:
         assert data[-1] == 0
         super().__init__(data)
-        
+
     @classmethod
     def from_array(
             cls: Type[T],

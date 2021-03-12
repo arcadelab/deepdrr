@@ -90,10 +90,11 @@ def pose_vector_angles(pose: geo.Vector3D) -> Tuple[float, float]:
 
 
 class MobileCArm(object):
-
+    # basic parameters which can be safely set by user, but move_by() and reposition() are recommended.
     isocenter: geo.Point3D # the isocenter point in the device frame
     alpha: float # alpha angle in radians
     beta: float # beta angle in radians
+    world_from_device: geo.FrameTransform # can be set by the user.
 
     def __init__(
         self,
@@ -158,11 +159,17 @@ class MobileCArm(object):
         self.source_to_isocenter_horizontal_offset = source_to_isocenter_horizontal_offset
         self.immersion_depth = immersion_depth
         self.free_space = free_space
+        self.pixel_size = pixel_size
+        self.sensor_width = sensor_width
+        self.sensor_height = sensor_height
         self.camera_intrinsics = geo.CameraIntrinsicTransform.from_sizes(
             sensor_size=(sensor_width, sensor_height),
             pixel_size=pixel_size,
             source_to_detector_distance=self.source_to_detector_distance,
         )
+
+        # points in the arm frame don't change.
+        self.viewpoint_in_arm = geo.point(0, self.source_to_isocenter_horizontal_offset, 0)
 
         self._static_mesh = None
 
@@ -184,63 +191,6 @@ class MobileCArm(object):
     @property
     def isocenter_in_world(self) -> geo.Point3D:
         return self.world_from_device @ self.isocenter
-
-    def move_by(
-        self,
-        delta_isocenter: Optional[geo.Vector3D] = None,
-        delta_alpha: Optional[float] = None,
-        delta_beta: Optional[float] = None,
-        degrees: bool = True,
-    ) -> None:
-        """Move the C-arm to the specified pose.
-
-        TODO: don't let out-of-bounds movement pass silently.
-
-        Args:
-            delta_isocenter (Optional[geo.Vector3D], optional): isocenter (Point3D): isocenter of the C-arm in C-arm-space. This is the center about which rotations are performed. Defaults to None.
-            delta_alpha (Optional[float], optional): change in alpha. Defaults to None.
-            delta_beta (Optional[float], optional): change in beta. Defaults to None.
-            degrees (bool, optional): whether the given angles are in degrees. Defaults to False.
-
-        """
-        if delta_isocenter is not None:
-            self.isocenter += geo.vector(delta_isocenter)
-            self.isocenter = geo.point(np.clip(self.isocenter, self.min_isocenter, self.max_isocenter))
-
-        if delta_alpha is not None:
-            assert np.isscalar(delta_alpha)
-            self.alpha += utils.radians(float(delta_alpha), degrees=degrees)
-            self.alpha = np.clip(self.alpha, self.min_alpha, self.max_alpha)
-
-        if delta_beta is not None:
-            assert np.isscalar(delta_beta)
-            self.beta += utils.radians(float(delta_beta), degrees=degrees)
-            self.beta = np.clip(self.beta, self.min_beta, self.max_beta)
-
-    def move_to(
-        self,
-        isocenter: Optional[geo.Point3D] = None,
-        alpha: Optional[geo.Point3D] = None,
-        beta: Optional[geo.Point3D] = None,
-        degrees: bool = True,
-    ) -> None:
-        """Move to the specified point.
-
-        Args:
-            isocenter (Optional[geo.Point3D], optional): the desired isocenter in carm coordinates. Defaults to None.
-            alpha (Optional[geo.Point3D], optional): the desired alpha angulation. Defaults to None.
-            beta (Optional[geo.Point3D], optional): the desired secondary angulation. Defaults to None.
-            degrees (bool, optional): whether angles are in degrees or radians. Defaults to False.
-        """
-        if isocenter is not None:
-            self.isocenter = geo.point(isocenter)
-            self.isocenter = geo.point(np.clip(self.isocenter, self.min_isocenter, self.max_isocenter))
-        if alpha is not None:
-            self.alpha = utils.radians(float(alpha), degrees=degrees)
-            self.alpha = np.clip(self.alpha, self.min_alpha, self.max_alpha)
-        if beta is not None:
-            self.beta = utils.radians(float(beta), degrees=degrees)
-            self.beta = np.clip(self.beta, self.min_beta, self.max_beta)
 
     @property
     def device_from_arm(self) -> geo.FrameTransform:
@@ -278,7 +228,7 @@ class MobileCArm(object):
         Returns:
             geo.Point3D: the viewpoint in the device frame.
         """
-        return self.device_from_arm @ geo.point(0, self.source_to_isocenter_horizontal_offset, 0)
+        return self.device_from_arm @ self.viewpoint_in_arm
 
     @property
     def viewpoint_in_world(self) -> geo.Point3D:
@@ -292,6 +242,85 @@ class MobileCArm(object):
     @property
     def principle_ray_in_world(self) -> geo.Vector3D:
         return self.world_from_device @ self.principle_ray
+
+    def move_by(
+        self,
+        delta_isocenter: Optional[geo.Vector3D] = None,
+        delta_alpha: Optional[float] = None,
+        delta_beta: Optional[float] = None,
+        degrees: bool = True,
+    ) -> None:
+        """Move the C-arm to the specified pose.
+
+        TODO: don't let out-of-bounds movement pass silently.
+
+        Args:
+            delta_isocenter (Optional[geo.Vector3D], optional): isocenter (Point3D): isocenter of the C-arm in C-arm-space. This is the center about which rotations are performed. Defaults to None.
+            delta_alpha (Optional[float], optional): change in alpha. Defaults to None.
+            delta_beta (Optional[float], optional): change in beta. Defaults to None.
+            degrees (bool, optional): whether the given angles are in degrees. Defaults to False.
+
+        """
+        if delta_isocenter is not None:
+            self.isocenter += geo.vector(delta_isocenter)
+            self.isocenter = geo.point(np.clip(self.isocenter, self.min_isocenter, self.max_isocenter))
+
+        if delta_alpha is not None:
+            assert np.isscalar(delta_alpha)
+            self.alpha += utils.radians(float(delta_alpha), degrees=degrees)
+            self.alpha = np.clip(self.alpha, self.min_alpha, self.max_alpha)
+
+        if delta_beta is not None:
+            assert np.isscalar(delta_beta)
+            self.beta += utils.radians(float(delta_beta), degrees=degrees)
+            self.beta = np.clip(self.beta, self.min_beta, self.max_beta)
+
+    def move_to(
+        self,
+        isocenter: Optional[geo.Point3D] = None,
+        alpha: float = None,
+        beta: float = None,
+        degrees: bool = True,
+    ) -> None:
+        """Move to the specified point.
+
+        Args:
+            isocenter (Optional[geo.Point3D], optional): the desired isocenter in carm coordinates. Defaults to None.
+            alpha (Optional[float], optional): the desired alpha angulation. Defaults to None.
+            beta (Optional[float], optional): the desired secondary angulation. Defaults to None.
+            degrees (bool, optional): whether angles are in degrees or radians. Defaults to False.
+        """
+        if isocenter is not None:
+            self.isocenter = geo.point(isocenter)
+            self.isocenter = geo.point(np.clip(self.isocenter, self.min_isocenter, self.max_isocenter))
+        if alpha is not None:
+            self.alpha = utils.radians(float(alpha), degrees=degrees)
+            self.alpha = np.clip(self.alpha, self.min_alpha, self.max_alpha)
+        if beta is not None:
+            self.beta = utils.radians(float(beta), degrees=degrees)
+            self.beta = np.clip(self.beta, self.min_beta, self.max_beta)
+
+    def reposition(
+        self, 
+        viewpoint_in_world: Optional[geo.Point3D] = None,
+        device_in_world: Optional[geo.Point3D] = None,
+    ) -> None:
+        """Reposition the C-arm by resetting its internal pose to the parameters and adjusting the world_from_device transform.
+
+        TODO: currently, this eliminates any scaling/rotation of the device in world.
+
+        May provide either the isocenter location (device_in_world) or viewpoint (viewpoint_in_world)
+
+        Args:
+            viewpoint_in_world (geo.Point3D): the initial viewpoint the device should have.
+            device_in_world (): initial isocenter.
+
+        """
+        if device_in_world is None:
+            assert viewpoint_in_world is not None
+            device_in_world = viewpoint_in_world - geo.vector(*self.viewpoint_in_world)
+        self.world_from_device = geo.FrameTransform.from_translation(device_in_world)
+        self.move_to(isocenter=[0, 0, 0], alpha=0, beta=0, degrees=False)
 
     # shape parameters
     source_height = 200
@@ -324,7 +353,7 @@ class MobileCArm(object):
             list(center_point + geo.vector(-100, 0, 0)),
             list(center_point + geo.vector(100, 0, 0)),
         ) + pv.Line(
-            list(center_point + geo.vector(0, -100, 0, 0)),
+            list(center_point + geo.vector(0, -100, 0)),
             list(center_point + geo.vector(0, 100, 0)),
         )
 
@@ -372,11 +401,11 @@ class MobileCArm(object):
         if self._static_mesh is None:
             self._static_mesh = self._make_mesh(full=full)
 
-        mesh = self.static_mesh.copy()
-        mesh.rotate_x(-np.degrees(self.alpha))
-        mesh.rotate_y(-np.degrees(self.beta))
+        mesh = self._static_mesh.copy()
+        mesh.rotate_x(np.degrees(self.alpha))
+        mesh.rotate_y(np.degrees(self.beta))
         mesh.translate(self.isocenter)
-        mesh.transform(geo.get_data(self.world_from_carm))
+        mesh.transform(geo.get_data(self.world_from_device))
 
         # TODO: add operating window.
 
