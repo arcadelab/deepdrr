@@ -84,8 +84,8 @@ def pose_vector_angles(pose: geo.Vector3D) -> Tuple[float, float]:
         Tuple[float, float]: carm angulation (alpha, beta) in radians.
     """
     x, y, z = pose
-    alpha = np.arctan2(y, np.sqrt(x * x + z * z))
-    beta = -np.arctan2(x, z)
+    alpha = -np.arctan2(y, np.sqrt(x * x + z * z))
+    beta = np.arctan2(x, z)
     return alpha, beta
 
 
@@ -255,14 +255,14 @@ class MobileCArm(object):
         TODO: don't let out-of-bounds movement pass silently.
 
         Args:
-            delta_isocenter (Optional[geo.Vector3D], optional): isocenter (Point3D): isocenter of the C-arm in C-arm-space. This is the center about which rotations are performed. Defaults to None.
+            delta_isocenter (Optional[geo.Vector3D], optional): change to the isocenter in world space (as a vector, this only matters if the scaling/rotation is different). This is the center about which rotations are performed. Defaults to None.
             delta_alpha (Optional[float], optional): change in alpha. Defaults to None.
             delta_beta (Optional[float], optional): change in beta. Defaults to None.
             degrees (bool, optional): whether the given angles are in degrees. Defaults to False.
 
         """
         if delta_isocenter is not None:
-            self.isocenter += geo.vector(delta_isocenter)
+            self.isocenter += self.device_from_world @ geo.vector(delta_isocenter)
             self.isocenter = geo.point(np.clip(self.isocenter, self.min_isocenter, self.max_isocenter))
 
         if delta_alpha is not None:
@@ -278,6 +278,7 @@ class MobileCArm(object):
     def move_to(
         self,
         isocenter: Optional[geo.Point3D] = None,
+        isocenter_in_world: Optional[geo.Point3D] = None,
         alpha: float = None,
         beta: float = None,
         degrees: bool = True,
@@ -285,11 +286,14 @@ class MobileCArm(object):
         """Move to the specified point.
 
         Args:
-            isocenter (Optional[geo.Point3D], optional): the desired isocenter in carm coordinates. Defaults to None.
+            isocenter_in_world (Optional[geo.Point3D], optional): the desired isocenter in world coordinates. Defaults to None.
             alpha (Optional[float], optional): the desired alpha angulation. Defaults to None.
             beta (Optional[float], optional): the desired secondary angulation. Defaults to None.
             degrees (bool, optional): whether angles are in degrees or radians. Defaults to False.
         """
+        if isocenter_in_world is not None:
+            isocenter = self.device_from_world @ geo.point(isocenter_in_world)
+
         if isocenter is not None:
             self.isocenter = geo.point(isocenter)
             self.isocenter = geo.point(np.clip(self.isocenter, self.min_isocenter, self.max_isocenter))
@@ -343,7 +347,7 @@ class MobileCArm(object):
         if include_labels:
             logger.warning(f'C-arm mesh labels not supported yet')
 
-        source_point = geo.point(0, self.source_to_isocenter_horizontal_offset, -self.source_to_isocenter_horizontal_offset)
+        source_point = geo.point(0, self.source_to_isocenter_horizontal_offset, -self.source_to_isocenter_vertical_distance)
         center_point = geo.point(0, self.source_to_isocenter_horizontal_offset, 0)
 
         mesh = pv.Line(
@@ -383,7 +387,8 @@ class MobileCArm(object):
                 ringradius=self.source_to_isocenter_vertical_distance,
                 crosssectionradius=self.arm_width / 2,
             )
-            arm.clip(normal='y', inplace=True)
+            y = max(-self.pixel_size * self.sensor_height / 2 + self.source_to_isocenter_horizontal_offset, source_point.y - self.source_radius)
+            arm.clip(normal='y', origin=[0, y, 0], inplace=True)
             arm.rotate_y(90)
             mesh += arm
 
@@ -417,7 +422,11 @@ class MobileCArm(object):
     
 
 class CArm(object):
-    """C-arm device for positioning a camera in space."""
+    """C-arm device for positioning a camera in space.
+    
+    It is suggested to use MobileCArm instead.
+    
+    """
     def __init__(
         self,
         isocenter_distance: float,
