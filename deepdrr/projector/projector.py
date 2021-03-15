@@ -60,7 +60,7 @@ def _get_kernel_projector_module(num_volumes, num_materials) -> SourceModule:
 class Projector(object):
     def __init__(
         self,
-        volume: Union[vol.Volume, List[vol.Volume]],
+        volume: Union[vol.Volume, List[Tuple[vol.Volume, int]]],
         camera_intrinsics: Optional[geo.CameraIntrinsicTransform] = None,
         carm: Optional[MobileCArm] = None,
         step: float = 0.1,
@@ -85,7 +85,10 @@ class Projector(object):
         ```
 
         Args:
-            volume (Union[Volume, List[Volume]]): a volume object with materials segmented. If multiple volumes are provided, they should have mutually exclusive materials (not checked).
+            volume (Union[Volume, List[Tuple[Volume,int]]]): a volume object with materials segmented. If multiple volumes are provided, they should have mutually exclusive materials (not checked). 
+                                Additionally, when multiple volumes are provided, each volume must be accompanied with an integer in the interval [0, NUM_VOLUMES) denoting the 'priority' of the volume.
+                                A volume's priority is used to determine which volumes to sample from for each given location if multiple volumes overlap at that location. The lower numerical value a
+                                priority is, the higher-priority the associated volume is. Note that multiple volumes can share a priority (for example, splicing volumes taken from a CT of a single person).
             camera_intrinsics (CameraIntrinsicTransform): intrinsics of the projector's camera. (used for sensor size). If None, the CArm object must be provided and have a camera_intrinsics attribute. Defaults to None.
             carm (Optional[MobileCArm], optional): Optional C-arm device, for convenience which can be used to get projections from C-Arm pose. If not provided, camera pose must be defined by user. Defaults to None.
             step (float, optional): size of the step along projection ray in voxels. Defaults to 0.1.
@@ -100,7 +103,17 @@ class Projector(object):
         """
                     
         # set variables
-        self.volumes = utils.listify(volume)
+        if isinstance(volume, vol.Volume):
+            volume = (volume, 0) # append priority
+        volume = utils.listify(volume)
+        self.volumes = []
+        self.priorities = []
+        for vp_tuple in volume:
+            assert isinstance(vp_tuple[0], vol.Volume)
+            assert isinstance(vp_tuple[1], int), "missing priority, or priority is not an integer"
+            assert (0 <= vp_tuple[1]) and (vp_tuple[1] < len(volume)), "invalid priority outside range [0, NUM_VOLUMES)"
+            self.volumes.append(vp_tuple[0])
+            self.priorities.append(vp_tuple[1])
         self.camera_intrinsics = camera_intrinsics
         self.carm = carm
         self.step = step
@@ -118,8 +131,8 @@ class Projector(object):
         assert len(self.volumes) > 0
 
         all_mats = []
-        for vol in self.volumes:
-            all_mats.extend(list(vol.materials.keys()))
+        for _vol in self.volumes:
+            all_mats.extend(list(_vol.materials.keys()))
         
         self.all_materials = list(set(all_mats))
 
@@ -189,14 +202,14 @@ class Projector(object):
         for i, proj in enumerate(camera_projections):
             logger.info(f"Projecting and attenuating camera position {i+1} / {len(camera_projections)}")
             # initialize projection-specific arguments
-            for vol_id, vol in enumerate(self.volumes):
-                source_ijk = np.array(proj.get_center_in_volume(vol)).astype(np.float32)
+            for vol_id, _vol in enumerate(self.volumes):
+                source_ijk = np.array(proj.get_center_in_volume(_vol)).astype(np.float32)
                 logger.debug(f'source point for volume #{vol_id}: {source_ijk}')
                 cuda.memcpy_htod(int(self.sourceX_gpu) + int(4 * vol_id), np.array([source_ijk[0]]))
                 cuda.memcpy_htod(int(self.sourceY_gpu) + int(4 * vol_id), np.array([source_ijk[1]]))
                 cuda.memcpy_htod(int(self.sourceZ_gpu) + int(4 * vol_id), np.array([source_ijk[2]]))
 
-                ijk_from_index = proj.get_ray_transform(vol)
+                ijk_from_index = proj.get_ray_transform(_vol)
                 logger.debug(f'center ray: {ijk_from_index @ geo.point(self.output_shape[0] / 2, self.output_shape[1] / 2)}')
                 ijk_from_index = np.array(ijk_from_index).astype(np.float32)
                 logger.debug(f'ijk_from_index (rt_kinv in kernel):\n{ijk_from_index}')
@@ -206,6 +219,7 @@ class Projector(object):
                 np.int32(proj.sensor_width),        # out_width
                 np.int32(proj.sensor_height),       # out_height
                 np.float32(self.step),              # step
+                self.priorities_gpu,          # priority
                 self.minPointX_gpu,         # gVolumeEdgeMinPointX
                 self.minPointY_gpu,         # gVolumeEdgeMinPointY
                 self.minPointZ_gpu,         # gVolumeEdgeMinPointZ
@@ -343,14 +357,14 @@ class Projector(object):
         
         self.segmentations_gpu = [] # List[List[segmentations]], indexing by (vol_id, material_id)
         self.segmentations_texref = [] # List[List[texrefs]], indexing by (vol_id, material_id)
-        for vol_id, vol in enumerate(self.volumes):
+        for vol_id, _vol in enumerate(self.volumes):
             seg_for_vol = []
             for mat in self.all_materials:
                 seg = None
-                if mat in vol.materials:
-                    seg = vol.materials[mat]
+                if mat in _vol.materials:
+                    seg = _vol.materials[mat]
                 else:
-                    seg = np.zeros(vol.shape).astype(np.float32)
+                    seg = np.zeros(_vol.shape).astype(np.float32)
                 seg_for_vol.append(cuda.np_to_array(np.moveaxis(seg, [0, 1, 2], [2, 1, 0]).copy(), order='C'))
             texref_for_vol = [self.mod.get_texref(f'seg_{vol_id}_{mat_id}') for mat_id, _ in enumerate(self.all_materials)]
 
@@ -364,6 +378,10 @@ class Projector(object):
             self.segmentations_gpu.append(seg_for_vol)
             self.segmentations_texref.append(texref)
 
+        # allocate volumes' priority level on the GPU
+        self.priorities_gpu = cuda.mem_alloc(len(self.volumes) * 4)
+        for vol_id, prio in enumerate(self.priorities):
+            cuda.memcpy_htod(int(self.priorities_gpu) + (4 * vol_id), np.int32(prio))
 
         # allocate gVolumeEdge{Min,Max}Point{X,Y,Z} and gVoxelElementSize{X,Y,Z} on the GPU
         self.minPointX_gpu = cuda.mem_alloc(len(self.volumes) * 4)
@@ -377,48 +395,26 @@ class Projector(object):
         self.voxelSizeX_gpu = cuda.mem_alloc(len(self.volumes) * 4)
         self.voxelSizeY_gpu = cuda.mem_alloc(len(self.volumes) * 4)
         self.voxelSizeZ_gpu = cuda.mem_alloc(len(self.volumes) * 4)
-        # gpu_ptr = cuda.mem_alloc(len(self.volumes) * 9 * 4)
-        # print(f"gpu_ptr: {gpu_ptr}")
-        # self.minPointX_gpu = int(gpu_ptr) + 0 * (4 * len(self.volumes))
-        # self.minPointY_gpu = int(gpu_ptr) + 1 * (4 * len(self.volumes))
-        # self.minPointZ_gpu = int(gpu_ptr) + 2 * (4 * len(self.volumes))
-        
-        # self.maxPointX_gpu = int(gpu_ptr) + 3 * (4 * len(self.volumes))
-        # self.maxPointY_gpu = int(gpu_ptr) + 4 * (4 * len(self.volumes))
-        # self.maxPointZ_gpu = int(gpu_ptr) + 5 * (4 * len(self.volumes))
 
-        # self.voxelSizeX_gpu = int(gpu_ptr) + 6 * (4 * len(self.volumes))
-        # self.voxelSizeY_gpu = int(gpu_ptr) + 7 * (4 * len(self.volumes))
-        # self.voxelSizeZ_gpu = int(gpu_ptr) + 8 * (4 * len(self.volumes))
-
-        for i, vol in enumerate(self.volumes):
+        for i, _vol in enumerate(self.volumes):
             gpu_ptr_offset = (4 * i)
             cuda.memcpy_htod(int(self.minPointX_gpu) + gpu_ptr_offset, np.float32(-0.5))
             cuda.memcpy_htod(int(self.minPointY_gpu) + gpu_ptr_offset, np.float32(-0.5))
             cuda.memcpy_htod(int(self.minPointZ_gpu) + gpu_ptr_offset, np.float32(-0.5))
 
-            cuda.memcpy_htod(int(self.maxPointX_gpu) + gpu_ptr_offset, np.float32(vol.shape[0] - 0.5))
-            cuda.memcpy_htod(int(self.maxPointY_gpu) + gpu_ptr_offset, np.float32(vol.shape[1] - 0.5))
-            cuda.memcpy_htod(int(self.maxPointZ_gpu) + gpu_ptr_offset, np.float32(vol.shape[2] - 0.5))
+            cuda.memcpy_htod(int(self.maxPointX_gpu) + gpu_ptr_offset, np.float32(_vol.shape[0] - 0.5))
+            cuda.memcpy_htod(int(self.maxPointY_gpu) + gpu_ptr_offset, np.float32(_vol.shape[1] - 0.5))
+            cuda.memcpy_htod(int(self.maxPointZ_gpu) + gpu_ptr_offset, np.float32(_vol.shape[2] - 0.5))
 
-            cuda.memcpy_htod(int(self.voxelSizeX_gpu) + gpu_ptr_offset, np.float32(vol.spacing[0]))
-            cuda.memcpy_htod(int(self.voxelSizeY_gpu) + gpu_ptr_offset, np.float32(vol.spacing[1]))
-            cuda.memcpy_htod(int(self.voxelSizeZ_gpu) + gpu_ptr_offset, np.float32(vol.spacing[2]))
-            # arr = np.array([
-            #     -0.5, -0.5, -0.5,
-            # ])
-            # tmp = cuda.mem_alloc(48)
-            # cuda.memcpy_htod(tmp, arr)
+            cuda.memcpy_htod(int(self.voxelSizeX_gpu) + gpu_ptr_offset, np.float32(_vol.spacing[0]))
+            cuda.memcpy_htod(int(self.voxelSizeY_gpu) + gpu_ptr_offset, np.float32(_vol.spacing[1]))
+            cuda.memcpy_htod(int(self.voxelSizeZ_gpu) + gpu_ptr_offset, np.float32(_vol.spacing[2]))
         logger.debug(f"gVolume information allocated and copied to GPU")
 
         # allocate source coord.s on GPU (4 bytes for each of {x,y,z} for each volume)
         self.sourceX_gpu = cuda.mem_alloc(len(self.volumes) * 4)
         self.sourceY_gpu = cuda.mem_alloc(len(self.volumes) * 4)
         self.sourceZ_gpu = cuda.mem_alloc(len(self.volumes) * 4)
-        # source_gpu = cuda.mem_alloc(len(self.volumes) * 3 * 4)
-        # self.sourceX_gpu = int(source_gpu + 0 * (4 * len(self.volumes)))
-        # self.sourceY_gpu = int(source_gpu + 1 * (4 * len(self.volumes)))
-        # self.sourceZ_gpu = int(source_gpu + 2 * (4 * len(self.volumes)))
 
         # allocate ijk_from_index matrix array on GPU (3x3 array x 4 bytes per float32)
         self.rt_kinv_gpu = cuda.mem_alloc(len(self.volumes) * 3 * 3 * 4)
@@ -469,6 +465,7 @@ class Projector(object):
                 for seg in self.segmentations_gpu[vol_id]:
                     seg.free()
             
+            self.priorities_gpu.free()
             self.minPointX_gpu.free() # frees all of the gVolume, gVoxel data
             self.sourceX_gpu.free() # also frees source{Y,Z}_gpu
             self.rt_kinv_gpu.free()

@@ -18,7 +18,6 @@ logger = logging.getLogger(__name__)
 
 
 def main():
-    ############## FIRST VOLUME ################
     # Define a simple phantom for test: a wire box around a cube.
     volume = np.zeros((120, 100, 80), dtype=np.float32)
     volume[0, 0, :] = 1
@@ -46,52 +45,7 @@ def main():
     origin = geo.point(-vol_center[0], -vol_center[1], -vol_center[2])
 
     # Create the volume object with segmentation
-    volume0 = Volume.from_parameters(
-        data=volume,
-        materials=materials, 
-        origin=origin, 
-        spacing=voxel_size,
-        anatomical_coordinate_system=None, # LPS, RAS, or None.
-        world_from_anatomical=None, # anatomical coordinate system is same as world
-    )
-
-    ################# SECOND VOLUME ####################
-    volume = np.zeros((40, 30, 25), dtype=np.float32)
-    volume[:, -10:-1, 0] = 1
-    volume[:, -10, -1] = 1
-    volume[0:30, 5:15, 0:10] = 1
-    volume[0, :, -1] = 1
-    volume[-1,:, 0] = 1
-    volume[-1, :, -1] = 1
-    volume[40:60, 40:60, 40:60] = 1
-
-    materials = {}
-    materials["air"] = volume == 0
-    materials["soft tissue"] = volume == 1
-    voxel_size = np.array([1, 1, 1], dtype=np.float32)
-
-    vol_center = (np.array(volume.shape) - 1) / 2 * voxel_size
-    origin = geo.point(-vol_center[0], -vol_center[1], -vol_center[2])
-
-    volume1 = Volume.from_parameters(
-        data=volume,
-        materials=materials, 
-        origin=origin, 
-        spacing=voxel_size,
-        anatomical_coordinate_system=None, # LPS, RAS, or None.
-        world_from_anatomical=None, # anatomical coordinate system is same as world
-    )
-
-    ######################### THIRD VOLUME ####################
-    volume = np.zeros((160, 4, 4), dtype=np.float32)
-    materials = {}
-    materials["bone"] = volume == 0
-    voxel_size = np.array([1, 1, 1], dtype=np.float32)
-
-    vol_center = (np.array(volume.shape) - 1) / 2 * voxel_size
-    origin = geo.point(-vol_center[0], -vol_center[1], -vol_center[2])
-
-    volume2 = Volume.from_parameters(
+    volume = Volume.from_parameters(
         data=volume,
         materials=materials, 
         origin=origin, 
@@ -123,7 +77,7 @@ def main():
 
     t = time()
     with Projector(
-        volume=[volume0, volume1, volume2],
+        volume=volume,
         camera_intrinsics=camera_intrinsics,
         carm=carm,
         step=0.1, # stepsize along projection ray, measured in voxels
