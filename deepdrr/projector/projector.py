@@ -192,17 +192,17 @@ class Projector(object):
             for vol_id, vol in enumerate(self.volumes):
                 source_ijk = np.array(proj.get_center_in_volume(vol)).astype(np.float32)
                 logger.debug(f'source point for volume #{vol_id}: {source_ijk}')
-                cuda.memcpy_dtoh(int(self.sourceX_gpu) + (4 * vol_id), np.array([source_ijk[0]]))
-                cuda.memcpy_dtoh(int(self.sourceY_gpu) + (4 * vol_id), np.array([source_ijk[1]]))
-                cuda.memcpy_dtoh(int(self.sourceZ_gpu) + (4 * vol_id), np.array([source_ijk[2]]))
+                cuda.memcpy_htod(int(self.sourceX_gpu) + int(4 * vol_id), np.array([source_ijk[0]]))
+                cuda.memcpy_htod(int(self.sourceY_gpu) + int(4 * vol_id), np.array([source_ijk[1]]))
+                cuda.memcpy_htod(int(self.sourceZ_gpu) + int(4 * vol_id), np.array([source_ijk[2]]))
 
                 ijk_from_index = proj.get_ray_transform(vol)
                 logger.debug(f'center ray: {ijk_from_index @ geo.point(self.output_shape[0] / 2, self.output_shape[1] / 2)}')
                 ijk_from_index = np.array(ijk_from_index).astype(np.float32)
                 logger.debug(f'ijk_from_index (rt_kinv in kernel):\n{ijk_from_index}')
-                cuda.memcpy_dtoh(int(self.rt_kinv_gpu) + (9 * 4) * vol_id, ijk_from_index)
+                cuda.memcpy_htod(int(self.rt_kinv_gpu) + (9 * 4) * vol_id, ijk_from_index)
 
-            arg = [
+            args = [
                 np.int32(proj.sensor_width),        # out_width
                 np.int32(proj.sensor_height),       # out_height
                 np.float32(self.step),              # step
