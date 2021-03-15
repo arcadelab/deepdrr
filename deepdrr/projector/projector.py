@@ -192,15 +192,15 @@ class Projector(object):
             for vol_id, vol in enumerate(self.volumes):
                 source_ijk = np.array(proj.get_center_in_volume(vol)).astype(np.float32)
                 logger.debug(f'source point for volume #{vol_id}: {source_ijk}')
-                cuda.memcpy_dtoh(int(self.sourceX_gpu + (4 * vol_id)), source_ijk[0])
-                cuda.memcpy_dtoh(int(self.sourceY_gpu + (4 * vol_id)), source_ijk[1])
-                cuda.memcpy_dtoh(int(self.sourceZ_gpu + (4 * vol_id)), source_ijk[2])
+                cuda.memcpy_dtoh(int(self.sourceX_gpu) + (4 * vol_id), np.array([source_ijk[0]]))
+                cuda.memcpy_dtoh(int(self.sourceY_gpu) + (4 * vol_id), np.array([source_ijk[1]]))
+                cuda.memcpy_dtoh(int(self.sourceZ_gpu) + (4 * vol_id), np.array([source_ijk[2]]))
 
                 ijk_from_index = proj.get_ray_transform(vol)
                 logger.debug(f'center ray: {ijk_from_index @ geo.point(self.output_shape[0] / 2, self.output_shape[1] / 2)}')
                 ijk_from_index = np.array(ijk_from_index).astype(np.float32)
                 logger.debug(f'ijk_from_index (rt_kinv in kernel):\n{ijk_from_index}')
-                cuda.memcpy_dtoh(int(self.rt_kinv_gpu + (9 * 4) * vol_id), ijk_from_index)
+                cuda.memcpy_dtoh(int(self.rt_kinv_gpu) + (9 * 4) * vol_id, ijk_from_index)
 
             arg = [
                 np.int32(proj.sensor_width),        # out_width
@@ -366,50 +366,59 @@ class Projector(object):
 
 
         # allocate gVolumeEdge{Min,Max}Point{X,Y,Z} and gVoxelElementSize{X,Y,Z} on the GPU
-        gpu_ptr = cuda.mem_alloc(len(self.volumes) * 9 * 4)
-        print(f"gpu_ptr: {gpu_ptr}")
-        self.minPointX_gpu = int(gpu_ptr) + 0 * (4 * len(self.volumes))
-        self.minPointY_gpu = int(gpu_ptr) + 1 * (4 * len(self.volumes))
-        self.minPointZ_gpu = int(gpu_ptr) + 2 * (4 * len(self.volumes))
+        self.minPointX_gpu = cuda.mem_alloc(len(self.volumes) * 4)
+        self.minPointY_gpu = cuda.mem_alloc(len(self.volumes) * 4)
+        self.minPointZ_gpu = cuda.mem_alloc(len(self.volumes) * 4)
         
-        self.maxPointX_gpu = int(gpu_ptr) + 3 * (4 * len(self.volumes))
-        self.maxPointY_gpu = int(gpu_ptr) + 4 * (4 * len(self.volumes))
-        self.maxPointZ_gpu = int(gpu_ptr) + 5 * (4 * len(self.volumes))
+        self.maxPointX_gpu = cuda.mem_alloc(len(self.volumes) * 4)
+        self.maxPointY_gpu = cuda.mem_alloc(len(self.volumes) * 4)
+        self.maxPointZ_gpu = cuda.mem_alloc(len(self.volumes) * 4)
+        
+        self.voxelSizeX_gpu = cuda.mem_alloc(len(self.volumes) * 4)
+        self.voxelSizeY_gpu = cuda.mem_alloc(len(self.volumes) * 4)
+        self.voxelSizeZ_gpu = cuda.mem_alloc(len(self.volumes) * 4)
+        # gpu_ptr = cuda.mem_alloc(len(self.volumes) * 9 * 4)
+        # print(f"gpu_ptr: {gpu_ptr}")
+        # self.minPointX_gpu = int(gpu_ptr) + 0 * (4 * len(self.volumes))
+        # self.minPointY_gpu = int(gpu_ptr) + 1 * (4 * len(self.volumes))
+        # self.minPointZ_gpu = int(gpu_ptr) + 2 * (4 * len(self.volumes))
+        
+        # self.maxPointX_gpu = int(gpu_ptr) + 3 * (4 * len(self.volumes))
+        # self.maxPointY_gpu = int(gpu_ptr) + 4 * (4 * len(self.volumes))
+        # self.maxPointZ_gpu = int(gpu_ptr) + 5 * (4 * len(self.volumes))
 
-        self.voxelSizeX_gpu = int(gpu_ptr) + 6 * (4 * len(self.volumes))
-        self.voxelSizeY_gpu = int(gpu_ptr) + 7 * (4 * len(self.volumes))
-        self.voxelSizeZ_gpu = int(gpu_ptr) + 8 * (4 * len(self.volumes))
+        # self.voxelSizeX_gpu = int(gpu_ptr) + 6 * (4 * len(self.volumes))
+        # self.voxelSizeY_gpu = int(gpu_ptr) + 7 * (4 * len(self.volumes))
+        # self.voxelSizeZ_gpu = int(gpu_ptr) + 8 * (4 * len(self.volumes))
 
         for i, vol in enumerate(self.volumes):
-            # gpu_ptr_offset = (4 * i)
-            # cuda.memcpy_htod(int(self.minPointX_gpu + gpu_ptr_offset), np.float32(-0.5))
-            # cuda.memcpy_htod(int(self.minPointY_gpu + gpu_ptr_offset), np.float32(-0.5))
-            # cuda.memcpy_htod(int(self.minPointZ_gpu + gpu_ptr_offset), np.float32(-0.5))
+            gpu_ptr_offset = (4 * i)
+            cuda.memcpy_htod(int(self.minPointX_gpu) + gpu_ptr_offset, np.float32(-0.5))
+            cuda.memcpy_htod(int(self.minPointY_gpu) + gpu_ptr_offset, np.float32(-0.5))
+            cuda.memcpy_htod(int(self.minPointZ_gpu) + gpu_ptr_offset, np.float32(-0.5))
 
-            # cuda.memcpy_htod(int(self.maxPointX_gpu + gpu_ptr_offset), np.float32(vol.shape[0] - 0.5))
-            # cuda.memcpy_htod(int(self.maxPointY_gpu + gpu_ptr_offset), np.float32(vol.shape[1] - 0.5))
-            # cuda.memcpy_htod(int(self.maxPointZ_gpu + gpu_ptr_offset), np.float32(vol.shape[2] - 0.5))
+            cuda.memcpy_htod(int(self.maxPointX_gpu) + gpu_ptr_offset, np.float32(vol.shape[0] - 0.5))
+            cuda.memcpy_htod(int(self.maxPointY_gpu) + gpu_ptr_offset, np.float32(vol.shape[1] - 0.5))
+            cuda.memcpy_htod(int(self.maxPointZ_gpu) + gpu_ptr_offset, np.float32(vol.shape[2] - 0.5))
 
-            # cuda.memcpy_htod(int(self.voxelSizeX_gpu + gpu_ptr_offset), np.float32(vol.spacing[0]))
-            # cuda.memcpy_htod(int(self.voxelSizeY_gpu + gpu_ptr_offset), np.float32(vol.spacing[1]))
-            # cuda.memcpy_htod(int(self.voxelSizeZ_gpu + gpu_ptr_offset), np.float32(vol.spacing[2]))
-            arr = np.array([
-                -0.5, -0.5, -0.5, 
-                vol.shape[0] - 0.5, 
-                vol.shape[1] - 0.5, 
-                vol.shape[2] - 0.5, 
-                vol.spacing[0],
-                vol.spacing[1],
-                vol.spacing[2]
-            ])
-            cuda.memcpy_htod(self.minPointX_gpu, arr)
+            cuda.memcpy_htod(int(self.voxelSizeX_gpu) + gpu_ptr_offset, np.float32(vol.spacing[0]))
+            cuda.memcpy_htod(int(self.voxelSizeY_gpu) + gpu_ptr_offset, np.float32(vol.spacing[1]))
+            cuda.memcpy_htod(int(self.voxelSizeZ_gpu) + gpu_ptr_offset, np.float32(vol.spacing[2]))
+            # arr = np.array([
+            #     -0.5, -0.5, -0.5,
+            # ])
+            # tmp = cuda.mem_alloc(48)
+            # cuda.memcpy_htod(tmp, arr)
         logger.debug(f"gVolume information allocated and copied to GPU")
 
         # allocate source coord.s on GPU (4 bytes for each of {x,y,z} for each volume)
-        source_gpu = cuda.mem_alloc(len(self.volumes) * 3 * 4)
-        self.sourceX_gpu = int(source_gpu + 0 * (4 * len(self.volumes)))
-        self.sourceY_gpu = int(source_gpu + 1 * (4 * len(self.volumes)))
-        self.sourceZ_gpu = int(source_gpu + 2 * (4 * len(self.volumes)))
+        self.sourceX_gpu = cuda.mem_alloc(len(self.volumes) * 4)
+        self.sourceY_gpu = cuda.mem_alloc(len(self.volumes) * 4)
+        self.sourceZ_gpu = cuda.mem_alloc(len(self.volumes) * 4)
+        # source_gpu = cuda.mem_alloc(len(self.volumes) * 3 * 4)
+        # self.sourceX_gpu = int(source_gpu + 0 * (4 * len(self.volumes)))
+        # self.sourceY_gpu = int(source_gpu + 1 * (4 * len(self.volumes)))
+        # self.sourceZ_gpu = int(source_gpu + 2 * (4 * len(self.volumes)))
 
         # allocate ijk_from_index matrix array on GPU (3x3 array x 4 bytes per float32)
         self.rt_kinv_gpu = cuda.mem_alloc(len(self.volumes) * 3 * 3 * 4)
@@ -455,7 +464,7 @@ class Projector(object):
     def free(self):
         """Free the allocated GPU memory."""
         if self.initialized:
-            for vol_id, vol_gpu in self.volumes_gpu:
+            for vol_id, vol_gpu in enumerate(self.volumes_gpu):
                 vol_gpu.free()
                 for seg in self.segmentations_gpu[vol_id]:
                     seg.free()
