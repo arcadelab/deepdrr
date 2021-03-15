@@ -55,7 +55,7 @@ def _get_kernel_projector_module(num_volumes, num_materials) -> SourceModule:
 
     logger.debug(f'compiling {source_path} with NUM_VOLUMES={num_volumes}, NUM_MATERIALS={num_materials}')
     # TODO: replace the NUM_MATERIALS junk with some elegant meta-programming.
-    return SourceModule(source, include_dirs=[bicubic_path], no_extern_c=True, options=['-D', f'NUM_VOLUMES={num_volumes}', f'NUM_MATERIALS={num_materials}'])
+    return SourceModule(source, include_dirs=[bicubic_path, str(d)], no_extern_c=True, options=['-D', f'NUM_VOLUMES={num_volumes}', '-D', f'NUM_MATERIALS={num_materials}'])
 
 class Projector(object):
     def __init__(
@@ -128,23 +128,25 @@ class Projector(object):
         self.project_kernel = self.mod.get_function("projectKernel")
 
         # assertions
-        for mat in self.volume.materials:
+        for mat in self.all_materials:
             assert mat in material_coefficients, f'unrecognized material: {mat}'
 
         if self.camera_intrinsics is None:
             assert self.carm is not None and hasattr(self.carm, 'camera_intrinsics')
             self.camera_intrinsics = self.carm.camera_intrinsics
+        
+        self.is_initialized = False
 
     @property
     def initialized(self):
         # Has the cuda memory been allocated?
-        return self.initialized
+        return self.is_initialized
 
     @property
     def volume(self):
-        if len(self.projectors) != 1: # TODO: what to do here?
+        if len(self.volumes) != 1: # TODO: what to do here? What do I return?
             raise DeprecationWarning(f'volume is deprecated. Each projector contains multiple "SingleProjectors", which contain their own volumes.')
-        return self.projectors[0].volume
+        return self.volumes[0]
 
     @property
     def output_shape(self) -> Tuple[int, int]:
@@ -198,7 +200,7 @@ class Projector(object):
                 logger.debug(f'center ray: {ijk_from_index @ geo.point(self.output_shape[0] / 2, self.output_shape[1] / 2)}')
                 ijk_from_index = np.array(ijk_from_index).astype(np.float32)
                 logger.debug(f'ijk_from_index (rt_kinv in kernel):\n{ijk_from_index}')
-                cuda.memcpy_dtoh(int(self.rt_kinv_gpu + (9 * 4) * vol_id)), ijk_from_index)
+                cuda.memcpy_dtoh(int(self.rt_kinv_gpu + (9 * 4) * vol_id), ijk_from_index)
 
             arg = [
                 np.int32(proj.sensor_width),        # out_width
@@ -334,14 +336,14 @@ class Projector(object):
         
         # set the (interpolation?) mode
         if self.mode == 'linear':
-            for texref in self.volume_texrefs:
+            for texref in self.volumes_texref:
                 texref.set_filter_mode(cuda.filter_mode.LINEAR)
         else:
             raise RuntimeError
         
         self.segmentations_gpu = [] # List[List[segmentations]], indexing by (vol_id, material_id)
         self.segmentations_texref = [] # List[List[texrefs]], indexing by (vol_id, material_id)
-        for vol_id, vol in self.volumes:
+        for vol_id, vol in enumerate(self.volumes):
             seg_for_vol = []
             for mat in self.all_materials:
                 seg = None
@@ -359,37 +361,48 @@ class Projector(object):
                 else:
                     raise RuntimeError("Invalid texref filter mode")
             
-            self.segmentations_gpu_for_vol.append(seg_for_vol)
-            self.segmentations_texref_for_vol.append(texref)
+            self.segmentations_gpu.append(seg_for_vol)
+            self.segmentations_texref.append(texref)
 
 
         # allocate gVolumeEdge{Min,Max}Point{X,Y,Z} and gVoxelElementSize{X,Y,Z} on the GPU
-        gpu_ptr = int(cuda.mem_alloc(len(self.volumes) * 9 * 4))
-        self.minPointX_gpu = int(gpu_ptr + 0 * (4 * len(self.volumes)))
-        self.minPointY_gpu = int(gpu_ptr + 1 * (4 * len(self.volumes)))
-        self.minPointZ_gpu = int(gpu_ptr + 2 * (4 * len(self.volumes)))
+        gpu_ptr = cuda.mem_alloc(len(self.volumes) * 9 * 4)
+        print(f"gpu_ptr: {gpu_ptr}")
+        self.minPointX_gpu = int(gpu_ptr) + 0 * (4 * len(self.volumes))
+        self.minPointY_gpu = int(gpu_ptr) + 1 * (4 * len(self.volumes))
+        self.minPointZ_gpu = int(gpu_ptr) + 2 * (4 * len(self.volumes))
         
-        self.maxPointX_gpu = int(gpu_ptr + 3 * (4 * len(self.volumes)))
-        self.maxPointY_gpu = int(gpu_ptr + 4 * (4 * len(self.volumes)))
-        self.maxPointZ_gpu = int(gpu_ptr + 5 * (4 * len(self.volumes)))
+        self.maxPointX_gpu = int(gpu_ptr) + 3 * (4 * len(self.volumes))
+        self.maxPointY_gpu = int(gpu_ptr) + 4 * (4 * len(self.volumes))
+        self.maxPointZ_gpu = int(gpu_ptr) + 5 * (4 * len(self.volumes))
 
-        self.voxelSizeX_gpu = int(gpu_ptr + 6 * (4 * len(self.volumes)))
-        self.voxelSizeY_gpu = int(gpu_ptr + 7 * (4 * len(self.volumes)))
-        self.voxelSizeZ_gpu = int(gpu_ptr + 8 * (4 * len(self.volumes)))
+        self.voxelSizeX_gpu = int(gpu_ptr) + 6 * (4 * len(self.volumes))
+        self.voxelSizeY_gpu = int(gpu_ptr) + 7 * (4 * len(self.volumes))
+        self.voxelSizeZ_gpu = int(gpu_ptr) + 8 * (4 * len(self.volumes))
 
         for i, vol in enumerate(self.volumes):
-            gpu_ptr_offset = (4 * i)
-            cuda.memcpy_htod(int(self.minPointX_gpu + gpu_ptr_offset), np.float32(-0.5))
-            cuda.memcpy_htod(int(self.minPointY_gpu + gpu_ptr_offset), np.float32(-0.5))
-            cuda.memcpy_htod(int(self.minPointZ_gpu + gpu_ptr_offset), np.float32(-0.5))
+            # gpu_ptr_offset = (4 * i)
+            # cuda.memcpy_htod(int(self.minPointX_gpu + gpu_ptr_offset), np.float32(-0.5))
+            # cuda.memcpy_htod(int(self.minPointY_gpu + gpu_ptr_offset), np.float32(-0.5))
+            # cuda.memcpy_htod(int(self.minPointZ_gpu + gpu_ptr_offset), np.float32(-0.5))
 
-            cuda.memcpy_htod(int(self.maxPointX_gpu + gpu_ptr_offset), np.float32(vol.shape[0] - 0.5))
-            cuda.memcpy_htod(int(self.maxPointY_gpu + gpu_ptr_offset), np.float32(vol.shape[1] - 0.5))
-            cuda.memcpy_htod(int(self.maxPointZ_gpu + gpu_ptr_offset), np.float32(vol.shape[2] - 0.5))
+            # cuda.memcpy_htod(int(self.maxPointX_gpu + gpu_ptr_offset), np.float32(vol.shape[0] - 0.5))
+            # cuda.memcpy_htod(int(self.maxPointY_gpu + gpu_ptr_offset), np.float32(vol.shape[1] - 0.5))
+            # cuda.memcpy_htod(int(self.maxPointZ_gpu + gpu_ptr_offset), np.float32(vol.shape[2] - 0.5))
 
-            cuda.memcpy_htod(int(self.voxelSizeX_gpu + gpu_ptr_offset), np.float32(vol.spacing[0]))
-            cuda.memcpy_htod(int(self.voxelSizeY_gpu + gpu_ptr_offset), np.float32(vol.spacing[1]))
-            cuda.memcpy_htod(int(self.voxelSizeZ_gpu + gpu_ptr_offset), np.float32(vol.spacing[2]))
+            # cuda.memcpy_htod(int(self.voxelSizeX_gpu + gpu_ptr_offset), np.float32(vol.spacing[0]))
+            # cuda.memcpy_htod(int(self.voxelSizeY_gpu + gpu_ptr_offset), np.float32(vol.spacing[1]))
+            # cuda.memcpy_htod(int(self.voxelSizeZ_gpu + gpu_ptr_offset), np.float32(vol.spacing[2]))
+            arr = np.array([
+                -0.5, -0.5, -0.5, 
+                vol.shape[0] - 0.5, 
+                vol.shape[1] - 0.5, 
+                vol.shape[2] - 0.5, 
+                vol.spacing[0],
+                vol.spacing[1],
+                vol.spacing[2]
+            ])
+            cuda.memcpy_htod(self.minPointX_gpu, arr)
         logger.debug(f"gVolume information allocated and copied to GPU")
 
         # allocate source coord.s on GPU (4 bytes for each of {x,y,z} for each volume)
@@ -430,14 +443,14 @@ class Projector(object):
         # precompute, allocate, and transfer the get_absorption_coef(energy, material) table (4 bytes to a float32)
         absorption_coef_table = np.empty(n_bins * len(self.all_materials)).astype(np.float32)
         for bin in range(n_bins): #, energy in enumerate(energies):
-            for m, mat_name in enumerate(self.volume.materials):
+            for m, mat_name in enumerate(self.all_materials):
                 absorption_coef_table[bin * len(self.all_materials) + m] = mass_attenuation.get_absorption_coefs(contiguous_energies[bin], mat_name)
         self.absorption_coef_table_gpu = cuda.mem_alloc(n_bins * len(self.all_materials) * 4)
         cuda.memcpy_htod(self.absorption_coef_table_gpu, absorption_coef_table)
         logger.debug(f"size alloc'd for self.absorption_coef_table_gpu: {n_bins * len(self.all_materials) * 4}")
 
         # Mark self as initialized.
-        self.initialized = True
+        self.is_initialized = True
 
     def free(self):
         """Free the allocated GPU memory."""
@@ -457,7 +470,7 @@ class Projector(object):
             self.pdf_gpu.free()
             self.absorption_coef_table_gpu.free()
 
-        self.initialized = False
+        self.is_initialized = False
 
     def __enter__(self):
         self.initialize()

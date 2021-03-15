@@ -6,7 +6,8 @@
 
 #define SEG_PASTER(vol_id, mat_id) seg_ ## vol_id ## _ ## mat_id
 #define SEG(vol_id, mat_id) SEG_PASTER(vol_id, mat_id)
-#define VOLUME(vol_id) volume_ ## vol_id
+#define VOL_PASTER(vol_id) volume_ ## vol_id
+#define VOLUME(vol_id) VOL_PASTER(vol_id)
 
 #ifndef NUM_MATERIALS
 #define NUM_MATERIALS 14

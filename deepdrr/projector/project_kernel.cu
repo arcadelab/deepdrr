@@ -5,6 +5,7 @@
 
 #define UPDATE(multiplier, vol_id, mat_id) do {\
     area_density[(mat_id)] += (multiplier) * tex3D(VOLUME(vol_id), px, py, pz) * round(cubicTex3D(SEG(vol_id, mat_id), px, py, pz));\
+    /*area_density[(mat_id)] += (multiplier) * tex3D(VOLUME(0), px, py, pz) * round(cubicTex3D(SEG(vol_id, mat_id), px, py, pz));*/\
 } while (0)
 
 #if NUM_MATERIALS == 1
@@ -160,6 +161,169 @@
 } while (0)
 #endif
 
+#define CALCULATE_RAY_FOR_VOL(vol_id) do {\
+    rx[vol_id] = u * rt_kinv[(9 * vol_id) + 0] + v * rt_kinv[(9 * vol_id) + 1] + rt_kinv[(9 * vol_id) + 2];\
+    ry[vol_id] = u * rt_kinv[(9 * vol_id) + 3] + v * rt_kinv[(9 * vol_id) + 4] + rt_kinv[(9 * vol_id) + 5];\
+    rz[vol_id] = u * rt_kinv[(9 * vol_id) + 6] + v * rt_kinv[(9 * vol_id) + 7] + rt_kinv[(9 * vol_id) + 8];\
+    /* make the ray a unit vector */\
+    float normFactor = 1.0f / sqrt((rx[vol_id] * rx[vol_id]) + (ry[vol_id] * ry[vol_id]) + (rz[vol_id] * rz[vol_id]));\
+    rx[vol_id] *= normFactor;\
+    ry[vol_id] *= normFactor;\
+    rz[vol_id] *= normFactor;\
+} while (0)
+
+#if NUM_VOLUMES == 1
+#define CALCULATE_RAYS do {\
+    CALCULATE_RAY_FOR_VOL(0);\
+} while (0)
+#elif NUM_VOLUMES == 2
+#define CALCULATE_RAYS do {\
+    CALCULATE_RAY_FOR_VOL(0);\
+    CALCULATE_RAY_FOR_VOL(1);\
+} while (0)
+#elif NUM_VOLUMES == 3
+#define CALCULATE_RAYS do {\
+    CALCULATE_RAY_FOR_VOL(0);\
+    CALCULATE_RAY_FOR_VOL(1);\
+    CALCULATE_RAY_FOR_VOL(2);\
+} while (0)
+#else
+#define CALCULATE_RAYS do {\
+    fprintf(stderr, "CALCULATE_RAYS not supported for NUM_VOLUMES outside [1, 3]");\
+} while (0)
+#endif
+
+#define CALCULATE_ALPHAS_FOR_VOL(i) do{\
+    minAlpha[i] = 0;\
+    maxAlpha[i] = INFINITY;\
+    do_trace[i] = 1;\
+\
+    if (0.0f != rx[i]) {\
+        float reci = 1.0f / rx[i];\
+        float alpha0 = (gVolumeEdgeMinPointX[i] - sx[i]) * reci;\
+        float alpha1 = (gVolumeEdgeMaxPointX[i] - sx[i]) * reci;\
+        minAlpha[i] = fmin(alpha0, alpha1);\
+        maxAlpha[i] = fmax(alpha0, alpha1);\
+    } else if (gVolumeEdgeMinPointX[i] > sx[i] || sx[i] > gVolumeEdgeMaxPointX[i]) {\
+        do_trace[i] = 0;\
+    }\
+\
+    if (do_trace[i] && (0.0f != ry[i])) {\
+        float reci = 1.0f / ry[i];\
+        float alpha0 = (gVolumeEdgeMinPointY[i] - sy[i]) * reci;\
+        float alpha1 = (gVolumeEdgeMaxPointY[i] - sy[i]) * reci;\
+        minAlpha[i] = fmax(minAlpha[i], fmin(alpha0, alpha1));\
+        maxAlpha[i] = fmin(maxAlpha[i], fmax(alpha0, alpha1));\
+    } else if (gVolumeEdgeMinPointY[i] > sy[i] || sy[i] > gVolumeEdgeMaxPointY[i]) {\
+        do_trace[i] = 0;\
+    }\
+\
+    if (do_trace[i] && (0.0f != rz[i]))  {\
+        float reci = 1.0f / rz[i];\
+        float alpha0 = (gVolumeEdgeMinPointZ[i] - sz[i]) * reci;\
+        float alpha1 = (gVolumeEdgeMaxPointZ[i] - sz[i]) * reci;\
+        minAlpha[i] = fmax(minAlpha[i], fmin(alpha0, alpha1));\
+        maxAlpha[i] = fmin(maxAlpha[i], fmax(alpha0, alpha1));\
+    } else if (gVolumeEdgeMinPointZ > sz || sz > gVolumeEdgeMaxPointZ) {\
+        do_trace[i] = 0;\
+    }\
+} while (0)
+
+#if NUM_VOLUMES == 1
+#define CALCULATE_ALPHAS do {\
+    CALCULATE_ALPHAS_FOR_VOL(0);\
+} while (0)
+#elif NUM_VOLUMES == 2
+#define CALCULATE_ALPHAS do {\
+    CALCULATE_ALPHAS_FOR_VOL(0);\
+    CALCULATE_ALPHAS_FOR_VOL(1);\
+} while (0)
+#elif NUM_VOLUMES == 3
+#define CALCULATE_ALPHAS do {\
+    CALCULATE_ALPHAS_FOR_VOL(0);\
+    CALCULATE_ALPHAS_FOR_VOL(1);\
+    CALCULATE_ALPHAS_FOR_VOL(2);\
+} while (0)
+#else
+#define CALCULATE_ALPHAS do {\
+    fprintf(stderr, "CALCULATE_ALPHAS not supported for NUM_VOLUMES outside [1, 3]");\
+} while (0)
+#endif
+
+#define RAY_TRACE_FOR_VOL(i) do {\
+    /* Trapezoidal rule (interpolating function = piecewise linear func) */\
+    float px, py, pz; /* voxel-space point */\
+    int t; /* number of steps along ray */\
+    float alpha; /* distance along ray (alpha = minAlpha + step * t) */\
+    float boundary_factor; /* factor to multiply at the boundary. */\
+\
+    /* Sample the points along the ray at the entrance boundary of the volume and the mid segments. */\
+    for (t = 0, alpha = minAlpha[i]; alpha < maxAlpha[i]; t++, alpha += step)\
+    {\
+        /* Get the current sample point in the volume voxel-space. */\
+        /* In CUDA, voxel centeras are located at (xx.5, xx.5, xx.5), whereas SwVolume has voxel centers at integers. */\
+        px = sx[i] + alpha * rx[i] - gVolumeEdgeMinPointX[i];\
+        py = sy[i] + alpha * ry[i] - gVolumeEdgeMinPointY[i];\
+        pz = sz[i] + alpha * rz[i] - gVolumeEdgeMinPointZ[i];\
+\
+        /* For the entry boundary, multiply by 0.5 (this is the t == 0 check). That is, for the initial interpolated value, */\
+        /* only a half step-size is considered in the computation. */\
+        /* For the second-to-last interpolation point, also multiply by 0.5, since there will be a final step at the maxAlpha boundary.*/\
+        boundary_factor = (t == 0 || alpha + step >= maxAlpha[i]) ? 0.5 : 1.0;\
+\
+        /* Perform the interpolation. This involves the variables: area_density, idx, px, py, pz, and volume. */\
+        /* It is done for each segmentation. */\
+        INTERPOLATE_FOR_VOL(boundary_factor, i);\
+    }\
+\
+    /* Scaling by step; */\
+    for (int m = 0; m < NUM_MATERIALS; m++) {\
+        area_density[m] *= step;\
+    }\
+\
+    /* Last segment of the line */\
+    if (area_density[0] > 0.0f) {\
+        alpha -= step;\
+        float lastStepsize = maxAlpha[i] - alpha;\
+        /* scaled last step interpolation (something weird?) */\
+        INTERPOLATE_FOR_VOL(0.5 * lastStepsize, i);\
+        /* The last segment of the line integral takes care of the varying length. */\
+        px = sx[i] + alpha * rx[i] - gVolumeEdgeMinPointX[i];\
+        py = sy[i] + alpha * ry[i] - gVolumeEdgeMinPointY[i];\
+        pz = sz[i] + alpha * rz[i] - gVolumeEdgeMinPointZ[i];\
+        /* interpolation */\
+        INTERPOLATE_FOR_VOL(0.5 * lastStepsize, i);\
+    }\
+\
+    /* normalize output value to world coordinate system units */\
+    for (int m = 0; m < NUM_MATERIALS; m++) {\
+        area_density[m] *= sqrt((rx[i] * gVoxelElementSizeX[i])*(rx[i] * gVoxelElementSizeX[i]) + (ry[i] * gVoxelElementSizeY[i])*(ry[i] * gVoxelElementSizeY[i]) + (rz[i] * gVoxelElementSizeZ[i])*(rz[i] * gVoxelElementSizeZ[i]));\
+        \
+        total_area_density[m] += area_density[m];\
+    }\
+} while (0)
+
+#if NUM_VOLUMES == 1
+#define RAY_TRACE do {\
+    RAY_TRACE_FOR_VOL(0);\
+} while (0)
+#elif NUM_VOLUMES == 2
+#define RAY_TRACE do {\
+    RAY_TRACE_FOR_VOL(0);\
+    RAY_TRACE_FOR_VOL(1);\
+} while (0)
+#elif NUM_VOLUMES == 3
+#define RAY_TRACE do {\
+    RAY_TRACE_FOR_VOL(0);\
+    RAY_TRACE_FOR_VOL(1);\
+    RAY_TRACE_FOR_VOL(2);\
+} while (0)
+#else
+#define RAY_TRACE do {\
+    fprintf(stderr, "RAY_TRACE not supported for NUM_VOLUMES outside [1, 3]");\
+} while (0)
+#endif
+
 extern "C" {
     __global__  void projectKernel(
         int out_width, // width of the output image
@@ -218,18 +382,7 @@ extern "C" {
         float rx[NUM_VOLUMES];
         float ry[NUM_VOLUMES];
         float rz[NUM_VOLUMES];
-        for (int i = 0; i < NUM_VOLUMES; i++) {
-            int offset = 9 * i; // for indexing into the proper rt_kinv
-            rx[i] = u * rt_kinv[offset + 0] + v * rt_kinv[offset + 1] + rt_kinv[offset + 2];
-            ry[i] = u * rt_kinv[offset + 3] + v * rt_kinv[offset + 4] + rt_kinv[offset + 5];
-            rz[i] = u * rt_kinv[offset + 6] + v * rt_kinv[offset + 7] + rt_kinv[offset + 8];
-
-            // make the ray a unit vector
-            float normFactor = 1.0f / sqrt((rx[i] * rx[i]) + (ry[i] * ry[i]) + (rz[i] * rz[i]))
-            rx[i] *= normFactor;
-            ry[i] *= normFactor;
-            rz[i] *= normFactor;
-        }
+        CALCULATE_RAYS;
 
         // calculate projections
         // Part 1: compute alpha value at entry and exit point of the volume on either side of the ray.
@@ -238,41 +391,7 @@ extern "C" {
         float minAlpha[NUM_VOLUMES];
         float maxAlpha[NUM_VOLUMES];
         int do_trace[NUM_VOLUMES]; // for each volume, whether or not to perform the ray-tracing
-        for (int i = 0; i < NUM_VOLUMES; i++) {
-            minAlpha[i] = 0;
-            maxAlpha[i] = INFINITY;
-            do_trace[i] = 1;
-
-            if (0.0f != rx[i]) {
-                float reci = 1.0f / rx[i];
-                float alpha0 = (gVolumeEdgeMinPointX[i] - sx[i]) * reci;
-                float alpha1 = (gVolumeEdgeMaxPointX[i] - sx[i]) * reci;
-                minAlpha[i] = fmin(alpha0, alpha1);
-                maxAlpha[i] = fmax(alpha0, alpha1);
-            } else if (gVolumeEdgeMinPointX[i] > sx[i] || sx[i] > gVolumeEdgeMaxPointX[i]) {
-                do_trace[i] = 0;
-            }
-
-            if (do_trace[i] && (0.0f != ry[i])) {
-                float reci = 1.0f / ry[i];
-                float alpha0 = (gVolumeEdgeMinPointY[i] - sy[i]) * reci;
-                float alpha1 = (gVolumeEdgeMaxPointY[i] - sy[i]) * reci;
-                minAlpha[i] = fmax(minAlpha[i], fmin(alpha0, alpha1));
-                maxAlpha[i] = fmin(maxAlpha[i], fmax(alpha0, alpha1));
-            } else if (gVolumeEdgeMinPointY[i] > sy[i] || sy[i] > gVolumeEdgeMaxPointY[i]) {
-                do_trace[i] = 0;
-            }
-
-            if (do_trace[i] && (0.0f != rz[i]))  {
-                float reci = 1.0f / rz[i];
-                float alpha0 = (gVolumeEdgeMinPointZ[i] - sz[i]) * reci;
-                float alpha1 = (gVolumeEdgeMaxPointZ[i] - sz[i]) * reci;
-                minAlpha[i] = fmax(minAlpha[i], fmin(alpha0, alpha1));
-                maxAlpha[i] = fmin(maxAlpha[i], fmax(alpha0, alpha1));
-            } else if (gVolumeEdgeMinPointZ > sz || sz > gVolumeEdgeMaxPointZ) {
-                do_trace[i] = 0;
-            }
-        }
+        CALCULATE_ALPHAS;
 
         // we start not at the exact entry point 
         // => we can be sure to be inside the volume
@@ -302,66 +421,11 @@ extern "C" {
             area_density[m] = 0;
         }
 
-        for (int i = 0; i < NUM_VOLUMES; i++) {
-            // Trapezoidal rule (interpolating function = piecewise linear func)
-            float px, py, pz; // voxel-space point
-            int t; // number of steps along ray
-            float alpha; // distance along ray (alpha = minAlpha + step * t)
-            float boundary_factor; // factor to multiply at the boundary.
-
-            // Sample the points along the ray at the entrance boundary of the volume and the mid segments.
-            for (t = 0, alpha = minAlpha[i]; alpha < maxAlpha[i]; t++, alpha += step)
-            {
-                // Get the current sample point in the volume voxel-space.
-                // In CUDA, voxel centeras are located at (xx.5, xx.5, xx.5), whereas SwVolume has voxel centers at integers.
-                px = sx[i] + alpha * rx[i] - gVolumeEdgeMinPointX[i];
-                py = sy[i] + alpha * ry[i] - gVolumeEdgeMinPointY[i];
-                pz = sz[i] + alpha * rz[i] - gVolumeEdgeMinPointZ[i];
-
-                /* For the entry boundary, multiply by 0.5 (this is the t == 0 check). That is, for the initial interpolated value, 
-                * only a half step-size is considered in the computation.
-                * For the second-to-last interpolation point, also multiply by 0.5, since there will be a final step at the maxAlpha boundary.
-                */ 
-                boundary_factor = (t == 0 || alpha + step >= maxAlpha[i]) ? 0.5 : 1.0;
-
-                // Perform the interpolation. This involves the variables: area_density, idx, px, py, pz, and volume. 
-                // It is done for each segmentation.
-                INTERPOLATE_FOR_VOL(boundary_factor, i); // TODO: change INTERPOLATE to handle volume-ID parameter
-            }
-
-            // Scaling by step;
-            for (int m = 0; m < NUM_MATERIALS; m++) {
-                area_density[m] *= step;
-            }
-
-            // Last segment of the line
-            if (area_density[0] > 0.0f) {
-                alpha -= step;
-                float lastStepsize = maxAlpha - alpha;
-
-                // scaled last step interpolation (something weird?)
-                INTERPOLATE_FOR_VOL(0.5 * lastStepsize, i);
-
-                // The last segment of the line integral takes care of the varying length.
-                px = sx[i] + alpha * rx[i] - gVolumeEdgeMinPointX[i];
-                py = sy[i] + alpha * ry[i] - gVolumeEdgeMinPointY[i];
-                pz = sz[i] + alpha * rz[i] - gVolumeEdgeMinPointZ[i];
-
-                // interpolation
-                INTERPOLATE_FOR_VOL(0.5 * lastStepsize, vol_id);
-            }
-
-            // normalize output value to world coordinate system units
-            for (int m = 0; m < NUM_MATERIALS; m++) {
-                area_density[m] *= sqrt((rx[i] * gVoxelElementSizeX[i])*(rx[i] * gVoxelElementSizeX[i]) + (ry[i] * gVoxelElementSizeY[i])*(ry[i] * gVoxelElementSizeY[i]) + (rz[i] * gVoxelElementSizeZ[i])*(rz[i] * gVoxelElementSizeZ[i]));
-                
-                total_area_density[m] += area_density[m];
-            }
-        }
+        RAY_TRACE;
 
         // Convert to centimeters
         for (int m = 0; m < NUM_MATERIALS; m++) {
-            total_area_density /= 10.0f;
+            total_area_density[m] /= 10.0f;
         }
 
         /* Up to this point, we have accomplished the original projectKernel functionality.
@@ -423,7 +487,7 @@ extern "C" {
             }
             float photon_prob_tmp = expf(-1.f * beer_lambert_exp) * pdf[bin]; // dimensionless value
 
-            photon_prob_tmp[img_dx] += photon_prob_tmp;
+            photon_prob[img_dx] += photon_prob_tmp;
             intensity[img_dx] += energies[bin] * photon_prob_tmp; // units: [keV] per unit photon to hit the pixel
         }
 
