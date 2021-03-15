@@ -135,6 +135,8 @@ class Projector(object):
             all_mats.extend(list(_vol.materials.keys()))
         
         self.all_materials = list(set(all_mats))
+        self.all_materials.sort()
+        print(f"ALL MATERIALS: {self.all_materials}")
 
         # compile the module
         self.mod = _get_kernel_projector_module(len(self.volumes), len(self.all_materials))
@@ -359,14 +361,17 @@ class Projector(object):
         self.segmentations_texref = [] # List[List[texrefs]], indexing by (vol_id, material_id)
         for vol_id, _vol in enumerate(self.volumes):
             seg_for_vol = []
-            for mat in self.all_materials:
+            texref_for_vol = []
+            for mat_id, mat in enumerate(self.all_materials):
                 seg = None
                 if mat in _vol.materials:
                     seg = _vol.materials[mat]
                 else:
                     seg = np.zeros(_vol.shape).astype(np.float32)
+                print(f"vol_id: {vol_id}. mat_id: {mat_id}. mat: {mat}. seg is zeros? {np.all(np.equal(seg, 0))}")
                 seg_for_vol.append(cuda.np_to_array(np.moveaxis(seg, [0, 1, 2], [2, 1, 0]).copy(), order='C'))
-            texref_for_vol = [self.mod.get_texref(f'seg_{vol_id}_{mat_id}') for mat_id, _ in enumerate(self.all_materials)]
+                texref = self.mod.get_texref(f'seg_{vol_id}_{mat_id}')
+                texref_for_vol.append(texref)
 
             for seg, texref in zip(seg_for_vol, texref_for_vol):
                 cuda.bind_array_to_texref(seg, texref)
