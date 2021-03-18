@@ -496,8 +496,9 @@ extern "C" {
         }
 
         // Last segment of the line
-        /*Bif (area_density[0] > 0.0f) {
+        if (area_density[0] > 0.0f) {
             // ERROR IN HERE
+            alpha -= step;
             float lastStepsize = globalMaxAlpha - alpha;
 
             // Determine priority at the location -- TODO: macro-ify
@@ -513,7 +514,7 @@ extern "C" {
                     n_vols_at_curr_priority ++;
                 }
             }
-            //Bif (n_vols_at_curr_priority <= 0) { printf("ERROR at alpha=%f. No volumes at current priority (%d) detected\n", alpha, curr_priority); }
+            if (n_vols_at_curr_priority <= 0) { printf("ERROR at alpha=%f. No volumes at current priority (%d) detected\n", alpha, curr_priority); }
             float weight = 1.0f / ((float) n_vols_at_curr_priority); // each volume contributes WEIGHT to the area_density
 
             // Scaled last step interpolation (something weird?)
@@ -538,13 +539,11 @@ extern "C" {
                         );
                     }
                 }*/
-                /*Bweight = 1.0f;
+                weight = 1.0f;
             }
             for (int m = 0; m < NUM_MATERIALS; m++) {
                 area_density[m] += adiatl[m] * weight;
             }
-
-            alpha -= step;
 
             // Determine priority at the location -- TODO: macro-fy
             curr_priority = NUM_VOLUMES;
@@ -559,7 +558,7 @@ extern "C" {
                     n_vols_at_curr_priority ++;
                 }
             }
-            //Bif (n_vols_at_curr_priority <= 0) { printf("ERROR at alpha=%f. No volumes at current priority (%d) detected\n", alpha, curr_priority); }
+            if (n_vols_at_curr_priority <= 0) { printf("ERROR2 at alpha=%f. No volumes at current priority (%d) detected\n", alpha, curr_priority); }
             weight = 1.0f / ((float) n_vols_at_curr_priority); // each volume contributes WEIGHT to the area_density
 
             // The last segment of the line integral takes care of the varying length.
@@ -567,7 +566,7 @@ extern "C" {
             for (int m = 0; m < NUM_MATERIALS; m++) {
                 area_density[m] += adiatl[m] * weight;
             }
-        }*/
+        }
 
         // Convert to centimeters
         for (int m = 0; m < NUM_MATERIALS; m++) {
