@@ -4,38 +4,233 @@
 #include "project_kernel_data.cu"
 
 #define UPDATE(multiplier, vol_id, mat_id) do {\
-    adiatl[(mat_id)] = (multiplier) * tex3D(VOLUME(vol_id), px, py, pz) * round(cubicTex3D(SEG(vol_id, mat_id), px, py, pz)) * volume_normalization_factor[vol_id];\
+    /* param 'weight' is the 1.0f/(number of volumes at curr_priority) */\
+    /*adiatl[(mat_id)] = (multiplier) * tex3D(VOLUME(vol_id), px[vol_id], py[vol_id], pz[vol_id]) * seg_at_alpha[vol_id][mat_id] * volume_normalization_factor[vol_id];*/\
+    area_density[(mat_id)] += (multiplier) * tex3D(VOLUME(vol_id), px[vol_id], py[vol_id], pz[vol_id]) * seg_at_alpha[vol_id][mat_id] * volume_normalization_factor[vol_id] * weight;\
+    output_for_vol[(vol_id)][(mat_id)] += (multiplier) * tex3D(VOLUME(vol_id), px[vol_id], py[vol_id], pz[vol_id]) * seg_at_alpha[vol_id][mat_id] * volume_normalization_factor[vol_id];\
 } while (0)
 
 #define GET_POSITION_FOR_VOL(vol_id) do {\
     /* Get the current sample point in the volume voxel-space. */\
-    /* In CUDA, voxel centeras are located at (xx.5, xx.5, xx.5), whereas SwVolume has voxel centers at integers. */\
-    px = sx[vol_id] + alpha * rx[vol_id] - gVolumeEdgeMinPointX[vol_id];\
-    py = sy[vol_id] + alpha * ry[vol_id] - gVolumeEdgeMinPointY[vol_id];\
-    pz = sz[vol_id] + alpha * rz[vol_id] - gVolumeEdgeMinPointZ[vol_id];\
+    /* In CUDA, voxel centers are located at (xx.5, xx.5, xx.5), whereas SwVolume has voxel centers at integers. */\
+    px[vol_id] = sx[vol_id] + alpha * rx[vol_id] - gVolumeEdgeMinPointX[vol_id];\
+    py[vol_id] = sy[vol_id] + alpha * ry[vol_id] - gVolumeEdgeMinPointY[vol_id];\
+    pz[vol_id] = sz[vol_id] + alpha * rz[vol_id] - gVolumeEdgeMinPointZ[vol_id];\
+} while (0)
+
+#define LOAG_SEGS_FOR_VOL_MAT(vol_id, mat_id) do {\
+    seg_at_alpha[vol_id][mat_id] = round(cubicTex3D(SEG(vol_id, mat_id), px[vol_id], py[vol_id], pz[vol_id]));\
+    /*if (seg_at_alpha[vol_id][mat_id] > 0.0f) {\
+        printf("at position {%f, %f, %f}, seg_at_alpha[%d][%d]=%f > 0.0f\n", px[vol_id], py[vol_id], pz[vol_id], vol_id, mat_id, seg_at_alpha[vol_id][mat_id]);\
+    }*/\
 } while (0)
 
 #if NUM_MATERIALS == 1
+#define LOAD_SEGS_FOR_VOL(vol_id) do {\
+    LOAG_SEGS_FOR_VOL_MAT(vol_id, 0);\
+} while (0)
+#elif NUM_MATERIALS == 2
+#define LOAD_SEGS_FOR_VOL(vol_id) do {\
+    LOAG_SEGS_FOR_VOL_MAT(vol_id, 0);\
+    LOAG_SEGS_FOR_VOL_MAT(vol_id, 1);\
+} while (0)
+#elif NUM_MATERIALS == 3
+#define LOAD_SEGS_FOR_VOL(vol_id) do {\
+    LOAG_SEGS_FOR_VOL_MAT(vol_id, 0);\
+    LOAG_SEGS_FOR_VOL_MAT(vol_id, 1);\
+    LOAG_SEGS_FOR_VOL_MAT(vol_id, 2);\
+} while (0)
+#elif NUM_MATERIALS == 4
+#define LOAD_SEGS_FOR_VOL(vol_id) do {\
+    LOAG_SEGS_FOR_VOL_MAT(vol_id, 0);\
+    LOAG_SEGS_FOR_VOL_MAT(vol_id, 1);\
+    LOAG_SEGS_FOR_VOL_MAT(vol_id, 2);\
+    LOAG_SEGS_FOR_VOL_MAT(vol_id, 3);\
+} while (0)
+#elif NUM_MATERIALS == 5
+#define LOAD_SEGS_FOR_VOL(vol_id) do {\
+    LOAG_SEGS_FOR_VOL_MAT(vol_id, 0);\
+    LOAG_SEGS_FOR_VOL_MAT(vol_id, 1);\
+    LOAG_SEGS_FOR_VOL_MAT(vol_id, 2);\
+    LOAG_SEGS_FOR_VOL_MAT(vol_id, 3);\
+    LOAG_SEGS_FOR_VOL_MAT(vol_id, 4);\
+} while (0)
+#elif NUM_MATERIALS == 6
+#define LOAD_SEGS_FOR_VOL(vol_id) do {\
+    LOAG_SEGS_FOR_VOL_MAT(vol_id, 0);\
+    LOAG_SEGS_FOR_VOL_MAT(vol_id, 1);\
+    LOAG_SEGS_FOR_VOL_MAT(vol_id, 2);\
+    LOAG_SEGS_FOR_VOL_MAT(vol_id, 3);\
+    LOAG_SEGS_FOR_VOL_MAT(vol_id, 4);\
+    LOAG_SEGS_FOR_VOL_MAT(vol_id, 5);\
+} while (0)
+#elif NUM_MATERIALS == 7
+#define LOAD_SEGS_FOR_VOL(vol_id) do {\
+    LOAG_SEGS_FOR_VOL_MAT(vol_id, 0);\
+    LOAG_SEGS_FOR_VOL_MAT(vol_id, 1);\
+    LOAG_SEGS_FOR_VOL_MAT(vol_id, 2);\
+    LOAG_SEGS_FOR_VOL_MAT(vol_id, 3);\
+    LOAG_SEGS_FOR_VOL_MAT(vol_id, 4);\
+    LOAG_SEGS_FOR_VOL_MAT(vol_id, 5);\
+    LOAG_SEGS_FOR_VOL_MAT(vol_id, 6);\
+} while (0)
+#elif NUM_MATERIALS == 8
+#define LOAD_SEGS_FOR_VOL(vol_id) do {\
+    LOAG_SEGS_FOR_VOL_MAT(vol_id, 0);\
+    LOAG_SEGS_FOR_VOL_MAT(vol_id, 1);\
+    LOAG_SEGS_FOR_VOL_MAT(vol_id, 2);\
+    LOAG_SEGS_FOR_VOL_MAT(vol_id, 3);\
+    LOAG_SEGS_FOR_VOL_MAT(vol_id, 4);\
+    LOAG_SEGS_FOR_VOL_MAT(vol_id, 5);\
+    LOAG_SEGS_FOR_VOL_MAT(vol_id, 6);\
+    LOAG_SEGS_FOR_VOL_MAT(vol_id, 7);\
+} while (0)
+#elif NUM_MATERIALS == 9
+#define LOAD_SEGS_FOR_VOL(vol_id) do {\
+    LOAG_SEGS_FOR_VOL_MAT(vol_id, 0);\
+    LOAG_SEGS_FOR_VOL_MAT(vol_id, 1);\
+    LOAG_SEGS_FOR_VOL_MAT(vol_id, 2);\
+    LOAG_SEGS_FOR_VOL_MAT(vol_id, 3);\
+    LOAG_SEGS_FOR_VOL_MAT(vol_id, 4);\
+    LOAG_SEGS_FOR_VOL_MAT(vol_id, 5);\
+    LOAG_SEGS_FOR_VOL_MAT(vol_id, 6);\
+    LOAG_SEGS_FOR_VOL_MAT(vol_id, 7);\
+    LOAG_SEGS_FOR_VOL_MAT(vol_id, 8);\
+} while (0)
+#elif NUM_MATERIALS == 10
+#define LOAD_SEGS_FOR_VOL(vol_id) do {\
+    LOAG_SEGS_FOR_VOL_MAT(vol_id, 0);\
+    LOAG_SEGS_FOR_VOL_MAT(vol_id, 1);\
+    LOAG_SEGS_FOR_VOL_MAT(vol_id, 2);\
+    LOAG_SEGS_FOR_VOL_MAT(vol_id, 3);\
+    LOAG_SEGS_FOR_VOL_MAT(vol_id, 4);\
+    LOAG_SEGS_FOR_VOL_MAT(vol_id, 5);\
+    LOAG_SEGS_FOR_VOL_MAT(vol_id, 6);\
+    LOAG_SEGS_FOR_VOL_MAT(vol_id, 7);\
+    LOAG_SEGS_FOR_VOL_MAT(vol_id, 8);\
+    LOAG_SEGS_FOR_VOL_MAT(vol_id, 9);\
+} while (0)
+#elif NUM_MATERIALS == 11
+#define LOAD_SEGS_FOR_VOL(vol_id) do {\
+    LOAG_SEGS_FOR_VOL_MAT(vol_id, 0);\
+    LOAG_SEGS_FOR_VOL_MAT(vol_id, 1);\
+    LOAG_SEGS_FOR_VOL_MAT(vol_id, 2);\
+    LOAG_SEGS_FOR_VOL_MAT(vol_id, 3);\
+    LOAG_SEGS_FOR_VOL_MAT(vol_id, 4);\
+    LOAG_SEGS_FOR_VOL_MAT(vol_id, 5);\
+    LOAG_SEGS_FOR_VOL_MAT(vol_id, 6);\
+    LOAG_SEGS_FOR_VOL_MAT(vol_id, 7);\
+    LOAG_SEGS_FOR_VOL_MAT(vol_id, 8);\
+    LOAG_SEGS_FOR_VOL_MAT(vol_id, 9);\
+    LOAG_SEGS_FOR_VOL_MAT(vol_id, 10);\
+} while (0)
+#elif NUM_MATERIALS == 12
+#define LOAD_SEGS_FOR_VOL(vol_id) do {\
+    LOAG_SEGS_FOR_VOL_MAT(vol_id, 0);\
+    LOAG_SEGS_FOR_VOL_MAT(vol_id, 1);\
+    LOAG_SEGS_FOR_VOL_MAT(vol_id, 2);\
+    LOAG_SEGS_FOR_VOL_MAT(vol_id, 3);\
+    LOAG_SEGS_FOR_VOL_MAT(vol_id, 4);\
+    LOAG_SEGS_FOR_VOL_MAT(vol_id, 5);\
+    LOAG_SEGS_FOR_VOL_MAT(vol_id, 6);\
+    LOAG_SEGS_FOR_VOL_MAT(vol_id, 7);\
+    LOAG_SEGS_FOR_VOL_MAT(vol_id, 8);\
+    LOAG_SEGS_FOR_VOL_MAT(vol_id, 9);\
+    LOAG_SEGS_FOR_VOL_MAT(vol_id, 10);\
+    LOAG_SEGS_FOR_VOL_MAT(vol_id, 11);\
+} while (0)
+#elif NUM_MATERIALS == 13
+#define LOAD_SEGS_FOR_VOL(vol_id) do {\
+    LOAG_SEGS_FOR_VOL_MAT(vol_id, 0);\
+    LOAG_SEGS_FOR_VOL_MAT(vol_id, 1);\
+    LOAG_SEGS_FOR_VOL_MAT(vol_id, 2);\
+    LOAG_SEGS_FOR_VOL_MAT(vol_id, 3);\
+    LOAG_SEGS_FOR_VOL_MAT(vol_id, 4);\
+    LOAG_SEGS_FOR_VOL_MAT(vol_id, 5);\
+    LOAG_SEGS_FOR_VOL_MAT(vol_id, 6);\
+    LOAG_SEGS_FOR_VOL_MAT(vol_id, 7);\
+    LOAG_SEGS_FOR_VOL_MAT(vol_id, 8);\
+    LOAG_SEGS_FOR_VOL_MAT(vol_id, 9);\
+    LOAG_SEGS_FOR_VOL_MAT(vol_id, 10);\
+    LOAG_SEGS_FOR_VOL_MAT(vol_id, 11);\
+    LOAG_SEGS_FOR_VOL_MAT(vol_id, 12);\
+} while (0)
+#elif NUM_MATERIALS == 14
+#define LOAD_SEGS_FOR_VOL(vol_id) do {\
+    LOAG_SEGS_FOR_VOL_MAT(vol_id, 0);\
+    LOAG_SEGS_FOR_VOL_MAT(vol_id, 1);\
+    LOAG_SEGS_FOR_VOL_MAT(vol_id, 2);\
+    LOAG_SEGS_FOR_VOL_MAT(vol_id, 3);\
+    LOAG_SEGS_FOR_VOL_MAT(vol_id, 4);\
+    LOAG_SEGS_FOR_VOL_MAT(vol_id, 5);\
+    LOAG_SEGS_FOR_VOL_MAT(vol_id, 6);\
+    LOAG_SEGS_FOR_VOL_MAT(vol_id, 7);\
+    LOAG_SEGS_FOR_VOL_MAT(vol_id, 8);\
+    LOAG_SEGS_FOR_VOL_MAT(vol_id, 9);\
+    LOAG_SEGS_FOR_VOL_MAT(vol_id, 10);\
+    LOAG_SEGS_FOR_VOL_MAT(vol_id, 11);\
+    LOAG_SEGS_FOR_VOL_MAT(vol_id, 12);\
+    LOAG_SEGS_FOR_VOL_MAT(vol_id, 13);\
+} while (0)
+#else
+#define LOAD_SEGS_FOR_VOL(vol_id) do {\
+    fprintf(stderr, "NUM_MATERIALS not in [1, 14]");\
+} while (0)
+#endif
+
+#if NUM_VOLUMES == 1
+#define LOAD_SEGS_AT_ALPHA do {\
+    if (do_trace[0]) { GET_POSITION_FOR_VOL(0); LOAD_SEGS_FOR_VOL(0); }\
+} while (0)
+#elif NUM_VOLUMES == 2
+#define LOAD_SEGS_AT_ALPHA do {\
+    if (do_trace[0]) {\
+        GET_POSITION_FOR_VOL(0);\
+        LOAD_SEGS_FOR_VOL(0);\
+        /*int has_nonzero_seg = 0;\
+        for (int __m = 0; __m < NUM_MATERIALS; __m++) {\
+            if (seg_at_alpha[0][__m] > 0.0f) {\
+                has_nonzero_seg = 1;\
+                printf("at position {%f, %f, %f}, seg_at_alpha[%d][%d]=%f > 0.0f\n", px[0], py[0], pz[0], 0, __m, seg_at_alpha[0][__m]);\
+                break;\
+            }\
+        }\
+        if (!has_nonzero_seg) {\
+           THIS NEVER TRIGGERED\
+            printf("at position {%f, %f, %f}, no non-zero seg for volume0\n", px[0], py[0], pz[0]);\
+        }*/\
+    }\
+    if (do_trace[1]) { GET_POSITION_FOR_VOL(1); LOAD_SEGS_FOR_VOL(1); }\
+} while (0)
+#elif NUM_VOLUMES == 3
+#define LOAD_SEGS_AT_ALPHA do {\
+    if (do_trace[0]) { GET_POSITION_FOR_VOL(0); LOAD_SEGS_FOR_VOL(0); }\
+    if (do_trace[1]) { GET_POSITION_FOR_VOL(1); LOAD_SEGS_FOR_VOL(1); }\
+    if (do_trace[2]) { GET_POSITION_FOR_VOL(2); LOAD_SEGS_FOR_VOL(2); }\
+} while (0)
+#else
+#define LOAD_SEGS_AT_ALPHA do {\
+    fprintf(stderr, "CALCULATE_RAYS not supported for NUM_VOLUMES outside [1, 3]");\
+} while (0)
+#endif
+
+#if NUM_MATERIALS == 1
 #define INTERPOLATE_FOR_VOL(multiplier, vol_id) do {\
-    GET_POSITION_FOR_VOL(vol_id);\
     UPDATE(multiplier, vol_id, 0);\
 } while (0)
 #elif NUM_MATERIALS == 2
 #define INTERPOLATE_FOR_VOL(multiplier, vol_id) do {\
-    GET_POSITION_FOR_VOL(vol_id);\
     UPDATE(multiplier, vol_id, 0);\
     UPDATE(multiplier, vol_id, 1);\
 } while (0)
 #elif NUM_MATERIALS == 3
 #define INTERPOLATE_FOR_VOL(multiplier, vol_id) do {\
-    GET_POSITION_FOR_VOL(vol_id);\
     UPDATE(multiplier, vol_id, 0);\
     UPDATE(multiplier, vol_id, 1);\
     UPDATE(multiplier, vol_id, 2);\
 } while (0)
 #elif NUM_MATERIALS == 4
 #define INTERPOLATE_FOR_VOL(multiplier, vol_id) do {\
-    GET_POSITION_FOR_VOL(vol_id);\
     UPDATE(multiplier, vol_id, 0);\
     UPDATE(multiplier, vol_id, 1);\
     UPDATE(multiplier, vol_id, 2);\
@@ -43,7 +238,6 @@
 } while (0)
 #elif NUM_MATERIALS == 5
 #define INTERPOLATE_FOR_VOL(multiplier, vol_id) do {\
-    GET_POSITION_FOR_VOL(vol_id);\
     UPDATE(multiplier, vol_id, 0);\
     UPDATE(multiplier, vol_id, 1);\
     UPDATE(multiplier, vol_id, 2);\
@@ -52,7 +246,6 @@
 } while (0)
 #elif NUM_MATERIALS == 6
 #define INTERPOLATE_FOR_VOL(multiplier, vol_id) do {\
-    GET_POSITION_FOR_VOL(vol_id);\
     UPDATE(multiplier, vol_id, 0);\
     UPDATE(multiplier, vol_id, 1);\
     UPDATE(multiplier, vol_id, 2);\
@@ -62,7 +255,6 @@
 } while (0)
 #elif NUM_MATERIALS == 7
 #define INTERPOLATE_FOR_VOL(multiplier, vol_id) do {\
-    GET_POSITION_FOR_VOL(vol_id);\
     UPDATE(multiplier, vol_id, 0);\
     UPDATE(multiplier, vol_id, 1);\
     UPDATE(multiplier, vol_id, 2);\
@@ -73,7 +265,6 @@
 } while (0)
 #elif NUM_MATERIALS == 8
 #define INTERPOLATE_FOR_VOL(multiplier, vol_id) do {\
-    GET_POSITION_FOR_VOL(vol_id);\
     UPDATE(multiplier, vol_id, 0);\
     UPDATE(multiplier, vol_id, 1);\
     UPDATE(multiplier, vol_id, 2);\
@@ -85,7 +276,6 @@
 } while (0)
 #elif NUM_MATERIALS == 9
 #define INTERPOLATE_FOR_VOL(multiplier, vol_id) do {\
-    GET_POSITION_FOR_VOL(vol_id);\
     UPDATE(multiplier, vol_id, 0);\
     UPDATE(multiplier, vol_id, 1);\
     UPDATE(multiplier, vol_id, 2);\
@@ -98,7 +288,6 @@
 } while (0)
 #elif NUM_MATERIALS == 10
 #define INTERPOLATE_FOR_VOL(multiplier, vol_id) do {\
-    GET_POSITION_FOR_VOL(vol_id);\
     UPDATE(multiplier, vol_id, 0);\
     UPDATE(multiplier, vol_id, 1);\
     UPDATE(multiplier, vol_id, 2);\
@@ -112,7 +301,6 @@
 } while (0)
 #elif NUM_MATERIALS == 11
 #define INTERPOLATE_FOR_VOL(multiplier, vol_id) do {\
-    GET_POSITION_FOR_VOL(vol_id);\
     UPDATE(multiplier, vol_id, 0);\
     UPDATE(multiplier, vol_id, 1);\
     UPDATE(multiplier, vol_id, 2);\
@@ -127,7 +315,6 @@
 } while (0)
 #elif NUM_MATERIALS == 12
 #define INTERPOLATE_FOR_VOL(multiplier, vol_id) do {\
-    GET_POSITION_FOR_VOL(vol_id);\
     UPDATE(multiplier, vol_id, 0);\
     UPDATE(multiplier, vol_id, 1);\
     UPDATE(multiplier, vol_id, 2);\
@@ -143,7 +330,6 @@
 } while (0)
 #elif NUM_MATERIALS == 13
 #define INTERPOLATE_FOR_VOL(multiplier, vol_id) do {\
-    GET_POSITION_FOR_VOL(vol_id);\
     UPDATE(multiplier, vol_id, 0);\
     UPDATE(multiplier, vol_id, 1);\
     UPDATE(multiplier, vol_id, 2);\
@@ -160,7 +346,6 @@
 } while (0)
 #elif NUM_MATERIALS == 14
 #define INTERPOLATE_FOR_VOL(multiplier, vol_id) do {\
-    GET_POSITION_FOR_VOL(vol_id);\
     UPDATE(multiplier, vol_id, 0);\
     UPDATE(multiplier, vol_id, 1);\
     UPDATE(multiplier, vol_id, 2);\
@@ -184,18 +369,18 @@
 
 #if NUM_VOLUMES == 1
 #define INTERPOLATE(multiplier) do {\
-    if (priority[0] == curr_priority) { INTERPOLATE_FOR_VOL(multiplier, 0); }\
+    if (do_trace[0] && (priority[0] == curr_priority)) { INTERPOLATE_FOR_VOL(multiplier, 0); }\
 } while (0)
 #elif NUM_VOLUMES == 2
 #define INTERPOLATE(multiplier) do {\
-    if (priority[0] == curr_priority) { INTERPOLATE_FOR_VOL(multiplier, 0); }\
-    if (priority[1] == curr_priority) { INTERPOLATE_FOR_VOL(multiplier, 1); }\
+    if (do_trace[0] && (priority[0] == curr_priority)) { /*printf("interp0: alpha=%f, pixel=[%d,%d]\n", alpha, udx, vdx);*/ INTERPOLATE_FOR_VOL(multiplier, 0); }\
+    if (do_trace[1] && (priority[1] == curr_priority)) { /*printf("interp1: alpha=%f, pixel=[%d,%d]\n", alpha, udx, vdx);*/ INTERPOLATE_FOR_VOL(multiplier, 1); }\
 } while (0)
 #elif NUM_VOLUMES == 3
 #define INTERPOLATE(multiplier) do {\
-    if (priority[0] == curr_priority) { INTERPOLATE_FOR_VOL(multiplier, 0); }\
-    if (priority[1] == curr_priority) { INTERPOLATE_FOR_VOL(multiplier, 1); }\
-    if (priority[2] == curr_priority) { INTERPOLATE_FOR_VOL(multiplier, 2); }\
+    if (do_trace[0] && (priority[0] == curr_priority)) { INTERPOLATE_FOR_VOL(multiplier, 0); }\
+    if (do_trace[1] && (priority[1] == curr_priority)) { INTERPOLATE_FOR_VOL(multiplier, 1); }\
+    if (do_trace[2] && (priority[2] == curr_priority)) { INTERPOLATE_FOR_VOL(multiplier, 2); }\
 } while (0)
 #else
 #define INTERPOLATE(multiplier) do {\
@@ -212,12 +397,12 @@
     rx[vol_id] *= normFactor;\
     ry[vol_id] *= normFactor;\
     rz[vol_id] *= normFactor;\
-    /*\
+    \
     float tmp = 0.0f;\
     tmp += (rx[vol_id] * gVoxelElementSizeX[vol_id])*(rx[vol_id] * gVoxelElementSizeX[vol_id]);\
     tmp += (ry[vol_id] * gVoxelElementSizeY[vol_id])*(ry[vol_id] * gVoxelElementSizeY[vol_id]);\
     tmp += (rz[vol_id] * gVoxelElementSizeZ[vol_id])*(rz[vol_id] * gVoxelElementSizeZ[vol_id]);\
-    volume_normalization_factor[vol_id] = sqrtf(tmp);*/\
+    volume_normalization_factor[vol_id] = sqrtf(tmp);\
 } while (0)
 
 #if NUM_VOLUMES == 1
@@ -300,12 +485,18 @@
 } while (0)
 #endif
 
-#define GET_PRIORITY_AT_ALPHA(curr_priority, n_vols_at_curr_priority, alpha) do {\
+#define GET_PRIORITY_AT_ALPHA do {\
     curr_priority = NUM_VOLUMES;\
     n_vols_at_curr_priority = 0;\
     for (int i = 0; i < NUM_VOLUMES; i++) {\
         if (0 == do_trace[i]) { continue; }\
         if ((alpha < minAlpha[i]) || (alpha > maxAlpha[i])) { continue; }\
+        float total_seg = 0.0f;\
+        for (int m = 0; m < NUM_MATERIALS; m++) {\
+            total_seg += seg_at_alpha[i][m];\
+            if (total_seg > 0.0f) { break; }\
+        }\
+        if (0.0f == total_seg) { continue; }\
 \
         if (priority[i] < curr_priority) {\
             curr_priority = priority[i];\
@@ -384,15 +575,6 @@ extern "C" {
         float volume_normalization_factor[NUM_VOLUMES];
         CALCULATE_RAYS;
 
-        for (int i = 0; i < NUM_VOLUMES; i++) {
-            float tmp = 0.0f;
-            tmp += (rx[i] * gVoxelElementSizeX[i])*(rx[i] * gVoxelElementSizeX[i]);
-            tmp += (ry[i] * gVoxelElementSizeY[i])*(ry[i] * gVoxelElementSizeY[i]);
-            tmp += (rz[i] * gVoxelElementSizeZ[i])*(rz[i] * gVoxelElementSizeZ[i]);
-            volume_normalization_factor[i] = sqrtf(tmp);
-            if ((0==udx) && (0==vdx)) printf("volume_normalization_factor[%d]: %f\n", i, volume_normalization_factor[i]);
-        }
-
         // calculate projections
         // Part 1: compute alpha value at entry and exit point of the volume on either side of the ray.
         // minAlpha: the distance from source point to volume entry point of the ray.
@@ -403,6 +585,10 @@ extern "C" {
         float globalMinAlpha = INFINITY; // the smallest of all the minAlpha's
         float globalMaxAlpha = 0.0f; // the largest of all the maxAlpha's
         CALCULATE_ALPHAS;
+
+        if (do_trace[1] && !do_trace[0]) {
+            printf("Huh? tracing volume1 but not volume0. pixel: [%d,%d]\n", udx, vdx);
+        }
 
         if ((600 == udx) && (400 == vdx)) {
             for (int i = 0; i < NUM_VOLUMES; i++) {
@@ -418,8 +604,7 @@ extern "C" {
         //    minAlpha[i] += step * 0.5f;
         //}
 
-        // Determine whether to do any ray-tracing at all. 
-        // BLAH Use [out_width] as variable because it is no longer needed
+        // Determine whether to do any ray-tracing at all.
         for (int i = 0; i < NUM_VOLUMES; i++) {
             if (do_trace[i]) { break; }
             else if ((NUM_VOLUMES - 1) == i) { return; }
@@ -432,139 +617,88 @@ extern "C" {
 
         // initialize the projection-output to 0.
         for (int m = 0; m < NUM_MATERIALS; m++) {
-            area_density[m] = 0;
+            area_density[m] = 0.0f;
         }
 
-        float px, py, pz; // voxel-space point -- temporary storage
+        float px[NUM_VOLUMES]; // voxel-space point
+        float py[NUM_VOLUMES];
+        float pz[NUM_VOLUMES];
         float alpha; // distance along ray (alpha = globalMinAlpha + step * t)
         float boundary_factor; // factor to multiply at boundary
         int curr_priority; // the priority at the location
         int n_vols_at_curr_priority; // how many volumes to consider at the location
         float adiatl[NUM_MATERIALS]; // area_density increment at this location
+        float seg_at_alpha[NUM_VOLUMES][NUM_MATERIALS];
+
+        float output_for_vol[NUM_VOLUMES][NUM_MATERIALS];
+        for (int i = 0; i < NUM_VOLUMES; i++) for (int m = 0; m < NUM_MATERIALS; m++) output_for_vol[i][m] = 0.0f;
 
         for (alpha = globalMinAlpha; alpha < globalMaxAlpha; alpha += step) {
-            // Determine priority at the location -- TODO: macro-ify
-            curr_priority = NUM_VOLUMES;
-            n_vols_at_curr_priority = 0;
-            for (int i = 0; i < NUM_VOLUMES; i++) {
-                if (0 == do_trace[i]) { continue; }
-                if ((alpha < minAlpha[i]) || (alpha > maxAlpha[i])) { continue; }
-        
-                if (priority[i] < curr_priority) {
-                    curr_priority = priority[i];
-                    n_vols_at_curr_priority = 1;
-                } else if (priority[i] == curr_priority) {
-                    n_vols_at_curr_priority ++;
+            LOAD_SEGS_AT_ALPHA; // initializes p{x,y,z}[...] and seg_at_alpha[...][...]
+            if (do_trace[0]) {
+                for (int mat = 0; mat < NUM_MATERIALS; mat++) {
+                    if (0.5f > seg_at_alpha[0][mat]) {
+                        //Bprintf("alpha=%f, p={%f, %f, %f}, round(cubicTex3D(seg_0_%d, ...))=%.10e\n", alpha, px[0], py[0], pz[0], mat, seg_at_alpha[0][mat]);
+                    }
                 }
             }
-            if ((n_vols_at_curr_priority <= 0)) { 
-                printf("ERROR at alpha=%f. No volumes at current priority (%d) detected\n", alpha, curr_priority);
-                for (int i = 0; i < NUM_VOLUMES; i++) {
-                    if (0 == i) GET_POSITION_FOR_VOL(0);
-                    else if (1 == i) GET_POSITION_FOR_VOL(1);
-                    else if (2 == i) GET_POSITION_FOR_VOL(2);
-                    else { printf("invalid volume ID\n"); break; }
-                    printf("\tvolume#%d (priority=%d) position: %f, %f, %f\n", i, priority[i], px, py, pz);
-                }
-            }
-            float weight = 1.0f / ((float) n_vols_at_curr_priority); // each volume contributes WEIGHT to the area_density
-            if (0 == n_vols_at_curr_priority) printf("WARNING WARNING WARNING: dividing by (n_vols_at_curr_priority == 0)\n");
-            if ((1 == NUM_VOLUMES) && (1.0f != weight)) printf("WARNING WARNING WARNING: improper 'weight' value (%f)\n", weight);
+            GET_PRIORITY_AT_ALPHA;
+            if (0 == n_vols_at_curr_priority) {
+                // Outside the bounds of all volumes to trace. Assume nominal density of air is 0.0f.
+                // Thus, we don't need to add to area_density
+                ;
+            } else {
+                float weight = 1.0f / ((float) n_vols_at_curr_priority); // each volume contributes WEIGHT to the area_density
+                
+                // For the entry boundary, multiply by 0.5. That is, for the initial interpolated value,
+                // only a half step-size is considered in the computation. For the second-to-last interpolation
+                // point, also multiply by 0.5, since there will be a final step at the globalMaxAlpha boundary.
+                boundary_factor = ((alpha <= globalMinAlpha) || (alpha + step >= globalMaxAlpha)) ? 0.5f : 1.0f;
 
-            // For the entry boundary, multiply by 0.5. That is, for the initial interpolated value,
-            // only a half step-size is considered in the computation. For the second-to-last interpolation
-            // point, also multiply by 0.5, since there will be a final step at the globalMaxAlpha boundary.
-            boundary_factor = ((alpha <= globalMinAlpha) || (alpha + step >= globalMaxAlpha)) ? 0.5f : 1.0f;
-            
-            INTERPOLATE(boundary_factor);
-            for (int m = 0; m < NUM_MATERIALS; m++) {
-                area_density[m] += adiatl[m] * weight;
-                if (adiatl[m] != adiatl[m]) {
-                    //printf("adiatl[%d] is NaN\n", m);
-                    //for (int i = 0; i < 12345678; i++) ;
+                INTERPOLATE(boundary_factor);
+                for (int m = 0; m < NUM_MATERIALS; m++) {
+                    //BAarea_density[m] += adiatl[m] * weight;
                 }
             }
+        }
+
+        if ((area_density[0] > 0.0f) || (area_density[1] > 0.0f)) {
+            /*Bprintf(
+                "after loop: a_d[0]=%.6e, a_d[1]=%.6e\n"
+                "\toutput_for_vol[%d][%d]=%.6e\n"
+                "\toutput_for_vol[%d][%d]=%.6e\n"
+                "\toutput_for_vol[%d][%d]=%.6e\n"
+                "\toutput_for_vol[%d][%d]=%.6e\n",
+                area_density[0], area_density[1],
+                0, 0, output_for_vol[0][0],
+                0, 1, output_for_vol[0][1],
+                1, 0, output_for_vol[1][0],
+                1, 1, output_for_vol[1][1]
+            );*/
         }
 
         // Scaling by step
         for (int m = 0; m < NUM_MATERIALS; m++) {
             area_density[m] *= step;
-
-            if (area_density[m] != area_density[m]) {
-                //printf("mat: %d, NaN\n", m);
-            }
         }
 
         // Last segment of the line
         if (area_density[0] > 0.0f) {
-            // ERROR IN HERE
             alpha -= step;
             float lastStepsize = globalMaxAlpha - alpha;
 
-            // Determine priority at the location -- TODO: macro-ify
-            curr_priority = NUM_VOLUMES;
-            n_vols_at_curr_priority = 0;
-            for (int i = 0; i < NUM_VOLUMES; i++) {
-                if ((alpha < minAlpha[i]) || (alpha > maxAlpha[i])) { continue; }
-                
-                if (priority[i] < curr_priority) {
-                    curr_priority = priority[i];
-                    n_vols_at_curr_priority = 1;
-                } else if (priority[i] == curr_priority) {
-                    n_vols_at_curr_priority ++;
+            GET_PRIORITY_AT_ALPHA;
+            if (0 == n_vols_at_curr_priority) {
+                // Outside the bounds of all volumes to trace. Assume nominal density of air is 0.0f.
+                // Thus, we don't need to add to area_density
+                ;
+            } else {
+                float weight = 1.0f / ((float) n_vols_at_curr_priority); // each volume contributes WEIGHT to the area_density
+                // Scaled last step interpolation (something weird?)
+                INTERPOLATE(lastStepsize);
+                for (int m = 0; m < NUM_MATERIALS; m++) {
+                    //BAarea_density[m] += adiatl[m] * weight;
                 }
-            }
-            if (n_vols_at_curr_priority <= 0) { printf("ERROR at alpha=%f. No volumes at current priority (%d) detected\n", alpha, curr_priority); }
-            float weight = 1.0f / ((float) n_vols_at_curr_priority); // each volume contributes WEIGHT to the area_density
-
-            // Scaled last step interpolation (something weird?)
-            INTERPOLATE(0.5f * lastStepsize);
-            if (0 > n_vols_at_curr_priority) {
-                printf("ERROR: n_vols_at_curr_priority < 0: is %d\n", n_vols_at_curr_priority);
-            } else if (0 == n_vols_at_curr_priority) {
-                /*for (int m = 0; m < NUM_MATERIALS; m++) {
-                    if (0 != adiatl[m]){
-                        int bytes;
-                        memcpy(&bytes, &adiatl[m], sizeof(int));
-                        char bits[33];
-                        for (int i = 0; i < 32; i++) {
-                            bits[32 - i - 1] = '0' + (bytes & 0x00000001);
-                            bytes >>= 1;
-                        }
-                        bits[33] = '\0';
-                        printf(
-                            "n_vols_at_curr_priority == 0. mat=%d, adiatl[mat]=%1.10e != 0. <- bad\n"
-                            "\tadiatl[mat] = 0b%s\n",
-                            m, adiatl[m], bits
-                        );
-                    }
-                }*/
-                weight = 1.0f;
-            }
-            for (int m = 0; m < NUM_MATERIALS; m++) {
-                area_density[m] += adiatl[m] * weight;
-            }
-
-            // Determine priority at the location -- TODO: macro-fy
-            curr_priority = NUM_VOLUMES;
-            n_vols_at_curr_priority = 0;
-            for (int i = 0; i < NUM_VOLUMES; i++) {
-                if ((alpha < minAlpha[i]) || (alpha > maxAlpha[i])) { continue; }
-
-                if (priority[i] < curr_priority) {
-                    curr_priority = priority[i];
-                    n_vols_at_curr_priority = 1;
-                } else if (priority[i] == curr_priority) {
-                    n_vols_at_curr_priority ++;
-                }
-            }
-            if (n_vols_at_curr_priority <= 0) { printf("ERROR2 at alpha=%f. No volumes at current priority (%d) detected\n", alpha, curr_priority); }
-            weight = 1.0f / ((float) n_vols_at_curr_priority); // each volume contributes WEIGHT to the area_density
-
-            // The last segment of the line integral takes care of the varying length.
-            INTERPOLATE(0.5f * lastStepsize);
-            for (int m = 0; m < NUM_MATERIALS; m++) {
-                area_density[m] += adiatl[m] * weight;
             }
         }
 
@@ -576,9 +710,9 @@ extern "C" {
         /*if (area_density[1] == 0.0f) {
             printf("pixel [%d, %d]. Channel[0]: %f, Channel[2]: %f\n", udx, vdx, area_density[0], area_density[2]);
         }*/
-        if ((area_density[0] != 0.0f) || (area_density[1] != 0.0f) || (area_density[2] != 0.0f)) {
-            //printf("pixel [%d, %d]. Channel[0]: %1.16e, Channel[1]: %1.16e, Channel[2]: %1.16e\n", udx, vdx, area_density[0], area_density[1], area_density[1]);
-        }
+        /*if ((area_density[0] != 0.0f) || (area_density[1] != 0.0f) || (area_density[2] != 0.0f)) {
+            printf("pixel [%d, %d]. Channel[0]: %1.16e, Channel[1]: %1.16e, Channel[2]: %1.16e\n", udx, vdx, area_density[0], area_density[1], area_density[1]);
+        }*/
 
         /*
         for (int i = 0; i < NUM_VOLUMES; i++) {
