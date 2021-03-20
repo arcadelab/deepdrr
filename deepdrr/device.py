@@ -310,11 +310,11 @@ class MobileCArm(object):
             device_in_world (): initial isocenter.
 
         """
+        self.move_to(isocenter=[0, 0, 0], alpha=0, beta=0, degrees=False)
         if device_in_world is None:
             assert viewpoint_in_world is not None
-            device_in_world = viewpoint_in_world - geo.vector(*self.viewpoint_in_world)
+            device_in_world = viewpoint_in_world - geo.vector(*self.viewpoint_in_arm)
         self.world_from_device = geo.FrameTransform.from_translation(device_in_world)
-        self.move_to(isocenter=[0, 0, 0], alpha=0, beta=0, degrees=False)
 
     # shape parameters
     source_height = 200
