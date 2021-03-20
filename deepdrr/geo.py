@@ -632,7 +632,7 @@ class FrameTransform(Transform):
         t = np.zeros(dim) if translation is None else np.array(translation)
 
         assert t.shape[0] == dim
-        assert R.shape == (dim, dim)
+        assert R.shape == (dim, dim), f'{dim} does not match R.shape {R.shape}'
 
         data = np.concatenate(
             [
