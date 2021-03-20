@@ -14,16 +14,6 @@ pv, pv_available = utils.try_import_pyvista()
 logger = logging.getLogger(__name__)
 
 PI = np.float32(np.pi)
-DEFAULT_MIN_ISOCENTER = [None, -100, -215]
-DEFAULT_MAX_ISOCENTER = [None, 100, 215]
-DEFAULT_MIN_ALPHA = -2 * PI / 3 # -120
-DEFAULT_MAX_ALPHA = 2 * PI / 3 # 120
-DEFAULT_MIN_BETA = -PI / 4 # -45
-DEFAULT_MAX_BETA = PI / 4 # 45
-DEFAULT_SENSOR_HEIGHT = 960
-DEFAULT_SENSOR_WIDTH = 1240
-DEFAULT_PIXEL_SIZE = 0.31
-DEFAULT_SOURCE_TO_DETECTOR_DISTANCE = 1020
 
 
 def make_detector_rotation(phi: float, theta: float, rho: float):
@@ -255,14 +245,14 @@ class MobileCArm(object):
         TODO: don't let out-of-bounds movement pass silently.
 
         Args:
-            delta_isocenter (Optional[geo.Vector3D], optional): change to the isocenter in world space (as a vector, this only matters if the scaling/rotation is different). This is the center about which rotations are performed. Defaults to None.
+            delta_isocenter (Optional[geo.Vector3D], optional): change to the isocenter in DEVICE space (as a vector, this only matters if the scaling/rotation is different). This is the center about which rotations are performed. Defaults to None.
             delta_alpha (Optional[float], optional): change in alpha. Defaults to None.
             delta_beta (Optional[float], optional): change in beta. Defaults to None.
             degrees (bool, optional): whether the given angles are in degrees. Defaults to False.
 
         """
         if delta_isocenter is not None:
-            self.isocenter += self.device_from_world @ geo.vector(delta_isocenter)
+            self.isocenter += geo.vector(delta_isocenter)
             self.isocenter = geo.point(np.clip(self.isocenter, self.min_isocenter, self.max_isocenter))
 
         if delta_alpha is not None:
