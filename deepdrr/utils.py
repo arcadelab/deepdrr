@@ -194,3 +194,16 @@ def try_import_pyvista():
         pv_available = False
 
     return pv, pv_available
+
+
+def try_import_vtk():
+    try:
+        import vtk
+        from vtk.util import numpy_support as nps
+        vtk_available = True
+    except ImportError:
+        vtk = None
+        nps = None
+        vtk_available = False
+
+    return vtk, nps, vtk_available
