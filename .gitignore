@@ -7,3 +7,4 @@ dist
 build
 docs/build
 .vscode
+**flycheck*.py
