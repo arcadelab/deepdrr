@@ -23,12 +23,17 @@ from typing import Union, Tuple, Optional, Type, List, Generic, TypeVar
 import logging
 from abc import ABC, abstractmethod
 import numpy as np
+import scipy.spatial.distance
 
 from . import vol
 from . import utils
 
 
 logger = logging.getLogger(__name__)
+
+
+# TODO:
+# [ ] decorator for methods to cast list, tuple, and numpy array inputs to the expected homogeneous object, rather than requiring the user to do it.
 
 
 def _to_homogeneous(x: np.ndarray, is_point: bool = True) -> np.ndarray:
@@ -128,6 +133,17 @@ class HomogeneousObject(ABC):
     def __setitem__(self, key, value):
         return self.data.__setitem__(key, value)
 
+    def __iter__(self):
+        return iter(np.array(self))
+
+    def get_data(self) -> np.ndarray:
+        return self.data
+
+
+def get_data(x: HomogeneousObject) -> np.ndarray:
+    assert issubclass(type(x), HomogeneousObject)
+    return x.get_data()
+
 
 class HomogeneousPointOrVector(HomogeneousObject):
     """A Homogeneous point or vector in any dimension."""
@@ -152,6 +168,21 @@ class HomogeneousPointOrVector(HomogeneousObject):
         """Return the L2 norm of the point or vector."""
         return self.norm()
 
+    def __div__(self, other):
+        return self * (1 / other)
+
+    @property
+    def x(self):
+        return self.data[0]
+
+    @property
+    def y(self):
+        return self.data[1]
+
+    @property
+    def z(self):
+        return self.data[2]
+    
 
 class Point(HomogeneousPointOrVector):
     def __init__(self, data: np.ndarray) -> None:
@@ -178,32 +209,48 @@ class Point(HomogeneousPointOrVector):
     def __sub__(
             self: Point,
             other: Point,
-    ) -> Union[Vector2D, Vector3D]:
+    ) -> Vector:
         """ Subtract two points, obtaining a vector. """
         other = self.from_any(other)
         return _point_or_vector(self.data - other.data)
 
-    def __add__(self, other):
-        """ Can add a vector to a point, but cannot add two points. """
+    def __add__(self, other: Vector):
+        """ Can add a vector to a point, but cannot add two points. TODO: cannot add points together? """
         if issubclass(type(other), Vector):
-            return type(self)(other.data + self.data)
+            return type(self)(self.data + other.data)
+        elif issubclass(type(other), Point):
+            # TODO: should points be allowed to be added together?
+            return point(np.array(self) + np.array(other))
         else:
             return NotImplemented
 
     def __radd__(self, other):
         return self + other
 
-    def __mul__(self, other):
+    def __mul__(self, other: Union[int, float]) -> Vector:
         if isinstance(other, (int, float)):
             return point(other * np.array(self))
         else:
             return NotImplemented
 
-    def __div__(self, other):
-        return self * (1 / other)
+    def __rmul__(self, other: Union[int, float]) -> Vector:
+        return self * other
 
     def __neg__(self):
         return self * (-1)
+
+    def lerp(self, other: Point, alpha: float = 0.5) -> Point:
+        """Linearly interpolate between one point and another.
+
+        Args:
+            other (Point): other point.
+            alpha (float): fraction of the distance from self to other to travel. Defaults to 0.5 (the midpoint).
+
+        Returns:
+            Point: the point that is `alpha` of the way between self and other.
+        """
+        return (1 - alpha) * self + alpha * other
+
 
 
 class Vector(HomogeneousPointOrVector):
@@ -251,7 +298,7 @@ class Vector(HomogeneousPointOrVector):
     def __sub__(self, other: Vector):
         return self + (-other)
 
-    def __rmul__(self, other: Vector):
+    def __rmul__(self, other: Union[int, float]):
         return self * other
 
     def __rsub__(self, other: Vector):
@@ -259,6 +306,52 @@ class Vector(HomogeneousPointOrVector):
 
     def __radd__(self, other: Vector):
         return self + other
+
+    def hat(self) -> Vector:
+        return self * (1 / self.norm())
+
+    def cross(self, other) -> Vector:
+        if issubclass(type(other), Vector) and self.dim == other.dim:
+            return vector(np.cross(self, other))
+        else:
+            return NotImplemented
+
+    def perpendicular(self) -> Vector3D:
+        """Find an arbitrary perpendicular vector to self.
+        
+        Borrowed from https://codereview.stackexchange.com/questions/43928/algorithm-to-get-an-arbitrary-perpendicular-vector
+
+        TODO: if the vector is 2D, return one of the other vectors in the plane, to keep it 2D.
+
+        """
+        if self.x == self.y == self.z == 0:
+            raise ValueError('zero-vector')
+
+        # If one dimension is zero, this can be solved by setting that to
+        # non-zero and the others to zero. Example: (4, 2, 0) lies in the
+        # x-y-Plane, so (0, 0, 1) is orthogonal to the plane.
+        if self.x == 0:
+            return vector(1, 0, 0)
+        if self.y == 0:
+            return vector(0, 1, 0)
+        if self.z == 0:
+            return vector(0, 0, 1)
+
+        # arbitrarily set a = b = 1
+        # then the equation simplifies to
+        #     c = -(x + y)/z
+        return vector(1, 1, -1.0 * (self.x + self.y) / self.z).hat()
+
+    def cosine_distance(self, other: Vector) -> float:
+        """Get the cosine distance between the angles.
+
+        Args:
+            other (Vector): the other vector.
+
+        Returns:
+            float: `1 - cos(angle)`, where `angle` is between self and other.
+        """
+        return scipy.spatial.distance.cosine(np.array(self), np.array(other))
 
 
 class Point2D(Point):
@@ -540,7 +633,7 @@ class FrameTransform(Transform):
         t = np.zeros(dim) if translation is None else np.array(translation)
 
         assert t.shape[0] == dim
-        assert R.shape == (dim, dim)
+        assert R.shape == (dim, dim), f'{dim} does not match R.shape {R.shape}'
 
         data = np.concatenate(
             [
@@ -691,6 +784,15 @@ def frame_transform(*args) -> FrameTransform:
             raise TypeError(f'could not parse FrameTransfrom from [R, t]: [{args[0]}, {args[1]}]')
     else:
         raise TypeError(f"too many arguments: {args}")
+
+
+RAS_from_LPS = FrameTransform(np.array([
+    [-1, 0, 0, 0],
+    [0, -1, 0, 0],
+    [0, 0, 1, 0],
+    [0, 0, 0, 1]]))
+
+LPS_from_RAS = RAS_from_LPS.inv
 
 
 class CameraIntrinsicTransform(FrameTransform):
@@ -890,8 +992,7 @@ class CameraProjection(Transform):
     def sensor_height(self) -> int:
         return self.intrinsic.sensor_height
 
-    @property
-    def center_in_world(self) -> Point3D:
+    def get_center_in_world(self) -> Point3D:
         """Get the center of the camera (origin of camera3d frame) in world coordinates.
 
         That is, get the translation vector of the world_from_camera3d FrameTransform
@@ -904,6 +1005,10 @@ class CameraProjection(Transform):
 
         world_from_camera3d = self.camera3d_from_world.inv
         return world_from_camera3d(point(0, 0, 0))
+
+    @property
+    def center_in_world(self) -> Point3D:
+        return self.get_center_in_world()
 
     def get_center_in_volume(self, volume: vol.Volume) -> Point3D:
         """Get the camera center in IJK-space.

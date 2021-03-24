@@ -92,9 +92,9 @@ T = TypeVar('T')
 
 def tuplify(t: Union[Tuple[T,...], T], n: int = 1) -> Tuple[T,...]:
     """ Create a tuple with `n` copies of `t`,  if `t` is not already a tuple of length `n`."""
-    if isinstance(t, Tuple):
+    if isinstance(t, (tuple, list)):
         assert len(t) == n
-        return t
+        return tuple(t)
     else:
         return tuple(t for _ in range(n))
 
@@ -171,7 +171,7 @@ def neglog(image: np.ndarray, epsilon: float = 0.01) -> np.ndarray:
     image_max = image.max(axis=(1, 2), keepdims=True)
     if np.any(image_max == image_min):
         logger.warning(f'mapping constant image to 0. This probably indicates the projector is pointed away from the volume.')
-        image.fill(0) # TODO(killeen): for multiple images, only fill the bad ones
+        image[:] = 0 # TODO(killeen): for multiple images, only fill the bad ones
         if image.shape[0] > 1:
             logger.error('TODO: zeroed all images, even though only one might be bad.')
     else:
@@ -184,3 +184,26 @@ def neglog(image: np.ndarray, epsilon: float = 0.01) -> np.ndarray:
         return image[0]
     else:
         return image
+
+def try_import_pyvista():
+    try:
+        import pyvista as pv
+        pv_available = True
+    except ImportError:
+        pv = None
+        pv_available = False
+
+    return pv, pv_available
+
+
+def try_import_vtk():
+    try:
+        import vtk
+        from vtk.util import numpy_support as nps
+        vtk_available = True
+    except ImportError:
+        vtk = None
+        nps = None
+        vtk_available = False
+
+    return vtk, nps, vtk_available
