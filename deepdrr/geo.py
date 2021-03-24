@@ -801,7 +801,7 @@ class CameraIntrinsicTransform(FrameTransform):
 
     def __init__(self, data: np.ndarray) -> None:
         super().__init__(data)
-        assert self.data.shape == (3,3), f'unrecognized shape: {self.data.shape}'
+        assert self.data.shape == (3, 3), f'unrecognized shape: {self.data.shape}'
 
     @classmethod
     def from_parameters(
