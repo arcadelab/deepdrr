@@ -8,6 +8,7 @@ import logging
 import numpy as np
 from pathlib import Path
 import nibabel as nib
+from pydicom.filereader import dcmread, InvalidDicomError
 
 from . import load_dicom
 from . import geo
@@ -56,7 +57,7 @@ class Volume(object):
     ):
         """Create a volume object with a segmentation of the materials, with its own anatomical coordinate space, from parameters.
 
-        Note that the anatomical coordinate system is not the world coordinate system (which is cartesion). 
+        Note that the anatomical coordinate system is not the world coordinate system (which is cartesian).
         
         Suggested anatomical coordinate space units is milimeters. 
         A helpful introduction to the geometry is can be found [here](https://www.slicer.org/wiki/Coordinate_systems).
@@ -75,7 +76,7 @@ class Volume(object):
 
         assert spacing.dim == 3
 
-        # define anatomical_from_indices FrameTransform
+        # define anatomical_from_ijk FrameTransform
         if anatomical_coordinate_system is None or anatomical_coordinate_system == 'none':
             anatomical_from_ijk = geo.FrameTransform.from_scaling(scaling=spacing, translation=origin)
         elif anatomical_coordinate_system == 'LPS':
@@ -159,11 +160,102 @@ class Volume(object):
 
     @classmethod
     def from_dicom(
-        cls,
-        path: Union[str, Path],
-    ) -> Volume:
-        """Create the volume from a DICOM file."""
-        raise NotImplementedError('load a volume from a dicom file')
+            cls,
+            path: Path,
+            origin: geo.Point3D = None,
+            use_thresholding: bool = True,
+            world_from_anatomical: Optional[geo.FrameTransform] = None,
+            use_cached: bool = True,
+            cache_dir: Optional[Path] = None
+    ):
+        """
+        load a volume from a dicom file and set the anatomical_from_ijk transform from metadata
+        https://www.slicer.org/wiki/Coordinate_systems
+        Args:
+            path:
+            use_thresholding:
+            world_from_anatomical:
+            use_cached:
+            cache_dir:
+
+        Returns:
+
+        """
+        path = Path(path)
+        stem = path.name.split('.')[0]
+
+        if cache_dir is None:
+            cache_dir = path.parent
+
+        # Multi-frame dicoms store all slices of a volume in one file.
+        # they must specify the necessary dicom tags under
+        # https://dicom.innolitics.com/ciods/enhanced-ct-image/enhanced-ct-image-multi-frame-functional-groups
+        assert path.is_file(), 'Currently only multi-frame dicoms are supported. Path must refer to a file.'
+        logger.info(f'loading Dicom volume from {path}')
+
+        # reading the dicom dataset object
+        ds = dcmread(path)
+        hu_values = np.array(ds.pixel_array, dtype=np.float32)
+
+        # normalize with intercept value (dicom could historically only save unsigned so an offset is applied)
+        RescaleIntercept = ds.SharedFunctionalGroupsSequence[0].PixelValueTransformationSequence[0].RescaleIntercept
+        hu_values += float(RescaleIntercept)
+
+        # transform the volume in HU to densities
+        data = load_dicom.conv_hu_to_density(hu_values)
+
+        # analogous to nifti
+        if use_thresholding:
+            materials_path = cache_dir / f'{stem}_materials_thresholding.npz'
+            if use_cached and materials_path.exists():
+                logger.info(f'found materials segmentation at {materials_path}.')
+                materials = dict(np.load(materials_path))
+            else:
+                logger.info(f'segmenting materials in volume')
+                materials = load_dicom.conv_hu_to_materials_thresholding(hu_values)
+                np.savez(materials_path, **materials)
+        else:
+            materials_path = cache_dir / f'{stem}_materials.npz'
+            if use_cached and materials_path.exists():
+                logger.info(f'found materials segmentation at {materials_path}.')
+                materials = dict(np.load(materials_path))
+            else:
+                logger.info(f'segmenting materials in volume')
+                materials = load_dicom.conv_hu_to_materials(hu_values)
+                np.savez(materials_path, **materials)
+
+        # extracting the necessary tags
+        di = float(ds[0x5200, 0x9229][0][0x0028, 0x9110][0][0x0028, 0x0030].value[0])
+        dj = float(ds[0x5200, 0x9229][0][0x0028, 0x9110][0][0x0028, 0x0030].value[1])
+        voxel_size[2] = float(ds[0x5200, 0x9229][0][0x0028, 0x9110][0][0x0018, 0x0050].value)
+        num_slices = int(ds[0x0028, 0x0008].value)  # [1]
+        R = np.array(ds[0x5200, 0x9229][0][0x0020, 0x9116][0][0x0020, 0x0037].value[:3])  # [2]
+        C = np.array(ds[0x5200, 0x9229][0][0x0020, 0x9116][0][0x0020, 0x0037].value[3:])  # [2]
+        T = np.array([np.array(ds[0x5200, 0x9230][i][0x0020, 0x9113][0][0x0020, 0x0032].value) for i in
+                      range(num_slices)])  # [3]
+        # [1] number of slices https://dicom.innolitics.com/ciods/enhanced-ct-image/enhanced-ct-image-multi-frame-functional-groups/00280008
+        # [2] image orientation https://dicom.innolitics.com/ciods/enhanced-ct-image/enhanced-ct-image-multi-frame-functional-groups/52009229/00209116/00200037
+        # [3] image position https://dicom.innolitics.com/ciods/enhanced-ct-image/enhanced-ct-image-multi-frame-functional-groups/52009230/00209113/00200032
+
+        # constructing the affine after https://mrohleder.medium.com/coordinate-systems-in-medical-data-science-a-rant-90394f60b27
+
+        # column 0 is direction cosine for changes in row index
+        # column 1 is direction cosine for changes in column index
+
+        rotation = [
+            [spacing[0], 0, 0],
+            [0, 0, spacing[2]],
+            [0, -spacing[1], 0],
+        ]  # is actually rotation + (an)isotropic scaling
+        anatomical_from_ijk = geo.FrameTransform.from_rt(rotation=rotation, translation=-origin)
+
+        # calling the standard constructor
+        return cls(
+            data,
+            materials,
+            anatomical_from_ijk,
+            world_from_anatomical,
+        )
 
     def to_dicom(self, path: Union[str, Path]):
         """Write the volume to a DICOM file.
