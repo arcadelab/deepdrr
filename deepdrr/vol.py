@@ -8,6 +8,7 @@ import logging
 import numpy as np
 from pathlib import Path
 import nibabel as nib
+from nibabel.nicom.dicomwrappers import MultiframeWrapper
 from pydicom.filereader import dcmread, InvalidDicomError
 
 from . import load_dicom
@@ -204,7 +205,7 @@ class Volume(object):
         # transform the volume in HU to densities
         data = load_dicom.conv_hu_to_density(hu_values)
 
-        # analogous to nifti
+        # obtain materials analogous to nifti
         if use_thresholding:
             materials_path = cache_dir / f'{stem}_materials_thresholding.npz'
             if use_cached and materials_path.exists():
@@ -224,32 +225,11 @@ class Volume(object):
                 materials = load_dicom.conv_hu_to_materials(hu_values)
                 np.savez(materials_path, **materials)
 
-        # extracting the necessary tags
-        di = float(ds[0x5200, 0x9229][0][0x0028, 0x9110][0][0x0028, 0x0030].value[0])
-        dj = float(ds[0x5200, 0x9229][0][0x0028, 0x9110][0][0x0028, 0x0030].value[1])
-        voxel_size[2] = float(ds[0x5200, 0x9229][0][0x0028, 0x9110][0][0x0018, 0x0050].value)
-        num_slices = int(ds[0x0028, 0x0008].value)  # [1]
-        R = np.array(ds[0x5200, 0x9229][0][0x0020, 0x9116][0][0x0020, 0x0037].value[:3])  # [2]
-        C = np.array(ds[0x5200, 0x9229][0][0x0020, 0x9116][0][0x0020, 0x0037].value[3:])  # [2]
-        T = np.array([np.array(ds[0x5200, 0x9230][i][0x0020, 0x9113][0][0x0020, 0x0032].value) for i in
-                      range(num_slices)])  # [3]
-        # [1] number of slices https://dicom.innolitics.com/ciods/enhanced-ct-image/enhanced-ct-image-multi-frame-functional-groups/00280008
-        # [2] image orientation https://dicom.innolitics.com/ciods/enhanced-ct-image/enhanced-ct-image-multi-frame-functional-groups/52009229/00209116/00200037
-        # [3] image position https://dicom.innolitics.com/ciods/enhanced-ct-image/enhanced-ct-image-multi-frame-functional-groups/52009230/00209113/00200032
+        # extracting lps_from_ijk
+        wrapped_dicom = MultiframeWrapper(ds)
+        anatomical_from_ijk = geo.FrameTransform(wrapped_dicom.affine)  # verify that this method works
 
-        # constructing the affine after https://mrohleder.medium.com/coordinate-systems-in-medical-data-science-a-rant-90394f60b27
-
-        # column 0 is direction cosine for changes in row index
-        # column 1 is direction cosine for changes in column index
-
-        rotation = [
-            [spacing[0], 0, 0],
-            [0, 0, spacing[2]],
-            [0, -spacing[1], 0],
-        ]  # is actually rotation + (an)isotropic scaling
-        anatomical_from_ijk = geo.FrameTransform.from_rt(rotation=rotation, translation=-origin)
-
-        # calling the standard constructor
+        # constructing the volume
         return cls(
             data,
             materials,
