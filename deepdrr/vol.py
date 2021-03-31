@@ -8,7 +8,6 @@ import logging
 import numpy as np
 from pathlib import Path
 import nibabel as nib
-from nibabel.nicom.dicomwrappers import MultiframeWrapper
 from pydicom.filereader import dcmread, InvalidDicomError
 
 from . import load_dicom
@@ -196,11 +195,39 @@ class Volume(object):
 
         # reading the dicom dataset object
         ds = dcmread(path)
-        hu_values = np.array(ds.pixel_array, dtype=np.float32)
 
-        # normalize with intercept value (dicom could historically only save unsigned so an offset is applied)
-        RescaleIntercept = ds.SharedFunctionalGroupsSequence[0].PixelValueTransformationSequence[0].RescaleIntercept
-        hu_values += float(RescaleIntercept)
+        # extracting all needed tags TODO add try exepts
+        frames = ds.PerFrameFunctionalGroupsSequence
+        shared = ds.SharedFunctionalGroupsSequence[0]
+        num_slices = len(frames)
+        first_slice_position = np.array(frames[0].PlanePositionSequence[0].ImagePositionPatient)
+        last_slice_position = np.array(frames[-1].PlanePositionSequence[0].ImagePositionPatient)
+        RC = np.array(shared.PlaneOrientationSequence[0].ImageOrientationPatient).reshape(2, 3).T
+        PixelSpacing = np.array(ds.SharedFunctionalGroupsSequence[0].PixelMeasuresSequence[0].PixelSpacing)
+        SliceThickness = np.array(ds.SharedFunctionalGroupsSequence[0].PixelMeasuresSequence[0].SliceThickness)
+        offset = ds.SharedFunctionalGroupsSequence[0].PixelValueTransformationSequence[0].RescaleIntercept
+        scale = ds.SharedFunctionalGroupsSequence[0].PixelValueTransformationSequence[0].RescaleSlope
+
+        # make user aware that this is only tested on windows
+        if ds.Manufacturer != "SIEMENS":
+            logger.warning("Multi-frame loading has only been tested on Siemens Enhanced CT DICOMs."
+                           "Please verify everything works as expected.")
+
+        # read the 'raw' data array
+        raw_data = ds.pixel_array.astype(np.float32)
+        hu_values = raw_data * scale + offset
+
+        # move slice index axis to back (k, j, i) -> (j, i, k)
+        hu_values = hu_values.transpose((1, 2, 0))
+
+        '''
+        EXPLANATION
+        
+        According to dicom (C.7.6.3.1.4 - Pixel Data) slices are of shape (Rows, Columns) 
+        => must be (j, i) indexed if we define i == horizontal and j == vertical.
+        This is taken care of in the definition of the affine transform 
+        Further reading: https://nipy.org/nibabel/dicom/dicom_orientation.html#i-j-columns-rows-in-dicom
+        '''
 
         # transform the volume in HU to densities
         data = load_dicom.conv_hu_to_density(hu_values)
@@ -225,15 +252,40 @@ class Volume(object):
                 materials = load_dicom.conv_hu_to_materials(hu_values)
                 np.savez(materials_path, **materials)
 
-        # extracting lps_from_ijk
-        wrapped_dicom = MultiframeWrapper(ds)
-        anatomical_from_ijk = geo.FrameTransform(wrapped_dicom.affine)  # verify that this method works
+        # manually composing affine transform lps_from_ijk
+
+        # construct column for index k
+        k = np.array((last_slice_position - first_slice_position) / num_slices).reshape(3, 1)
+
+        # check if the calculated increment matches the SliceThickness (allow .1 millimeters deviations)
+        assert np.allclose(np.abs(k[2]), SliceThickness, atol=0.1, rtol=0)
+
+        # flip because dicom convention indexes a slice as [Columns, Rows]. see explanation above
+        CR = np.fliplr(RC)
+        CR_scaled = CR * PixelSpacing
+
+        # construct rotation matrix from three columns for (j, i, k)
+        rot = np.hstack((CR_scaled, k))
+
+        # construct affine matrix
+        affine = np.zeros((4, 4))
+        affine[:3, :3] = rot
+        affine[:3, 3] = first_slice_position
+        affine[3, 3] = 1
+
+        # log affine matrix in debug mode
+        logger.debug(f"manually constructed affine matrix: \n{affine}")
+        logger.debug(
+            f"volume_center_xyz : {np.mean([affine @ np.array([*data.shape, 1]), affine @ [0, 0, 0, 1]], axis=0)}")
+
+        # cast to FrameTransform
+        lps_from_ijk = geo.FrameTransform(affine)
 
         # constructing the volume
         return cls(
             data,
             materials,
-            anatomical_from_ijk,
+            lps_from_ijk,
             world_from_anatomical,
         )
 
