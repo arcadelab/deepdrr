@@ -185,7 +185,7 @@ class MobileCArm(object):
     @property
     def device_from_arm(self) -> geo.FrameTransform:
         # First, rotate points, then translate back by the isocenter.
-        rot = Rotation.from_euler('XY', [self.alpha, self.beta]).as_matrix()
+        rot = Rotation.from_euler('xy', [self.alpha, self.beta]).as_matrix()
         return geo.FrameTransform.from_rt(rot, self.isocenter)
 
     @property
