@@ -162,24 +162,23 @@ class Volume(object):
     def from_dicom(
             cls,
             path: Path,
-            origin: geo.Point3D = None,
             use_thresholding: bool = True,
             world_from_anatomical: Optional[geo.FrameTransform] = None,
             use_cached: bool = True,
             cache_dir: Optional[Path] = None
     ):
         """
-        load a volume from a dicom file and set the anatomical_from_ijk transform from metadata
+        load a volume from a dicom file and compute the anatomical_from_ijk transform from metadata
         https://www.slicer.org/wiki/Coordinate_systems
         Args:
-            path:
-            use_thresholding:
-            world_from_anatomical:
-            use_cached:
-            cache_dir:
+            path: path-like to a multi-frame dicom file. (Currently only Multi-Frame from Siemens supported)
+            use_thresholding (bool, optional): segment the materials using thresholding (faster but less accurate). Defaults to True.
+            world_from_anatomical (Optional[geo.FrameTransform], optional): position the volume in world space. If None, uses identity. Defaults to None.
+            use_cached (bool, optional): [description]. Use a cached segmentation if available. Defaults to True.
+            cache_dir (Optional[Path], optional): Where to load/save the cached segmentation. If None, use the parent dir of `path`. Defaults to None.
 
         Returns:
-
+            Volume: an instance of a deepdrr volume
         """
         path = Path(path)
         stem = path.name.split('.')[0]
@@ -253,7 +252,6 @@ class Volume(object):
                 np.savez(materials_path, **materials)
 
         # manually composing affine transform lps_from_ijk
-
         # construct column for index k
         k = np.array((last_slice_position - first_slice_position) / num_slices).reshape(3, 1)
 
