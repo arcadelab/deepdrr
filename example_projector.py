@@ -19,7 +19,7 @@ logger = logging.getLogger(__name__)
 
 def main():
     volume = np.zeros((120, 100, 80), dtype=np.float32)
-    volume[:, :, 30:50] = 1
+    volume[10:110, 10:90, 30:50] = 1
 
     materials = {}
     materials["air"] = volume == 0
@@ -45,22 +45,27 @@ def main():
 
     materials = {}
     # CHOOSE ONE OF THE BELOW OPTIONS
+    null_test = False
     air_test = False
     soft_test = True
     bone_test = False
     
-    if air_test:
-        assert (not soft_test) and (not bone_test)
+    if null_test:
+        assert (not air_test) and (not soft_test) and (not bone_test)
+        print("NULL TEST")
+        volume = 0 * volume
+    elif air_test:
+        assert (not null_test) and (not soft_test) and (not bone_test)
         print("AIR TEST")
-        materials["air"] = (volume == 1) # everywhere else is the null segmentation
+        materials["air"] = (volume == 1).copy() # everywhere else is the null segmentation
         volume = 0 * volume
     elif soft_test:
-        assert (not air_test) and (not bone_test)
+        assert (not null_test) and (not air_test) and (not bone_test)
         print("SOFT TISSUE TEST")
         materials["soft tissue"] = (volume == 1) # everywhere else is the null segmentation
     else:
         print("BONE TEST")
-        assert bone_test
+        assert (not null_test) and (not air_test) and (not soft_test)
         materials["bone"] = (volume == 1) # everywhere else is the null segmentation
         volume = 2 * volume
     
@@ -101,7 +106,8 @@ def main():
 
     t = time()
     with Projector(
-        volume=[(volume0, 0), (volume1, 0)],
+        volume=[volume0, volume1],
+        priorities=None, # default, equivalent to priorities=[1, 0]
         camera_intrinsics=camera_intrinsics,
         carm=carm,
         step=0.1, # stepsize along projection ray, measured in voxels

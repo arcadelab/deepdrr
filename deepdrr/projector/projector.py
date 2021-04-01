@@ -60,7 +60,8 @@ def _get_kernel_projector_module(num_volumes, num_materials) -> SourceModule:
 class Projector(object):
     def __init__(
         self,
-        volume: Union[vol.Volume, List[Tuple[vol.Volume, int]]],
+        volume: Union[vol.Volume, List[vol.Volume]],
+        priorities: Optional[List[int]] = None,
         camera_intrinsics: Optional[geo.CameraIntrinsicTransform] = None,
         carm: Optional[MobileCArm] = None,
         step: float = 0.1,
@@ -85,10 +86,11 @@ class Projector(object):
         ```
 
         Args:
-            volume (Union[Volume, List[Tuple[Volume,int]]]): a volume object with materials segmented. If multiple volumes are provided, they should have mutually exclusive materials (not checked). 
-                                Additionally, when multiple volumes are provided, each volume must be accompanied with an integer in the interval [0, NUM_VOLUMES) denoting the 'priority' of the volume.
-                                A volume's priority is used to determine which volumes to sample from for each given location if multiple volumes overlap at that location. The lower numerical value a
-                                priority is, the higher-priority the associated volume is. Note that multiple volumes can share a priority (for example, splicing volumes taken from a CT of a single person).
+            volume (Union[Volume, List[Volume]]): a volume object with materials segmented, or a list of volume objects.
+            priorities (Optional[List[int]], optional): Denotes the 'priority level' of the volumes in projection. At each position, if volumes with lower priority-integers are sampled from as long as they have a non-null 
+                                segmentation at that location. valid priority levels are in the range [0, NUM_VOLUMES), with priority 0 being prioritized over other priority levels. Note that multiple volumes can share a 
+                                priority level.  If a list of priorities is provided, the priorities are associated in-order to the provided volumes.  If no list is provided (the default), the volumes are assumed to have
+                                distinct priority levels, and each volume is prioritized over the preceding volumes. (This behavior is equivalent to passing in the list: [NUM_VOLUMES - 1, ..., 1, 0].)
             camera_intrinsics (CameraIntrinsicTransform): intrinsics of the projector's camera. (used for sensor size). If None, the CArm object must be provided and have a camera_intrinsics attribute. Defaults to None.
             carm (Optional[MobileCArm], optional): Optional C-arm device, for convenience which can be used to get projections from C-Arm pose. If not provided, camera pose must be defined by user. Defaults to None.
             step (float, optional): size of the step along projection ray in voxels. Defaults to 0.1.
@@ -108,12 +110,17 @@ class Projector(object):
         volume = utils.listify(volume)
         self.volumes = []
         self.priorities = []
-        for vp_tuple in volume:
-            assert isinstance(vp_tuple[0], vol.Volume)
-            assert isinstance(vp_tuple[1], int), "missing priority, or priority is not an integer"
-            assert (0 <= vp_tuple[1]) and (vp_tuple[1] < len(volume)), "invalid priority outside range [0, NUM_VOLUMES)"
-            self.volumes.append(vp_tuple[0])
-            self.priorities.append(vp_tuple[1])
+        for _vol in volume:
+            assert isinstance(_vol, vol.Volume)
+            self.volumes.append(_vol)
+        if priorities is None:
+            self.priorities = [len(self.volumes) - 1 - i for i in range(len(self.volumes))]
+        for prio in priorities:
+            assert isinstance(prio, int), "missing priority, or priority is not an integer"
+            assert (0 <= prio) and (prio < len(volume)), "invalid priority outside range [0, NUM_VOLUMES)"
+            self.priorities.append(prio)
+        assert len(self.volumes) == len(self.priorities)
+
         self.camera_intrinsics = camera_intrinsics
         self.carm = carm
         self.step = step

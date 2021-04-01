@@ -4,10 +4,13 @@
 #include "project_kernel_data.cu"
 
 #define UPDATE(multiplier, vol_id, mat_id) do {\
-    /* param 'weight' is the 1.0f/(number of volumes at curr_priority) */\
-    /*adiatl[(mat_id)] = (multiplier) * tex3D(VOLUME(vol_id), px[vol_id], py[vol_id], pz[vol_id]) * seg_at_alpha[vol_id][mat_id] * volume_normalization_factor[vol_id];*/\
+    /* param. weight is set to 1.0f / (float)n_vols_at_curr_priority */\
+    if (1.0f == tex3D(VOLUME(vol_id), px[vol_id], py[vol_id], pz[vol_id])) {\
+        if (seg_at_alpha[vol_id][1] != 1.0f) {\
+            printf("pos: {%f, %f, %f}. volume_%d == 1, seg_at_alpha[%d][1] != 1.0f\n", px[vol_id], py[vol_id], pz[vol_id], vol_id, vol_id);\
+        }\
+    }\
     area_density[(mat_id)] += (multiplier) * tex3D(VOLUME(vol_id), px[vol_id], py[vol_id], pz[vol_id]) * seg_at_alpha[vol_id][mat_id] * volume_normalization_factor[vol_id] * weight;\
-    output_for_vol[(vol_id)][(mat_id)] += (multiplier) * tex3D(VOLUME(vol_id), px[vol_id], py[vol_id], pz[vol_id]) * seg_at_alpha[vol_id][mat_id] * volume_normalization_factor[vol_id];\
 } while (0)
 
 #define GET_POSITION_FOR_VOL(vol_id) do {\
@@ -20,9 +23,6 @@
 
 #define LOAG_SEGS_FOR_VOL_MAT(vol_id, mat_id) do {\
     seg_at_alpha[vol_id][mat_id] = round(cubicTex3D(SEG(vol_id, mat_id), px[vol_id], py[vol_id], pz[vol_id]));\
-    /*if (seg_at_alpha[vol_id][mat_id] > 0.0f) {\
-        printf("at position {%f, %f, %f}, seg_at_alpha[%d][%d]=%f > 0.0f\n", px[vol_id], py[vol_id], pz[vol_id], vol_id, mat_id, seg_at_alpha[vol_id][mat_id]);\
-    }*/\
 } while (0)
 
 #if NUM_MATERIALS == 1
@@ -184,22 +184,7 @@
 } while (0)
 #elif NUM_VOLUMES == 2
 #define LOAD_SEGS_AT_ALPHA do {\
-    if (do_trace[0]) {\
-        GET_POSITION_FOR_VOL(0);\
-        LOAD_SEGS_FOR_VOL(0);\
-        /*int has_nonzero_seg = 0;\
-        for (int __m = 0; __m < NUM_MATERIALS; __m++) {\
-            if (seg_at_alpha[0][__m] > 0.0f) {\
-                has_nonzero_seg = 1;\
-                printf("at position {%f, %f, %f}, seg_at_alpha[%d][%d]=%f > 0.0f\n", px[0], py[0], pz[0], 0, __m, seg_at_alpha[0][__m]);\
-                break;\
-            }\
-        }\
-        if (!has_nonzero_seg) {\
-           THIS NEVER TRIGGERED\
-            printf("at position {%f, %f, %f}, no non-zero seg for volume0\n", px[0], py[0], pz[0]);\
-        }*/\
-    }\
+    if (do_trace[0]) { GET_POSITION_FOR_VOL(0); LOAD_SEGS_FOR_VOL(0); }\
     if (do_trace[1]) { GET_POSITION_FOR_VOL(1); LOAD_SEGS_FOR_VOL(1); }\
 } while (0)
 #elif NUM_VOLUMES == 3
@@ -210,7 +195,7 @@
 } while (0)
 #else
 #define LOAD_SEGS_AT_ALPHA do {\
-    fprintf(stderr, "CALCULATE_RAYS not supported for NUM_VOLUMES outside [1, 3]");\
+    fprintf(stderr, "LOAD_SEGS_AT_ALPHA not supported for NUM_VOLUMES outside [1, 3]");\
 } while (0)
 #endif
 
@@ -373,8 +358,8 @@
 } while (0)
 #elif NUM_VOLUMES == 2
 #define INTERPOLATE(multiplier) do {\
-    if (do_trace[0] && (priority[0] == curr_priority)) { /*printf("interp0: alpha=%f, pixel=[%d,%d]\n", alpha, udx, vdx);*/ INTERPOLATE_FOR_VOL(multiplier, 0); }\
-    if (do_trace[1] && (priority[1] == curr_priority)) { /*printf("interp1: alpha=%f, pixel=[%d,%d]\n", alpha, udx, vdx);*/ INTERPOLATE_FOR_VOL(multiplier, 1); }\
+    if (do_trace[0] && (priority[0] == curr_priority)) { INTERPOLATE_FOR_VOL(multiplier, 0); }\
+    if (do_trace[1] && (priority[1] == curr_priority)) { INTERPOLATE_FOR_VOL(multiplier, 1); }\
 } while (0)
 #elif NUM_VOLUMES == 3
 #define INTERPOLATE(multiplier) do {\
@@ -491,12 +476,12 @@
     for (int i = 0; i < NUM_VOLUMES; i++) {\
         if (0 == do_trace[i]) { continue; }\
         if ((alpha < minAlpha[i]) || (alpha > maxAlpha[i])) { continue; }\
-        float total_seg = 0.0f;\
+        float any_seg = 0.0f;\
         for (int m = 0; m < NUM_MATERIALS; m++) {\
-            total_seg += seg_at_alpha[i][m];\
-            if (total_seg > 0.0f) { break; }\
+            any_seg += seg_at_alpha[i][m];\
+            if (any_seg > 0.0f) { break; }\
         }\
-        if (0.0f == total_seg) { continue; }\
+        if (0.0f == any_seg) { continue; }\
 \
         if (priority[i] < curr_priority) {\
             curr_priority = priority[i];\
@@ -560,9 +545,41 @@ extern "C" {
 
         if ((0 == udx) && (0 == vdx)) {
             for (int i = 0; i < NUM_VOLUMES; i++) {
-                printf("priority #%d: %d\n", i, priority[i]);
+                printf(
+                    "priority #%d: %d\n\tbounds #%d: [%f, %f], [%f, %f], [%f, %f]\n", 
+                    i, priority[i], i, 
+                    gVolumeEdgeMinPointX[i], gVolumeEdgeMaxPointX[i], 
+                    gVolumeEdgeMinPointY[i], gVolumeEdgeMaxPointY[i], 
+                    gVolumeEdgeMinPointZ[i], gVolumeEdgeMaxPointZ[i]
+                );
             }
         }
+
+        /*if ((0 == udx) && (0 == vdx)) {
+            // test cubicTex3D around edges of volume1. volume1 is ones for slice [40:80, 40:60, 30:50]
+            float x_min = 40.f;// + gVolumeEdgeMinPointX[1];
+            float x_max = 80.f;// + gVolumeEdgeMinPointX[1];
+            float y_min = 40.f;// + gVolumeEdgeMinPointY[1];
+            float y_max = 60.f;// + gVolumeEdgeMinPointY[1];
+            float z_min = 30.f;// + gVolumeEdgeMinPointZ[1];
+            float z_max = 50.f;// + gVolumeEdgeMinPointZ[1];
+
+            for (float x = x_min; x <= x_max; x += 0.5) {
+                for (float y = y_min; y <= y_max; y += 0.5) {
+                    for (float z = z_min; z <= z_max; z += 0.5) {
+                        float seg_0_val = cubicTex3D(seg_1_0, x, y, z);
+                        float seg_1_val = cubicTex3D(seg_1_1, x, y, z);
+
+                        if (seg_0_val > 0.5f) {
+                            printf("volume1, seg0 == %f > 0.5 in non-null section\n", seg_0_val);
+                        }
+                        if (seg_1_val < 0.5f) {
+                            printf("volume1, seg1 == %f < 0.5 in non-null section: {%f, %f, %f}\n", seg_1_val, x, y, z);
+                        }
+                    }
+                }
+            }
+        }*/
 
         // cell-centered sampling point corresponding to pixel index, in index-space.
         float u = (float) udx + 0.5;
@@ -585,10 +602,6 @@ extern "C" {
         float globalMinAlpha = INFINITY; // the smallest of all the minAlpha's
         float globalMaxAlpha = 0.0f; // the largest of all the maxAlpha's
         CALCULATE_ALPHAS;
-
-        if (do_trace[1] && !do_trace[0]) {
-            printf("Huh? tracing volume1 but not volume0. pixel: [%d,%d]\n", udx, vdx);
-        }
 
         if ((600 == udx) && (400 == vdx)) {
             for (int i = 0; i < NUM_VOLUMES; i++) {
@@ -626,55 +639,26 @@ extern "C" {
         float alpha; // distance along ray (alpha = globalMinAlpha + step * t)
         float boundary_factor; // factor to multiply at boundary
         int curr_priority; // the priority at the location
-        int n_vols_at_curr_priority; // how many volumes to consider at the location
-        float adiatl[NUM_MATERIALS]; // area_density increment at this location
+        int n_vols_at_curr_priority;//B[NUM_MATERIALS]; // how many volumes to consider at the location (for each material)
         float seg_at_alpha[NUM_VOLUMES][NUM_MATERIALS];
-
-        float output_for_vol[NUM_VOLUMES][NUM_MATERIALS];
-        for (int i = 0; i < NUM_VOLUMES; i++) for (int m = 0; m < NUM_MATERIALS; m++) output_for_vol[i][m] = 0.0f;
 
         for (alpha = globalMinAlpha; alpha < globalMaxAlpha; alpha += step) {
             LOAD_SEGS_AT_ALPHA; // initializes p{x,y,z}[...] and seg_at_alpha[...][...]
-            if (do_trace[0]) {
-                for (int mat = 0; mat < NUM_MATERIALS; mat++) {
-                    if (0.5f > seg_at_alpha[0][mat]) {
-                        //Bprintf("alpha=%f, p={%f, %f, %f}, round(cubicTex3D(seg_0_%d, ...))=%.10e\n", alpha, px[0], py[0], pz[0], mat, seg_at_alpha[0][mat]);
-                    }
-                }
-            }
             GET_PRIORITY_AT_ALPHA;
             if (0 == n_vols_at_curr_priority) {
                 // Outside the bounds of all volumes to trace. Assume nominal density of air is 0.0f.
                 // Thus, we don't need to add to area_density
                 ;
             } else {
-                float weight = 1.0f / ((float) n_vols_at_curr_priority); // each volume contributes WEIGHT to the area_density
-                
+                float weight = 1.0f / ((float)n_vols_at_curr_priority);
+
                 // For the entry boundary, multiply by 0.5. That is, for the initial interpolated value,
                 // only a half step-size is considered in the computation. For the second-to-last interpolation
                 // point, also multiply by 0.5, since there will be a final step at the globalMaxAlpha boundary.
                 boundary_factor = ((alpha <= globalMinAlpha) || (alpha + step >= globalMaxAlpha)) ? 0.5f : 1.0f;
 
                 INTERPOLATE(boundary_factor);
-                for (int m = 0; m < NUM_MATERIALS; m++) {
-                    //BAarea_density[m] += adiatl[m] * weight;
-                }
             }
-        }
-
-        if ((area_density[0] > 0.0f) || (area_density[1] > 0.0f)) {
-            /*Bprintf(
-                "after loop: a_d[0]=%.6e, a_d[1]=%.6e\n"
-                "\toutput_for_vol[%d][%d]=%.6e\n"
-                "\toutput_for_vol[%d][%d]=%.6e\n"
-                "\toutput_for_vol[%d][%d]=%.6e\n"
-                "\toutput_for_vol[%d][%d]=%.6e\n",
-                area_density[0], area_density[1],
-                0, 0, output_for_vol[0][0],
-                0, 1, output_for_vol[0][1],
-                1, 0, output_for_vol[1][0],
-                1, 1, output_for_vol[1][1]
-            );*/
         }
 
         // Scaling by step
@@ -687,18 +671,17 @@ extern "C" {
             alpha -= step;
             float lastStepsize = globalMaxAlpha - alpha;
 
+            LOAD_SEGS_AT_ALPHA; // TODO: are this line and the next (both macros) necessary?
             GET_PRIORITY_AT_ALPHA;
             if (0 == n_vols_at_curr_priority) {
                 // Outside the bounds of all volumes to trace. Assume nominal density of air is 0.0f.
                 // Thus, we don't need to add to area_density
                 ;
             } else {
-                float weight = 1.0f / ((float) n_vols_at_curr_priority); // each volume contributes WEIGHT to the area_density
+                float weight = 1.0f / ((float)n_vols_at_curr_priority);
+
                 // Scaled last step interpolation (something weird?)
                 INTERPOLATE(lastStepsize);
-                for (int m = 0; m < NUM_MATERIALS; m++) {
-                    //BAarea_density[m] += adiatl[m] * weight;
-                }
             }
         }
 
@@ -706,68 +689,6 @@ extern "C" {
         for (int m = 0; m < NUM_MATERIALS; m++) {
             area_density[m] /= 10.0f;
         }
-
-        /*if (area_density[1] == 0.0f) {
-            printf("pixel [%d, %d]. Channel[0]: %f, Channel[2]: %f\n", udx, vdx, area_density[0], area_density[2]);
-        }*/
-        /*if ((area_density[0] != 0.0f) || (area_density[1] != 0.0f) || (area_density[2] != 0.0f)) {
-            printf("pixel [%d, %d]. Channel[0]: %1.16e, Channel[1]: %1.16e, Channel[2]: %1.16e\n", udx, vdx, area_density[0], area_density[1], area_density[1]);
-        }*/
-
-        /*
-        for (int i = 0; i < NUM_VOLUMES; i++) {
-            // Trapezoidal rule (interpolating function = piecewise linear func)
-            float px, py, pz; // voxel-space point
-            int t; // number of steps along ray //
-            float alpha; // distance along ray (alpha = minAlpha + step * t)
-            float boundary_factor; // factor to multiply at the boundary.
-        
-            // Sample the points along the ray at the entrance boundary of the volume and the mid segments.
-            for (t = 0, alpha = minAlpha[i]; alpha < maxAlpha[i]; t++, alpha += step)
-            {
-                // Get the current sample point in the volume voxel-space.
-                // In CUDA, voxel centeras are located at (xx.5, xx.5, xx.5), whereas SwVolume has voxel centers at integers.
-                px = sx[i] + alpha * rx[i] - gVolumeEdgeMinPointX[i];
-                py = sy[i] + alpha * ry[i] - gVolumeEdgeMinPointY[i];
-                pz = sz[i] + alpha * rz[i] - gVolumeEdgeMinPointZ[i];
-        
-                // For the entry boundary, multiply by 0.5 (this is the t == 0 check). That is, for the initial interpolated value,
-                // only a half step-size is considered in the computation.
-                // For the second-to-last interpolation point, also multiply by 0.5, since there will be a final step at the maxAlpha boundary.
-                boundary_factor = (t == 0 || alpha + step >= maxAlpha[i]) ? 0.5 : 1.0;
-        
-                // Perform the interpolation. This involves the variables: area_density, idx, px, py, pz, and volume. 
-                // It is done for each segmentation. 
-                INTERPOLATE_FOR_VOL(boundary_factor, i);
-            }
-        
-            // Scaling by step; 
-            for (int m = 0; m < NUM_MATERIALS; m++) {
-                area_density[m] *= step;
-            }
-        
-            // Last segment of the line 
-            if (area_density[0] > 0.0f) {
-                alpha -= step;
-                float lastStepsize = maxAlpha[i] - alpha;
-                // scaled last step interpolation (something weird?) 
-                INTERPOLATE_FOR_VOL(0.5 * lastStepsize, i);
-                // The last segment of the line integral takes care of the varying length.
-                px = sx[i] + alpha * rx[i] - gVolumeEdgeMinPointX[i];
-                py = sy[i] + alpha * ry[i] - gVolumeEdgeMinPointY[i];
-                pz = sz[i] + alpha * rz[i] - gVolumeEdgeMinPointZ[i];
-                // interpolation 
-                INTERPOLATE_FOR_VOL(0.5 * lastStepsize, i);
-            }
-        
-            // normalize output value to world coordinate system units 
-            for (int m = 0; m < NUM_MATERIALS; m++) {
-                area_density[m] *= sqrt((rx[i] * gVoxelElementSizeX[i])*(rx[i] * gVoxelElementSizeX[i]) + (ry[i] * gVoxelElementSizeY[i])*(ry[i] * gVoxelElementSizeY[i]) + (rz[i] * gVoxelElementSizeZ[i])*(rz[i] * gVoxelElementSizeZ[i]));
-                
-                total_area_density[m] += area_density[m];
-            }
-        }
-        */
 
         /* Up to this point, we have accomplished the original projectKernel functionality.
          * The next steps to do are combining the forward_projections dictionary-ization and 
