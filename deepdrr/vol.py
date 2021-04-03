@@ -8,7 +8,7 @@ import logging
 import numpy as np
 from pathlib import Path
 import nibabel as nib
-from pydicom.filereader import dcmread, InvalidDicomError
+from pydicom.filereader import dcmread
 
 from . import load_dicom
 from . import geo
@@ -59,7 +59,7 @@ class Volume(object):
 
         Note that the anatomical coordinate system is not the world coordinate system (which is cartesian).
         
-        Suggested anatomical coordinate space units is milimeters. 
+        Suggested anatomical coordinate space units is millimeters.
         A helpful introduction to the geometry is can be found [here](https://www.slicer.org/wiki/Coordinate_systems).
 
         Args:
@@ -195,17 +195,19 @@ class Volume(object):
         # reading the dicom dataset object
         ds = dcmread(path)
 
-        # extracting all needed tags TODO add try exepts
+        # slice specific tags
         frames = ds.PerFrameFunctionalGroupsSequence
-        shared = ds.SharedFunctionalGroupsSequence[0]
         num_slices = len(frames)
         first_slice_position = np.array(frames[0].PlanePositionSequence[0].ImagePositionPatient)
         last_slice_position = np.array(frames[-1].PlanePositionSequence[0].ImagePositionPatient)
+
+        # volume specific tags
+        shared = ds.SharedFunctionalGroupsSequence[0]
         RC = np.array(shared.PlaneOrientationSequence[0].ImageOrientationPatient).reshape(2, 3).T
-        PixelSpacing = np.array(ds.SharedFunctionalGroupsSequence[0].PixelMeasuresSequence[0].PixelSpacing)
-        SliceThickness = np.array(ds.SharedFunctionalGroupsSequence[0].PixelMeasuresSequence[0].SliceThickness)
-        offset = ds.SharedFunctionalGroupsSequence[0].PixelValueTransformationSequence[0].RescaleIntercept
-        scale = ds.SharedFunctionalGroupsSequence[0].PixelValueTransformationSequence[0].RescaleSlope
+        PixelSpacing = np.array(shared.PixelMeasuresSequence[0].PixelSpacing)
+        SliceThickness = np.array(shared.PixelMeasuresSequence[0].SliceThickness)
+        offset = shared.PixelValueTransformationSequence[0].RescaleIntercept
+        scale = shared.PixelValueTransformationSequence[0].RescaleSlope
 
         # make user aware that this is only tested on windows
         if ds.Manufacturer != "SIEMENS":
