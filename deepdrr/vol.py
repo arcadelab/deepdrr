@@ -216,17 +216,16 @@ class Volume(object):
         raw_data = ds.pixel_array.astype(np.float32)
         hu_values = raw_data * scale + offset
 
-        # move slice index axis to back (k, j, i) -> (j, i, k)
-        hu_values = hu_values.transpose((1, 2, 0))
-
         '''
-        EXPLANATION
-        
+        EXPLANATION - indexing conventions
+
         According to dicom (C.7.6.3.1.4 - Pixel Data) slices are of shape (Rows, Columns) 
         => must be (j, i) indexed if we define i == horizontal and j == vertical.
-        This is taken care of in the definition of the affine transform 
-        Further reading: https://nipy.org/nibabel/dicom/dicom_orientation.html#i-j-columns-rows-in-dicom
+        => we want to conform to the (i, j, k) layout and therefore move the axis of the data array
         '''
+
+        # convert data to our indexing convention (k, j, i) -> (j, i, k)
+        hu_values = hu_values.transpose((2, 1, 0)).copy()
 
         # transform the volume in HU to densities
         data = load_dicom.conv_hu_to_density(hu_values)
@@ -251,25 +250,33 @@ class Volume(object):
                 materials = load_dicom.conv_hu_to_materials(hu_values)
                 np.savez(materials_path, **materials)
 
-        # manually composing affine transform lps_from_ijk
+        '''
+        EXPLANATION - 3d affine transform
+        
+        DICOM does not offer a 3d transform to locate the voxel data in world space for historic reasons.
+        However we can construct it from some related DICOM tags. See this resource for more information:
+        https://nipy.org/nibabel/dicom/dicom_orientation.html
+        
+        Note, that we do not modify the affine transform to account for the differences in indexing, but 
+        instead modified the data in memory to be in (i, j, k) order.
+        '''
         # construct column for index k
-        k = np.array((last_slice_position - first_slice_position) / num_slices).reshape(3, 1)
+        k = np.array((last_slice_position - first_slice_position) / (num_slices - 1)).reshape(3, 1)
 
         # check if the calculated increment matches the SliceThickness (allow .1 millimeters deviations)
         assert np.allclose(np.abs(k[2]), SliceThickness, atol=0.1, rtol=0)
 
-        # flip because dicom convention indexes a slice as [Columns, Rows]. see explanation above
-        CR = np.fliplr(RC)
-        CR_scaled = CR * PixelSpacing
+        # apply scaling to mm
+        RC_scaled = RC * PixelSpacing
 
-        # construct rotation matrix from three columns for (j, i, k)
-        rot = np.hstack((CR_scaled, k))
+        # construct rotation matrix from three columns for (i, j, k)
+        rot = np.hstack((RC_scaled, k))
 
         # construct affine matrix
         affine = np.zeros((4, 4))
-        affine[:3, :3] = rot
-        affine[:3, 3] = first_slice_position
-        affine[3, 3] = 1
+        affine[:3, :3] = rot  # rotation and scaling
+        affine[:3, 3] = first_slice_position  # translation
+        affine[3, 3] = 1  # homogenous component
 
         # log affine matrix in debug mode
         logger.debug(f"manually constructed affine matrix: \n{affine}")
