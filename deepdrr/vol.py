@@ -8,6 +8,7 @@ import logging
 import numpy as np
 from pathlib import Path
 import nibabel as nib
+from pydicom.filereader import dcmread
 
 from . import load_dicom
 from . import geo
@@ -56,9 +57,9 @@ class Volume(object):
     ):
         """Create a volume object with a segmentation of the materials, with its own anatomical coordinate space, from parameters.
 
-        Note that the anatomical coordinate system is not the world coordinate system (which is cartesion). 
+        Note that the anatomical coordinate system is not the world coordinate system (which is cartesian).
         
-        Suggested anatomical coordinate space units is milimeters. 
+        Suggested anatomical coordinate space units is millimeters.
         A helpful introduction to the geometry is can be found [here](https://www.slicer.org/wiki/Coordinate_systems).
 
         Args:
@@ -75,7 +76,7 @@ class Volume(object):
 
         assert spacing.dim == 3
 
-        # define anatomical_from_indices FrameTransform
+        # define anatomical_from_ijk FrameTransform
         if anatomical_coordinate_system is None or anatomical_coordinate_system == 'none':
             anatomical_from_ijk = geo.FrameTransform.from_scaling(scaling=spacing, translation=origin)
         elif anatomical_coordinate_system == 'LPS':
@@ -159,11 +160,141 @@ class Volume(object):
 
     @classmethod
     def from_dicom(
-        cls,
-        path: Union[str, Path],
-    ) -> Volume:
-        """Create the volume from a DICOM file."""
-        raise NotImplementedError('load a volume from a dicom file')
+            cls,
+            path: Path,
+            use_thresholding: bool = True,
+            world_from_anatomical: Optional[geo.FrameTransform] = None,
+            use_cached: bool = True,
+            cache_dir: Optional[Path] = None
+    ):
+        """
+        load a volume from a dicom file and compute the anatomical_from_ijk transform from metadata
+        https://www.slicer.org/wiki/Coordinate_systems
+        Args:
+            path: path-like to a multi-frame dicom file. (Currently only Multi-Frame from Siemens supported)
+            use_thresholding (bool, optional): segment the materials using thresholding (faster but less accurate). Defaults to True.
+            world_from_anatomical (Optional[geo.FrameTransform], optional): position the volume in world space. If None, uses identity. Defaults to None.
+            use_cached (bool, optional): [description]. Use a cached segmentation if available. Defaults to True.
+            cache_dir (Optional[Path], optional): Where to load/save the cached segmentation. If None, use the parent dir of `path`. Defaults to None.
+
+        Returns:
+            Volume: an instance of a deepdrr volume
+        """
+        path = Path(path)
+        stem = path.name.split('.')[0]
+
+        if cache_dir is None:
+            cache_dir = path.parent
+
+        # Multi-frame dicoms store all slices of a volume in one file.
+        # they must specify the necessary dicom tags under
+        # https://dicom.innolitics.com/ciods/enhanced-ct-image/enhanced-ct-image-multi-frame-functional-groups
+        assert path.is_file(), 'Currently only multi-frame dicoms are supported. Path must refer to a file.'
+        logger.info(f'loading Dicom volume from {path}')
+
+        # reading the dicom dataset object
+        ds = dcmread(path)
+
+        # slice specific tags
+        frames = ds.PerFrameFunctionalGroupsSequence
+        num_slices = len(frames)
+        first_slice_position = np.array(frames[0].PlanePositionSequence[0].ImagePositionPatient)
+        last_slice_position = np.array(frames[-1].PlanePositionSequence[0].ImagePositionPatient)
+
+        # volume specific tags
+        shared = ds.SharedFunctionalGroupsSequence[0]
+        RC = np.array(shared.PlaneOrientationSequence[0].ImageOrientationPatient).reshape(2, 3).T
+        PixelSpacing = np.array(shared.PixelMeasuresSequence[0].PixelSpacing)
+        SliceThickness = np.array(shared.PixelMeasuresSequence[0].SliceThickness)
+        offset = shared.PixelValueTransformationSequence[0].RescaleIntercept
+        scale = shared.PixelValueTransformationSequence[0].RescaleSlope
+
+        # make user aware that this is only tested on windows
+        if ds.Manufacturer != "SIEMENS":
+            logger.warning("Multi-frame loading has only been tested on Siemens Enhanced CT DICOMs."
+                           "Please verify everything works as expected.")
+
+        # read the 'raw' data array
+        raw_data = ds.pixel_array.astype(np.float32)
+        hu_values = raw_data * scale + offset
+
+        '''
+        EXPLANATION - indexing conventions
+
+        According to dicom (C.7.6.3.1.4 - Pixel Data) slices are of shape (Rows, Columns) 
+        => must be (j, i) indexed if we define i == horizontal and j == vertical.
+        => we want to conform to the (i, j, k) layout and therefore move the axis of the data array
+        '''
+
+        # convert data to our indexing convention (k, j, i) -> (j, i, k)
+        hu_values = hu_values.transpose((2, 1, 0)).copy()
+
+        # transform the volume in HU to densities
+        data = load_dicom.conv_hu_to_density(hu_values)
+
+        # obtain materials analogous to nifti
+        if use_thresholding:
+            materials_path = cache_dir / f'{stem}_materials_thresholding.npz'
+            if use_cached and materials_path.exists():
+                logger.info(f'found materials segmentation at {materials_path}.')
+                materials = dict(np.load(materials_path))
+            else:
+                logger.info(f'segmenting materials in volume')
+                materials = load_dicom.conv_hu_to_materials_thresholding(hu_values)
+                np.savez(materials_path, **materials)
+        else:
+            materials_path = cache_dir / f'{stem}_materials.npz'
+            if use_cached and materials_path.exists():
+                logger.info(f'found materials segmentation at {materials_path}.')
+                materials = dict(np.load(materials_path))
+            else:
+                logger.info(f'segmenting materials in volume')
+                materials = load_dicom.conv_hu_to_materials(hu_values)
+                np.savez(materials_path, **materials)
+
+        '''
+        EXPLANATION - 3d affine transform
+        
+        DICOM does not offer a 3d transform to locate the voxel data in world space for historic reasons.
+        However we can construct it from some related DICOM tags. See this resource for more information:
+        https://nipy.org/nibabel/dicom/dicom_orientation.html
+        
+        Note, that we do not modify the affine transform to account for the differences in indexing, but 
+        instead modified the data in memory to be in (i, j, k) order.
+        '''
+        # construct column for index k
+        k = np.array((last_slice_position - first_slice_position) / (num_slices - 1)).reshape(3, 1)
+
+        # check if the calculated increment matches the SliceThickness (allow .1 millimeters deviations)
+        assert np.allclose(np.abs(k[2]), SliceThickness, atol=0.1, rtol=0)
+
+        # apply scaling to mm
+        RC_scaled = RC * PixelSpacing
+
+        # construct rotation matrix from three columns for (i, j, k)
+        rot = np.hstack((RC_scaled, k))
+
+        # construct affine matrix
+        affine = np.zeros((4, 4))
+        affine[:3, :3] = rot  # rotation and scaling
+        affine[:3, 3] = first_slice_position  # translation
+        affine[3, 3] = 1  # homogenous component
+
+        # log affine matrix in debug mode
+        logger.debug(f"manually constructed affine matrix: \n{affine}")
+        logger.debug(
+            f"volume_center_xyz : {np.mean([affine @ np.array([*data.shape, 1]), affine @ [0, 0, 0, 1]], axis=0)}")
+
+        # cast to FrameTransform
+        lps_from_ijk = geo.FrameTransform(affine)
+
+        # constructing the volume
+        return cls(
+            data,
+            materials,
+            lps_from_ijk,
+            world_from_anatomical,
+        )
 
     def to_dicom(self, path: Union[str, Path]):
         """Write the volume to a DICOM file.
