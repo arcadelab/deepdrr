@@ -1,15 +1,10 @@
 #include <stdio.h>
 #include <cubicTex3D.cu>
 
-#include "project_kernel_data.cu"
+#include "project_kernel_multi_data.cu"
 
 #define UPDATE(multiplier, vol_id, mat_id) do {\
     /* param. weight is set to 1.0f / (float)n_vols_at_curr_priority */\
-    if (1.0f == tex3D(VOLUME(vol_id), px[vol_id], py[vol_id], pz[vol_id])) {\
-        if (seg_at_alpha[vol_id][1] != 1.0f) {\
-            printf("pos: {%f, %f, %f}. volume_%d == 1, seg_at_alpha[%d][1] != 1.0f\n", px[vol_id], py[vol_id], pz[vol_id], vol_id, vol_id);\
-        }\
-    }\
     area_density[(mat_id)] += (multiplier) * tex3D(VOLUME(vol_id), px[vol_id], py[vol_id], pz[vol_id]) * seg_at_alpha[vol_id][mat_id] * volume_normalization_factor[vol_id] * weight;\
 } while (0)
 
@@ -543,7 +538,7 @@ extern "C" {
         if (udx >= out_width || vdx >= out_height)
             return;
 
-        if ((0 == udx) && (0 == vdx)) {
+        /*if ((0 == udx) && (0 == vdx)) {
             for (int i = 0; i < NUM_VOLUMES; i++) {
                 printf(
                     "priority #%d: %d\n\tbounds #%d: [%f, %f], [%f, %f], [%f, %f]\n", 
@@ -552,32 +547,6 @@ extern "C" {
                     gVolumeEdgeMinPointY[i], gVolumeEdgeMaxPointY[i], 
                     gVolumeEdgeMinPointZ[i], gVolumeEdgeMaxPointZ[i]
                 );
-            }
-        }
-
-        /*if ((0 == udx) && (0 == vdx)) {
-            // test cubicTex3D around edges of volume1. volume1 is ones for slice [40:80, 40:60, 30:50]
-            float x_min = 40.f;// + gVolumeEdgeMinPointX[1];
-            float x_max = 80.f;// + gVolumeEdgeMinPointX[1];
-            float y_min = 40.f;// + gVolumeEdgeMinPointY[1];
-            float y_max = 60.f;// + gVolumeEdgeMinPointY[1];
-            float z_min = 30.f;// + gVolumeEdgeMinPointZ[1];
-            float z_max = 50.f;// + gVolumeEdgeMinPointZ[1];
-
-            for (float x = x_min; x <= x_max; x += 0.5) {
-                for (float y = y_min; y <= y_max; y += 0.5) {
-                    for (float z = z_min; z <= z_max; z += 0.5) {
-                        float seg_0_val = cubicTex3D(seg_1_0, x, y, z);
-                        float seg_1_val = cubicTex3D(seg_1_1, x, y, z);
-
-                        if (seg_0_val > 0.5f) {
-                            printf("volume1, seg0 == %f > 0.5 in non-null section\n", seg_0_val);
-                        }
-                        if (seg_1_val < 0.5f) {
-                            printf("volume1, seg1 == %f < 0.5 in non-null section: {%f, %f, %f}\n", seg_1_val, x, y, z);
-                        }
-                    }
-                }
             }
         }*/
 
@@ -602,13 +571,6 @@ extern "C" {
         float globalMinAlpha = INFINITY; // the smallest of all the minAlpha's
         float globalMaxAlpha = 0.0f; // the largest of all the maxAlpha's
         CALCULATE_ALPHAS;
-
-        if ((600 == udx) && (400 == vdx)) {
-            for (int i = 0; i < NUM_VOLUMES; i++) {
-                printf("minAlpha[%d]=%f, maxAlpha[%d]=%f\n", i, minAlpha[i], i, maxAlpha[i]);
-            }
-            printf("globalMinAlpha=%f, globalMaxAlpha=%f\n", globalMinAlpha, globalMaxAlpha);
-        }
 
         // we start not at the exact entry point 
         // => we can be sure to be inside the volume
@@ -670,9 +632,7 @@ extern "C" {
         if (area_density[0] > 0.0f) {
             alpha -= step;
             float lastStepsize = globalMaxAlpha - alpha;
-
-            LOAD_SEGS_AT_ALPHA; // TODO: are this line and the next (both macros) necessary?
-            GET_PRIORITY_AT_ALPHA;
+            
             if (0 == n_vols_at_curr_priority) {
                 // Outside the bounds of all volumes to trace. Assume nominal density of air is 0.0f.
                 // Thus, we don't need to add to area_density
