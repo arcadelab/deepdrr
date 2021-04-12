@@ -173,8 +173,9 @@ class Projector(object):
 
     @property
     def volume(self):
-        if len(self.volumes) != 1: # TODO(judish): what to do here? What do I return?
-            raise DeprecationWarning(f'volume is deprecated. Each projector can contain multiple volumes.')
+        raise DeprecationWarning(f'volume is deprecated. Each projector can contain multiple volumes.')
+        if len(self.volumes) != 1:
+            raise AttributeError
         return self.volumes[0]
 
     @property
