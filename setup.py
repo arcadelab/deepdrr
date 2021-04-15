@@ -5,7 +5,7 @@ with open("README.md", "r") as fh:
 
 setuptools.setup(
     name="deepdrr",
-    version="1.0.4",
+    version="1.1.0a0",
     author="Benjamin D. Killeen",
     author_email="killeen@jhu.edu",
     description="A Catalyst for Machine Learning in Fluoroscopy-guided Procedures.",
@@ -19,9 +19,10 @@ setuptools.setup(
         "nibabel",
         "scikit-image",
         "pydicom",
-        # 'pycuda', # requires cuda
+        "pyvista",
         "scipy",
     ],
+    extras_require={"gpu": ["pycuda"]},
     include_package_data=True,
     python_requires=">=3.8",
 )

@@ -83,6 +83,37 @@ def pose_vector_angles(pose: geo.Vector3D) -> Tuple[float, float]:
 
 
 class MobileCArm(object):
+    """A simulated C-arm imaging device with orbital movement (alpha), angulation (beta) and 3D translation.
+
+    A MobileCArm has its own `device` frame, which moves independent of the `arm` frame and the
+    `camera` frame, which actually defines the projection.
+
+    The geometry and default values, are based on the Cios Fusion device, specifically this_
+    document, with some exceptions. Rather than incorporating a swivel, this device allows for
+    simple horizontal translations. Additionally, by default the principle ray is not offset from
+    the isocenter.
+
+    .. _this: https://www.lomisa.com/app/download/10978681598/ARCO_EN_C_SIEMENS_CIOS_FUSION.pdf?t=1490962065
+
+    Additionall, the orbital movement and angulation are reversed from the convention used in `Kausch
+    et al<https://pubmed.ncbi.nlm.nih.gov/32533315/>`_, Figure 2.
+
+    All length units are in millimeters.
+
+    TODO(killeen): finish documenting aruments.
+
+    Args:
+        isocenter (geo.Point3D): the initial isocenter of in the device frame. This is the point
+            about which rotations are performed.
+        isocenter_distance (float): the distance from the X-ray source to the isocenter of the CAarm. (The center of rotation).
+        alpha (float): initial LAO/RAO angle of the C-Arm. alpha > 0 is in the RAO direction. This is the angle along arm of the C-arm.
+        beta (float): initial CRA/CAU angulation of the C-arm. beta > 0 is in the CAU direction.
+        degrees (bool, optional): Whether given angles are in degrees. Defaults to False.
+        world_from_device: (Optional[geo.FrameTransform], optional): Transform that defines the device coordinate space in world coordinates. None is the identity transform. Defaults to None.
+        camera_intrinsics: (Optional[Union[geo.CameraIntrinsicTransform, dict]], optional): either a CameraIntrinsicTransform instance or kwargs for CameraIntrinsicTransform.from_sizes
+
+    """
+
     # basic parameters which can be safely set by user, but move_by() and reposition() are recommended.
     isocenter: geo.Point3D  # the isocenter point in the device frame
     alpha: float  # alpha angle in radians
@@ -111,32 +142,6 @@ class MobileCArm(object):
         sensor_width: int = 1536,
         pixel_size: float = 0.194,
     ) -> None:
-        """Make a CArm device.
-
-        All units in mm.
-
-        The C-arm frame is centered in the isocenter movement window, with -Y pointed toward the "Arm" and Z pointing up.
-        
-        The actual point being visualized is offset from the isocenter.
-
-        The angulation and orbital angles are reversed from figure 2 in Kausch et al: https://pubmed.ncbi.nlm.nih.gov/32533315/
-
-        TODO(killeen): the C-Arm is really a fancy CameraProjection. Inherit from that?
-
-        Rather than incorporating a swivel, the device allows for horizontal translations, based on += 12 degrees (by default).
-        
-        Defaults based on the Siemens Cios Fusion device. Specifications here:
-        https://www.lomisa.com/app/download/10978681598/ARCO_EN_C_SIEMENS_CIOS_FUSION.pdf?t=1490962065 
-
-        Args:
-            isocenter_distance (float): the distance from the X-ray source to the isocenter of the CAarm. (The center of rotation).
-            isocenter (Point3D): isocenter of the C-arm in carm-space. This is the center about which rotations are performed.
-            alpha (float): initial LAO/RAO angle of the C-Arm. alpha > 0 is in the RAO direction. This is the angle along arm of the C-arm.
-            beta (float): initial CRA/CAU angulation of the C-arm. beta > 0 is in the CAU direction.
-            degrees (bool, optional): Whether given angles are in degrees. Defaults to False.
-            world_from_device: (Optional[geo.FrameTransform], optional): Transform that defines the device coordinate space in world coordinates. None is the identity transform. Defaults to None.
-            camera_intrinsics: (Optional[Union[geo.CameraIntrinsicTransform, dict]], optional): either a CameraIntrinsicTransform instance or kwargs for CameraIntrinsicTransform.from_sizes
-        """
         self.isocenter = geo.point(isocenter)
         self.alpha = utils.radians(alpha, degrees=degrees)
         self.beta = utils.radians(beta, degrees=degrees)
@@ -351,13 +356,12 @@ class MobileCArm(object):
     detector_height = 100
     arm_width = 100
 
-    def _make_mesh(self, full=True, include_labels: bool = False) -> pv.PolyData:
+    def _make_mesh(self, full=True, include_labels: bool = False):
         """Make the mesh of the C-arm, centered and upright.
 
         This DOES NOT use the current isocenter, alpha, or beta.
 
         Returns:
-            pv.PolyData: [description]
         """
         assert (
             pv_available
@@ -429,14 +433,12 @@ class MobileCArm(object):
 
         return mesh
 
-    def get_mesh_in_world(self, full=False) -> pv.PolyData:
+    def get_mesh_in_world(self, full=False):
         """Get the pyvista mesh for the C-arm, in its world-space orientation.
 
         Raises:
             RuntimeError: if pyvista is not available.
 
-        Returns:
-            pv.PolyData: a mesh somewhat resembling the C-arm device.
         """
         if self._static_mesh is None:
             self._static_mesh = self._make_mesh(full=full)
