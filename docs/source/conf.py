@@ -23,8 +23,7 @@ copyright = "2021, Benjamin D. Killeen, Cong Gao, Jan-Nico Zaech, and Mathias Un
 author = "Benjamin D. Killeen, Cong Gao, Jan-Nico Zaech, and Mathias Unberath"
 
 # The full version, including alpha/beta/rc tags
-release = "1.1.0"
-
+release = "1.1.0a1"
 
 # -- General configuration ---------------------------------------------------
 
@@ -40,6 +39,8 @@ extensions = [
     "sphinxcontrib.autohttp.flaskqref",
     "recommonmark"
 ]
+
+master_doc = "index"
 
 # Add any paths that contain templates here, relative to this directory.
 templates_path = ["_templates"]
