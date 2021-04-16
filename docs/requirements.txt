@@ -4,4 +4,3 @@ pytest
 pydata-sphinx-theme
 sphinxcontrib-httpdomain
 sphinxcontrib-mermaid
-recommonmark
