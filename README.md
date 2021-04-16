@@ -1,8 +1,7 @@
 # DeepDRR
 
-DeepDRR provides state-of-the-art tools to generate realistic 
-radiographs and fluoroscopy from 3D CTs on a training set scale.
-It is straightforward and user-friendly.
+DeepDRR provides state-of-the-art tools to generate realistic radiographs and fluoroscopy from 3D
+CTs on a training set scale.
 
 ## Installation
 
@@ -18,35 +17,29 @@ pip install deepdrr
 
 ## Usage
 
-DeepDRR is designed to be simple to use. The following minimal example loads a CT volume from a NifTi `.nii.gz` file and simulates X-ray projection of the IJK point [100, 100, 100]:
+The following minimal example loads a CT volume from a NifTi `.nii.gz` file and simulates an X-ray projection:
 
 ```python
-import deepdrr
+from deepdrr import geo, Volume, MobileCArm, Projector
+import matplotlib.pyplot as plt
 
-volume = deepdrr.Volume.from_nifti('/path/to/ct_image.nii.gz')
-camera_intrinsics = deepdrr.geo.CameraIntrinsicTransform.from_sizes(
-  sensor_size=512,
-  pixel_size=0.33,
-  source_to_detector_distance=1200,
-)
+volume = Volume.from_nifti('/path/to/ct_image.nii.gz')
+carm = MobileCArm()
+carm.reposition(volume.center_in_world)
 
+with Projector(volume, carm=carm) as projector:
+    carm.move_to(alpha=30, beta=10, degrees=True)
+    projection = projector()
 
-center = volume.world_from_ijk @ deepdrr.geo.point(100, 100, 100)
-carm = deepdrr.CArm(isocenter=center, isocenter_distance=800)
-
-with deepdrr.Projector(volume, camera_intrinsics, carm) as projector:
-  projection = projector()
+plt.imshow(projection, cmap='gray')
+plt.show()
 ```
 
-A more detailed example script is given in `example_projector.py`. This script contains a typical use-case for projecting over a volume.
-
-## Documentation
-
-Documentation is available at deepdrr.readthedocs.io.
+The script `example_projector.py` gives an alternative example. Additional tutorials are in progress at [deepdrr.readthedocs.io](https://deepdrr.readthedocs.io). Contributions are welcome.
 
 ## Contributing
 
-Contributions are welcome. Please make a pull request.
+Contributions for bug fixes, enhancements, and other suggestions are welcome. Please make a pull request.
 
 ## Method Overview
 

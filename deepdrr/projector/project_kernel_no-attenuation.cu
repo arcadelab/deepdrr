@@ -53,7 +53,7 @@ texture<float, 3, cudaReadModeElementType> seg(13);
 #endif
 
 #define UPDATE(multiplier, n) do {\
-    output[(n)] += (multiplier) * tex3D(volume, px, py, pz) * round(cubicTex3D(seg(n), px, py, pz));\
+    output[idx + (n)] += (multiplier) * tex3D(volume, px, py, pz) * round(cubicTex3D(seg(n), px, py, pz));\
 } while (0)
 
 #if NUM_MATERIALS == 1
@@ -220,15 +220,8 @@ extern "C" {
         float sx, // x-coordinate of source point for rays in world-space
         float sy,
         float sz,
-        float *rt_kinv, // (3, 3) array giving the image-to-world-ray transform.
-        float *intensity, // flat array, with shape (out_height, out_width).
-        float *photon_prob, // flat array, with shape (out_height, out_width).
-        int n_bins, // the number of spectral bins
-        float *energies, // 1-D array -- size is the n_bins
-        float *pdf, // 1-D array -- probability density function over the energies
-        float *absorb_coef_table, // flat [n_bins x NUM_MATERIALS] table that represents
-                        // the precomputed get_absorption_coef values.
-                        // index into the table as: table[bin * NUM_MATERIALS + mat]
+        float* rt_kinv, // (3, 3) array giving the image-to-world-ray transform.
+        float* output, // flat array, with shape (out_height, out_width, NUM_MATERIALS).
         int offsetW,
         int offsetH)
     {
@@ -253,6 +246,10 @@ extern "C" {
         // if the current point is outside the output image, no computation needed
         if (udx >= out_width || vdx >= out_height)
             return;
+
+        // flat index to first material in output "channel". 
+        // So (idx + m) gets you the pixel for material index m in [0, NUM_MATERIALS)
+        int idx = udx * (out_height * NUM_MATERIALS) + vdx * NUM_MATERIALS; 
 
         // cell-centered sampling point corresponding to pixel index, in index-space.
         float u = (float) udx + 0.5;
@@ -329,12 +326,9 @@ extern "C" {
         float alpha; // distance along ray (alpha = minAlpha + step * t)
         float boundary_factor; // factor to multiply at the boundary.
 
-        // material projection-output channels
-        float output[NUM_MATERIALS];
-
-        // initialize the projection-output to 0.
+        // initialize the output to 0.
         for (int m = 0; m < NUM_MATERIALS; m++) {
-            output[m] = 0;
+            output[idx + m] = 0;
         }
 
         // Sample the points along the ray at the entrance boundary of the volume and the mid segments.
@@ -359,11 +353,12 @@ extern "C" {
 
         // Scaling by step;
         for (int m = 0; m < NUM_MATERIALS; m++) {
-            output[m] *= step;
+            output[idx + m] *= step;
         }
 
+
         // Last segment of the line
-        if (output[0] > 0.0f) {
+        if (output[idx] > 0.0f) {
             alpha -= step;
             float lastStepsize = maxAlpha - alpha;
 
@@ -381,44 +376,12 @@ extern "C" {
 
         // normalize output value to world coordinate system units
         for (int m = 0; m < NUM_MATERIALS; m++) {
-            output[m] *= sqrt((rx * gVoxelElementSizeX)*(rx * gVoxelElementSizeX) + (ry * gVoxelElementSizeY)*(ry * gVoxelElementSizeY) + (rz * gVoxelElementSizeZ)*(rz * gVoxelElementSizeZ));
-            
-            // convert to centimeters
-            output[m] /= 10;
+            output[idx + m] *= sqrt((rx * gVoxelElementSizeX)*(rx * gVoxelElementSizeX) + (ry * gVoxelElementSizeY)*(ry * gVoxelElementSizeY) + (rz * gVoxelElementSizeZ)*(rz * gVoxelElementSizeZ));
         }
 
-        /* Up to this point, we have accomplished the original projectKernel functionality.
-         * The next steps to do are combining the forward_projections dictionary-ization and 
-         * the mass_attenuation computation
-         */
-
-        // forward_projections dictionary-ization is implicit.
-
-        // flat index to pixel in *intensity and *photon_prob
-        int img_dx = (udx * out_height) + vdx;
-
-        // zero-out intensity and photon_prob
-        intensity[img_dx] = 0;
-        photon_prob[img_dx] = 0;
-
-        // MASS ATTENUATION COMPUTATION
-        for (int bin = 0; bin < n_bins; bin++) {
-            float energy = energies[bin];
-            float p = pdf[bin];
-
-            float intensity_tmp = 0.0f; // lifting the call to calculate_attenuation_gpu(...) up a level
-            for (int m = 0; m < NUM_MATERIALS; m++) {
-                float absorb_coef = absorb_coef_table[bin * NUM_MATERIALS + m];
-                intensity_tmp += output[m] * -1 * absorb_coef;
-            }
-            intensity_tmp = expf(intensity_tmp) * energy * p;
-            // done with the "lifted" call to calculate_attenuation_gpu(...)
-
-            intensity[img_dx] += intensity_tmp;
-            photon_prob[img_dx] += intensity_tmp * (1.0 / energy);
-        }
-
+        if (u == 800 && v == 800)
+            printf("output: %f", output[idx]);
+    
         return;
     }
 }
-    

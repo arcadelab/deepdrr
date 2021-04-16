@@ -12,11 +12,7 @@ import pickle
 logger = logging.getLogger(__name__)
 
 
-def image_saver(
-    images: np.ndarray,
-    prefix: str,
-    path: str
-) -> bool:
+def image_saver(images: np.ndarray, prefix: str, path: str) -> bool:
     """Save the images as tiff
 
     Args:
@@ -34,7 +30,9 @@ def image_saver(
     return True
 
 
-def param_saver(thetas, phis, proj_mats, camera, origin, photons, spectrum, prefix, save_path):
+def param_saver(
+    thetas, phis, proj_mats, camera, origin, photons, spectrum, prefix, save_path
+):
     """Save the paramaters.
 
     This function may be deprecated.
@@ -54,17 +52,25 @@ def param_saver(thetas, phis, proj_mats, camera, origin, photons, spectrum, pref
         [type]: [description]
     """
     i0 = np.sum(spectrum[:, 0] * (spectrum[:, 1] / np.sum(spectrum[:, 1]))) / 1000
-    data = {"date": datetime.now(), "thetas": thetas, "phis": phis, "proj_mats": proj_mats, "camera": camera, "origin": origin, "photons": photons, "spectrum": spectrum, "I0": i0}
-    with open(Path(save_path) / f"{prefix}.pickle", 'wb') as f:
+    data = {
+        "date": datetime.now(),
+        "thetas": thetas,
+        "phis": phis,
+        "proj_mats": proj_mats,
+        "camera": camera,
+        "origin": origin,
+        "photons": photons,
+        "spectrum": spectrum,
+        "I0": i0,
+    }
+    with open(Path(save_path) / f"{prefix}.pickle", "wb") as f:
         # Pickle the 'data' dictionary using the highest protocol available.
         pickle.dump(data, f, pickle.HIGHEST_PROTOCOL)
     return True
 
 
 def one_hot(
-    x: np.ndarray, 
-    num_classes: Optional[int] = None,
-    axis: int = -1,
+    x: np.ndarray, num_classes: Optional[int] = None, axis: int = -1,
 ) -> np.ndarray:
     """One-hot encode the vector x along the axis.
 
@@ -83,23 +89,32 @@ def one_hot(
     if axis != -1:
         # copy x to actually move the axis, not just make a new view.
         x = np.moveaxis(x, -1, axis).copy()
-        
+
     return x
 
 
-T = TypeVar('T')
+T = TypeVar("T")
 
 
-def tuplify(t: Union[Tuple[T,...], T], n: int) -> Tuple[T,...]:
+def tuplify(t: Union[Tuple[T, ...], T], n: int = 1) -> Tuple[T, ...]:
     """ Create a tuple with `n` copies of `t`,  if `t` is not already a tuple of length `n`."""
-    if isinstance(t, Tuple):
+    if isinstance(t, (tuple, list)):
         assert len(t) == n
-        return t
+        return tuple(t)
     else:
         return tuple(t for _ in range(n))
 
 
-def radians(*ts: Union[float, np.ndarray], degrees: bool = True) -> Union[float, List[float]]:
+def listify(x: Union[List[T], T], n: int = 1) -> List[T]:
+    if isinstance(x, list):
+        return x
+    else:
+        return [x] * n
+
+
+def radians(
+    *ts: Union[float, np.ndarray], degrees: bool = True
+) -> Union[float, List[float]]:
     """Convert to radians.
 
     Args:
@@ -115,8 +130,7 @@ def radians(*ts: Union[float, np.ndarray], degrees: bool = True) -> Union[float,
 
 
 def generate_uniform_angles(
-    phi_range: Tuple[float, float, float],
-    theta_range: Tuple[float, float, float],
+    phi_range: Tuple[float, float, float], theta_range: Tuple[float, float, float],
 ) -> Tuple[np.ndarray, np.ndarray]:
     """Generate a uniform sampling of angles over the given ranges.
 
@@ -128,10 +142,12 @@ def generate_uniform_angles(
 
     Returns:
         Tuple[np.ndarray, np.ndarray]: phis, thetas over uniform angles, in radians.
-    """    
+    """
     min_theta, max_theta, spacing_theta = theta_range
     min_phi, max_phi, spacing_phi = phi_range
-    thetas = np.array(np.arange(min_theta, max_theta + spacing_theta / 2, step=spacing_theta))
+    thetas = np.array(
+        np.arange(min_theta, max_theta + spacing_theta / 2, step=spacing_theta)
+    )
     num_thetas = len(thetas)
     phis = np.array(np.arange(min_phi, max_phi, step=spacing_phi))
     num_phis = len(phis)
@@ -140,19 +156,70 @@ def generate_uniform_angles(
     return phis, thetas
 
 
-def neglog(image, I_0=1):
-    """Negative log transform.
+def neglog(image: np.ndarray, epsilon: float = 0.01) -> np.ndarray:
+    """Take the negative log transform of an intensity image.
 
     Args:
-        image (np.ndarray): the image, as output by projector. Assumes last two dimensions are height and width.
-        I_0 (int, optional): I_0. Defaults to 1.
+        image (np.ndarray): a single 2D image, or N such images.
+        epsilon (float, optional): positive offset from 0 before taking the logarithm.
 
     Returns:
-        np.ndarray: Image with neg_log transform applied.
+        np.ndarray: the image or images after a negative log transform, scaled to [0, 1]
     """
-    if np.all(image == 0):
-        logger.warning(f'image is all 0')
+    image = np.array(image)
+    shape = image.shape
+    if len(shape) == 2:
+        image = image[np.newaxis, :, :]
+
+    # shift image to avoid invalid values
+    image += image.min(axis=(1, 2), keepdims=True) + epsilon
+
+    # negative log transform
+    image = -np.log(image)
+
+    # linear interpolate to range [0, 1]
+    image_min = image.min(axis=(1, 2), keepdims=True)
+    image_max = image.max(axis=(1, 2), keepdims=True)
+    if np.any(image_max == image_min):
+        logger.warning(
+            f"mapping constant image to 0. This probably indicates the projector is pointed away from the volume."
+        )
+        image[:] = 0  # TODO(killeen): for multiple images, only fill the bad ones
+        if image.shape[0] > 1:
+            logger.error("TODO: zeroed all images, even though only one might be bad.")
+    else:
+        image = (image - image_min) / (image_max - image_min)
+
+    if np.any(np.isnan(image)):
+        logger.warning(f"got NaN values from negative log transform.")
+
+    if len(shape) == 2:
+        return image[0]
+    else:
         return image
-        
-    min_nonzero_value = image[image > 0].min()
-    return np.where(image == 0, min_nonzero_value, -np.log(image / I_0))
+
+
+def try_import_pyvista():
+    try:
+        import pyvista as pv
+
+        pv_available = True
+    except ImportError:
+        pv = None
+        pv_available = False
+
+    return pv, pv_available
+
+
+def try_import_vtk():
+    try:
+        import vtk
+        from vtk.util import numpy_support as nps
+
+        vtk_available = True
+    except ImportError:
+        vtk = None
+        nps = None
+        vtk_available = False
+
+    return vtk, nps, vtk_available
