@@ -32,10 +32,6 @@ from . import utils
 logger = logging.getLogger(__name__)
 
 
-# TODO:
-# [ ] decorator for methods to cast list, tuple, and numpy array inputs to the expected homogeneous object, rather than requiring the user to do it.
-
-
 def _to_homogeneous(x: np.ndarray, is_point: bool = True) -> np.ndarray:
     """Convert an array to homogeneous points or vectors.
 
@@ -421,6 +417,7 @@ def vector(*v: Union[np.ndarray, float, Vector2D, Vector3D]) -> Union[Vector2D, 
     """The preferred method for creating a vector.
 
     There are three ways to create a point using `vector()`.
+    
     - Pass the coordinates as separate arguments. For instance, `vector(0, 0)` returns the 2D homogeneous vector `Vector2D([0, 0, 0])`.
     - Pass a numpy array containing the non-homogeneous representation of the vector.
       For example `vector(np.ndarray([0, 1, 2]))` is the 3D homogeneous veector `Vector3D([0, 1, 2, 0])`.
@@ -693,24 +690,11 @@ class FrameTransform(Transform):
         cls,
         origin: Point,
     ) -> FrameTransform:
-        """Suppose `origin` is point where frame B has its origin, as a point in frame A. Get the B_from_A transform.
-
-        Just negates the origin, but this is often counterintuitive.
-
-        For example:
-
-        ```
-            ^
-            |     ^
-            |     |
-            |    B --- >
-            |    ^
-            |   /
-            |  / `origin`
-            | /
-            |/
-          A  ----------------------- >
-        ```
+        """Make a transfrom to a frame knowing the origin.
+        
+        Suppose `origin` is point where frame `B` has its origin, as a point 
+        in frame `A`. Make the `B_from_A` transform.
+        This just negates `origin`, but this is often counterintuitive.
 
         Args:
             origin (Point): origin of the target frame in the world frame
@@ -811,15 +795,18 @@ class CameraIntrinsicTransform(FrameTransform):
         shear: float = 0,
         aspect_ratio: Optional[float] = None,
     ) -> CameraIntrinsicTransform:
-        """The camera intrinsic matrix, which is fundamentally a FrameTransform in 2D, namely `index_from_camera2d`.
+        """The camera intrinsic matrix.
+        
+        The intrinsic matrix is fundamentally a FrameTransform in 2D, namely `index_from_camera2d`.
+        It transforms to the index-space of the image (as mapped on the sensor)
+        from the index-space centered on the principle ray.
 
-        The intrinsic matrix transfroms to the index-space of the image (as mapped on the sensor) from the
+        Note:
+            Focal lengths are often measured in world units (e.g. millimeters.), 
+            but here they are in pixels. 
+            The conversion can be taken from the size of a pixel.
 
-        Note that focal lengths are often measured in world units (e.g. millimeters.), but here they are in pixels.
-        The conversion can be taken from the size of a pixel.
-
-        References:
-        - Szeliski's "Computer Vision."
+        Useful references include Szeliski's "Computer Vision"
         - https://ksimek.github.io/2013/08/13/intrinsic/
 
         Args:
@@ -831,14 +818,7 @@ class CameraIntrinsicTransform(FrameTransform):
                 ratio is 1. Defaults to None.
 
         Returns:
-            CameraIntrinsicTransform: The camera intrinsic matrix as
-                [[f_x, s, c_x],
-                 [0, f_y, c_y],
-                 [0,   0,   1]]
-                or
-                [[f, s, c_x],
-                 [0, a f, c_y],
-                 [0,   0,   1]]
+            CameraIntrinsicTransform: The camera intrinsic matrix.
 
         """
         optical_center = point(optical_center)
