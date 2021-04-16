@@ -21,14 +21,18 @@ The following minimal example loads a CT volume from a NifTi `.nii.gz` file and 
 
 ```python
 from deepdrr import geo, Volume, MobileCArm, Projector
+import matplotlib.pyplot as plt
 
 volume = Volume.from_nifti('/path/to/ct_image.nii.gz')
 carm = MobileCArm()
 carm.reposition(volume.center_in_world)
 
-with Projector(volume, camera_intrinsics, carm) as projector:
+with Projector(volume, carm=carm) as projector:
     carm.move_to(alpha=30, beta=10, degrees=True)
     projection = projector()
+
+plt.imshow(projection, cmap='gray')
+plt.show()
 ```
 
 The script `example_projector.py` gives an alternative example. Additional tutorials are in progress at [deepdrr.readthedocs.io](https://deepdrr.readthedocs.io). Contributions are welcome.
