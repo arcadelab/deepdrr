@@ -1,3 +1,4 @@
+# development requirements
 numpy
 torch
 torchvision
@@ -7,4 +8,6 @@ pydicom
 scipy
 pyvista
 pycuda
-matplotlib
+
+
+
