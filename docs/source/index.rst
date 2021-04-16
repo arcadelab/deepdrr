@@ -12,28 +12,6 @@ DeepDRR
 
    deepdrr
 
-DeepDRR provides state-of-the-art tools to generate realistic 
-radiographs and fluoroscopy from 3D CTs on a training set scale.
-It is straightforward and user-friendly.
-
-.. code-block:: python
-
-   import deepdrr
-   
-   volume = deepdrr.Volume.from_nifti('/path/to/ct_image.nii.gz')
-   camera_intrinsics = deepdrr.geo.CameraIntrinsicTransform.from_sizes(
-      sensor_size=512,
-      pixel_size=0.33,
-      source_to_detector_distance=1200,
-   )
-
-
-   center = volume.world_from_ijk @ deepdrr.geo.point(100, 100, 100)
-   carm = deepdrr.CArm(isocenter=center)
-   
-   with deepdrr.Projector(volume, camera_intrinsics, carm) as projector:
-      projection = projector()
-
 Installation
 ------------
 
