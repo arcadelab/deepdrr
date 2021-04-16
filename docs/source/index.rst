@@ -10,14 +10,14 @@ DeepDRR
    :maxdepth: 2
    :caption: Contents:
 
-   README
+   README.md
    deepdrr
    modules
 
 
-Indices and tables
-==================
+.. Indices and tables
+.. ==================
 
-* :ref:`genindex`
-* :ref:`modindex`
-* :ref:`search`
+.. * :ref:`genindex`
+.. * :ref:`modindex`
+.. * :ref:`search`
