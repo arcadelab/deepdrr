@@ -13,7 +13,7 @@
 import sys
 from pathlib import Path
 
-sys.path.insert(0, (Path(__file__).parent / ".." / ".." / "deepdrr").absolute())
+sys.path.insert(0, (Path(__file__).parent / ".." / "..").absolute())
 
 
 # -- Project information -----------------------------------------------------
@@ -37,7 +37,7 @@ extensions = [
     "sphinxcontrib.httpdomain",
     "sphinxcontrib.autohttp.flask",
     "sphinxcontrib.autohttp.flaskqref",
-    "recommonmark"
+    "recommonmark",
 ]
 
 # Add any paths that contain templates here, relative to this directory.
