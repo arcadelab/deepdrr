@@ -5,8 +5,8 @@ nibabel
 scikit-image
 pydicom
 scipy
-# pyvista # avoid unnecessary packages for docs build
-# pycuda # docs build machines don't have GPUs
+pyvista # avoid unnecessary packages for docs build
+pycuda # docs build machines don't have GPUs
 
 flake8
 Sphinx
