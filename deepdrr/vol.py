@@ -441,6 +441,8 @@ class Volume(object):
             x (geo.Point3D): the world-space point.
 
         """
+
+        # TODO(killeen): fix this. It doesn't use x.
         x = geo.point(x)
         center_anatomical = self.anatomical_from_ijk @ geo.point(np.array(self.shape) / 2)
         self.world_from_anatomical = geo.FrameTransform.from_rt(self.world_from_anatomical.R) @ geo.FrameTransform.from_origin(center_anatomical)
