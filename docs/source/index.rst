@@ -5,7 +5,6 @@ DeepDRR
    :maxdepth: 2
    :caption: Contents:
 
-   README.md
    deepdrr
    modules
 
