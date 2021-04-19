@@ -102,8 +102,6 @@ class MobileCArm(object):
 
     All length units are in millimeters.
 
-    TODO(killeen): finish documenting aruments.
-
     Args:
         isocenter (geo.Point3D): the initial isocenter of in the device frame. This is the point
             about which rotations are performed.
@@ -180,8 +178,10 @@ class MobileCArm(object):
         self._static_mesh = None
 
     def __str__(self):
-        return (f"MobileCArm(isocenter={np.array_str(np.array(self.isocenter))}, "
-                f"alpha={np.degrees(self.alpha)}, beta={np.degrees(self.beta)}, degrees=True)")
+        return (
+            f"MobileCArm(isocenter={np.array_str(np.array(self.isocenter))}, "
+            f"alpha={np.degrees(self.alpha)}, beta={np.degrees(self.beta)}, degrees=True)"
+        )
 
     @property
     def max_isocenter(self) -> np.ndarray:
