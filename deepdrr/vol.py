@@ -441,6 +441,8 @@ class Volume(object):
             x (geo.Point3D): the world-space point.
 
         """
+
+        # TODO(killeen): fix this. It doesn't use x.
         x = geo.point(x)
         center_anatomical = self.anatomical_from_ijk @ geo.point(np.array(self.shape) / 2)
         self.world_from_anatomical = geo.FrameTransform.from_rt(self.world_from_anatomical.R) @ geo.FrameTransform.from_origin(center_anatomical)
@@ -531,11 +533,16 @@ class Volume(object):
                 surface.save(cache_path)
         return surface
 
-    def get_mesh_in_world(self, full: bool = False, cache_dir: Optional[Path] = None) -> pv.PolyData:
+    def get_mesh_in_world(self, full: bool = False, cache_dir: Optional[Path] = None, use_cached: bool = True) -> pv.PolyData:
         """Get a pyvista mesh of the outline in world-space.
 
+        Args:
+            full (bool): Whether to render the full volume or just a wireframe. Defaults to False.
+            cache_dir (Optional[Path], optional): a location to cache the bone surface.
+            use_cached (bool): If False, don't use the cached bone surface but re-create it (expensive). Defaults to True.
+
         Returns:
-            pv.PolyData: pyvist mesh.
+            pv.PolyData: pyvista mesh.
         """
 
         assert pv_available, f'PyVista not available for obtaining Volume mesh. Try: `pip install pyvista`'
@@ -567,7 +574,8 @@ class Volume(object):
         mesh += pv.Line(points[3], points[7])
 
         if full:
-            material_mesh = self.get_surface(material='bone', cache_dir=cache_dir)
+            logger.debug(f"getting full surface mesh for volume")
+            material_mesh = self.get_surface(material='bone', cache_dir=cache_dir, use_cached=use_cached)
             material_mesh.transform(geo.get_data(self.world_from_anatomical))
             mesh += material_mesh
 
