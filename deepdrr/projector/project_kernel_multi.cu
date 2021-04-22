@@ -188,9 +188,79 @@
     if (do_trace[1]) { GET_POSITION_FOR_VOL(1); LOAD_SEGS_FOR_VOL(1); }\
     if (do_trace[2]) { GET_POSITION_FOR_VOL(2); LOAD_SEGS_FOR_VOL(2); }\
 } while (0)
+#elif NUM_VOLUMES == 4
+#define LOAD_SEGS_AT_ALPHA do {\
+    if (do_trace[0]) { GET_POSITION_FOR_VOL(0); LOAD_SEGS_FOR_VOL(0); }\
+    if (do_trace[1]) { GET_POSITION_FOR_VOL(1); LOAD_SEGS_FOR_VOL(1); }\
+    if (do_trace[2]) { GET_POSITION_FOR_VOL(2); LOAD_SEGS_FOR_VOL(2); }\
+    if (do_trace[3]) { GET_POSITION_FOR_VOL(3); LOAD_SEGS_FOR_VOL(3); }\
+} while (0)
+#elif NUM_VOLUMES == 5
+#define LOAD_SEGS_AT_ALPHA do {\
+    if (do_trace[0]) { GET_POSITION_FOR_VOL(0); LOAD_SEGS_FOR_VOL(0); }\
+    if (do_trace[1]) { GET_POSITION_FOR_VOL(1); LOAD_SEGS_FOR_VOL(1); }\
+    if (do_trace[2]) { GET_POSITION_FOR_VOL(2); LOAD_SEGS_FOR_VOL(2); }\
+    if (do_trace[3]) { GET_POSITION_FOR_VOL(3); LOAD_SEGS_FOR_VOL(3); }\
+    if (do_trace[4]) { GET_POSITION_FOR_VOL(4); LOAD_SEGS_FOR_VOL(4); }\
+} while (0)
+#elif NUM_VOLUMES == 6
+#define LOAD_SEGS_AT_ALPHA do {\
+    if (do_trace[0]) { GET_POSITION_FOR_VOL(0); LOAD_SEGS_FOR_VOL(0); }\
+    if (do_trace[1]) { GET_POSITION_FOR_VOL(1); LOAD_SEGS_FOR_VOL(1); }\
+    if (do_trace[2]) { GET_POSITION_FOR_VOL(2); LOAD_SEGS_FOR_VOL(2); }\
+    if (do_trace[3]) { GET_POSITION_FOR_VOL(3); LOAD_SEGS_FOR_VOL(3); }\
+    if (do_trace[4]) { GET_POSITION_FOR_VOL(4); LOAD_SEGS_FOR_VOL(4); }\
+    if (do_trace[5]) { GET_POSITION_FOR_VOL(5); LOAD_SEGS_FOR_VOL(5); }\
+} while (0)
+#elif NUM_VOLUMES == 7
+#define LOAD_SEGS_AT_ALPHA do {\
+    if (do_trace[0]) { GET_POSITION_FOR_VOL(0); LOAD_SEGS_FOR_VOL(0); }\
+    if (do_trace[1]) { GET_POSITION_FOR_VOL(1); LOAD_SEGS_FOR_VOL(1); }\
+    if (do_trace[2]) { GET_POSITION_FOR_VOL(2); LOAD_SEGS_FOR_VOL(2); }\
+    if (do_trace[3]) { GET_POSITION_FOR_VOL(3); LOAD_SEGS_FOR_VOL(3); }\
+    if (do_trace[4]) { GET_POSITION_FOR_VOL(4); LOAD_SEGS_FOR_VOL(4); }\
+    if (do_trace[5]) { GET_POSITION_FOR_VOL(5); LOAD_SEGS_FOR_VOL(5); }\
+    if (do_trace[6]) { GET_POSITION_FOR_VOL(6); LOAD_SEGS_FOR_VOL(6); }\
+} while (0)
+#elif NUM_VOLUMES == 8
+#define LOAD_SEGS_AT_ALPHA do {\
+    if (do_trace[0]) { GET_POSITION_FOR_VOL(0); LOAD_SEGS_FOR_VOL(0); }\
+    if (do_trace[1]) { GET_POSITION_FOR_VOL(1); LOAD_SEGS_FOR_VOL(1); }\
+    if (do_trace[2]) { GET_POSITION_FOR_VOL(2); LOAD_SEGS_FOR_VOL(2); }\
+    if (do_trace[3]) { GET_POSITION_FOR_VOL(3); LOAD_SEGS_FOR_VOL(3); }\
+    if (do_trace[4]) { GET_POSITION_FOR_VOL(4); LOAD_SEGS_FOR_VOL(4); }\
+    if (do_trace[5]) { GET_POSITION_FOR_VOL(5); LOAD_SEGS_FOR_VOL(5); }\
+    if (do_trace[6]) { GET_POSITION_FOR_VOL(6); LOAD_SEGS_FOR_VOL(6); }\
+    if (do_trace[7]) { GET_POSITION_FOR_VOL(7); LOAD_SEGS_FOR_VOL(7); }\
+} while (0)
+#elif NUM_VOLUMES == 9
+#define LOAD_SEGS_AT_ALPHA do {\
+    if (do_trace[0]) { GET_POSITION_FOR_VOL(0); LOAD_SEGS_FOR_VOL(0); }\
+    if (do_trace[1]) { GET_POSITION_FOR_VOL(1); LOAD_SEGS_FOR_VOL(1); }\
+    if (do_trace[2]) { GET_POSITION_FOR_VOL(2); LOAD_SEGS_FOR_VOL(2); }\
+    if (do_trace[3]) { GET_POSITION_FOR_VOL(3); LOAD_SEGS_FOR_VOL(3); }\
+    if (do_trace[4]) { GET_POSITION_FOR_VOL(4); LOAD_SEGS_FOR_VOL(4); }\
+    if (do_trace[5]) { GET_POSITION_FOR_VOL(5); LOAD_SEGS_FOR_VOL(5); }\
+    if (do_trace[6]) { GET_POSITION_FOR_VOL(6); LOAD_SEGS_FOR_VOL(6); }\
+    if (do_trace[7]) { GET_POSITION_FOR_VOL(7); LOAD_SEGS_FOR_VOL(7); }\
+    if (do_trace[8]) { GET_POSITION_FOR_VOL(8); LOAD_SEGS_FOR_VOL(8); }\
+} while (0)
+#elif NUM_VOLUMES == 10
+#define LOAD_SEGS_AT_ALPHA do {\
+    if (do_trace[0]) { GET_POSITION_FOR_VOL(0); LOAD_SEGS_FOR_VOL(0); }\
+    if (do_trace[1]) { GET_POSITION_FOR_VOL(1); LOAD_SEGS_FOR_VOL(1); }\
+    if (do_trace[2]) { GET_POSITION_FOR_VOL(2); LOAD_SEGS_FOR_VOL(2); }\
+    if (do_trace[3]) { GET_POSITION_FOR_VOL(3); LOAD_SEGS_FOR_VOL(3); }\
+    if (do_trace[4]) { GET_POSITION_FOR_VOL(4); LOAD_SEGS_FOR_VOL(4); }\
+    if (do_trace[5]) { GET_POSITION_FOR_VOL(5); LOAD_SEGS_FOR_VOL(5); }\
+    if (do_trace[6]) { GET_POSITION_FOR_VOL(6); LOAD_SEGS_FOR_VOL(6); }\
+    if (do_trace[7]) { GET_POSITION_FOR_VOL(7); LOAD_SEGS_FOR_VOL(7); }\
+    if (do_trace[8]) { GET_POSITION_FOR_VOL(8); LOAD_SEGS_FOR_VOL(8); }\
+    if (do_trace[9]) { GET_POSITION_FOR_VOL(9); LOAD_SEGS_FOR_VOL(9); }\
+} while (0)
 #else
 #define LOAD_SEGS_AT_ALPHA do {\
-    fprintf(stderr, "LOAD_SEGS_AT_ALPHA not supported for NUM_VOLUMES outside [1, 3]");\
+    fprintf(stderr, "LOAD_SEGS_AT_ALPHA not supported for NUM_VOLUMES outside [1, 10]");\
 } while (0)
 #endif
 
@@ -362,132 +432,402 @@
     if (do_trace[1] && (priority[1] == curr_priority)) { INTERPOLATE_FOR_VOL(multiplier, 1); }\
     if (do_trace[2] && (priority[2] == curr_priority)) { INTERPOLATE_FOR_VOL(multiplier, 2); }\
 } while (0)
+#elif NUM_VOLUMES == 4
+#define INTERPOLATE(multiplier) do {\
+    if (do_trace[0] && (priority[0] == curr_priority)) { INTERPOLATE_FOR_VOL(multiplier, 0); }\
+    if (do_trace[1] && (priority[1] == curr_priority)) { INTERPOLATE_FOR_VOL(multiplier, 1); }\
+    if (do_trace[2] && (priority[2] == curr_priority)) { INTERPOLATE_FOR_VOL(multiplier, 2); }\
+    if (do_trace[3] && (priority[3] == curr_priority)) { INTERPOLATE_FOR_VOL(multiplier, 3); }\
+} while (0)
+#elif NUM_VOLUMES == 5
+#define INTERPOLATE(multiplier) do {\
+    if (do_trace[0] && (priority[0] == curr_priority)) { INTERPOLATE_FOR_VOL(multiplier, 0); }\
+    if (do_trace[1] && (priority[1] == curr_priority)) { INTERPOLATE_FOR_VOL(multiplier, 1); }\
+    if (do_trace[2] && (priority[2] == curr_priority)) { INTERPOLATE_FOR_VOL(multiplier, 2); }\
+    if (do_trace[3] && (priority[3] == curr_priority)) { INTERPOLATE_FOR_VOL(multiplier, 3); }\
+    if (do_trace[4] && (priority[4] == curr_priority)) { INTERPOLATE_FOR_VOL(multiplier, 4); }\
+} while (0)
+#elif NUM_VOLUMES == 6
+#define INTERPOLATE(multiplier) do {\
+    if (do_trace[0] && (priority[0] == curr_priority)) { INTERPOLATE_FOR_VOL(multiplier, 0); }\
+    if (do_trace[1] && (priority[1] == curr_priority)) { INTERPOLATE_FOR_VOL(multiplier, 1); }\
+    if (do_trace[2] && (priority[2] == curr_priority)) { INTERPOLATE_FOR_VOL(multiplier, 2); }\
+    if (do_trace[3] && (priority[3] == curr_priority)) { INTERPOLATE_FOR_VOL(multiplier, 3); }\
+    if (do_trace[4] && (priority[4] == curr_priority)) { INTERPOLATE_FOR_VOL(multiplier, 4); }\
+    if (do_trace[5] && (priority[5] == curr_priority)) { INTERPOLATE_FOR_VOL(multiplier, 5); }\
+} while (0)
+#elif NUM_VOLUMES == 7
+#define INTERPOLATE(multiplier) do {\
+    if (do_trace[0] && (priority[0] == curr_priority)) { INTERPOLATE_FOR_VOL(multiplier, 0); }\
+    if (do_trace[1] && (priority[1] == curr_priority)) { INTERPOLATE_FOR_VOL(multiplier, 1); }\
+    if (do_trace[2] && (priority[2] == curr_priority)) { INTERPOLATE_FOR_VOL(multiplier, 2); }\
+    if (do_trace[3] && (priority[3] == curr_priority)) { INTERPOLATE_FOR_VOL(multiplier, 3); }\
+    if (do_trace[4] && (priority[4] == curr_priority)) { INTERPOLATE_FOR_VOL(multiplier, 4); }\
+    if (do_trace[5] && (priority[5] == curr_priority)) { INTERPOLATE_FOR_VOL(multiplier, 5); }\
+    if (do_trace[6] && (priority[6] == curr_priority)) { INTERPOLATE_FOR_VOL(multiplier, 6); }\
+} while (0)
+#elif NUM_VOLUMES == 8
+#define INTERPOLATE(multiplier) do {\
+    if (do_trace[0] && (priority[0] == curr_priority)) { INTERPOLATE_FOR_VOL(multiplier, 0); }\
+    if (do_trace[1] && (priority[1] == curr_priority)) { INTERPOLATE_FOR_VOL(multiplier, 1); }\
+    if (do_trace[2] && (priority[2] == curr_priority)) { INTERPOLATE_FOR_VOL(multiplier, 2); }\
+    if (do_trace[3] && (priority[3] == curr_priority)) { INTERPOLATE_FOR_VOL(multiplier, 3); }\
+    if (do_trace[4] && (priority[4] == curr_priority)) { INTERPOLATE_FOR_VOL(multiplier, 4); }\
+    if (do_trace[5] && (priority[5] == curr_priority)) { INTERPOLATE_FOR_VOL(multiplier, 5); }\
+    if (do_trace[6] && (priority[6] == curr_priority)) { INTERPOLATE_FOR_VOL(multiplier, 6); }\
+    if (do_trace[7] && (priority[7] == curr_priority)) { INTERPOLATE_FOR_VOL(multiplier, 7); }\
+} while (0)
+#elif NUM_VOLUMES == 9
+#define INTERPOLATE(multiplier) do {\
+    if (do_trace[0] && (priority[0] == curr_priority)) { INTERPOLATE_FOR_VOL(multiplier, 0); }\
+    if (do_trace[1] && (priority[1] == curr_priority)) { INTERPOLATE_FOR_VOL(multiplier, 1); }\
+    if (do_trace[2] && (priority[2] == curr_priority)) { INTERPOLATE_FOR_VOL(multiplier, 2); }\
+    if (do_trace[3] && (priority[3] == curr_priority)) { INTERPOLATE_FOR_VOL(multiplier, 3); }\
+    if (do_trace[4] && (priority[4] == curr_priority)) { INTERPOLATE_FOR_VOL(multiplier, 4); }\
+    if (do_trace[5] && (priority[5] == curr_priority)) { INTERPOLATE_FOR_VOL(multiplier, 5); }\
+    if (do_trace[6] && (priority[6] == curr_priority)) { INTERPOLATE_FOR_VOL(multiplier, 6); }\
+    if (do_trace[7] && (priority[7] == curr_priority)) { INTERPOLATE_FOR_VOL(multiplier, 7); }\
+    if (do_trace[8] && (priority[8] == curr_priority)) { INTERPOLATE_FOR_VOL(multiplier, 8); }\
+} while (0)
+#elif NUM_VOLUMES == 10
+#define INTERPOLATE(multiplier) do {\
+    if (do_trace[0] && (priority[0] == curr_priority)) { INTERPOLATE_FOR_VOL(multiplier, 0); }\
+    if (do_trace[1] && (priority[1] == curr_priority)) { INTERPOLATE_FOR_VOL(multiplier, 1); }\
+    if (do_trace[2] && (priority[2] == curr_priority)) { INTERPOLATE_FOR_VOL(multiplier, 2); }\
+    if (do_trace[3] && (priority[3] == curr_priority)) { INTERPOLATE_FOR_VOL(multiplier, 3); }\
+    if (do_trace[4] && (priority[4] == curr_priority)) { INTERPOLATE_FOR_VOL(multiplier, 4); }\
+    if (do_trace[5] && (priority[5] == curr_priority)) { INTERPOLATE_FOR_VOL(multiplier, 5); }\
+    if (do_trace[6] && (priority[6] == curr_priority)) { INTERPOLATE_FOR_VOL(multiplier, 6); }\
+    if (do_trace[7] && (priority[7] == curr_priority)) { INTERPOLATE_FOR_VOL(multiplier, 7); }\
+    if (do_trace[8] && (priority[8] == curr_priority)) { INTERPOLATE_FOR_VOL(multiplier, 8); }\
+    if (do_trace[9] && (priority[9] == curr_priority)) { INTERPOLATE_FOR_VOL(multiplier, 9); }\
+} while (0)
 #else
 #define INTERPOLATE(multiplier) do {\
-    fprintf(stderr, "INTERPOLATE not supported for NUM_VOLUMES outside [1, 3]");\
+    fprintf(stderr, "INTERPOLATE not supported for NUM_VOLUMES outside [1, 10]");\
 } while (0)
 #endif
-
-#define CALCULATE_RAY_FOR_VOL(vol_id) do {\
-    rx[vol_id] = u * rt_kinv[(9 * vol_id) + 0] + v * rt_kinv[(9 * vol_id) + 1] + rt_kinv[(9 * vol_id) + 2];\
-    ry[vol_id] = u * rt_kinv[(9 * vol_id) + 3] + v * rt_kinv[(9 * vol_id) + 4] + rt_kinv[(9 * vol_id) + 5];\
-    rz[vol_id] = u * rt_kinv[(9 * vol_id) + 6] + v * rt_kinv[(9 * vol_id) + 7] + rt_kinv[(9 * vol_id) + 8];\
-    /* make the ray a unit vector */\
-    float normFactor = 1.0f / sqrt((rx[vol_id] * rx[vol_id]) + (ry[vol_id] * ry[vol_id]) + (rz[vol_id] * rz[vol_id]));\
-    rx[vol_id] *= normFactor;\
-    ry[vol_id] *= normFactor;\
-    rz[vol_id] *= normFactor;\
-    \
-    float tmp = 0.0f;\
-    tmp += (rx[vol_id] * gVoxelElementSizeX[vol_id])*(rx[vol_id] * gVoxelElementSizeX[vol_id]);\
-    tmp += (ry[vol_id] * gVoxelElementSizeY[vol_id])*(ry[vol_id] * gVoxelElementSizeY[vol_id]);\
-    tmp += (rz[vol_id] * gVoxelElementSizeZ[vol_id])*(rz[vol_id] * gVoxelElementSizeZ[vol_id]);\
-    volume_normalization_factor[vol_id] = sqrtf(tmp);\
-} while (0)
-
-#if NUM_VOLUMES == 1
-#define CALCULATE_RAYS do {\
-    CALCULATE_RAY_FOR_VOL(0);\
-} while (0)
-#elif NUM_VOLUMES == 2
-#define CALCULATE_RAYS do {\
-    CALCULATE_RAY_FOR_VOL(0);\
-    CALCULATE_RAY_FOR_VOL(1);\
-} while (0)
-#elif NUM_VOLUMES == 3
-#define CALCULATE_RAYS do {\
-    CALCULATE_RAY_FOR_VOL(0);\
-    CALCULATE_RAY_FOR_VOL(1);\
-    CALCULATE_RAY_FOR_VOL(2);\
-} while (0)
-#else
-#define CALCULATE_RAYS do {\
-    fprintf(stderr, "CALCULATE_RAYS not supported for NUM_VOLUMES outside [1, 3]");\
-} while (0)
-#endif
-
-#define CALCULATE_ALPHAS_FOR_VOL(i) do{\
-    minAlpha[i] = 0;\
-    maxAlpha[i] = INFINITY;\
-    do_trace[i] = 1;\
-\
-    if (0.0f != rx[i]) {\
-        float reci = 1.0f / rx[i];\
-        float alpha0 = (gVolumeEdgeMinPointX[i] - sx[i]) * reci;\
-        float alpha1 = (gVolumeEdgeMaxPointX[i] - sx[i]) * reci;\
-        minAlpha[i] = fmin(alpha0, alpha1);\
-        maxAlpha[i] = fmax(alpha0, alpha1);\
-    } else if (gVolumeEdgeMinPointX[i] > sx[i] || sx[i] > gVolumeEdgeMaxPointX[i]) {\
-        do_trace[i] = 0;\
-    }\
-\
-    if (do_trace[i] && (0.0f != ry[i])) {\
-        float reci = 1.0f / ry[i];\
-        float alpha0 = (gVolumeEdgeMinPointY[i] - sy[i]) * reci;\
-        float alpha1 = (gVolumeEdgeMaxPointY[i] - sy[i]) * reci;\
-        minAlpha[i] = fmax(minAlpha[i], fmin(alpha0, alpha1));\
-        maxAlpha[i] = fmin(maxAlpha[i], fmax(alpha0, alpha1));\
-    } else if (gVolumeEdgeMinPointY[i] > sy[i] || sy[i] > gVolumeEdgeMaxPointY[i]) {\
-        do_trace[i] = 0;\
-    }\
-\
-    if (do_trace[i] && (0.0f != rz[i]))  {\
-        float reci = 1.0f / rz[i];\
-        float alpha0 = (gVolumeEdgeMinPointZ[i] - sz[i]) * reci;\
-        float alpha1 = (gVolumeEdgeMaxPointZ[i] - sz[i]) * reci;\
-        minAlpha[i] = fmax(minAlpha[i], fmin(alpha0, alpha1));\
-        maxAlpha[i] = fmin(maxAlpha[i], fmax(alpha0, alpha1));\
-    } else if (gVolumeEdgeMinPointZ > sz || sz > gVolumeEdgeMaxPointZ) {\
-        do_trace[i] = 0;\
-    }\
-    globalMinAlpha = fmin(minAlpha[i], globalMinAlpha);\
-    globalMaxAlpha = fmax(maxAlpha[i], globalMaxAlpha);\
-} while (0)
-
-#if NUM_VOLUMES == 1
-#define CALCULATE_ALPHAS do {\
-    CALCULATE_ALPHAS_FOR_VOL(0);\
-} while (0)
-#elif NUM_VOLUMES == 2
-#define CALCULATE_ALPHAS do {\
-    CALCULATE_ALPHAS_FOR_VOL(0);\
-    CALCULATE_ALPHAS_FOR_VOL(1);\
-} while (0)
-#elif NUM_VOLUMES == 3
-#define CALCULATE_ALPHAS do {\
-    CALCULATE_ALPHAS_FOR_VOL(0);\
-    CALCULATE_ALPHAS_FOR_VOL(1);\
-    CALCULATE_ALPHAS_FOR_VOL(2);\
-} while (0)
-#else
-#define CALCULATE_ALPHAS do {\
-    fprintf(stderr, "CALCULATE_ALPHAS not supported for NUM_VOLUMES outside [1, 3]");\
-} while (0)
-#endif
-
-#define GET_PRIORITY_AT_ALPHA do {\
-    curr_priority = NUM_VOLUMES;\
-    n_vols_at_curr_priority = 0;\
-    for (int i = 0; i < NUM_VOLUMES; i++) {\
-        if (0 == do_trace[i]) { continue; }\
-        if ((alpha < minAlpha[i]) || (alpha > maxAlpha[i])) { continue; }\
-        float any_seg = 0.0f;\
-        for (int m = 0; m < NUM_MATERIALS; m++) {\
-            any_seg += seg_at_alpha[i][m];\
-            if (any_seg > 0.0f) { break; }\
-        }\
-        if (0.0f == any_seg) { continue; }\
-\
-        if (priority[i] < curr_priority) {\
-            curr_priority = priority[i];\
-            n_vols_at_curr_priority = 1;\
-        } else if (priority[i] == curr_priority) {\
-            n_vols_at_curr_priority ++;\
-        }\
-    }\
-} while (0)
 
 extern "C" {
+    /* "return" variables point to an item in the array, not the beginning of the array */
+    __device__ static void calculate_alpha(
+        float *minAlpha, float *maxAlpha, int *do_trace, 
+        float *globalMinAlpha, float *globalMaxAlpha,
+        float rx, float ry, float rz,
+        float sx, float sy, float sz,
+        float minBoundX, float minBoundY, float minBoundZ,
+        float maxBoundX, float maxBoundY, float maxBoundZ
+    ) {
+        *minAlpha = 0.0f;
+        *maxAlpha = INFINITY;
+        *do_trace = 1;
+
+        if (0.0f != rx) {
+            float reci = 1.0f / rx;
+            float alpha0 = (minBoundX - sx) * reci;
+            float alpha1 = (maxBoundX - sx) * reci;
+            *minAlpha = fmin(alpha0, alpha1);
+            *maxAlpha = fmax(alpha0, alpha1);
+        } else if (minBoundX > sx || sx > maxBoundX) {
+            *do_trace = 0;
+        }
+    
+        if ((*do_trace) && (0.0f != ry)) {
+            float reci = 1.0f / ry;
+            float alpha0 = (minBoundY - sy) * reci;
+            float alpha1 = (maxBoundY - sy) * reci;
+            *minAlpha = fmax(*minAlpha, fmin(alpha0, alpha1));
+            *maxAlpha = fmin(*maxAlpha, fmax(alpha0, alpha1));
+        } else if (minBoundY > sy || sy > maxBoundY) {
+            *do_trace = 0;
+        }
+    
+        if ((*do_trace) && (0.0f != rz))  {
+            float reci = 1.0f / rz;
+            float alpha0 = (minBoundZ - sz) * reci;
+            float alpha1 = (maxBoundZ - sz) * reci;
+            *minAlpha = fmax(*minAlpha, fmin(alpha0, alpha1));
+            *maxAlpha = fmin(*maxAlpha, fmax(alpha0, alpha1));
+        } else if (minBoundZ > sz || sz > maxBoundZ) {
+            *do_trace = 0;
+        }
+        *globalMinAlpha = fmin(*minAlpha, *globalMinAlpha);
+        *globalMaxAlpha = fmax(*maxAlpha, *globalMaxAlpha);
+    }
+
+    __device__ static void calculate_all_alphas(
+        float minAlpha[NUM_VOLUMES], float maxAlpha[NUM_VOLUMES], int do_trace[NUM_VOLUMES],
+        float *globalMinAlpha, float *globalMaxAlpha, 
+        float rx[NUM_VOLUMES], float ry[NUM_VOLUMES], float rz[NUM_VOLUMES],
+        float sx[NUM_VOLUMES], float sy[NUM_VOLUMES], float sz[NUM_VOLUMES],
+        float gVolumeEdgeMinPointX[NUM_VOLUMES], float gVolumeEdgeMinPointY[NUM_VOLUMES], float gVolumeEdgeMinPointZ[NUM_VOLUMES], 
+        float gVolumeEdgeMaxPointX[NUM_VOLUMES], float gVolumeEdgeMaxPointY[NUM_VOLUMES], float gVolumeEdgeMaxPointZ[NUM_VOLUMES]
+    ) {
+        #if NUM_VOLUMES <= 0
+        fprintf(stderr, "calculate_all_alphas not supported for NUM_VOLUMES outside [1, 10]"); return;
+        #endif
+
+        #if NUM_VOLUMES > 10
+        fprintf(stderr, "calculate_all_alphas not supported for NUM_VOLUMES outside [1, 10]"); return;
+        #endif
+
+        int i; 
+        #if NUM_VOLUMES > 0
+        i = 0;
+        calculate_alpha(
+            &minAlpha[i], &maxAlpha[i], &do_trace[i],
+            globalMinAlpha, globalMaxAlpha,
+            rx[i], ry[i], rz[i],
+            sx[i], sy[i], sz[i],
+            gVolumeEdgeMinPointX[i], gVolumeEdgeMinPointY[i], gVolumeEdgeMinPointZ[i],
+            gVolumeEdgeMaxPointX[i], gVolumeEdgeMaxPointY[i], gVolumeEdgeMaxPointZ[i]
+        );
+        #endif
+        #if NUM_VOLUMES > 1
+        i = 1;
+        calculate_alpha(
+            &minAlpha[i], &maxAlpha[i], &do_trace[i],
+            globalMinAlpha, globalMaxAlpha,
+            rx[i], ry[i], rz[i],
+            sx[i], sy[i], sz[i],
+            gVolumeEdgeMinPointX[i], gVolumeEdgeMinPointY[i], gVolumeEdgeMinPointZ[i],
+            gVolumeEdgeMaxPointX[i], gVolumeEdgeMaxPointY[i], gVolumeEdgeMaxPointZ[i]
+        );
+        #endif
+        #if NUM_VOLUMES > 2
+        i = 2;
+        calculate_alpha(
+            &minAlpha[i], &maxAlpha[i], &do_trace[i],
+            globalMinAlpha, globalMaxAlpha,
+            rx[i], ry[i], rz[i],
+            sx[i], sy[i], sz[i],
+            gVolumeEdgeMinPointX[i], gVolumeEdgeMinPointY[i], gVolumeEdgeMinPointZ[i],
+            gVolumeEdgeMaxPointX[i], gVolumeEdgeMaxPointY[i], gVolumeEdgeMaxPointZ[i]
+        );
+        #endif
+        #if NUM_VOLUMES > 3
+        i = 3;
+        calculate_alpha(
+            &minAlpha[i], &maxAlpha[i], &do_trace[i],
+            globalMinAlpha, globalMaxAlpha,
+            rx[i], ry[i], rz[i],
+            sx[i], sy[i], sz[i],
+            gVolumeEdgeMinPointX[i], gVolumeEdgeMinPointY[i], gVolumeEdgeMinPointZ[i],
+            gVolumeEdgeMaxPointX[i], gVolumeEdgeMaxPointY[i], gVolumeEdgeMaxPointZ[i]
+        );
+        #endif
+        #if NUM_VOLUMES > 4
+        i = 4;
+        calculate_alpha(
+            &minAlpha[i], &maxAlpha[i], &do_trace[i],
+            globalMinAlpha, globalMaxAlpha,
+            rx[i], ry[i], rz[i],
+            sx[i], sy[i], sz[i],
+            gVolumeEdgeMinPointX[i], gVolumeEdgeMinPointY[i], gVolumeEdgeMinPointZ[i],
+            gVolumeEdgeMaxPointX[i], gVolumeEdgeMaxPointY[i], gVolumeEdgeMaxPointZ[i]
+        );
+        #endif
+        #if NUM_VOLUMES > 5
+        i = 5;
+        calculate_alpha(
+            &minAlpha[i], &maxAlpha[i], &do_trace[i],
+            globalMinAlpha, globalMaxAlpha,
+            rx[i], ry[i], rz[i],
+            sx[i], sy[i], sz[i],
+            gVolumeEdgeMinPointX[i], gVolumeEdgeMinPointY[i], gVolumeEdgeMinPointZ[i],
+            gVolumeEdgeMaxPointX[i], gVolumeEdgeMaxPointY[i], gVolumeEdgeMaxPointZ[i]
+        );
+        #endif
+        #if NUM_VOLUMES > 6
+        i = 6;
+        calculate_alpha(
+            &minAlpha[i], &maxAlpha[i], &do_trace[i],
+            globalMinAlpha, globalMaxAlpha,
+            rx[i], ry[i], rz[i],
+            sx[i], sy[i], sz[i],
+            gVolumeEdgeMinPointX[i], gVolumeEdgeMinPointY[i], gVolumeEdgeMinPointZ[i],
+            gVolumeEdgeMaxPointX[i], gVolumeEdgeMaxPointY[i], gVolumeEdgeMaxPointZ[i]
+        );
+        #endif
+        #if NUM_VOLUMES > 7
+        i = 7;
+        calculate_alpha(
+            &minAlpha[i], &maxAlpha[i], &do_trace[i],
+            globalMinAlpha, globalMaxAlpha,
+            rx[i], ry[i], rz[i],
+            sx[i], sy[i], sz[i],
+            gVolumeEdgeMinPointX[i], gVolumeEdgeMinPointY[i], gVolumeEdgeMinPointZ[i],
+            gVolumeEdgeMaxPointX[i], gVolumeEdgeMaxPointY[i], gVolumeEdgeMaxPointZ[i]
+        );
+        #endif
+        #if NUM_VOLUMES > 8
+        i = 8;
+        calculate_alpha(
+            &minAlpha[i], &maxAlpha[i], &do_trace[i],
+            globalMinAlpha, globalMaxAlpha,
+            rx[i], ry[i], rz[i],
+            sx[i], sy[i], sz[i],
+            gVolumeEdgeMinPointX[i], gVolumeEdgeMinPointY[i], gVolumeEdgeMinPointZ[i],
+            gVolumeEdgeMaxPointX[i], gVolumeEdgeMaxPointY[i], gVolumeEdgeMaxPointZ[i]
+        );
+        #endif
+        #if NUM_VOLUMES > 9
+        i = 9;
+        calculate_alpha(
+            &minAlpha[i], &maxAlpha[i], &do_trace[i],
+            globalMinAlpha, globalMaxAlpha,
+            rx[i], ry[i], rz[i],
+            sx[i], sy[i], sz[i],
+            gVolumeEdgeMinPointX[i], gVolumeEdgeMinPointY[i], gVolumeEdgeMinPointZ[i],
+            gVolumeEdgeMaxPointX[i], gVolumeEdgeMaxPointY[i], gVolumeEdgeMaxPointZ[i]
+        );
+        #endif
+    }
+
+    /* "return" variables point to an item in the array, not the beginning of the array */
+    __device__ static void calculate_ray(
+        float *rx, float *ry, float *rz, float *vnf,
+        float u, float v, float *rt_kinv_arr, int rt_kinv_offset,
+        float voxelSizeX, float voxelSizeY, float voxelSizeZ
+    ) {
+        *rx = u * rt_kinv_arr[rt_kinv_offset + 0] + v * rt_kinv_arr[rt_kinv_offset + 1] + rt_kinv_arr[rt_kinv_offset + 2];
+        *ry = u * rt_kinv_arr[rt_kinv_offset + 3] + v * rt_kinv_arr[rt_kinv_offset + 4] + rt_kinv_arr[rt_kinv_offset + 5];
+        *rz = u * rt_kinv_arr[rt_kinv_offset + 6] + v * rt_kinv_arr[rt_kinv_offset + 7] + rt_kinv_arr[rt_kinv_offset + 8];
+        /* make the ray a unit vector */
+        float normFactor = 1.0f / sqrt(((*rx) * (*rx)) + ((*ry) * (*ry)) + ((*rz) * (*rz)));
+        *rx *= normFactor;
+        *ry *= normFactor;
+        *rz *= normFactor;
+        
+        float tmp = 0.0f;
+        tmp += ((*rx) * voxelSizeX) * ((*rx) * voxelSizeX);
+        tmp += ((*ry) * voxelSizeY) * ((*ry) * voxelSizeY);
+        tmp += ((*rz) * voxelSizeZ) * ((*rz) * voxelSizeZ);
+        *vnf = sqrtf(tmp);
+    }
+
+    __device__ static void calculate_all_rays(
+        float rx[NUM_VOLUMES], float ry[NUM_VOLUMES], float rz[NUM_VOLUMES], float volume_normalization_factor[NUM_VOLUMES],
+        float u, float v, float rt_kinv_arr[9 * NUM_VOLUMES],
+        float gVoxelElementSizeX[NUM_VOLUMES], float gVoxelElementSizeY[NUM_VOLUMES], float gVoxelElementSizeZ[NUM_VOLUMES]
+    ) {
+        #if NUM_VOLUMES <= 0
+        fprintf(stderr, "calculate_all_rays not supported for NUM_VOLUMES outside [1, 10]"); return;
+        #endif
+
+        #if NUM_VOLUMES > 10
+        fprintf(stderr, "calculate_all_rays not supported for NUM_VOLUMES outside [1, 10]"); return;
+        #endif
+
+        int i; 
+        #if NUM_VOLUMES > 0
+        i = 0;
+        calculate_ray(
+            &rx[i], &ry[i], &rz[i], &volume_normalization_factor[i],
+            u, v, rt_kinv_arr, 9 * i,
+            gVoxelElementSizeX[i], gVoxelElementSizeY[i], gVoxelElementSizeZ[i]
+        );
+        #endif
+        #if NUM_VOLUMES > 1
+        i = 1;
+        calculate_ray(
+            &rx[i], &ry[i], &rz[i], &volume_normalization_factor[i],
+            u, v, rt_kinv_arr, 9 * i,
+            gVoxelElementSizeX[i], gVoxelElementSizeY[i], gVoxelElementSizeZ[i]
+        );
+        #endif
+        #if NUM_VOLUMES > 2
+        i = 2;
+        calculate_ray(
+            &rx[i], &ry[i], &rz[i], &volume_normalization_factor[i],
+            u, v, rt_kinv_arr, 9 * i,
+            gVoxelElementSizeX[i], gVoxelElementSizeY[i], gVoxelElementSizeZ[i]
+        );
+        #endif
+        #if NUM_VOLUMES > 3
+        i = 3;
+        calculate_ray(
+            &rx[i], &ry[i], &rz[i], &volume_normalization_factor[i],
+            u, v, rt_kinv_arr, 9 * i,
+            gVoxelElementSizeX[i], gVoxelElementSizeY[i], gVoxelElementSizeZ[i]
+        );
+        #endif
+        #if NUM_VOLUMES > 4
+        i = 4;
+        calculate_ray(
+            &rx[i], &ry[i], &rz[i], &volume_normalization_factor[i],
+            u, v, rt_kinv_arr, 9 * i,
+            gVoxelElementSizeX[i], gVoxelElementSizeY[i], gVoxelElementSizeZ[i]
+        );
+        #endif
+        #if NUM_VOLUMES > 5
+        i = 5;
+        calculate_ray(
+            &rx[i], &ry[i], &rz[i], &volume_normalization_factor[i],
+            u, v, rt_kinv_arr, 9 * i,
+            gVoxelElementSizeX[i], gVoxelElementSizeY[i], gVoxelElementSizeZ[i]
+        );
+        #endif
+        #if NUM_VOLUMES > 6
+        i = 6;
+        calculate_ray(
+            &rx[i], &ry[i], &rz[i], &volume_normalization_factor[i],
+            u, v, rt_kinv_arr, 9 * i,
+            gVoxelElementSizeX[i], gVoxelElementSizeY[i], gVoxelElementSizeZ[i]
+        );
+        #endif
+        #if NUM_VOLUMES > 7
+        i = 7;
+        calculate_ray(
+            &rx[i], &ry[i], &rz[i], &volume_normalization_factor[i],
+            u, v, rt_kinv_arr, 9 * i,
+            gVoxelElementSizeX[i], gVoxelElementSizeY[i], gVoxelElementSizeZ[i]
+        );
+        #endif
+        #if NUM_VOLUMES > 8
+        i = 8;
+        calculate_ray(
+            &rx[i], &ry[i], &rz[i], &volume_normalization_factor[i],
+            u, v, rt_kinv_arr, 9 * i,
+            gVoxelElementSizeX[i], gVoxelElementSizeY[i], gVoxelElementSizeZ[i]
+        );
+        #endif
+        #if NUM_VOLUMES > 9
+        i = 9;
+        calculate_ray(
+            &rx[i], &ry[i], &rz[i], &volume_normalization_factor[i],
+            u, v, rt_kinv_arr, 9 * i,
+            gVoxelElementSizeX[i], gVoxelElementSizeY[i], gVoxelElementSizeZ[i]
+        );
+        #endif
+    }
+
+    __device__ static void get_priority_at_alpha(
+        float alpha, int *curr_priority, int *n_vols_at_curr_priority,
+        float minAlpha[NUM_VOLUMES], float maxAlpha[NUM_VOLUMES], int do_trace[NUM_VOLUMES],
+        float seg_at_alpha[NUM_VOLUMES][NUM_MATERIALS], int priority[NUM_VOLUMES]
+    ) {
+        *curr_priority = NUM_VOLUMES;
+        *n_vols_at_curr_priority = 0;
+        for (int i = 0; i < NUM_VOLUMES; i++) {
+            if (0 == do_trace[i]) { continue; }
+            if ((alpha < minAlpha[i]) || (alpha > maxAlpha[i])) { continue; }
+            float any_seg = 0.0f;
+            for (int m = 0; m < NUM_MATERIALS; m++) {
+                any_seg += seg_at_alpha[i][m];
+                if (any_seg > 0.0f) { break; }
+            }
+            if (0.0f == any_seg) { continue; }
+    
+            if (priority[i] < *curr_priority) {
+                *curr_priority = priority[i];
+                *n_vols_at_curr_priority = 1;
+            } else if (priority[i] == *curr_priority) {
+                *n_vols_at_curr_priority += 1;
+            }
+        }
+    }
+
     __global__  void projectKernel(
         int out_width, // width of the output image
         int out_height, // height of the output image
@@ -538,18 +878,6 @@ extern "C" {
         if (udx >= out_width || vdx >= out_height)
             return;
 
-        /*if ((0 == udx) && (0 == vdx)) {
-            for (int i = 0; i < NUM_VOLUMES; i++) {
-                printf(
-                    "priority #%d: %d\n\tbounds #%d: [%f, %f], [%f, %f], [%f, %f]\n", 
-                    i, priority[i], i, 
-                    gVolumeEdgeMinPointX[i], gVolumeEdgeMaxPointX[i], 
-                    gVolumeEdgeMinPointY[i], gVolumeEdgeMaxPointY[i], 
-                    gVolumeEdgeMinPointZ[i], gVolumeEdgeMaxPointZ[i]
-                );
-            }
-        }*/
-
         // cell-centered sampling point corresponding to pixel index, in index-space.
         float u = (float) udx + 0.5;
         float v = (float) vdx + 0.5;
@@ -559,7 +887,11 @@ extern "C" {
         float ry[NUM_VOLUMES];
         float rz[NUM_VOLUMES];
         float volume_normalization_factor[NUM_VOLUMES];
-        CALCULATE_RAYS;
+        calculate_all_rays(
+            rx, ry, rz, volume_normalization_factor,
+            u, v, rt_kinv, 
+            gVoxelElementSizeX, gVoxelElementSizeY, gVoxelElementSizeZ
+        );
 
         // calculate projections
         // Part 1: compute alpha value at entry and exit point of the volume on either side of the ray.
@@ -570,7 +902,14 @@ extern "C" {
         int do_trace[NUM_VOLUMES]; // for each volume, whether or not to perform the ray-tracing
         float globalMinAlpha = INFINITY; // the smallest of all the minAlpha's
         float globalMaxAlpha = 0.0f; // the largest of all the maxAlpha's
-        CALCULATE_ALPHAS;
+        calculate_all_alphas(
+            minAlpha, maxAlpha, do_trace,
+            &globalMinAlpha, &globalMaxAlpha,
+            rx, ry, rz,
+            sx, sy, sz,
+            gVolumeEdgeMinPointX, gVolumeEdgeMinPointY, gVolumeEdgeMinPointZ,
+            gVolumeEdgeMaxPointX, gVolumeEdgeMaxPointY, gVolumeEdgeMaxPointZ
+        );
 
         // we start not at the exact entry point 
         // => we can be sure to be inside the volume
@@ -606,7 +945,11 @@ extern "C" {
 
         for (alpha = globalMinAlpha; alpha < globalMaxAlpha; alpha += step) {
             LOAD_SEGS_AT_ALPHA; // initializes p{x,y,z}[...] and seg_at_alpha[...][...]
-            GET_PRIORITY_AT_ALPHA;
+            get_priority_at_alpha(
+                alpha, &curr_priority, &n_vols_at_curr_priority,
+                minAlpha, maxAlpha, do_trace,
+                seg_at_alpha, priority
+            );
             if (0 == n_vols_at_curr_priority) {
                 // Outside the bounds of all volumes to trace. Assume nominal density of air is 0.0f.
                 // Thus, we don't need to add to area_density

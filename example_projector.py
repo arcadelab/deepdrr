@@ -106,7 +106,7 @@ def main():
 
     t = time()
     with Projector(
-        volume=volume0,
+        volume=[volume0, volume1],
         priorities=None, # default, equivalent to priorities=[1, 0]
         camera_intrinsics=camera_intrinsics,
         carm=carm,
