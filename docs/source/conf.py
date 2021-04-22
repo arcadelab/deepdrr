@@ -10,10 +10,11 @@
 # add these directories to sys.path here. If the directory is relative to the
 # documentation root, use os.path.abspath to make it absolute, like shown here.
 #
+import os
 import sys
-from pathlib import Path
 
-sys.path.insert(0, (Path(__file__).parent / ".." / ".." / "deepdrr").absolute())
+sys.path.append(os.path.abspath("../.."))
+sys.path.append(os.path.abspath("../../deepdrr"))
 
 
 # -- Project information -----------------------------------------------------
@@ -23,8 +24,7 @@ copyright = "2021, Benjamin D. Killeen, Cong Gao, Jan-Nico Zaech, and Mathias Un
 author = "Benjamin D. Killeen, Cong Gao, Jan-Nico Zaech, and Mathias Unberath"
 
 # The full version, including alpha/beta/rc tags
-release = "1.1.0"
-
+release = "1.1.0a1"
 
 # -- General configuration ---------------------------------------------------
 
@@ -38,6 +38,7 @@ extensions = [
     "sphinxcontrib.httpdomain",
     "sphinxcontrib.autohttp.flask",
     "sphinxcontrib.autohttp.flaskqref",
+    "recommonmark",
 ]
 
 # Add any paths that contain templates here, relative to this directory.

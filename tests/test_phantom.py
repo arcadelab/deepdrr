@@ -75,8 +75,6 @@ def test_phantom():
     ) as projector:
         images = projector.project()
 
-    logger.info(f"projected {images.shape[0]} views in {dt:.03f}s")
-
     # save results as matplotlib plots
     # output_dir = Path(f"examples")
     # output_dir.mkdir(exist_ok=True)

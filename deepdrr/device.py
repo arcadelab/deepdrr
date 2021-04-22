@@ -96,11 +96,11 @@ class MobileCArm(object):
     .. _this: https://www.lomisa.com/app/download/10978681598/ARCO_EN_C_SIEMENS_CIOS_FUSION.pdf?t=1490962065
 
     Additionall, the orbital movement and angulation are reversed from the convention used in `Kausch
-    et al<https://pubmed.ncbi.nlm.nih.gov/32533315/>`_, Figure 2.
+    et al`_, Figure 2.
+
+    .. _Kausch et al: https://pubmed.ncbi.nlm.nih.gov/32533315/
 
     All length units are in millimeters.
-
-    TODO(killeen): finish documenting aruments.
 
     Args:
         isocenter (geo.Point3D): the initial isocenter of in the device frame. This is the point
@@ -178,7 +178,10 @@ class MobileCArm(object):
         self._static_mesh = None
 
     def __str__(self):
-        return f"MobileCArm(isocenter={np.array_str(np.array(self.isocenter))}, alpha={np.degrees(self.alpha)}, beta={np.degrees(self.beta)}, degrees=True)"
+        return (
+            f"MobileCArm(isocenter={np.array_str(np.array(self.isocenter))}, "
+            f"alpha={np.degrees(self.alpha)}, beta={np.degrees(self.beta)}, degrees=True)"
+        )
 
     @property
     def max_isocenter(self) -> np.ndarray:
@@ -272,15 +275,17 @@ class MobileCArm(object):
     ) -> None:
         """Move the C-arm to the specified pose.
 
-        TODO: don't let out-of-bounds movement pass silently.
-
         Args:
-            delta_isocenter (Optional[geo.Vector3D], optional): change to the isocenter in DEVICE space (as a vector, this only matters if the scaling/rotation is different). This is the center about which rotations are performed. Defaults to None.
+            delta_isocenter (Optional[geo.Vector3D], optional): change to the isocenter in DEVICE space
+                (as a vector, this only matters if the scaling/rotation is different).
+                This is the center about which rotations are performed. Defaults to None.
             delta_alpha (Optional[float], optional): change in alpha. Defaults to None.
             delta_beta (Optional[float], optional): change in beta. Defaults to None.
             degrees (bool, optional): whether the given angles are in degrees. Defaults to False.
 
         """
+        # TODO: don't let out-of-bounds movement pass silently.
+
         if delta_isocenter is not None:
             self.isocenter += geo.vector(delta_isocenter)
             self.isocenter = geo.point(

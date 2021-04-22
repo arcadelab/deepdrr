@@ -1,4 +1,4 @@
-from typing import Literal, List, Union, Tuple, Optional, Dict
+from typing import Literal, List, Union, Tuple, Optional, Dict, Any
 
 import logging
 import numpy as np
@@ -13,6 +13,7 @@ try:
     pycuda_available = True
 except ImportError:
     pycuda_available = False
+    SourceModule = Any
     logging.warning("pycuda unavailable")
 
 from . import spectral_data
@@ -42,10 +43,12 @@ def _get_spectrum(spectrum):
 def _get_kernel_projector_module(num_volumes, num_materials) -> SourceModule:
     """Compile the cuda code for the kernel projector.
 
-    Assumes `project_kernel.cu` and `cubic` interpolation library is in the same directory as THIS file.
+    Assumes `project_kernel.cu` and `cubic` interpolation library is in the same directory as THIS
+    file.
 
     Returns:
         SourceModule: pycuda SourceModule object.
+
     """
     #path to files for cubic interpolation (folder cubic in DeepDRR)
     d = Path(__file__).resolve().parent
