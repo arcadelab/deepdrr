@@ -1,0 +1,10 @@
+numpy
+torch
+torchvision
+nibabel
+scikit-image
+pydicom
+scipy
+pyvista
+pycuda
+matplotlib

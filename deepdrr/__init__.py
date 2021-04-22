@@ -1,5 +1,5 @@
-from .device import CArm
+from .device import CArm, MobileCArm
 from .vol import Volume
 from .projector import Projector
 
-__all__ = [CArm, Volume, Projector]
+__all__ = ["MobileCArm", "CArm", "Volume", "Projector"]

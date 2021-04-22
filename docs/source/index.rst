@@ -10,6 +10,8 @@ DeepDRR
    :maxdepth: 2
    :caption: Contents:
 
+   deepdrr
+
 DeepDRR provides state-of-the-art tools to generate realistic 
 radiographs and fluoroscopy from 3D CTs on a training set scale.
 It is straightforward and user-friendly.

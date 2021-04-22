@@ -60,7 +60,6 @@ deepdrr.projector.spectral\_data module
    :undoc-members:
    :show-inheritance:
 
-
 Module contents
 ---------------
 

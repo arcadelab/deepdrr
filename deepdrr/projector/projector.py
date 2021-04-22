@@ -9,9 +9,11 @@ try:
     import pycuda.autoinit
     from pycuda.autoinit import context
     from pycuda.compiler import SourceModule
+
+    pycuda_available = True
 except ImportError:
-    SourceModule = "SourceModule"
-    logging.warning('pycuda unavailable')
+    pycuda_available = False
+    logging.warning("pycuda unavailable")
 
 from . import spectral_data
 from . import mass_attenuation
@@ -31,10 +33,10 @@ def _get_spectrum(spectrum):
     if isinstance(spectrum, np.ndarray):
         return spectrum
     elif isinstance(spectrum, str):
-        assert spectrum in spectral_data.spectrums, f'unrecognized spectrum: {spectrum}'
+        assert spectrum in spectral_data.spectrums, f"unrecognized spectrum: {spectrum}"
         return spectral_data.spectrums[spectrum]
     else:
-        raise TypeError(f'unrecognized spectrum: {type(spectrum)}')
+        raise TypeError(f"unrecognized spectrum: {type(spectrum)}")
 
 
 def _get_kernel_projector_module(num_volumes, num_materials) -> SourceModule:
@@ -54,7 +56,16 @@ def _get_kernel_projector_module(num_volumes, num_materials) -> SourceModule:
     else:
         source_path = str(d / 'project_kernel_multi.cu')
 
-    with open(source_path, 'r') as file:
+    # path to files for cubic interpolation (folder cubic in DeepDRR)
+    d = Path(__file__).resolve().parent
+    bicubic_path = str(d / "cubic")
+    source_path = (
+        str(d / "project_kernel.cu")
+        if attenuation
+        else str(d / "project_kernel_no-attenuation.cu")
+    )
+
+    with open(source_path, "r") as file:
         source = file.read()
 
     # TODO: replace the NUM_MATERIALS junk with some elegant meta-programming.
@@ -73,14 +84,16 @@ class Projector(object):
         camera_intrinsics: Optional[geo.CameraIntrinsicTransform] = None,
         carm: Optional[MobileCArm] = None,
         step: float = 0.1,
-        mode: Literal['linear'] = 'linear',
-        spectrum: Union[np.ndarray, Literal['60KV_AL35', '90KV_AL40', '120KV_AL43']] = '90KV_AL40',
+        mode: Literal["linear"] = "linear",
+        spectrum: Union[
+            np.ndarray, Literal["60KV_AL35", "90KV_AL40", "120KV_AL43"]
+        ] = "90KV_AL40",
         add_scatter: bool = False,
         add_noise: bool = False,
         photon_count: int = 100000,
         threads: int = 8,
         max_block_index: int = 1024,
-        collected_energy: bool = False, # convert to keV / cm^2 or keV / mm^2
+        collected_energy: bool = False,  # convert to keV / cm^2 or keV / mm^2
         neglog: bool = True,
         intensity_upper_bound: Optional[float] = None,
     ) -> None:
@@ -111,7 +124,7 @@ class Projector(object):
             neglog (bool, optional): whether to apply negative log transform to intensity images. If True, outputs are in range [0, 1]. Recommended for easy viewing. Defaults to False.
             intensity_upper_bound (Optional[float], optional): Maximum intensity, clipped before neglog, after noise and scatter. Defaults to 40.
         """
-                    
+
         # set variables
         volume = utils.listify(volume)
         self.volumes = []
@@ -161,7 +174,7 @@ class Projector(object):
             assert mat in material_coefficients, f'unrecognized material: {mat}'
 
         if self.camera_intrinsics is None:
-            assert self.carm is not None and hasattr(self.carm, 'camera_intrinsics')
+            assert self.carm is not None and hasattr(self.carm, "camera_intrinsics")
             self.camera_intrinsics = self.carm.camera_intrinsics
         
         self.is_initialized = False
@@ -186,10 +199,7 @@ class Projector(object):
     def output_size(self) -> int:
         return int(np.prod(self.output_shape))
 
-    def project(
-        self,
-        *camera_projections: geo.CameraProjection,
-    ) -> np.ndarray:
+    def project(self, *camera_projections: geo.CameraProjection,) -> np.ndarray:
         """Perform the projection.
 
         Args:
@@ -205,7 +215,9 @@ class Projector(object):
             raise RuntimeError("Projector has not been initialized.")
 
         if not camera_projections and self.carm is None:
-            raise ValueError('must provide a camera projection object to the projector, unless imaging device (e.g. CArm) is provided')
+            raise ValueError(
+                "must provide a camera projection object to the projector, unless imaging device (e.g. CArm) is provided"
+            )
         elif not camera_projections and self.carm is not None:
             camera_projections = [self.carm.get_camera_projection()]
             logger.debug(f'projecting with source at {camera_projections[0].center_in_world}, pointing toward isocenter at {self.carm.isocenter}...')
@@ -339,11 +351,16 @@ class Projector(object):
         # transform to collected energy in keV per cm^2 (or keV per mm^2)
         if self.collected_energy:
             logger.info("converting image to collected energy")
-            images = images * (self.photon_count / (self.camera.pixel_size[0] * self.camera.pixel_size[1]))
+            images = images * (
+                self.photon_count
+                / (self.camera.pixel_size[0] * self.camera.pixel_size[1])
+            )
 
         if self.add_noise:
             logger.info("adding Poisson noise")
-            images = analytic_generators.add_noise(images, photon_prob, self.photon_count)
+            images = analytic_generators.add_noise(
+                images, photon_prob, self.photon_count
+            )
 
         if self.intensity_upper_bound is not None:
             images = np.clip(images, None, self.intensity_upper_bound)
@@ -372,10 +389,7 @@ class Projector(object):
         phis, thetas = utils.generate_uniform_angles(phi_range, theta_range)
         for phi, theta in zip(phis, thetas):
             extrinsic = self.carm.get_camera3d_from_world(
-                self.carm.isocenter,
-                phi=phi,
-                theta=theta,
-                degrees=degrees,
+                self.carm.isocenter, phi=phi, theta=theta, degrees=degrees,
             )
 
             camera_projections.append(
@@ -544,6 +558,6 @@ class Projector(object):
 
     def __exit__(self, type, value, tb):
         self.free()
-        
+
     def __call__(self, *args, **kwargs):
         return self.project(*args, **kwargs)

@@ -1,8 +1,7 @@
 # DeepDRR
 
-DeepDRR provides state-of-the-art tools to generate realistic 
-radiographs and fluoroscopy from 3D CTs on a training set scale.
-It is straightforward and user-friendly.
+DeepDRR provides state-of-the-art tools to generate realistic radiographs and fluoroscopy from 3D
+CTs on a training set scale.
 
 ## Installation
 
@@ -42,7 +41,7 @@ A more detailed example script is given in `example_projector.py`. This script c
 
 ## Documentation
 
-Documentation is available at deepdrr.readthedocs.io.
+Documentation is available at [deepdrr.readthedocs.io](https://deepdrr.readthedocs.io).
 
 ## Contributing
 
