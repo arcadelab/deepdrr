@@ -56,15 +56,6 @@ def _get_kernel_projector_module(num_volumes, num_materials) -> SourceModule:
     else:
         source_path = str(d / 'project_kernel_multi.cu')
 
-    # path to files for cubic interpolation (folder cubic in DeepDRR)
-    d = Path(__file__).resolve().parent
-    bicubic_path = str(d / "cubic")
-    source_path = (
-        str(d / "project_kernel.cu")
-        if attenuation
-        else str(d / "project_kernel_no-attenuation.cu")
-    )
-
     with open(source_path, "r") as file:
         source = file.read()
 
