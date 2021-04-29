@@ -356,7 +356,7 @@ extern "C" {
 
             double phi = TWO_PI_DOUBLE * ranecu_double(seed);
             get_scattered_dir(dir, cos_theta, phi);
-            //printf("dir has chnaged to: {%f, %f, %f}\n", dir->x, dir->y, dir->z);
+            //printf("dir has changed to: {%f, %f, %f}\n", dir->x, dir->y, dir->z);
         }
 
         /* Final processing once the photon has left the volume */
@@ -365,6 +365,7 @@ extern "C" {
         float dist_to_detector = psurface_check_ray_intersection(pos, dir, detector_plane);
         if (dist_to_detector < 0.0f) {
             *hits_detector = 0;
+            return;
         }
 
         pos->x += dist_to_detector * dir->x;

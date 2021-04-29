@@ -20,27 +20,31 @@ logger = logging.getLogger(__name__)
 def main():
     # Define a simple phantom for test: a wire box around a cube.
     ###volume = np.zeros((120, 100, 80), dtype=np.float32)
-    volume = np.zeros((240, 200, 320), dtype=np.float32)
-    volume[0, 0, :] = 1
-    volume[0, -1, :] = 1
-    volume[-1, 0, :] = 1
-    volume[-1,-1, :] = 1
-    volume[:, 0, 0] = 1
-    volume[:, 0, -1] = 1
-    volume[:, -1, 0] = 1
-    volume[:, -1, -1] = 1
-    volume[0, :, 0] = 1
-    volume[0, :, -1] = 1
-    volume[-1,:, 0] = 1
-    volume[-1, :, -1] = 1
+    # volume = np.zeros((240, 200, 320), dtype=np.float32)
+    volume = np.zeros((120, 100, 160), dtype=np.float32)
+    volume[:, :, :] = 4.5
+    # volume[0, 0, :] = 1
+    # volume[0, -1, :] = 1
+    # volume[-1, 0, :] = 1
+    # volume[-1,-1, :] = 1
+    # volume[:, 0, 0] = 1
+    # volume[:, 0, -1] = 1
+    # volume[:, -1, 0] = 1
+    # volume[:, -1, -1] = 1
+    # volume[0, :, 0] = 1
+    # volume[0, :, -1] = 1
+    # volume[-1,:, 0] = 1
+    # volume[-1, :, -1] = 1
 
     ###volume[40:60, 40:60, 40:60] = 1
-    volume[80:160, 80:160, 80:120] = 1
-    volume[170:200, 50:70, 160:240] = 2
+    #volume[80:160, 80:160, 80:120] = 1
+    #volume[170:200, 50:70, 160:240] = 2
+
     materials = {}
-    materials["air"] = volume == 2#0
-    materials["soft tissue"] = volume == 0#1
-    materials["bone"] = (volume == 1)#2
+    materials["air"] = volume == 0
+    materials["soft tissue"] = volume == 1
+    materials["bone"] = volume == 2
+    materials["titanium"] = volume == 4.5
     voxel_size = np.array([1, 1, 1], dtype=np.float32)
 
     # Use the center of the volume as the "world" coordinates. The origin is the (0, 0, 0) index of the volume in the world frame.
@@ -109,7 +113,7 @@ def main():
     print(f"phis: {phis}, thetas: {thetas}")
 
     # save results as matplotlib plots
-    output_dir = Path(f'examples')
+    output_dir = Path(f'examples/scatter-examples')
     output_dir.mkdir(exist_ok=True)
     for i, image in enumerate(images):
         plt.imshow(image, cmap="gray")
