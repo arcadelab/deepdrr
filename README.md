@@ -137,4 +137,6 @@ The segmentation pipeline is based on the Vnet architecture:
 https://github.com/mattmacy/vnet.pytorch  
 F. Milletari, N. Navab, S-A. Ahmadi. V-Net: Fully Convolutional Neural Networks for Volumetric Medical Image Segmentation. arXiv:160604797. 2016.
 
+Automated testing utilizes the The Stanford volume data archive
+
 We gratefully acknowledge the support of the NVIDIA Corporation with the donation of the GPUs used for this research.

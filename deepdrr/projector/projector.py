@@ -30,21 +30,36 @@ from .. import utils
 logger = logging.getLogger(__name__)
 
 
-def _get_spectrum(spectrum):
+def _get_spectrum(spectrum: Union[np.ndarray, str]):
+    """Get the data corresponding to the given spectrum name.
+
+    Args:
+        spectrum (Union[np.ndarray, str]): the spectrum array or the spectrum itself.
+
+    Raises:
+        TypeError: If the spectrum is not recognized.
+
+    Returns:
+        np.ndarray: The X-ray spectrum data.
+    """
     if isinstance(spectrum, np.ndarray):
         return spectrum
     elif isinstance(spectrum, str):
-        assert spectrum in spectral_data.spectrums, f"unrecognized spectrum: {spectrum}"
+        if spectrum not in spectral_data.spectrums:
+            raise KeyError(f"unrecognized spectrum: {spectrum}")
         return spectral_data.spectrums[spectrum]
     else:
-        raise TypeError(f"unrecognized spectrum: {type(spectrum)}")
+        raise TypeError(f"unrecognized spectrum type: {type(spectrum)}")
 
 
-def _get_kernel_projector_module(num_materials, attenuation=True) -> SourceModule:
+def _get_kernel_projector_module(num_materials: int, attenuation=True) -> SourceModule:
     """Compile the cuda code for the kernel projector.
 
     Assumes `project_kernel.cu` and `cubic` interpolation library is in the same directory as THIS
     file.
+
+    Args:
+        num_materials (int): The number of materials to assume
 
     Returns:
         SourceModule: pycuda SourceModule object.
