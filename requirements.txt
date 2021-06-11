@@ -8,3 +8,4 @@ pydicom
 scipy
 pyvista
 pycuda
+pynrrd

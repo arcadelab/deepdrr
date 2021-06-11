@@ -10,6 +10,7 @@ import numpy as np
 from pathlib import Path
 import nibabel as nib
 from pydicom.filereader import dcmread
+import nrrd
 
 from . import load_dicom
 from . import geo
@@ -47,11 +48,11 @@ class Volume(object):
         """
         self.data = np.array(data).astype(np.float32)
         self.materials = self._format_materials(materials)
-        self.anatomical_from_ijk = anatomical_from_ijk
+        self.anatomical_from_ijk = geo.frame_transform(anatomical_from_ijk)
         self.world_from_anatomical = (
             geo.FrameTransform.identity(3)
             if world_from_anatomical is None
-            else world_from_anatomical
+            else geo.frame_transform(world_from_anatomical)
         )
 
     @classmethod
@@ -410,7 +411,7 @@ class Volume(object):
         # constructing the volume
         return cls(data, materials, lps_from_ijk, world_from_anatomical,)
 
-    def to_dicom(self, path: Union[str, Path]):
+    def to_dicom(self, path: str):
         """Write the volume to a DICOM file.
 
         Args:
@@ -419,6 +420,47 @@ class Volume(object):
         path = Path(path)
 
         raise NotImplementedError("save volume to dicom file")
+
+    @classmethod
+    def from_nrrd(
+        cls, 
+        path: str, 
+        world_from_anatomical: Optional[geo.FrameTransform] = None, 
+        use_thresholding: bool = True,
+        use_cached: bool = True,
+        cache_dir: Optional[Path] = None,
+    ):
+        """Load a volume from a nrrd file.
+
+        Args:
+            path (str): path to the file.
+            use_thresholding (bool, optional): segment the materials using thresholding (faster but less accurate). Defaults to True.
+            world_from_anatomical (Optional[geo.FrameTransform], optional): position the volume in world space. If None, uses identity. Defaults to None.
+            use_cached (bool, optional): Use a cached segmentation if available. Defaults to True.
+            cache_dir (Optional[Path], optional): Where to load/save the cached segmentation. If None, use the parent dir of `path`. Defaults to None.
+
+        Returns:
+            Volume: A volume formed from the NRRD.
+        """
+        hu_values, header = nrrd.read(path)
+        ijk_from_anatomical = np.concatenate(
+            [
+                header['space directions'],
+                header['space origin'].reshape(-1, 1),
+            ],
+            axis=1,
+        )
+        ijk_from_anatomical = np.concatenate([ijk_from_anatomical, [[0, 0, 0, 1]]], axis=0)
+        anatomical_from_ijk = np.linalg.inv(ijk_from_anatomical)
+        data = cls._convert_hounsfield_to_density(hu_values)
+        materials = cls.segment_materials(
+            hu_values,
+            use_thresholding=use_thresholding,
+            use_cached=use_cached,
+            cache_dir=cache_dir,
+        )
+
+        return cls(data, materials, anatomical_from_ijk, world_from_anatomical)
 
     @property
     def origin(self) -> geo.Point3D:
