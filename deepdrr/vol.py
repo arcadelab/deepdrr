@@ -11,6 +11,7 @@ from pathlib import Path
 import nibabel as nib
 from pydicom.filereader import dcmread
 import nrrd
+from scipy.spatial.transform import Rotation
 
 from . import load_dicom
 from . import geo
@@ -463,6 +464,14 @@ class Volume(object):
         return cls(data, materials, anatomical_from_ijk, world_from_anatomical)
 
     @property
+    def anatomical_from_world(self):
+        return self.world_from_anatomical.inv
+
+    @property
+    def ijk_from_anatomical(self):
+        return self.anatomical_from_ijk.inv
+
+    @property
     def origin(self) -> geo.Point3D:
         """The origin of the volume in anatomical space."""
         return geo.point(self.anatomical_from_ijk.t)
@@ -522,6 +531,30 @@ class Volume(object):
         self.world_from_anatomical = geo.FrameTransform.from_rt(
             self.world_from_anatomical.R
         ) @ geo.FrameTransform.from_origin(center_anatomical)
+
+    def translate(self, t: geo.Vector3D) -> None:
+        """Translate the volume by `t`.
+
+        Args:
+            t (geo.Vector3D): The vector to translate by, in world space.
+        """
+        t = geo.vector(t)
+        self.world_from_anatomical = self.world_from_anatomical @ geo.FrameTransform.from_translation(
+            self.anatomical_from_world @ t)
+
+    def rotate(self, r: Union[geo.Vector3D, Rotation], x: geo.Point3D = [0, 0, 0]) -> None:
+        """Rotate the volume by `r` about `x`.
+
+        Args:
+            r (Union[geo.Vector3D, Rotation]): the rotation in world-space. If it is a vector, `Rotation.from_rotvec(r)` is used.
+            x (geo.Point3D): the center of rotation, world space coordinates.
+        """
+        if isinstance(r, Rotation):
+            r = r.as_rotvec()
+            assert r.shape == (3,)
+        
+        r = geo.vector(r)
+        r 
 
     def __contains__(self, x: geo.Point3D) -> bool:
         """Determine whether the point x is inside the volume.
