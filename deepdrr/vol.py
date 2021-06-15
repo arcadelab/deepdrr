@@ -539,22 +539,25 @@ class Volume(object):
             t (geo.Vector3D): The vector to translate by, in world space.
         """
         t = geo.vector(t)
-        self.world_from_anatomical = self.world_from_anatomical @ geo.FrameTransform.from_translation(
-            self.anatomical_from_world @ t)
+        T = geo.FrameTransform.from_translation(t)
+        self.world_from_anatomical = T @ self.world_from_anatomical
 
-    def rotate(self, r: Union[geo.Vector3D, Rotation], x: geo.Point3D = [0, 0, 0]) -> None:
+    def rotate(self, r: Union[geo.Vector3D, Rotation], center: geo.Point3D = [0, 0, 0]) -> None:
         """Rotate the volume by `r` about `x`.
 
         Args:
             r (Union[geo.Vector3D, Rotation]): the rotation in world-space. If it is a vector, `Rotation.from_rotvec(r)` is used.
-            x (geo.Point3D): the center of rotation, world space coordinates.
+            center (geo.Point3D): the center of rotation in world space coordinates.
         """
         if isinstance(r, Rotation):
-            r = r.as_rotvec()
-            assert r.shape == (3,)
-        
-        r = geo.vector(r)
-        r 
+            R = geo.FrameTransform.from_rotation(r.as_matrix())
+        else:
+            r = geo.vector()
+            R = geo.FrameTransform.from_rotation(Rotation.from_rotvec(r).as_matrix())
+
+        T = geo.FrameTransform.from_translation(center)
+        raise NotImplementedError
+        self.world_from_anatomical = R @ self.world_from_anatomical
 
     def __contains__(self, x: geo.Point3D) -> bool:
         """Determine whether the point x is inside the volume.
