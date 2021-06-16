@@ -19,7 +19,7 @@ from . import utils
 pv, pv_available = utils.try_import_pyvista()
 
 
-def show(*item: Any, full: Unionbool = False) -> None:
+def show(*item: Any, full: Union[bool, List[bool]] = False) -> None:
     """[summary]
 
     Args:
