@@ -5,8 +5,8 @@ DeepDRR
    :maxdepth: 2
    :caption: Contents:
 
+   README
    deepdrr
-   modules
 
 .. Indices and tables
 .. ==================

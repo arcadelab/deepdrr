@@ -1,3 +1,5 @@
+[![Open In Collab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/Naereen/badges)
+
 # DeepDRR
 
 DeepDRR provides state-of-the-art tools to generate realistic radiographs and fluoroscopy from 3D
@@ -31,7 +33,7 @@ To create the autodocs, run
 sphinx-apidoc -f -o docs/source deepdrr
 ```
 
-in the base directory.
+in the base directory. Then do `cd docs` and `make html` to build the static site locally.
 
 ## Usage
 
