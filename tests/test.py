@@ -18,21 +18,27 @@ def pytest_generate_tests(metafunc):
         argnames, [[funcargs[name] for name in argnames] for funcargs in funcarglist]
     )
 
+
 class TestSingleVolume:
-    output_dir = Path.cwd() / 'output'
+    output_dir = Path.cwd() / "output"
     output_dir.mkdir(exist_ok=True)
     file_path = testing.download_sampledata("CT-chest")
 
     params = {
         "test_simple": [dict()],
-        "test_translate": [dict(t=[0, 0, 0]), dict(t=[100, 0, 0]), dict(t=[0, 100, 0]), dict(t=[0, 0, 100])],
+        "test_translate": [
+            dict(t=[0, 0, 0]),
+            dict(t=[100, 0, 0]),
+            dict(t=[0, 100, 0]),
+            dict(t=[0, 0, 100]),
+        ],
         "test_rotate_x": [dict(x=0), dict(x=30), dict(x=45), dict(x=90), dict(x=180)],
         "test_angle": [dict(alpha=0, beta=90)],
     }
 
     def load_volume(self):
         volume = deepdrr.Volume.from_nrrd(self.file_path)
-        # volume.rotate(Rotation.from_euler('x', -90, degrees=True))
+        volume.rotate(Rotation.from_euler("x", -90, degrees=True))
         return volume
 
     def project(self, volume, carm, name):
@@ -49,34 +55,39 @@ class TestSingleVolume:
             neglog=True,
         ) as projector:
             image = projector.project()
-           
+
         image = (image * 255).astype(np.uint8)
         Image.fromarray(image).save(self.output_dir / name)
 
     def test_simple(self):
         volume = deepdrr.Volume.from_nrrd(self.file_path)
         carm = deepdrr.MobileCArm(isocenter=volume.center_in_world)
-        self.project(volume, carm, 'test_simple.png')
+        self.project(volume, carm, "test_simple.png")
 
     def test_translate(self, t):
         volume = deepdrr.Volume.from_nrrd(self.file_path)
         carm = deepdrr.MobileCArm(isocenter=volume.center_in_world)
         volume.translate(t)
-        self.project(volume, carm, f'test_translate_{int(t[0])}_{int(t[1])}_{int(t[2])}.png')
+        self.project(
+            volume, carm, f"test_translate_{int(t[0])}_{int(t[1])}_{int(t[2])}.png"
+        )
 
     def test_rotate_x(self, x):
         volume = deepdrr.Volume.from_nrrd(self.file_path)
         carm = deepdrr.MobileCArm(isocenter=volume.center_in_world)
         vis.show(carm, volume)
-        volume.rotate(Rotation.from_euler('x', x, degrees=True), volume.center_in_world)
+        volume.rotate(Rotation.from_euler("x", x, degrees=True), volume.center_in_world)
         vis.show(carm, volume)
-        self.project(volume, carm, f'test_rotate_x={int(x)}.png')
+        self.project(volume, carm, f"test_rotate_x={int(x)}.png")
 
     def test_angle(self, alpha, beta):
         volume = deepdrr.Volume.from_nrrd(self.file_path)
         carm = deepdrr.MobileCArm(isocenter=volume.center_in_world)
         carm.move_to(alpha=alpha, beta=beta, degrees=True)
-        self.project(volume, carm, f'test_angle_alpha={int(alpha)}_beta={int(beta)}.png')
+        self.project(
+            volume, carm, f"test_angle_alpha={int(alpha)}_beta={int(beta)}.png"
+        )
+
 
 if __name__ == "__main__":
     volume = TestSingleVolume().load_volume()

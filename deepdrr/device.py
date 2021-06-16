@@ -83,7 +83,6 @@ def pose_vector_angles(pose: geo.Vector3D) -> Tuple[float, float]:
 
 
 class MobileCArm(object):
-    
 
     # basic parameters which can be safely set by user, but move_by() and reposition() are recommended.
     isocenter: geo.Point3D  # the isocenter point in the device frame
@@ -106,7 +105,7 @@ class MobileCArm(object):
         degrees: bool = True,
         source_to_detector_distance: float = 1020,
         source_to_isocenter_vertical_distance: float = 530,  # vertical component of the source point offset from the isocenter of rotation, in -Z. Previously called `isocenter_distance`
-        source_to_isocenter_horizontal_offset: float = 200,  # horizontal offset of the principle ray from the isocenter of rotation, in +Y
+        source_to_isocenter_horizontal_offset: float = 0,  # horizontal offset of the principle ray from the isocenter of rotation, in +Y. Defaults to 9, but should be 200 in document.
         immersion_depth: float = 730,  # horizontal distance from principle ray to inner C-arm circumference. Used for visualization
         free_space: float = 820,  # distance from central ray to edge of arm. Used for visualization
         sensor_height: int = 1536,
