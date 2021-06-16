@@ -554,7 +554,7 @@ class Volume(object):
         if isinstance(r, Rotation):
             R = geo.FrameTransform.from_rotation(r.as_matrix())
         else:
-            r = geo.vector()
+            r = geo.vector(r)
             R = geo.FrameTransform.from_rotation(Rotation.from_rotvec(r).as_matrix())
 
         T = geo.FrameTransform.from_translation(center)
