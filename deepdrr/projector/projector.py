@@ -1,4 +1,4 @@
-from typing import Literal, List, Union, Tuple, Optional, Dict, Any
+from typing import List, Union, Tuple, Optional, Dict, Any
 
 import logging
 import numpy as np
@@ -96,10 +96,8 @@ class SingleProjector(object):
         volume: vol.Volume,
         camera_intrinsics: geo.CameraIntrinsicTransform,
         step: float = 0.1,
-        mode: Literal["linear"] = "linear",
-        spectrum: Union[
-            np.ndarray, Literal["60KV_AL35", "90KV_AL40", "120KV_AL43"]
-        ] = "90KV_AL40",
+        mode: str = "linear",
+        spectrum: Union[np.ndarray, str] = "90KV_AL40",
         threads: int = 8,
         max_block_index: int = 1024,
         attenuation: bool = True,
@@ -413,10 +411,8 @@ class Projector(object):
         camera_intrinsics: Optional[geo.CameraIntrinsicTransform] = None,
         carm: Optional[MobileCArm] = None,
         step: float = 0.1,
-        mode: Literal["linear"] = "linear",
-        spectrum: Union[
-            np.ndarray, Literal["60KV_AL35", "90KV_AL40", "120KV_AL43"]
-        ] = "90KV_AL40",
+        mode: str = "linear",
+        spectrum: Union[np.ndarray, str] = "90KV_AL40",
         add_scatter: bool = False,
         add_noise: bool = False,
         photon_count: int = 100000,
@@ -440,12 +436,12 @@ class Projector(object):
             camera_intrinsics (CameraIntrinsicTransform): intrinsics of the projector's camera. (used for sensor size). If None, the CArm object must be provided and have a camera_intrinsics attribute. Defaults to None.
             carm (Optional[MobileCArm], optional): Optional C-arm device, for convenience which can be used to get projections from C-Arm pose. If not provided, camera pose must be defined by user. Defaults to None.
             step (float, optional): size of the step along projection ray in voxels. Defaults to 0.1.
-            mode (Literal['linear']): [description].
-            spectrum (Union[np.ndarray, Literal['60KV_AL35', '90KV_AL40', '120KV_AL43'], optional): spectrum array or name of spectrum to use for projection. Defaults to '90KV_AL40'.
-            add_scatter (bool, optional): whether to add scatter noise from artifacts. Defaults to False.
-            add_noise: (bool, optional): whether to add Poisson noise. Defaults to False.
-            threads (int, optional): number of threads to use. Defaults to 8.
-            max_block_index (int, optional): maximum GPU block. Defaults to 1024. TODO: determine from compute capability.
+            mode (str): Interpolation mode for the kernel. Defaults to "linear".
+            spectrum (Union[np.ndarray, str], optional): Spectrum array or name of spectrum to use for projection. Defaults to '90KV_AL40'.
+            add_scatter (bool, optional): Whether to add scatter noise from artifacts. Defaults to False.
+            add_noise: (bool, optional): Whether to add Poisson noise. Defaults to False.
+            threads (int, optional): Number of threads to use. Defaults to 8.
+            max_block_index (int, optional): Maximum GPU block. Defaults to 1024. TODO: determine from compute capability.
             neglog (bool, optional): whether to apply negative log transform to intensity images. If True, outputs are in range [0, 1]. Recommended for easy viewing. Defaults to False.
             intensity_upper_bound (Optional[float], optional): Maximum intensity, clipped before neglog, after noise and scatter. Defaults to 40.
         """

@@ -3,7 +3,7 @@
 """
 
 from __future__ import annotations
-from typing import Union, Tuple, Literal, List, Optional, Dict
+from typing import Union, Tuple, List, Optional, Dict
 
 import logging
 import numpy as np
@@ -14,6 +14,7 @@ import nrrd
 from scipy.spatial.transform import Rotation
 
 from . import load_dicom
+from shutil import which
 from . import geo
 from . import utils
 
@@ -63,10 +64,10 @@ class Volume(object):
         materials: Dict[str, np.ndarray],
         origin: geo.Point3D,
         spacing: Optional[geo.Vector3D] = [1, 1, 1],
-        anatomical_coordinate_system: Optional[Literal["LPS", "RAS", "none"]] = None,
+        anatomical_coordinate_system: Optional[str] = None,
         world_from_anatomical: Optional[geo.FrameTransform] = None,
     ):
-        """Create a volume object with a segmentation of the materials, with its own anatomical coordinate space, from parameters.
+        """Create a volume object with a segmentation of the materials, from parameters.
 
         Note that the anatomical coordinate system is not the world coordinate system (which is cartesian).
         
@@ -78,13 +79,12 @@ class Volume(object):
             materials (dict[str, np.ndarray]): mapping from material names to binary segmentation of that material.
             origin (Point3D): Location of the volume's origin in the anatomical coordinate system.
             spacing (Tuple[float, float, float], optional): Spacing of the volume in the anatomical coordinate system. Defaults to (1, 1, 1).
-            anatomical_coordinate_system (Literal['LPS', 'RAS', 'none']): anatomical coordinate system convention. Defaults to 'none'.
+            anatomical_coordinate_system (Optional[str]): anatomical coordinate system convention, either "RAS" or "LPS". Defaults to None.
             world_from_anatomical (FrameTransform, optional): Optional transformation from anatomical to world coordinates. 
                 If None, then identity is used. Defaults to None.
         """
         origin = geo.point(origin)
         spacing = geo.vector(spacing)
-
         assert spacing.dim == 3
 
         # define anatomical_from_ijk FrameTransform
@@ -105,10 +105,12 @@ class Volume(object):
             anatomical_from_ijk = geo.FrameTransform.from_rt(
                 rotation=rotation, translation=origin
             )
-        else:
+        elif anatomical_coordinate_system == "RAS":
             raise NotImplementedError(
                 "conversion from RAS (not hard, look at LPS example)"
             )
+        else:
+            raise ValueError()
 
         return cls(
             data=data,
@@ -124,7 +126,7 @@ class Volume(object):
         origin: geo.Point3D,
         use_thresholding: bool = True,
         spacing: Optional[geo.Vector3D] = (1, 1, 1),
-        anatomical_coordinate_system: Optional[Literal["LPS", "RAS", "none"]] = None,
+        anatomical_coordinate_system: Optional[str] = None,
         world_from_anatomical: Optional[geo.FrameTransform] = None,
     ) -> None:
         data = cls._convert_hounsfield_to_density(hu_values)
@@ -424,9 +426,9 @@ class Volume(object):
 
     @classmethod
     def from_nrrd(
-        cls, 
-        path: str, 
-        world_from_anatomical: Optional[geo.FrameTransform] = None, 
+        cls,
+        path: str,
+        world_from_anatomical: Optional[geo.FrameTransform] = None,
         use_thresholding: bool = True,
         use_cached: bool = True,
         cache_dir: Optional[Path] = None,
@@ -445,13 +447,12 @@ class Volume(object):
         """
         hu_values, header = nrrd.read(path)
         ijk_from_anatomical = np.concatenate(
-            [
-                header['space directions'],
-                header['space origin'].reshape(-1, 1),
-            ],
+            [header["space directions"], header["space origin"].reshape(-1, 1),],
             axis=1,
         )
-        anatomical_from_ijk = np.concatenate([ijk_from_anatomical, [[0, 0, 0, 1]]], axis=0)
+        anatomical_from_ijk = np.concatenate(
+            [ijk_from_anatomical, [[0, 0, 0, 1]]], axis=0
+        )
         data = cls._convert_hounsfield_to_density(hu_values)
         materials = cls.segment_materials(
             hu_values,
@@ -509,7 +510,6 @@ class Volume(object):
     def shape(self) -> Tuple[int, int, int]:
         return self.data.shape
 
-
     def __array__(self) -> np.ndarray:
         return self.data
 
@@ -542,7 +542,9 @@ class Volume(object):
         T = geo.FrameTransform.from_translation(t)
         self.world_from_anatomical = T @ self.world_from_anatomical
 
-    def rotate(self, r: Union[geo.Vector3D, Rotation], center: geo.Point3D = [0, 0, 0]) -> None:
+    def rotate(
+        self, r: Union[geo.Vector3D, Rotation], center: geo.Point3D = [0, 0, 0]
+    ) -> None:
         """Rotate the volume by `r` about `x`.
 
         Args:
