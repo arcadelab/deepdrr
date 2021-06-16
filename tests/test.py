@@ -5,6 +5,7 @@ from pathlib import Path
 from scipy.spatial.transform import Rotation
 import deepdrr
 from deepdrr import geo
+from deepdrr import vis
 from deepdrr.utils import testing
 from PIL import Image
 
@@ -61,7 +62,9 @@ class TestSingleVolume:
     def test_rotate_x(self, x):
         volume = deepdrr.Volume.from_nrrd(self.file_path)
         carm = deepdrr.MobileCArm(isocenter=volume.center_in_world)
+        vis.show(carm, volume)
         volume.rotate(Rotation.from_euler('x', x, degrees=True), volume.center_in_world)
+        vis.show(carm, volume)
         self.project(volume, carm, f'test_rotate_x={int(x)}.png')
 
     def test_angle(self, alpha, beta):
@@ -71,4 +74,4 @@ class TestSingleVolume:
         self.project(volume, carm, f'test_angle_alpha={int(alpha)}_beta={int(beta)}.png')
 
 if __name__ == "__main__":
-    TestSingleVolume().test_simple()
+    TestSingleVolume().test_rotate_x(0)
