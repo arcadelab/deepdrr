@@ -8,6 +8,7 @@ Subpackages
    :maxdepth: 4
 
    deepdrr.projector
+   deepdrr.utils
 
 Submodules
 ----------
@@ -68,10 +69,10 @@ deepdrr.segmentation module
    :undoc-members:
    :show-inheritance:
 
-deepdrr.utils module
---------------------
+deepdrr.vis module
+------------------
 
-.. automodule:: deepdrr.utils
+.. automodule:: deepdrr.vis
    :members:
    :undoc-members:
    :show-inheritance:
