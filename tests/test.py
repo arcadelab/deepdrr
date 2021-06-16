@@ -24,9 +24,9 @@ class TestSingleVolume:
 
     params = {
         "test_simple": [dict()],
-        "test_translation": [dict(t=[0, 0, 0]), dict(t=[100, 0, 0]), dict(t=[0, 100, 0]), dict(t=[0, 0, 100])],
+        "test_translate": [dict(t=[0, 0, 0]), dict(t=[100, 0, 0]), dict(t=[0, 100, 0]), dict(t=[0, 0, 100])],
+        "test_rotate_x": [dict(x=0), dict(x=30), dict(x=45), dict(x=90), dict(x=180)],
         "test_angle": [dict(alpha=0, beta=90)],
-        "test_rotation": [dict()]
     }
 
     def project(self, volume, carm, name):
@@ -52,17 +52,17 @@ class TestSingleVolume:
         carm = deepdrr.MobileCArm(isocenter=volume.center_in_world)
         self.project(volume, carm, 'test_simple.png')
 
-    def test_translation(self, t):
+    def test_translate(self, t):
         volume = deepdrr.Volume.from_nrrd(self.file_path)
         carm = deepdrr.MobileCArm(isocenter=volume.center_in_world)
         volume.translate(t)
-        self.project(volume, carm, f'test_translation_{int(t[0])}_{int(t[1])}_{int(t[2])}.png')
+        self.project(volume, carm, f'test_translate_{int(t[0])}_{int(t[1])}_{int(t[2])}.png')
 
-    def test_rotation(self):
+    def test_rotate_x(self, x):
         volume = deepdrr.Volume.from_nrrd(self.file_path)
         carm = deepdrr.MobileCArm(isocenter=volume.center_in_world)
-        volume.rotate(Rotation.from_euler('x', 10, degrees=True), volume.center_in_world)
-        self.project(volume, carm, f'test_rotation.png')
+        volume.rotate(Rotation.from_euler('x', x, degrees=True), volume.center_in_world)
+        self.project(volume, carm, f'test_rotate_x={int(x)}.png')
 
     def test_angle(self, alpha, beta):
         volume = deepdrr.Volume.from_nrrd(self.file_path)

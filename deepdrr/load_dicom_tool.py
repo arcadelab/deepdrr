@@ -1,3 +1,5 @@
+"""Legacy code for loading tool volumes."""
+
 import pydicom as dicom
 import glob
 import numpy as np

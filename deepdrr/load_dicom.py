@@ -1,3 +1,5 @@
+"""Legacy code for loading DICOM files. See vol.Volume.from_dicom."""
+
 import glob
 
 import logging

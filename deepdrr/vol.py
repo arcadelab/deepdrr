@@ -556,8 +556,7 @@ class Volume(object):
             R = geo.FrameTransform.from_rotation(Rotation.from_rotvec(r).as_matrix())
 
         T = geo.FrameTransform.from_translation(center)
-        raise NotImplementedError
-        self.world_from_anatomical = R @ self.world_from_anatomical
+        self.world_from_anatomical = T @ R @ T.inv @ self.world_from_anatomical
 
     def __contains__(self, x: geo.Point3D) -> bool:
         """Determine whether the point x is inside the volume.
