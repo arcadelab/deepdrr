@@ -1,4 +1,20 @@
-[![Open In Collab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/Naereen/badges)
+<p align="center">
+  <a href="https://pypi.org/project/deepdrr/">
+    <img src="https://img.shields.io/pypi/v/deepdrr" alt="PyPI" />
+  </a>
+  <a href="#">
+    <img src="https://img.shields.io/pypi/l/deepdrr" alt="PyPI - License" />
+  </a>
+  <a href="https://pypi.python.org/pypi/deepdrr/">
+    <img src="https://img.shields.io/pypi/pyversions/deepdrr" alt="PyPI - Python Version" />
+  </a>
+  <a href="https://pypi.python.org/pypi/deepdrr/">
+    <img src="https://img.shields.io/pypi/dt/ansicolortags.svg" alt="Downloads" />
+  </a>
+  <a href="https://colab.research.google.com/github/arcadelab/deepdrr/blob/dev/deepdrr_demo.ipynb">
+    <img src="https://colab.research.google.com/assets/colab-badge.svg" alt="Open in Collab" />
+  </a>
+</p>
 
 # DeepDRR
 

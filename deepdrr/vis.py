@@ -32,7 +32,7 @@ def show(*item: Any, full: Union[bool, List[bool]] = False) -> None:
     renderer.set_viewup([0, 0, 1])
 
     items = item
-    fulls = utils.listify(full, len(item))
+    fulls = utils.listify(full, len(items))
     for item, full in zip(items, fulls):
         renderer.add_mesh(item.get_mesh_in_world(full=full))
 
