@@ -28,15 +28,12 @@ def show(*item: Any, full: bool = True) -> None:
     renderer = pv.Plotter()
     renderer.show_axes()
     renderer.set_background("#4d94b0")
-    renderer.remove_legend()
-    renderer.remove_scalar_bar()
+    # renderer.remove_legend()
     renderer.set_position([500, 1500, 1200])
     renderer.set_viewup([0, 0, 1])
 
     items = item
     for item in items:
-        renderer.add_mesh(
-            item.get_mesh_in_world(full=full),
-        )
+        renderer.add_mesh(item.get_mesh_in_world(full=full))
 
     renderer.show()
