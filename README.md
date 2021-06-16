@@ -21,6 +21,18 @@ to install it in your environment. 4. You may also wish to [install PyTorch](htt
 pip install deepdrr
 ```
 
+## Documentation
+
+Documentation is available at [deepdrr.readthedocs.io](https://deepdrr.readthedocs.io/).
+
+To create the autodocs, run
+
+```bash
+sphinx-apidoc -f -o docs/source deepdrr
+```
+
+in the base directory.
+
 ## Usage
 
 The following minimal example loads a CT volume from a NifTi `.nii.gz` file and simulates an X-ray projection:
