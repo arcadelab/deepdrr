@@ -30,6 +30,11 @@ class TestSingleVolume:
         "test_angle": [dict(alpha=0, beta=90)],
     }
 
+    def load_volume(self):
+        volume = deepdrr.Volume.from_nrrd(self.file_path)
+        # volume.rotate(Rotation.from_euler('x', -90, degrees=True))
+        return volume
+
     def project(self, volume, carm, name):
         with deepdrr.Projector(
             volume=volume,
@@ -74,4 +79,7 @@ class TestSingleVolume:
         self.project(volume, carm, f'test_angle_alpha={int(alpha)}_beta={int(beta)}.png')
 
 if __name__ == "__main__":
-    TestSingleVolume().test_rotate_x(0)
+    volume = TestSingleVolume().load_volume()
+    center = print(f"center, shape: {volume.center_in_world}, {volume.shape}")
+    carm = deepdrr.MobileCArm(isocenter=volume.center_in_world)
+    vis.show(volume, carm)

@@ -451,8 +451,7 @@ class Volume(object):
             ],
             axis=1,
         )
-        ijk_from_anatomical = np.concatenate([ijk_from_anatomical, [[0, 0, 0, 1]]], axis=0)
-        anatomical_from_ijk = np.linalg.inv(ijk_from_anatomical)
+        anatomical_from_ijk = np.concatenate([ijk_from_anatomical, [[0, 0, 0, 1]]], axis=0)
         data = cls._convert_hounsfield_to_density(hu_values)
         materials = cls.segment_materials(
             hu_values,
@@ -462,6 +461,14 @@ class Volume(object):
         )
 
         return cls(data, materials, anatomical_from_ijk, world_from_anatomical)
+
+    @property
+    def world_from_ijk(self) -> geo.FrameTransform:
+        return self.world_from_anatomical @ self.anatomical_from_ijk
+
+    @property
+    def ijk_from_world(self) -> geo.FrameTransform:
+        return self.world_from_ijk.inv
 
     @property
     def anatomical_from_world(self):
@@ -502,13 +509,6 @@ class Volume(object):
     def shape(self) -> Tuple[int, int, int]:
         return self.data.shape
 
-    @property
-    def world_from_ijk(self) -> geo.FrameTransform:
-        return self.world_from_anatomical @ self.anatomical_from_ijk
-
-    @property
-    def ijk_from_world(self) -> geo.FrameTransform:
-        return self.world_from_ijk.inv
 
     def __array__(self) -> np.ndarray:
         return self.data

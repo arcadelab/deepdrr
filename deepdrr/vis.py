@@ -19,10 +19,15 @@ from . import utils
 pv, pv_available = utils.try_import_pyvista()
 
 
-def show(*item: Any, full: bool = False) -> None:
+def show(*item: Any, full: bool = True) -> None:
+    """[summary]
+
+    Args:
+        full (bool, optional): [description]. Defaults to True.
+    """
     renderer = pv.Plotter()
     renderer.show_axes()
-    renderer.set_background("white")
+    renderer.set_background("#4d94b0")
     renderer.remove_legend()
     renderer.remove_scalar_bar()
     renderer.set_position([500, 1500, 1200])
