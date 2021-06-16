@@ -27,5 +27,5 @@ setuptools.setup(
     ],
     extras_require={"gpu": ["pycuda"]},
     include_package_data=True,
-    python_requires=">=3.6",
+    python_requires=">=3.7",
 )
