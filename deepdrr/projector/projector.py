@@ -171,7 +171,7 @@ class Projector(object):
         
         self.all_materials = list(set(all_mats))
         self.all_materials.sort()
-        print(f"ALL MATERIALS: {self.all_materials}")
+        logger.info(f"ALL MATERIALS: {self.all_materials}")
 
         # compile the module
         self.mod = _get_kernel_projector_module(len(self.volumes), len(self.all_materials))
@@ -194,7 +194,7 @@ class Projector(object):
 
     @property
     def volume(self):
-        raise DeprecationWarning(f'volume is deprecated. Each projector can contain multiple volumes.')
+        logger.warning(f'volume is deprecated. Each projector can contain multiple volumes.')
         if len(self.volumes) != 1:
             raise AttributeError
         return self.volumes[0]
@@ -377,7 +377,10 @@ class Projector(object):
             logger.info("applying negative log transform")
             images = utils.neglog(images)
 
-        return images
+        if images.shape[0] == 1:
+            return images[0]
+        else:
+            return images
 
     def project_over_carm_range(
         self,
