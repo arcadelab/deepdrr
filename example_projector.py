@@ -22,7 +22,7 @@ def main():
     ###volume = np.zeros((120, 100, 80), dtype=np.float32)
     # volume = np.zeros((240, 200, 320), dtype=np.float32)
     volume = np.zeros((120, 100, 160), dtype=np.float32)
-    volume[:, :, :] = 4.5
+    volume[:, :, :] = 2
     # volume[0, 0, :] = 1
     # volume[0, -1, :] = 1
     # volume[-1, 0, :] = 1
@@ -44,7 +44,7 @@ def main():
     materials["air"] = volume == 0
     materials["soft tissue"] = volume == 1
     materials["bone"] = volume == 2
-    materials["titanium"] = volume == 4.5
+    #materials["titanium"] = volume == 4.5
     voxel_size = np.array([1, 1, 1], dtype=np.float32)
 
     # Use the center of the volume as the "world" coordinates. The origin is the (0, 0, 0) index of the volume in the world frame.

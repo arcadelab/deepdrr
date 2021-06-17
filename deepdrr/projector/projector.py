@@ -543,6 +543,7 @@ class SingleProjector(object):
             labeled_seg = np.zeros(self.volume.shape).astype(np.int8)
             for i, mat in enumerate(my_materials):
                 labeled_seg = np.add(labeled_seg, i * self.volume.materials[mat]).astype(np.int8)
+            labeled_seg = np.moveaxis(labeled_seg, [0, 1, 2], [2, 1, 0]).copy() # TODO: is this axis swap necessary?
             self.labeled_segmentation_gpu = cuda.mem_alloc(num_voxels)
             cuda.memcpy_htod(self.labeled_segmentation_gpu, labeled_seg)
 

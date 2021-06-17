@@ -91,6 +91,7 @@ texture<float, 3, cudaReadModeElementType> seg(13);
     UPDATE(multiplier, 0);\
     UPDATE(multiplier, 1);\
     UPDATE(multiplier, 2);\
+    UPDATE(multiplier, 3);\
     UPDATE(multiplier, 4);\
     UPDATE(multiplier, 5);\
 } while (0)
@@ -99,6 +100,7 @@ texture<float, 3, cudaReadModeElementType> seg(13);
     UPDATE(multiplier, 0);\
     UPDATE(multiplier, 1);\
     UPDATE(multiplier, 2);\
+    UPDATE(multiplier, 3);\
     UPDATE(multiplier, 4);\
     UPDATE(multiplier, 5);\
     UPDATE(multiplier, 6);\
@@ -108,6 +110,7 @@ texture<float, 3, cudaReadModeElementType> seg(13);
     UPDATE(multiplier, 0);\
     UPDATE(multiplier, 1);\
     UPDATE(multiplier, 2);\
+    UPDATE(multiplier, 3);\
     UPDATE(multiplier, 4);\
     UPDATE(multiplier, 5);\
     UPDATE(multiplier, 6);\
@@ -119,6 +122,7 @@ texture<float, 3, cudaReadModeElementType> seg(13);
     UPDATE(multiplier, 1);\
     UPDATE(multiplier, 2);\
     UPDATE(multiplier, 4);\
+    UPDATE(multiplier, 3);\
     UPDATE(multiplier, 5);\
     UPDATE(multiplier, 6);\
     UPDATE(multiplier, 7);\
@@ -129,6 +133,7 @@ texture<float, 3, cudaReadModeElementType> seg(13);
     UPDATE(multiplier, 0);\
     UPDATE(multiplier, 1);\
     UPDATE(multiplier, 2);\
+    UPDATE(multiplier, 3);\
     UPDATE(multiplier, 4);\
     UPDATE(multiplier, 5);\
     UPDATE(multiplier, 6);\
@@ -141,6 +146,7 @@ texture<float, 3, cudaReadModeElementType> seg(13);
     UPDATE(multiplier, 0);\
     UPDATE(multiplier, 1);\
     UPDATE(multiplier, 2);\
+    UPDATE(multiplier, 3);\
     UPDATE(multiplier, 4);\
     UPDATE(multiplier, 5);\
     UPDATE(multiplier, 6);\
@@ -154,6 +160,7 @@ texture<float, 3, cudaReadModeElementType> seg(13);
     UPDATE(multiplier, 0);\
     UPDATE(multiplier, 1);\
     UPDATE(multiplier, 2);\
+    UPDATE(multiplier, 3);\
     UPDATE(multiplier, 4);\
     UPDATE(multiplier, 5);\
     UPDATE(multiplier, 6);\
@@ -168,6 +175,7 @@ texture<float, 3, cudaReadModeElementType> seg(13);
     UPDATE(multiplier, 0);\
     UPDATE(multiplier, 1);\
     UPDATE(multiplier, 2);\
+    UPDATE(multiplier, 3);\
     UPDATE(multiplier, 4);\
     UPDATE(multiplier, 5);\
     UPDATE(multiplier, 6);\
@@ -183,6 +191,7 @@ texture<float, 3, cudaReadModeElementType> seg(13);
     UPDATE(multiplier, 0);\
     UPDATE(multiplier, 1);\
     UPDATE(multiplier, 2);\
+    UPDATE(multiplier, 3);\
     UPDATE(multiplier, 4);\
     UPDATE(multiplier, 5);\
     UPDATE(multiplier, 6);\
