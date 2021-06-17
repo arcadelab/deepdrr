@@ -5,55 +5,56 @@
 #define NUM_MATERIALS 14
 #endif
 
-#define _seg(n) seg_##n
-#define seg(n) _seg(n)
+// seg_0_{mat_id} to unify naming conventions with the multi-volume kernel
+#define SEG_PASTER(mat_id) seg_0_ ## mat_id
+#define SEG(mat_id) SEG_PASTER(mat_id)
 
 // channel of the materials array, same size as the volume.
 #if NUM_MATERIALS > 0
-texture<float, 3, cudaReadModeElementType> seg(0);
+texture<float, 3, cudaReadModeElementType> SEG(0);
 #endif
 #if NUM_MATERIALS > 1
-texture<float, 3, cudaReadModeElementType> seg(1);
+texture<float, 3, cudaReadModeElementType> SEG(1);
 #endif
 #if NUM_MATERIALS > 2
-texture<float, 3, cudaReadModeElementType> seg(2);
+texture<float, 3, cudaReadModeElementType> SEG(2);
 #endif
 #if NUM_MATERIALS > 3
-texture<float, 3, cudaReadModeElementType> seg(3);
+texture<float, 3, cudaReadModeElementType> SEG(3);
 #endif
 #if NUM_MATERIALS > 4
-texture<float, 3, cudaReadModeElementType> seg(4);
+texture<float, 3, cudaReadModeElementType> SEG(4);
 #endif
 #if NUM_MATERIALS > 5
-texture<float, 3, cudaReadModeElementType> seg(5);
+texture<float, 3, cudaReadModeElementType> SEG(5);
 #endif
 #if NUM_MATERIALS > 6
-texture<float, 3, cudaReadModeElementType> seg(6);
+texture<float, 3, cudaReadModeElementType> SEG(6);
 #endif
 #if NUM_MATERIALS > 7
-texture<float, 3, cudaReadModeElementType> seg(7);
+texture<float, 3, cudaReadModeElementType> SEG(7);
 #endif
 #if NUM_MATERIALS > 8
-texture<float, 3, cudaReadModeElementType> seg(8);
+texture<float, 3, cudaReadModeElementType> SEG(8);
 #endif
 #if NUM_MATERIALS > 9
-texture<float, 3, cudaReadModeElementType> seg(9);
+texture<float, 3, cudaReadModeElementType> SEG(9);
 #endif
 #if NUM_MATERIALS > 10
-texture<float, 3, cudaReadModeElementType> seg(10);
+texture<float, 3, cudaReadModeElementType> SEG(10);
 #endif
 #if NUM_MATERIALS > 11
-texture<float, 3, cudaReadModeElementType> seg(11);
+texture<float, 3, cudaReadModeElementType> SEG(11);
 #endif
 #if NUM_MATERIALS > 12
-texture<float, 3, cudaReadModeElementType> seg(12);
+texture<float, 3, cudaReadModeElementType> SEG(12);
 #endif
 #if NUM_MATERIALS > 13
-texture<float, 3, cudaReadModeElementType> seg(13);
+texture<float, 3, cudaReadModeElementType> SEG(13);
 #endif
 
 #define UPDATE(multiplier, n) do {\
-    area_density[(n)] += (multiplier) * tex3D(volume, px, py, pz) * round(cubicTex3D(seg(n), px, py, pz));\
+    area_density[(n)] += (multiplier) * tex3D(volume_0, px, py, pz) * round(cubicTex3D(SEG(n), px, py, pz));\
 } while (0)
 
 #if NUM_MATERIALS == 1
@@ -210,7 +211,8 @@ texture<float, 3, cudaReadModeElementType> seg(13);
 #endif
 
 // the CT volume (used to be tex_density)
-texture<float, 3, cudaReadModeElementType> volume;
+// volume_0 to unify naming conventions with multi-volume kernel
+texture<float, 3, cudaReadModeElementType> volume_0;
 
 #define PI_FLOAT  3.14159265358979323846f
 #define FOUR_PI_INV_FLOAT 0.0795774715459476678844f // 1 / (4 \pi), from Wolfram Alpha
@@ -381,17 +383,8 @@ extern "C" {
         if (area_density[0] > 0.0f) {
             alpha -= step;
             float lastStepsize = maxAlpha - alpha;
-
-            // scaled last step interpolation (something weird?)
-            INTERPOLATE(0.5 * lastStepsize);
-
-            // The last segment of the line integral takes care of the varying length.
-            px = sx + alpha * rx + 0.5;
-            py = sy + alpha * ry + 0.5;
-            pz = sz + alpha * rz - gVolumeEdgeMinPointZ;
-
             // interpolation
-            INTERPOLATE(0.5 * lastStepsize);
+            INTERPOLATE(lastStepsize);
         }
 
         // normalize area_density value to world coordinate system units
@@ -588,4 +581,3 @@ extern "C" {
         return;
     }
 }
-    
