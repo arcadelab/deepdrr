@@ -5,55 +5,56 @@
 #define NUM_MATERIALS 14
 #endif
 
-#define _seg(n) seg_##n
-#define seg(n) _seg(n)
+// seg_0_{mat_id} to unify naming conventions with the multi-volume kernel
+#define SEG_PASTER(mat_id) seg_0_ ## mat_id
+#define SEG(mat_id) SEG_PASTER(mat_id)
 
 // channel of the materials array, same size as the volume.
 #if NUM_MATERIALS > 0
-texture<float, 3, cudaReadModeElementType> seg(0);
+texture<float, 3, cudaReadModeElementType> SEG(0);
 #endif
 #if NUM_MATERIALS > 1
-texture<float, 3, cudaReadModeElementType> seg(1);
+texture<float, 3, cudaReadModeElementType> SEG(1);
 #endif
 #if NUM_MATERIALS > 2
-texture<float, 3, cudaReadModeElementType> seg(2);
+texture<float, 3, cudaReadModeElementType> SEG(2);
 #endif
 #if NUM_MATERIALS > 3
-texture<float, 3, cudaReadModeElementType> seg(3);
+texture<float, 3, cudaReadModeElementType> SEG(3);
 #endif
 #if NUM_MATERIALS > 4
-texture<float, 3, cudaReadModeElementType> seg(4);
+texture<float, 3, cudaReadModeElementType> SEG(4);
 #endif
 #if NUM_MATERIALS > 5
-texture<float, 3, cudaReadModeElementType> seg(5);
+texture<float, 3, cudaReadModeElementType> SEG(5);
 #endif
 #if NUM_MATERIALS > 6
-texture<float, 3, cudaReadModeElementType> seg(6);
+texture<float, 3, cudaReadModeElementType> SEG(6);
 #endif
 #if NUM_MATERIALS > 7
-texture<float, 3, cudaReadModeElementType> seg(7);
+texture<float, 3, cudaReadModeElementType> SEG(7);
 #endif
 #if NUM_MATERIALS > 8
-texture<float, 3, cudaReadModeElementType> seg(8);
+texture<float, 3, cudaReadModeElementType> SEG(8);
 #endif
 #if NUM_MATERIALS > 9
-texture<float, 3, cudaReadModeElementType> seg(9);
+texture<float, 3, cudaReadModeElementType> SEG(9);
 #endif
 #if NUM_MATERIALS > 10
-texture<float, 3, cudaReadModeElementType> seg(10);
+texture<float, 3, cudaReadModeElementType> SEG(10);
 #endif
 #if NUM_MATERIALS > 11
-texture<float, 3, cudaReadModeElementType> seg(11);
+texture<float, 3, cudaReadModeElementType> SEG(11);
 #endif
 #if NUM_MATERIALS > 12
-texture<float, 3, cudaReadModeElementType> seg(12);
+texture<float, 3, cudaReadModeElementType> SEG(12);
 #endif
 #if NUM_MATERIALS > 13
-texture<float, 3, cudaReadModeElementType> seg(13);
+texture<float, 3, cudaReadModeElementType> SEG(13);
 #endif
 
 #define UPDATE(multiplier, n) do {\
-    output[(n)] += (multiplier) * tex3D(volume, px, py, pz) * round(cubicTex3D(seg(n), px, py, pz));\
+    area_density[(n)] += (multiplier) * tex3D(volume_0, px, py, pz) * round(cubicTex3D(SEG(n), px, py, pz));\
 } while (0)
 
 #if NUM_MATERIALS == 1
@@ -201,7 +202,8 @@ texture<float, 3, cudaReadModeElementType> seg(13);
 #endif
 
 // the CT volume (used to be tex_density)
-texture<float, 3, cudaReadModeElementType> volume;
+// volume_0 to unify naming conventions with multi-volume kernel
+texture<float, 3, cudaReadModeElementType> volume_0;
 
 extern "C" {
     __global__  void projectKernel(
@@ -221,14 +223,15 @@ extern "C" {
         float sy,
         float sz,
         float *rt_kinv, // (3, 3) array giving the image-to-world-ray transform.
-        float *intensity, // flat array, with shape (out_height, out_width).
-        float *photon_prob, // flat array, with shape (out_height, out_width).
         int n_bins, // the number of spectral bins
-        float *energies, // 1-D array -- size is the n_bins
+        float *energies, // 1-D array -- size is the n_bins. Units: keV
         float *pdf, // 1-D array -- probability density function over the energies
         float *absorb_coef_table, // flat [n_bins x NUM_MATERIALS] table that represents
                         // the precomputed get_absorption_coef values.
                         // index into the table as: table[bin * NUM_MATERIALS + mat]
+        float *intensity, // flat array, with shape (out_height, out_width).
+        float *photon_prob, // flat array, with shape (out_height, out_width).
+        float *solid_angle, // flat array, with shape (out_height, out_width). Could be NULL pointer
         int offsetW,
         int offsetH)
     {
@@ -329,12 +332,14 @@ extern "C" {
         float alpha; // distance along ray (alpha = minAlpha + step * t)
         float boundary_factor; // factor to multiply at the boundary.
 
-        // material projection-output channels
-        float output[NUM_MATERIALS];
+        // Output channels of the raycasting
+        // Stores the product of [linear distance of the ray through material 'm'] and 
+        // [density of the material]
+        float area_density[NUM_MATERIALS];
 
-        // initialize the projection-output to 0.
+        // initialize the raycasting output (the area density) to 0.
         for (int m = 0; m < NUM_MATERIALS; m++) {
-            output[m] = 0;
+            area_density[m] = 0;
         }
 
         // Sample the points along the ray at the entrance boundary of the volume and the mid segments.
@@ -352,44 +357,39 @@ extern "C" {
              */ 
             boundary_factor = (t == 0 || alpha + step >= maxAlpha) ? 0.5 : 1.0;
 
-            // Perform the interpolation. This involves the variables: output, idx, px, py, pz, and volume. 
+            // Perform the interpolation. This involves the variables: area_density, idx, px, py, pz, and volume. 
             // It is done for each segmentation.
             INTERPOLATE(boundary_factor);
         }
 
         // Scaling by step;
         for (int m = 0; m < NUM_MATERIALS; m++) {
-            output[m] *= step;
+            area_density[m] *= step;
         }
 
         // Last segment of the line
-        if (output[0] > 0.0f) {
+        if (area_density[0] > 0.0f) {
             alpha -= step;
             float lastStepsize = maxAlpha - alpha;
-
-            // scaled last step interpolation (something weird?)
-            INTERPOLATE(0.5 * lastStepsize);
-
-            // The last segment of the line integral takes care of the varying length.
-            px = sx + alpha * rx + 0.5;
-            py = sy + alpha * ry + 0.5;
-            pz = sz + alpha * rz - gVolumeEdgeMinPointZ;
-
             // interpolation
-            INTERPOLATE(0.5 * lastStepsize);
+            INTERPOLATE(lastStepsize);
         }
 
-        // normalize output value to world coordinate system units
+        // normalize area_density value to world coordinate system units
         for (int m = 0; m < NUM_MATERIALS; m++) {
-            output[m] *= sqrt((rx * gVoxelElementSizeX)*(rx * gVoxelElementSizeX) + (ry * gVoxelElementSizeY)*(ry * gVoxelElementSizeY) + (rz * gVoxelElementSizeZ)*(rz * gVoxelElementSizeZ));
+            area_density[m] *= sqrt((rx * gVoxelElementSizeX)*(rx * gVoxelElementSizeX) + (ry * gVoxelElementSizeY)*(ry * gVoxelElementSizeY) + (rz * gVoxelElementSizeZ)*(rz * gVoxelElementSizeZ));
             
-            // convert to centimeters
-            output[m] /= 10;
+            // convert to centimeters, since the ray-cast length is in voxels, AKA millimeters
+            area_density[m] /= 10;
         }
 
         /* Up to this point, we have accomplished the original projectKernel functionality.
          * The next steps to do are combining the forward_projections dictionary-ization and 
-         * the mass_attenuation computation
+         * the mass_attenuation computation.
+         * 
+         * area_density[m] contains, for material 'm', the length (in centimeters) of the ray's path that passes 
+         * through material 'm', multiplied by the density of the material (in g / cm^3).  Accordingly, the
+         * units of area_density[m] are (g / cm^2).
          */
 
         // forward_projections dictionary-ization is implicit.
@@ -402,23 +402,54 @@ extern "C" {
         photon_prob[img_dx] = 0;
 
         // MASS ATTENUATION COMPUTATION
+
+        /**
+         * EXPLANATION OF THE PHYSICS/MATHEMATICS
+         * 
+         *      The mass attenuation coefficient (found in absorb_coef_table) is: \mu / \rho, where
+         * \mu is the linear attenuation coefficient, and \rho is the mass density.  \mu has units of
+         * inverse length, and \rho has units of mass/volume, so the mass attenuation coefficient has
+         * units of [cm^2 / g]
+         *      area_density[m] is the product of [linear distance of the ray through material 'm'] and 
+         * [density of the material].  Accordingly, area_density[m] has units of [g / cm^2].
+         *
+         * The mass attenuation code uses the Beer-Lambert law:
+         *
+         *      I = I_{0} exp[-(\mu / \rho) * \rho * d]
+         *
+         * where I_{0} is the initial intensity, (\mu / \rho) is the mass attenuation coefficient, 
+         * \rho is the density, and d is the length of the ray passing through the material.  Note 
+         * that the product (\rho * d), also known as the 'area density' is the quantity area_density[m].
+         *      Because we are attenuating multiple materials, the exponent that we use for the 
+         * Beer-Lambert law is the sum of the (\mu_{mat} / \rho_{mat}) * (\rho_{mat} * d_{mat}) for
+         * each material 'mat'.
+         *
+         *      The above explains the calculation up to and including 
+         *              '____ = expf(-1 * beer_lambert_exp)',
+         * but does not yet explain the remaining calculation.  The remaining calculation serves to 
+         * approximate the workings of a pixel in the dectector:
+         *      
+         *      pixelReading = \sum_{E} attenuatedBeamStrength[E] * E * p(E)
+         *
+         * where attenuatedBeamStrength follows the Beer-Lambert law as above, E is the energies of
+         * the spectrum, and p(E) is the PDF of the spectrum.
+         *      Note also that the Beer-Lambert law deals with the quantity 'intensity', which is 
+         * related to the power transmitted through [unit area perpendicular to the direction of travel].
+         * Since the intensities mentioned in the Beer-Lambert law are proportional to 1/[unit area], we
+         * can replace the "intensity" calcuation with simply the energies involved.  Later conversion to 
+         * other physical quanities can be done outside of the kernel.
+         */
         for (int bin = 0; bin < n_bins; bin++) {
-            float energy = energies[bin];
-            float p = pdf[bin];
-
-            float intensity_tmp = 0.0f; // lifting the call to calculate_attenuation_gpu(...) up a level
+            float beer_lambert_exp = 0.0f;
             for (int m = 0; m < NUM_MATERIALS; m++) {
-                float absorb_coef = absorb_coef_table[bin * NUM_MATERIALS + m];
-                intensity_tmp += output[m] * -1 * absorb_coef;
+                beer_lambert_exp += area_density[m] * absorb_coef_table[bin * NUM_MATERIALS + m];
             }
-            intensity_tmp = expf(intensity_tmp) * energy * p;
-            // done with the "lifted" call to calculate_attenuation_gpu(...)
+            float photon_prob_tmp = expf(-1.f * beer_lambert_exp) * pdf[bin]; // dimensionless value
 
-            intensity[img_dx] += intensity_tmp;
-            photon_prob[img_dx] += intensity_tmp * (1.0 / energy);
+            photon_prob[img_dx] += photon_prob_tmp;
+            intensity[img_dx] += energies[bin] * photon_prob_tmp; // units: [keV] per unit photon to hit the pixel
         }
 
         return;
     }
 }
-    

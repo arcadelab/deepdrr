@@ -18,26 +18,12 @@ logger = logging.getLogger(__name__)
 
 
 def main():
-    # Define a simple phantom for test: a wire box around a cube.
     volume = np.zeros((120, 100, 80), dtype=np.float32)
-    volume[0, 0, :] = 1
-    volume[0, -1, :] = 1
-    volume[-1, 0, :] = 1
-    volume[-1,-1, :] = 1
-    volume[:, 0, 0] = 1
-    volume[:, 0, -1] = 1
-    volume[:, -1, 0] = 1
-    volume[:, -1, -1] = 1
-    volume[0, :, 0] = 1
-    volume[0, :, -1] = 1
-    volume[-1,:, 0] = 1
-    volume[-1, :, -1] = 1
+    volume[10:110, 10:90, 30:50] = 1
 
-    volume[40:60, 40:60, 40:60] = 1
     materials = {}
     materials["air"] = volume == 0
     materials["soft tissue"] = volume == 1
-    materials["bone"] = volume == 2
     voxel_size = np.array([1, 1, 1], dtype=np.float32)
 
     # Use the center of the volume as the "world" coordinates. The origin is the (0, 0, 0) index of the volume in the world frame.
@@ -45,8 +31,51 @@ def main():
     origin = geo.point(-vol_center[0], -vol_center[1], -vol_center[2])
 
     # Create the volume object with segmentation
-    volume = Volume.from_parameters(
-        data=volume,
+    volume0 = Volume.from_parameters(
+        data=volume.copy(),
+        materials=materials, 
+        origin=origin, 
+        spacing=voxel_size,
+        anatomical_coordinate_system=None, # LPS, RAS, or None.
+        world_from_anatomical=None, # anatomical coordinate system is same as world
+    )
+
+    volume = np.zeros((120, 100, 80), dtype=np.float32)
+    volume[40:80, 40:60, 30:50] = 1
+
+    materials = {}
+    # CHOOSE ONE OF THE BELOW OPTIONS
+    null_test = False
+    air_test = False
+    soft_test = True
+    bone_test = False
+    
+    if null_test:
+        assert (not air_test) and (not soft_test) and (not bone_test)
+        print("NULL TEST")
+        volume = 0 * volume
+    elif air_test:
+        assert (not null_test) and (not soft_test) and (not bone_test)
+        print("AIR TEST")
+        materials["air"] = (volume == 1).copy() # everywhere else is the null segmentation
+        volume = 0 * volume
+    elif soft_test:
+        assert (not null_test) and (not air_test) and (not bone_test)
+        print("SOFT TISSUE TEST")
+        materials["soft tissue"] = (volume == 1) # everywhere else is the null segmentation
+    else:
+        print("BONE TEST")
+        assert (not null_test) and (not air_test) and (not soft_test)
+        materials["bone"] = (volume == 1) # everywhere else is the null segmentation
+        volume = 2 * volume
+    
+    voxel_size = np.array([1, 1, 1], dtype=np.float32)
+    vol_center = (np.array(volume.shape) - 1) / 2 * voxel_size
+    origin = geo.point(-vol_center[0], -vol_center[1], -vol_center[2])
+
+    # Create the volume object with segmentation
+    volume1 = Volume.from_parameters(
+        data=volume.copy(),
         materials=materials, 
         origin=origin, 
         spacing=voxel_size,
@@ -77,7 +106,8 @@ def main():
 
     t = time()
     with Projector(
-        volume=volume,
+        volume=[volume0, volume1],
+        priorities=None, # default, equivalent to priorities=[1, 0]
         camera_intrinsics=camera_intrinsics,
         carm=carm,
         step=0.1, # stepsize along projection ray, measured in voxels
