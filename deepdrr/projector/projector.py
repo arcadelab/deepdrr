@@ -1,4 +1,4 @@
-from typing import Literal, List, Union, Tuple, Optional, Dict, Any
+from typing import List, Union, Tuple, Optional, Dict, Any
 
 import logging
 import numpy as np
@@ -30,21 +30,36 @@ from .. import utils
 logger = logging.getLogger(__name__)
 
 
-def _get_spectrum(spectrum):
+def _get_spectrum(spectrum: Union[np.ndarray, str]):
+    """Get the data corresponding to the given spectrum name.
+
+    Args:
+        spectrum (Union[np.ndarray, str]): the spectrum array or the spectrum itself.
+
+    Raises:
+        TypeError: If the spectrum is not recognized.
+
+    Returns:
+        np.ndarray: The X-ray spectrum data.
+    """
     if isinstance(spectrum, np.ndarray):
         return spectrum
     elif isinstance(spectrum, str):
-        assert spectrum in spectral_data.spectrums, f"unrecognized spectrum: {spectrum}"
+        if spectrum not in spectral_data.spectrums:
+            raise KeyError(f"unrecognized spectrum: {spectrum}")
         return spectral_data.spectrums[spectrum]
     else:
-        raise TypeError(f"unrecognized spectrum: {type(spectrum)}")
+        raise TypeError(f"unrecognized spectrum type: {type(spectrum)}")
 
 
-def _get_kernel_projector_module(num_volumes, num_materials) -> SourceModule:
+def _get_kernel_projector_module(num_volumes: int, num_materials: int) -> SourceModule:
     """Compile the cuda code for the kernel projector.
 
     Assumes `project_kernel.cu` and `cubic` interpolation library is in the same directory as THIS
     file.
+
+    Args:
+        num_materials (int): The number of materials to assume
 
     Returns:
         SourceModule: pycuda SourceModule object.
@@ -70,6 +85,7 @@ def _get_kernel_projector_module(num_volumes, num_materials) -> SourceModule:
         logger.debug(f'compiling {source_path} with NUM_VOLUMES={num_volumes}, NUM_MATERIALS={num_materials}')
         return SourceModule(source, include_dirs=[bicubic_path, str(d)], no_extern_c=True, options=['-D', f'NUM_VOLUMES={num_volumes}', '-D', f'NUM_MATERIALS={num_materials}'])
 
+
 class Projector(object):
     def __init__(
         self,
@@ -78,10 +94,8 @@ class Projector(object):
         camera_intrinsics: Optional[geo.CameraIntrinsicTransform] = None,
         carm: Optional[MobileCArm] = None,
         step: float = 0.1,
-        mode: Literal["linear"] = "linear",
-        spectrum: Union[
-            np.ndarray, Literal["60KV_AL35", "90KV_AL40", "120KV_AL43"]
-        ] = "90KV_AL40",
+        mode: str = "linear",
+        spectrum: Union[np.ndarray, str] = "90KV_AL40",
         add_scatter: bool = False,
         add_noise: bool = False,
         photon_count: int = 100000,
@@ -109,12 +123,12 @@ class Projector(object):
             camera_intrinsics (CameraIntrinsicTransform): intrinsics of the projector's camera. (used for sensor size). If None, the CArm object must be provided and have a camera_intrinsics attribute. Defaults to None.
             carm (Optional[MobileCArm], optional): Optional C-arm device, for convenience which can be used to get projections from C-Arm pose. If not provided, camera pose must be defined by user. Defaults to None.
             step (float, optional): size of the step along projection ray in voxels. Defaults to 0.1.
-            mode (Literal['linear']): [description].
-            spectrum (Union[np.ndarray, Literal['60KV_AL35', '90KV_AL40', '120KV_AL43'], optional): spectrum array or name of spectrum to use for projection. Defaults to '90KV_AL40'.
-            add_scatter (bool, optional): whether to add scatter noise from artifacts. Defaults to False.
-            add_noise: (bool, optional): whether to add Poisson noise. Defaults to False.
-            threads (int, optional): number of threads to use. Defaults to 8.
-            max_block_index (int, optional): maximum GPU block. Defaults to 1024. TODO: determine from compute capability.
+            mode (str): Interpolation mode for the kernel. Defaults to "linear".
+            spectrum (Union[np.ndarray, str], optional): Spectrum array or name of spectrum to use for projection. Defaults to '90KV_AL40'.
+            add_scatter (bool, optional): Whether to add scatter noise from artifacts. Defaults to False.
+            add_noise: (bool, optional): Whether to add Poisson noise. Defaults to False.
+            threads (int, optional): Number of threads to use. Defaults to 8.
+            max_block_index (int, optional): Maximum GPU block. Defaults to 1024. TODO: determine from compute capability.
             neglog (bool, optional): whether to apply negative log transform to intensity images. If True, outputs are in range [0, 1]. Recommended for easy viewing. Defaults to False.
             intensity_upper_bound (Optional[float], optional): Maximum intensity, clipped before neglog, after noise and scatter. Defaults to 40.
         """

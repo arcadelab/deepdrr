@@ -24,6 +24,7 @@ import logging
 from abc import ABC, abstractmethod
 import numpy as np
 import scipy.spatial.distance
+from scipy.spatial.transform import Rotation
 
 from . import vol
 from . import utils

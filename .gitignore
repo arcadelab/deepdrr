@@ -8,3 +8,5 @@ build
 docs/build
 .vscode
 **flycheck*.py
+/.DS_Store
+output

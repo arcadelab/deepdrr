@@ -1,16 +1,20 @@
 """Volume class for CT volume.
+
 """
 
 from __future__ import annotations
-from typing import Union, Tuple, Literal, List, Optional, Dict
+from typing import Union, Tuple, List, Optional, Dict
 
 import logging
 import numpy as np
 from pathlib import Path
 import nibabel as nib
 from pydicom.filereader import dcmread
+import nrrd
+from scipy.spatial.transform import Rotation
 
 from . import load_dicom
+from shutil import which
 from . import geo
 from . import utils
 
@@ -46,8 +50,12 @@ class Volume(object):
         """
         self.data = np.array(data).astype(np.float32)
         self.materials = self._format_materials(materials)
-        self.anatomical_from_ijk = anatomical_from_ijk
-        self.world_from_anatomical = geo.FrameTransform.identity(3) if world_from_anatomical is None else world_from_anatomical
+        self.anatomical_from_ijk = geo.frame_transform(anatomical_from_ijk)
+        self.world_from_anatomical = (
+            geo.FrameTransform.identity(3)
+            if world_from_anatomical is None
+            else geo.frame_transform(world_from_anatomical)
+        )
 
     @classmethod
     def from_parameters(
@@ -56,10 +64,10 @@ class Volume(object):
         materials: Dict[str, np.ndarray],
         origin: geo.Point3D,
         spacing: Optional[geo.Vector3D] = [1, 1, 1],
-        anatomical_coordinate_system: Optional[Literal['LPS', 'RAS', 'none']] = None,
+        anatomical_coordinate_system: Optional[str] = None,
         world_from_anatomical: Optional[geo.FrameTransform] = None,
     ):
-        """Create a volume object with a segmentation of the materials, with its own anatomical coordinate space, from parameters.
+        """Create a volume object with a segmentation of the materials, from parameters.
 
         Note that the anatomical coordinate system is not the world coordinate system (which is cartesian).
         
@@ -71,28 +79,38 @@ class Volume(object):
             materials (dict[str, np.ndarray]): mapping from material names to binary segmentation of that material.
             origin (Point3D): Location of the volume's origin in the anatomical coordinate system.
             spacing (Tuple[float, float, float], optional): Spacing of the volume in the anatomical coordinate system. Defaults to (1, 1, 1).
-            anatomical_coordinate_system (Literal['LPS', 'RAS', 'none']): anatomical coordinate system convention. Defaults to 'none'.
+            anatomical_coordinate_system (Optional[str]): anatomical coordinate system convention, either "RAS" or "LPS". Defaults to None.
             world_from_anatomical (FrameTransform, optional): Optional transformation from anatomical to world coordinates. 
                 If None, then identity is used. Defaults to None.
         """
         origin = geo.point(origin)
         spacing = geo.vector(spacing)
-
         assert spacing.dim == 3
 
         # define anatomical_from_ijk FrameTransform
-        if anatomical_coordinate_system is None or anatomical_coordinate_system == 'none':
-            anatomical_from_ijk = geo.FrameTransform.from_scaling(scaling=spacing, translation=origin)
-        elif anatomical_coordinate_system == 'LPS':
+        if (
+            anatomical_coordinate_system is None
+            or anatomical_coordinate_system == "none"
+        ):
+            anatomical_from_ijk = geo.FrameTransform.from_scaling(
+                scaling=spacing, translation=origin
+            )
+        elif anatomical_coordinate_system == "LPS":
             # IJKtoLPS = LPS_from_IJK
             rotation = [
                 [spacing[0], 0, 0],
                 [0, 0, spacing[2]],
                 [0, -spacing[1], 0],
             ]
-            anatomical_from_ijk = geo.FrameTransform.from_rt(rotation=rotation, translation=origin)
+            anatomical_from_ijk = geo.FrameTransform.from_rt(
+                rotation=rotation, translation=origin
+            )
+        elif anatomical_coordinate_system == "RAS":
+            raise NotImplementedError(
+                "conversion from RAS (not hard, look at LPS example)"
+            )
         else:
-            raise NotImplementedError("conversion from RAS (not hard, look at LPS example)")
+            raise ValueError()
 
         return cls(
             data=data,
@@ -108,7 +126,7 @@ class Volume(object):
         origin: geo.Point3D,
         use_thresholding: bool = True,
         spacing: Optional[geo.Vector3D] = (1, 1, 1),
-        anatomical_coordinate_system: Optional[Literal['LPS', 'RAS', 'none']] = None,
+        anatomical_coordinate_system: Optional[str] = None,
         world_from_anatomical: Optional[geo.FrameTransform] = None,
     ) -> None:
         data = cls._convert_hounsfield_to_density(hu_values)
@@ -116,10 +134,10 @@ class Volume(object):
 
         return cls.from_parameters(
             data,
-            materials, 
-            origin=origin, 
-            spacing=spacing, 
-            anatomical_coordinate_system=anatomical_coordinate_system, 
+            materials,
+            origin=origin,
+            spacing=spacing,
+            anatomical_coordinate_system=anatomical_coordinate_system,
             world_from_anatomical=world_from_anatomical,
         )
 
@@ -127,9 +145,16 @@ class Volume(object):
     def _get_cache_path(
         use_thresholding: bool = True,
         cache_dir: Optional[Path] = None,
-        prefix: str = '',
+        prefix: str = "",
     ) -> Optional[Path]:
-        return None if cache_dir is None else Path(cache_dir) / '{}materials{}.npz'.format(prefix, '_with_thresholding' if use_thresholding else '')
+        return (
+            None
+            if cache_dir is None
+            else Path(cache_dir)
+            / "{}materials{}.npz".format(
+                prefix, "_with_thresholding" if use_thresholding else ""
+            )
+        )
 
     @staticmethod
     def _convert_hounsfield_to_density(hu_values: np.ndarray):
@@ -137,8 +162,7 @@ class Volume(object):
 
     @staticmethod
     def _segment_materials(
-        hu_values: np.ndarray,
-        use_thresholding: bool = True,
+        hu_values: np.ndarray, use_thresholding: bool = True,
     ) -> Dict[str, np.ndarray]:
         """Segment the materials.
 
@@ -163,7 +187,7 @@ class Volume(object):
         use_thresholding: bool = True,
         use_cached: bool = True,
         cache_dir: Optional[Path] = None,
-        prefix: str = '',
+        prefix: str = "",
     ) -> Dict[str, np.ndarray]:
         """Segment the materials in a volume, potentially caching.
 
@@ -180,20 +204,23 @@ class Volume(object):
             Dict[str, np.ndarray]: materials segmentation.
         """
 
-        materials_path = cls._get_cache_path(use_thresholding=use_thresholding, cache_dir=cache_dir, prefix=prefix)
+        materials_path = cls._get_cache_path(
+            use_thresholding=use_thresholding, cache_dir=cache_dir, prefix=prefix
+        )
 
         if materials_path is not None and materials_path.exists() and use_cached:
-            logger.info(f'using cached materials segmentation at {materials_path}')
+            logger.info(f"using cached materials segmentation at {materials_path}")
             materials = dict(np.load(materials_path))
         else:
-            logger.info(f'segmenting materials in volume')
-            materials = cls._segment_materials(hu_values, use_thresholding=use_thresholding)
-        
+            logger.info(f"segmenting materials in volume")
+            materials = cls._segment_materials(
+                hu_values, use_thresholding=use_thresholding
+            )
+
             if materials_path is not None:
                 np.savez(materials_path, **materials)
 
         return materials
-
 
     @classmethod
     def from_nifti(
@@ -221,32 +248,32 @@ class Volume(object):
         if cache_dir is None:
             cache_dir = path.parent
 
-        logger.info(f'loading NiFti volume from {path}')
+        logger.info(f"loading NiFti volume from {path}")
         img = nib.load(path)
-        if img.header.get_xyzt_units() != ('mm', 'sec'):
-            logger.warning(f'got NifTi units: {img.header.get_xyzt_units()}')
+        if img.header.get_xyzt_units() != ("mm", "sec"):
+            logger.warning(f"got NifTi units: {img.header.get_xyzt_units()}")
 
         anatomical_from_ijk = geo.FrameTransform(img.affine)
         hu_values = img.get_fdata()
-        
+
         data = cls._convert_hounsfield_to_density(hu_values)
-        materials = cls.segment_materials(hu_values, use_thresholding=use_thresholding, use_cached=use_cached, cache_dir=cache_dir)
-        
-        return cls(
-            data,
-            materials,
-            anatomical_from_ijk,
-            world_from_anatomical,
+        materials = cls.segment_materials(
+            hu_values,
+            use_thresholding=use_thresholding,
+            use_cached=use_cached,
+            cache_dir=cache_dir,
         )
+
+        return cls(data, materials, anatomical_from_ijk, world_from_anatomical,)
 
     @classmethod
     def from_dicom(
-            cls,
-            path: Path,
-            use_thresholding: bool = True,
-            world_from_anatomical: Optional[geo.FrameTransform] = None,
-            use_cached: bool = True,
-            cache_dir: Optional[Path] = None
+        cls,
+        path: Path,
+        use_thresholding: bool = True,
+        world_from_anatomical: Optional[geo.FrameTransform] = None,
+        use_cached: bool = True,
+        cache_dir: Optional[Path] = None,
     ):
         """
         load a volume from a dicom file and compute the anatomical_from_ijk transform from metadata
@@ -262,7 +289,7 @@ class Volume(object):
             Volume: an instance of a deepdrr volume
         """
         path = Path(path)
-        stem = path.name.split('.')[0]
+        stem = path.name.split(".")[0]
 
         if cache_dir is None:
             cache_dir = path.parent
@@ -270,8 +297,10 @@ class Volume(object):
         # Multi-frame dicoms store all slices of a volume in one file.
         # they must specify the necessary dicom tags under
         # https://dicom.innolitics.com/ciods/enhanced-ct-image/enhanced-ct-image-multi-frame-functional-groups
-        assert path.is_file(), 'Currently only multi-frame dicoms are supported. Path must refer to a file.'
-        logger.info(f'loading Dicom volume from {path}')
+        assert (
+            path.is_file()
+        ), "Currently only multi-frame dicoms are supported. Path must refer to a file."
+        logger.info(f"loading Dicom volume from {path}")
 
         # reading the dicom dataset object
         ds = dcmread(path)
@@ -279,12 +308,20 @@ class Volume(object):
         # slice specific tags
         frames = ds.PerFrameFunctionalGroupsSequence
         num_slices = len(frames)
-        first_slice_position = np.array(frames[0].PlanePositionSequence[0].ImagePositionPatient)
-        last_slice_position = np.array(frames[-1].PlanePositionSequence[0].ImagePositionPatient)
+        first_slice_position = np.array(
+            frames[0].PlanePositionSequence[0].ImagePositionPatient
+        )
+        last_slice_position = np.array(
+            frames[-1].PlanePositionSequence[0].ImagePositionPatient
+        )
 
         # volume specific tags
         shared = ds.SharedFunctionalGroupsSequence[0]
-        RC = np.array(shared.PlaneOrientationSequence[0].ImageOrientationPatient).reshape(2, 3).T
+        RC = (
+            np.array(shared.PlaneOrientationSequence[0].ImageOrientationPatient)
+            .reshape(2, 3)
+            .T
+        )
         PixelSpacing = np.array(shared.PixelMeasuresSequence[0].PixelSpacing)
         SliceThickness = np.array(shared.PixelMeasuresSequence[0].SliceThickness)
         offset = shared.PixelValueTransformationSequence[0].RescaleIntercept
@@ -292,20 +329,22 @@ class Volume(object):
 
         # make user aware that this is only tested on windows
         if ds.Manufacturer != "SIEMENS":
-            logger.warning("Multi-frame loading has only been tested on Siemens Enhanced CT DICOMs."
-                           "Please verify everything works as expected.")
+            logger.warning(
+                "Multi-frame loading has only been tested on Siemens Enhanced CT DICOMs."
+                "Please verify everything works as expected."
+            )
 
         # read the 'raw' data array
         raw_data = ds.pixel_array.astype(np.float32)
         hu_values = raw_data * scale + offset
 
-        '''
+        """
         EXPLANATION - indexing conventions
 
         According to dicom (C.7.6.3.1.4 - Pixel Data) slices are of shape (Rows, Columns) 
         => must be (j, i) indexed if we define i == horizontal and j == vertical.
         => we want to conform to the (i, j, k) layout and therefore move the axis of the data array
-        '''
+        """
 
         # convert data to our indexing convention (k, j, i) -> (j, i, k)
         hu_values = hu_values.transpose((2, 1, 0)).copy()
@@ -315,25 +354,25 @@ class Volume(object):
 
         # obtain materials analogous to nifti
         if use_thresholding:
-            materials_path = cache_dir / f'{stem}_materials_thresholding.npz'
+            materials_path = cache_dir / f"{stem}_materials_thresholding.npz"
             if use_cached and materials_path.exists():
-                logger.info(f'found materials segmentation at {materials_path}.')
+                logger.info(f"found materials segmentation at {materials_path}.")
                 materials = dict(np.load(materials_path))
             else:
-                logger.info(f'segmenting materials in volume')
+                logger.info(f"segmenting materials in volume")
                 materials = load_dicom.conv_hu_to_materials_thresholding(hu_values)
                 np.savez(materials_path, **materials)
         else:
-            materials_path = cache_dir / f'{stem}_materials.npz'
+            materials_path = cache_dir / f"{stem}_materials.npz"
             if use_cached and materials_path.exists():
-                logger.info(f'found materials segmentation at {materials_path}.')
+                logger.info(f"found materials segmentation at {materials_path}.")
                 materials = dict(np.load(materials_path))
             else:
-                logger.info(f'segmenting materials in volume')
+                logger.info(f"segmenting materials in volume")
                 materials = load_dicom.conv_hu_to_materials(hu_values)
                 np.savez(materials_path, **materials)
 
-        '''
+        """
         EXPLANATION - 3d affine transform
         
         DICOM does not offer a 3d transform to locate the voxel data in world space for historic reasons.
@@ -342,9 +381,11 @@ class Volume(object):
         
         Note, that we do not modify the affine transform to account for the differences in indexing, but 
         instead modified the data in memory to be in (i, j, k) order.
-        '''
+        """
         # construct column for index k
-        k = np.array((last_slice_position - first_slice_position) / (num_slices - 1)).reshape(3, 1)
+        k = np.array(
+            (last_slice_position - first_slice_position) / (num_slices - 1)
+        ).reshape(3, 1)
 
         # check if the calculated increment matches the SliceThickness (allow .1 millimeters deviations)
         assert np.allclose(np.abs(k[2]), SliceThickness, atol=0.1, rtol=0)
@@ -364,20 +405,16 @@ class Volume(object):
         # log affine matrix in debug mode
         logger.debug(f"manually constructed affine matrix: \n{affine}")
         logger.debug(
-            f"volume_center_xyz : {np.mean([affine @ np.array([*data.shape, 1]), affine @ [0, 0, 0, 1]], axis=0)}")
+            f"volume_center_xyz : {np.mean([affine @ np.array([*data.shape, 1]), affine @ [0, 0, 0, 1]], axis=0)}"
+        )
 
         # cast to FrameTransform
         lps_from_ijk = geo.FrameTransform(affine)
 
         # constructing the volume
-        return cls(
-            data,
-            materials,
-            lps_from_ijk,
-            world_from_anatomical,
-        )
+        return cls(data, materials, lps_from_ijk, world_from_anatomical,)
 
-    def to_dicom(self, path: Union[str, Path]):
+    def to_dicom(self, path: str):
         """Write the volume to a DICOM file.
 
         Args:
@@ -385,7 +422,62 @@ class Volume(object):
         """
         path = Path(path)
 
-        raise NotImplementedError('save volume to dicom file')
+        raise NotImplementedError("save volume to dicom file")
+
+    @classmethod
+    def from_nrrd(
+        cls,
+        path: str,
+        world_from_anatomical: Optional[geo.FrameTransform] = None,
+        use_thresholding: bool = True,
+        use_cached: bool = True,
+        cache_dir: Optional[Path] = None,
+    ):
+        """Load a volume from a nrrd file.
+
+        Args:
+            path (str): path to the file.
+            use_thresholding (bool, optional): segment the materials using thresholding (faster but less accurate). Defaults to True.
+            world_from_anatomical (Optional[geo.FrameTransform], optional): position the volume in world space. If None, uses identity. Defaults to None.
+            use_cached (bool, optional): Use a cached segmentation if available. Defaults to True.
+            cache_dir (Optional[Path], optional): Where to load/save the cached segmentation. If None, use the parent dir of `path`. Defaults to None.
+
+        Returns:
+            Volume: A volume formed from the NRRD.
+        """
+        hu_values, header = nrrd.read(path)
+        ijk_from_anatomical = np.concatenate(
+            [header["space directions"], header["space origin"].reshape(-1, 1),],
+            axis=1,
+        )
+        anatomical_from_ijk = np.concatenate(
+            [ijk_from_anatomical, [[0, 0, 0, 1]]], axis=0
+        )
+        data = cls._convert_hounsfield_to_density(hu_values)
+        materials = cls.segment_materials(
+            hu_values,
+            use_thresholding=use_thresholding,
+            use_cached=use_cached,
+            cache_dir=cache_dir,
+        )
+
+        return cls(data, materials, anatomical_from_ijk, world_from_anatomical)
+
+    @property
+    def world_from_ijk(self) -> geo.FrameTransform:
+        return self.world_from_anatomical @ self.anatomical_from_ijk
+
+    @property
+    def ijk_from_world(self) -> geo.FrameTransform:
+        return self.world_from_ijk.inv
+
+    @property
+    def anatomical_from_world(self):
+        return self.world_from_anatomical.inv
+
+    @property
+    def ijk_from_anatomical(self):
+        return self.anatomical_from_ijk.inv
 
     @property
     def origin(self) -> geo.Point3D:
@@ -407,10 +499,7 @@ class Volume(object):
         """The spacing of the voxels."""
         return geo.vector(np.abs(np.array(self.anatomical_from_ijk.R)).max(axis=0))
 
-    def _format_materials(
-        self, 
-        materials: Dict[str, np.ndarray],
-    ) -> np.ndarray:
+    def _format_materials(self, materials: Dict[str, np.ndarray],) -> np.ndarray:
         """Standardize the input material segmentation."""
         for mat in materials:
             materials[mat] = np.array(materials[mat]).astype(np.float32)
@@ -420,14 +509,6 @@ class Volume(object):
     @property
     def shape(self) -> Tuple[int, int, int]:
         return self.data.shape
-
-    @property
-    def world_from_ijk(self) -> geo.FrameTransform:
-        return self.world_from_anatomical @ self.anatomical_from_ijk
-
-    @property
-    def ijk_from_world(self) -> geo.FrameTransform:
-        return self.world_from_ijk.inv
 
     def __array__(self) -> np.ndarray:
         return self.data
@@ -444,8 +525,40 @@ class Volume(object):
 
         # TODO(killeen): fix this. It doesn't use x.
         x = geo.point(x)
-        center_anatomical = self.anatomical_from_ijk @ geo.point(np.array(self.shape) / 2)
-        self.world_from_anatomical = geo.FrameTransform.from_rt(self.world_from_anatomical.R) @ geo.FrameTransform.from_origin(center_anatomical)
+        center_anatomical = self.anatomical_from_ijk @ geo.point(
+            np.array(self.shape) / 2
+        )
+        self.world_from_anatomical = geo.FrameTransform.from_rt(
+            self.world_from_anatomical.R
+        ) @ geo.FrameTransform.from_origin(center_anatomical)
+
+    def translate(self, t: geo.Vector3D) -> None:
+        """Translate the volume by `t`.
+
+        Args:
+            t (geo.Vector3D): The vector to translate by, in world space.
+        """
+        t = geo.vector(t)
+        T = geo.FrameTransform.from_translation(t)
+        self.world_from_anatomical = T @ self.world_from_anatomical
+
+    def rotate(
+        self, r: Union[geo.Vector3D, Rotation], center: geo.Point3D = [0, 0, 0]
+    ) -> None:
+        """Rotate the volume by `r` about `x`.
+
+        Args:
+            r (Union[geo.Vector3D, Rotation]): the rotation in world-space. If it is a vector, `Rotation.from_rotvec(r)` is used.
+            center (geo.Point3D): the center of rotation in world space coordinates.
+        """
+        if isinstance(r, Rotation):
+            R = geo.FrameTransform.from_rotation(r.as_matrix())
+        else:
+            r = geo.vector(r)
+            R = geo.FrameTransform.from_rotation(Rotation.from_rotvec(r).as_matrix())
+
+        T = geo.FrameTransform.from_translation(center)
+        self.world_from_anatomical = T @ R @ T.inv @ self.world_from_anatomical
 
     def __contains__(self, x: geo.Point3D) -> bool:
         """Determine whether the point x is inside the volume.
@@ -457,33 +570,33 @@ class Volume(object):
         x_ijk = self.ijk_from_world @ geo.point(x)
         return np.all(0 <= np.array(x_ijk) <= np.array(self.shape) - 1)
 
-    def _make_surface(self, material: str = 'bone'):
+    def _make_surface(self, material: str = "bone"):
         """Make a surface for the boolean segmentation"""
         assert vtk_available and pv_available
-        assert material in self.materials, f'"{material}" not in {self.materials.keys()}'
+        assert (
+            material in self.materials
+        ), f'"{material}" not in {self.materials.keys()}'
 
         segmentation = self.materials[material]
         R = self.anatomical_from_ijk.R
         t = self.anatomical_from_ijk.t
 
         vol = vtk.vtkStructuredPoints()
-        vol.SetDimensions(segmentation.shape[0], segmentation.shape[1], segmentation.shape[2])
+        vol.SetDimensions(
+            segmentation.shape[0], segmentation.shape[1], segmentation.shape[2]
+        )
         vol.SetOrigin(
-            -np.sign(R[0, 0]) * t[0],
-            np.sign(R[1, 1]) * t[1],
-            np.sign(R[2, 2]) * t[2],
+            -np.sign(R[0, 0]) * t[0], np.sign(R[1, 1]) * t[1], np.sign(R[2, 2]) * t[2],
         )
         vol.SetSpacing(
-            -abs(R[0, 0]),
-            abs(R[1, 1]),
-            abs(R[2, 2]),
+            -abs(R[0, 0]), abs(R[1, 1]), abs(R[2, 2]),
         )
 
         segmentation = segmentation.astype(np.uint8)
-        scalars = nps.numpy_to_vtk(segmentation.ravel(order='F'), deep=True)
+        scalars = nps.numpy_to_vtk(segmentation.ravel(order="F"), deep=True)
         vol.GetPointData().SetScalars(scalars)
 
-        logger.debug('isolating bone surface for visualization...')
+        logger.debug("isolating bone surface for visualization...")
         dmc = vtk.vtkDiscreteMarchingCubes()
         dmc.SetInputData(vol)
         dmc.GenerateValues(1, 1, 1)
@@ -515,25 +628,32 @@ class Volume(object):
 
     def get_surface(
         self,
-        material: str = 'bone',
+        material: str = "bone",
         cache_dir: Optional[Path] = None,
         use_cached: bool = True,
     ):
-        cache_path = None if cache_dir is None else Path(cache_dir) / f'{material}_mesh.vtp'
+        cache_path = (
+            None if cache_dir is None else Path(cache_dir) / f"{material}_mesh.vtp"
+        )
         if use_cached and cache_path is not None and cache_path.exists():
-            logger.info(f'reading cached {material} mesh from {cache_path}')
+            logger.info(f"reading cached {material} mesh from {cache_path}")
             surface = pv.read(cache_path)
         else:
-            logger.info(f'meshing {material} segmentation...')
+            logger.info(f"meshing {material} segmentation...")
             surface = self._make_surface(material)
             if cache_path is not None:
                 if not cache_dir.exists():
                     cache_dir.mkdir()
-                logger.info(f'caching {material} surface to {cache_path}.')
+                logger.info(f"caching {material} surface to {cache_path}.")
                 surface.save(cache_path)
         return surface
 
-    def get_mesh_in_world(self, full: bool = False, cache_dir: Optional[Path] = None, use_cached: bool = True) -> pv.PolyData:
+    def get_mesh_in_world(
+        self,
+        full: bool = False,
+        cache_dir: Optional[Path] = None,
+        use_cached: bool = True,
+    ) -> pv.PolyData:
         """Get a pyvista mesh of the outline in world-space.
 
         Args:
@@ -545,7 +665,9 @@ class Volume(object):
             pv.PolyData: pyvista mesh.
         """
 
-        assert pv_available, f'PyVista not available for obtaining Volume mesh. Try: `pip install pyvista`'
+        assert (
+            pv_available
+        ), f"PyVista not available for obtaining Volume mesh. Try: `pip install pyvista`"
 
         x, y, z = np.array(self.shape) - 1
         points = [
@@ -575,7 +697,9 @@ class Volume(object):
 
         if full:
             logger.debug(f"getting full surface mesh for volume")
-            material_mesh = self.get_surface(material='bone', cache_dir=cache_dir, use_cached=use_cached)
+            material_mesh = self.get_surface(
+                material="bone", cache_dir=cache_dir, use_cached=use_cached
+            )
             material_mesh.transform(geo.get_data(self.world_from_anatomical))
             mesh += material_mesh
 
@@ -586,19 +710,19 @@ class MetalVolume(Volume):
     """Same as a volume, but with a different segmentation for the materials.
 
     """
+
     @staticmethod
     def _convert_hounsfield_to_density(hu_values: np.ndarray):
         # TODO: verify
         return 30 * hu_values
 
     @staticmethod
-    def _segment_materials(hu_values: np.ndarray, use_thresholding: bool = True) -> Dict[str, np.ndarray]:
+    def _segment_materials(
+        hu_values: np.ndarray, use_thresholding: bool = True
+    ) -> Dict[str, np.ndarray]:
         if not use_thresholding:
             raise NotImplementedError
 
         return dict(
-            air=(hu_values == 0),
-            bone=(hu_values > 0),
-            titanium=(hu_values > 0),
+            air=(hu_values == 0), bone=(hu_values > 0), titanium=(hu_values > 0),
         )
-        

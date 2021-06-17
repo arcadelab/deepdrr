@@ -1,1 +1,1 @@
-/home/benjamin/projects/deepdrr/README.md
+../../README.md
