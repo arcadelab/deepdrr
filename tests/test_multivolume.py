@@ -26,4 +26,7 @@ def test_multivolume():
             image = projector.project()
         
     image = (image * 255).astype(np.uint8)
-    Image.fromarray(image).save("ouput/test_multivolume.png")
+    Image.fromarray(image).save("output/test_multivolume.png")
+
+if __name__ == "__main__":
+    test_multivolume()
