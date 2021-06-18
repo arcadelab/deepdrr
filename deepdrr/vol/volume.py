@@ -13,10 +13,9 @@ from pydicom.filereader import dcmread
 import nrrd
 from scipy.spatial.transform import Rotation
 
-from . import load_dicom
-from shutil import which
-from . import geo
-from . import utils
+from .. import load_dicom
+from .. import geo
+from .. import utils
 
 pv, pv_available = utils.try_import_pyvista()
 vtk, nps, vtk_available = utils.try_import_vtk()
@@ -40,7 +39,8 @@ class Volume(object):
     ) -> None:
         """A deepdrr Volume object with materials segmentation and orientation in world-space.
 
-        The recommended way to create a Volume is to load from a NifTi file using the `Volume.from_nifti(path)` class method.
+        The recommended way to create a Volume is to load from a file using the classmethods
+        `from_nifti()` or `from_nrrd()`.
 
         Args:
             data (np.ndarray): the density data (a 3D array)
@@ -70,7 +70,7 @@ class Volume(object):
         """Create a volume object with a segmentation of the materials, from parameters.
 
         Note that the anatomical coordinate system is not the world coordinate system (which is cartesian).
-        
+
         Suggested anatomical coordinate space units is millimeters.
         A helpful introduction to the geometry is can be found [here](https://www.slicer.org/wiki/Coordinate_systems).
 
@@ -130,7 +130,8 @@ class Volume(object):
         world_from_anatomical: Optional[geo.FrameTransform] = None,
     ) -> None:
         data = cls._convert_hounsfield_to_density(hu_values)
-        materials = cls._segment_materials(hu_values, use_thresholding=use_thresholding)
+        materials = cls._segment_materials(
+            hu_values, use_thresholding=use_thresholding)
 
         return cls.from_parameters(
             data,
@@ -191,7 +192,7 @@ class Volume(object):
     ) -> Dict[str, np.ndarray]:
         """Segment the materials in a volume, potentially caching.
 
-       
+
 
         Args:
             hu_values (np.ndarray): volume data in Hounsfield Units.
@@ -209,7 +210,8 @@ class Volume(object):
         )
 
         if materials_path is not None and materials_path.exists() and use_cached:
-            logger.info(f"using cached materials segmentation at {materials_path}")
+            logger.info(
+                f"using cached materials segmentation at {materials_path}")
             materials = dict(np.load(materials_path))
         else:
             logger.info(f"segmenting materials in volume")
@@ -237,11 +239,11 @@ class Volume(object):
             path (Path): path to the .nii.gz file.
             use_thresholding (bool, optional): segment the materials using thresholding (faster but less accurate). Defaults to True.
             world_from_anatomical (Optional[geo.FrameTransform], optional): position the volume in world space. If None, uses identity. Defaults to None.
-            use_cached (bool, optional): [description]. Use a cached segmentation if available. Defaults to True.
+            use_cached (bool, optional): Use a cached segmentation if available. Defaults to True.
             cache_dir (Optional[Path], optional): Where to load/save the cached segmentation. If None, use the parent dir of `path`. Defaults to None.
 
         Returns:
-            [type]: [description]
+            Volume: A new volume object.
         """
         path = Path(path)
 
@@ -264,7 +266,7 @@ class Volume(object):
             cache_dir=cache_dir,
         )
 
-        return cls(data, materials, anatomical_from_ijk, world_from_anatomical,)
+        return cls(data, materials, anatomical_from_ijk, world_from_anatomical)
 
     @classmethod
     def from_dicom(
@@ -318,12 +320,14 @@ class Volume(object):
         # volume specific tags
         shared = ds.SharedFunctionalGroupsSequence[0]
         RC = (
-            np.array(shared.PlaneOrientationSequence[0].ImageOrientationPatient)
+            np.array(
+                shared.PlaneOrientationSequence[0].ImageOrientationPatient)
             .reshape(2, 3)
             .T
         )
         PixelSpacing = np.array(shared.PixelMeasuresSequence[0].PixelSpacing)
-        SliceThickness = np.array(shared.PixelMeasuresSequence[0].SliceThickness)
+        SliceThickness = np.array(
+            shared.PixelMeasuresSequence[0].SliceThickness)
         offset = shared.PixelValueTransformationSequence[0].RescaleIntercept
         scale = shared.PixelValueTransformationSequence[0].RescaleSlope
 
@@ -356,16 +360,19 @@ class Volume(object):
         if use_thresholding:
             materials_path = cache_dir / f"{stem}_materials_thresholding.npz"
             if use_cached and materials_path.exists():
-                logger.info(f"found materials segmentation at {materials_path}.")
+                logger.info(
+                    f"found materials segmentation at {materials_path}.")
                 materials = dict(np.load(materials_path))
             else:
                 logger.info(f"segmenting materials in volume")
-                materials = load_dicom.conv_hu_to_materials_thresholding(hu_values)
+                materials = load_dicom.conv_hu_to_materials_thresholding(
+                    hu_values)
                 np.savez(materials_path, **materials)
         else:
             materials_path = cache_dir / f"{stem}_materials.npz"
             if use_cached and materials_path.exists():
-                logger.info(f"found materials segmentation at {materials_path}.")
+                logger.info(
+                    f"found materials segmentation at {materials_path}.")
                 materials = dict(np.load(materials_path))
             else:
                 logger.info(f"segmenting materials in volume")
@@ -447,7 +454,8 @@ class Volume(object):
         """
         hu_values, header = nrrd.read(path)
         ijk_from_anatomical = np.concatenate(
-            [header["space directions"], header["space origin"].reshape(-1, 1),],
+            [header["space directions"],
+                header["space origin"].reshape(-1, 1), ],
             axis=1,
         )
         anatomical_from_ijk = np.concatenate(
@@ -555,7 +563,8 @@ class Volume(object):
             R = geo.FrameTransform.from_rotation(r.as_matrix())
         else:
             r = geo.vector(r)
-            R = geo.FrameTransform.from_rotation(Rotation.from_rotvec(r).as_matrix())
+            R = geo.FrameTransform.from_rotation(
+                Rotation.from_rotvec(r).as_matrix())
 
         T = geo.FrameTransform.from_translation(center)
         self.world_from_anatomical = T @ R @ T.inv @ self.world_from_anatomical
@@ -586,7 +595,8 @@ class Volume(object):
             segmentation.shape[0], segmentation.shape[1], segmentation.shape[2]
         )
         vol.SetOrigin(
-            -np.sign(R[0, 0]) * t[0], np.sign(R[1, 1]) * t[1], np.sign(R[2, 2]) * t[2],
+            -np.sign(R[0, 0]) * t[0], np.sign(R[1, 1]) *
+            t[1], np.sign(R[2, 2]) * t[2],
         )
         vol.SetSpacing(
             -abs(R[0, 0]), abs(R[1, 1]), abs(R[2, 2]),
@@ -633,7 +643,8 @@ class Volume(object):
         use_cached: bool = True,
     ):
         cache_path = (
-            None if cache_dir is None else Path(cache_dir) / f"{material}_mesh.vtp"
+            None if cache_dir is None else Path(
+                cache_dir) / f"{material}_mesh.vtp"
         )
         if use_cached and cache_path is not None and cache_path.exists():
             logger.info(f"reading cached {material} mesh from {cache_path}")

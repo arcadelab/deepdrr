@@ -20,7 +20,7 @@ pv, pv_available = utils.try_import_pyvista()
 
 
 def show(*item: Any, full: Union[bool, List[bool]] = False) -> None:
-    """[summary]
+    """Show the given items in a pyvista window.
 
     Args:
         full (bool, optional): [description]. Defaults to True.

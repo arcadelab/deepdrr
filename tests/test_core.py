@@ -5,7 +5,7 @@ from pathlib import Path
 from scipy.spatial.transform import Rotation
 import deepdrr
 from deepdrr import geo
-from deepdrr.utils import testing
+from deepdrr.utils import test_utils
 from PIL import Image
 
 
@@ -14,14 +14,15 @@ def pytest_generate_tests(metafunc):
     funcarglist = metafunc.cls.params[metafunc.function.__name__]
     argnames = sorted(funcarglist[0])
     metafunc.parametrize(
-        argnames, [[funcargs[name] for name in argnames] for funcargs in funcarglist]
+        argnames, [[funcargs[name] for name in argnames]
+                   for funcargs in funcarglist]
     )
 
 
 class TestSingleVolume:
     output_dir = Path.cwd() / "output"
     output_dir.mkdir(exist_ok=True)
-    file_path = testing.download_sampledata("CT-chest")
+    file_path = test_utils.download_sampledata("CT-chest")
 
     params = {
         "test_simple": [dict()],
@@ -54,7 +55,7 @@ class TestSingleVolume:
             neglog=True,
         ) as projector:
             image = projector.project()
-        
+
         image = (image * 255).astype(np.uint8)
         Image.fromarray(image).save(self.output_dir / name)
         return image
@@ -75,7 +76,8 @@ class TestSingleVolume:
     def test_rotate_x(self, x):
         volume = deepdrr.Volume.from_nrrd(self.file_path)
         carm = deepdrr.MobileCArm(isocenter=volume.center_in_world)
-        volume.rotate(Rotation.from_euler("x", x, degrees=True), volume.center_in_world)
+        volume.rotate(Rotation.from_euler(
+            "x", x, degrees=True), volume.center_in_world)
         self.project(volume, carm, f"test_rotate_x={int(x)}.png")
 
     def test_angle(self, alpha, beta):
@@ -85,7 +87,6 @@ class TestSingleVolume:
         self.project(
             volume, carm, f"test_angle_alpha={int(alpha)}_beta={int(beta)}.png"
         )
-
 
 
 if __name__ == "__main__":
