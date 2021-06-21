@@ -62,7 +62,8 @@ def _from_homogeneous(x: np.ndarray, is_point: bool = True) -> np.ndarray:
     if is_point:
         return (x / x[..., -1:])[..., :-1]
     else:
-        assert np.all(np.isclose(x[..., -1], 0)), f"not a homogeneous vector: {x}"
+        assert np.all(np.isclose(x[..., -1], 0)
+                      ), f"not a homogeneous vector: {x}"
         return x[..., :-1]
 
 
@@ -297,12 +298,13 @@ class Vector(HomogeneousPointOrVector):
 
     def perpendicular(self) -> Vector3D:
         """Find an arbitrary perpendicular vector to self.
-        
-        Borrowed from https://codereview.stackexchange.com/questions/43928/algorithm-to-get-an-arbitrary-perpendicular-vector
 
-        TODO: if the vector is 2D, return one of the other vectors in the plane, to keep it 2D.
+        Returns:
+            Vector3D: An arbitrary vector in 3D space, perpendicular to the original.
 
         """
+        # TODO: if the vector is 2D, return one of the other vectors in the plane, to keep it 2D.
+
         if self.x == self.y == self.z == 0:
             raise ValueError("zero-vector")
 
@@ -406,7 +408,7 @@ def vector(
     """The preferred method for creating a vector.
 
     There are three ways to create a point using `vector()`.
-    
+
     - Pass the coordinates as separate arguments. For instance, `vector(0, 0)` returns the 2D homogeneous vector `Vector2D([0, 0, 0])`.
     - Pass a numpy array containing the non-homogeneous representation of the vector.
       For example `vector(np.ndarray([0, 1, 2]))` is the 3D homogeneous veector `Vector3D([0, 1, 2, 0])`.
@@ -663,7 +665,7 @@ class FrameTransform(Transform):
     @classmethod
     def from_origin(cls, origin: Point,) -> FrameTransform:
         """Make a transfrom to a frame knowing the origin.
-        
+
         Suppose `origin` is point where frame `B` has its origin, as a point 
         in frame `A`. Make the `B_from_A` transform.
         This just negates `origin`, but this is often counterintuitive.
@@ -683,7 +685,7 @@ class FrameTransform(Transform):
         points_A: Union[List[Point3D], np.ndarray],
         points_B: Union[List[Point3D], np.ndarray],
     ):
-        """Create a frame transform from point correspondence.
+        """Create a frame transform from a known point correspondence.
 
         Args:
             points_A: a list of N points in the A frame (or an array with shape [N, 3]).
@@ -726,17 +728,18 @@ class FrameTransform(Transform):
         t = b_m - R @ a_m
 
         if not np.isclose(d, 1):
-            raise RuntimeError(f"det(R) = {d}, should be +1 for rotation matrices.")
+            raise RuntimeError(
+                f"det(R) = {d}, should be +1 for rotation matrices.")
 
         return cls.from_rt(rotation=R, translation=t)
 
     @property
     def R(self):
-        return self.data[0 : self.dim, 0 : self.dim]
+        return self.data[0: self.dim, 0: self.dim]
 
     @property
     def t(self):
-        return self.data[0 : self.dim, self.dim]
+        return self.data[0: self.dim, self.dim]
 
     @property
     def inv(self):
@@ -814,7 +817,8 @@ class CameraIntrinsicTransform(FrameTransform):
 
     def __init__(self, data: np.ndarray) -> None:
         super().__init__(data)
-        assert self.data.shape == (3, 3), f"unrecognized shape: {self.data.shape}"
+        assert self.data.shape == (
+            3, 3), f"unrecognized shape: {self.data.shape}"
 
     @classmethod
     def from_parameters(
@@ -825,7 +829,7 @@ class CameraIntrinsicTransform(FrameTransform):
         aspect_ratio: Optional[float] = None,
     ) -> CameraIntrinsicTransform:
         """The camera intrinsic matrix.
-        
+
         The intrinsic matrix is fundamentally a FrameTransform in 2D, namely `index_from_camera2d`.
         It transforms to the index-space of the image (as mapped on the sensor)
         from the index-space centered on the principle ray.
@@ -863,7 +867,8 @@ class CameraIntrinsicTransform(FrameTransform):
             ), "cannot use aspect ratio if both focal lengths provided"
             fx, fy = (focal_length, aspect_ratio * focal_length)
 
-        data = np.array([[fx, shear, cx], [0, fy, cy], [0, 0, 1]]).astype(np.float32)
+        data = np.array([[fx, shear, cx], [0, fy, cy],
+                        [0, 0, 1]]).astype(np.float32)
 
         return cls(data)
 
