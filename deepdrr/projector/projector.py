@@ -111,78 +111,6 @@ def _get_kernel_scatter_module(num_materials) -> SourceModule:
 <<<<<<< HEAD
 
 class SingleProjector(object):
-    initialized: bool = False
-
-    def __init__(
-        self,
-        volume: vol.Volume,
-        camera_intrinsics: geo.CameraIntrinsicTransform,
-        source_to_detector_distance: float, 
-        step: float,
-        photon_count: int,
-        mode: Literal['linear'] = 'linear',
-        spectrum: Union[np.ndarray, Literal['60KV_AL35', '90KV_AL40', '120KV_AL43']] = '90KV_AL40',
-        threads: int = 8,
-        max_block_index: int = 1024,
-        attenuation: bool = True,
-        collected_energy: bool = False,
-        add_scatter: bool = False,
-        scatter_num: int = 0
-    ) -> None:
-        """Create the projector, which has info for simulating the DRR, for a single projection angle.
-
-        Args:
-            volume (Volume): a volume object with materials segmented.
-            camera_intrinsics (CameraIntrinsicTransform): intrinsics of the projector's camera. (used for sensor size).
-            source_to_detector_distance (float): distance from source to detector in millimeters.
-            step (float, optional): size of the step along projection ray in voxels.
-            photon_count (int, optional): the average number of photons that hit each pixel. (The expected number of photons that hit each pixel is not uniform over each pixel because the detector is a flat panel.)
-            mode (Literal['linear']): [description].
-            spectrum (Union[np.ndarray, Literal['60KV_AL35', '90KV_AL40', '120KV_AL43'], optional): spectrum array or name of spectrum to use for projection. Defaults to '90KV_AL40'.
-            threads (int, optional): number of threads per "side" in a 2-D GPU block. Defaults to 8.
-            max_block_index (int, optional): maximum GPU block. Defaults to 1024.
-            attenuation (bool, optional): whether the mass-attenuation calculation is performed in the CUDA kernel. Defaults to True.
-            collected_energy (bool, optional): Whether to return data of "intensity" (energy deposited per photon, [keV]) or "collected energy" (energy deposited on pixel, [keV / mm^2]). Defaults to False ("intensity").
-            add_scatter (bool, optional): whether to add scatter noise from artifacts. Defaults to False. DEPRECATED: use scatter_num instead.  If add_scatter is True, and scatter_num is unspecified, uses 10^6
-            scatter_num (int, optional): the number of photons to sue in the scatter simulation.  If zero, scatter is not simulated.
-        """
-        logger.warning('Previously, projector.SingleProjector used add_scatter as the switch to control scatter. Now, use the scatter_num switch. add_scatter=True is currently equivalent to scatter_num=(10**6)')
-
-        # set variables
-        self.volume = volume # spacing units defaults to mm
-        self.camera_intrinsics = camera_intrinsics
-        self.source_to_detector_distance = source_to_detector_distance
-        self.step = step
-        self.photon_count = photon_count
-        self.mode = mode
-        self.spectrum = _get_spectrum(spectrum)
-        self.threads = threads
-        self.max_block_index = max_block_index
-        self.attenuation = attenuation
-        self.collected_energy = collected_energy
-
-        #print(f"SPECTRUM ARGUMENT: {spectrum}")
-        #print(f"SPECTRUM ARRAY: {self.spectrum}")
-
-        if (scatter_num == 0) and add_scatter:
-            self.scatter_num = 1000000 # 10^6
-        else:
-            self.scatter_num = max(scatter_num, 0) # in case scatter_num < 0
-
-        self.num_materials = len(self.volume.materials)
-
-        # compile the module
-        # TODO: fix attenuation vs no-attenuation ugliness.
-        self.mod = _get_kernel_projector_module(self.num_materials, attenuation=self.attenuation)
-        self.project_kernel = self.mod.get_function("projectKernel")
-
-        self.scatter_mod = _get_kernel_scatter_module(self.num_materials)
-        self.simulate_scatter = self.scatter_mod.get_function("simulate_scatter")
-
-        # assertions
-        for mat in self.volume.materials:
-            assert mat in material_coefficients, f'unrecognized material: {mat}'
-
     def project(
         self,
         camera_projection: geo.CameraProjection,
@@ -634,26 +562,17 @@ class Projector(object):
         volume: Union[vol.Volume, List[vol.Volume]],
         priorities: Optional[List[int]] = None,
         camera_intrinsics: Optional[geo.CameraIntrinsicTransform] = None,
-<<<<<<< HEAD
-        source_to_detector_distance: float = 1200, 
-        carm: Optional[CArm] = None,
-=======
         carm: Optional[MobileCArm] = None,
->>>>>>> dev
         step: float = 0.1,
         mode: str = "linear",
         spectrum: Union[np.ndarray, str] = "90KV_AL40",
-        add_scatter: bool = False,
+        add_scatter: Optional[bool] = None,
         scatter_num: int = 0,
         add_noise: bool = False,
         photon_count: int = 10000,
         threads: int = 8,
         max_block_index: int = 1024,
-<<<<<<< HEAD
         collected_energy: bool = False,
-=======
-        collected_energy: bool = False,  # convert to keV / cm^2 or keV / mm^2
->>>>>>> dev
         neglog: bool = True,
         intensity_upper_bound: Optional[float] = None,
     ) -> None:
@@ -667,46 +586,27 @@ class Projector(object):
         ```
 
         Args:
-<<<<<<< HEAD
-            volume (Union[Volume, List[Volume]]): a volume object with materials segmented. If multiple volumes are provided, they should have mutually exclusive materials (not checked).
-            camera_intrinsics (CameraIntrinsicTransform): intrinsics of the projector's camera. (used for sensor size). None is NotImplemented. Defaults to None.
-            source_to_detector_distance (float): distance from source to detector in millimeters.
-            carm (Optional[CArm], optional): Optional C-arm device, for convenience which can be used to get projections from C-Arm pose. If not provided, camera pose must be defined by user. Defaults to None.
-            step (float, optional): size of the step along projection ray in voxels. Defaults to 0.1.
-            mode (Literal['linear']): [description].
-            spectrum (Union[np.ndarray, Literal['60KV_AL35', '90KV_AL40', '120KV_AL43'], optional): spectrum array or name of spectrum to use for projection. Defaults to '90KV_AL40'.
-            add_scatter (bool, optional): whether to add scatter noise from artifacts. Defaults to False. DEPRECATED: use scatter_num instead.  If add_scatter is True, and scatter_num is unspecified, uses 10^6
-            scatter_num (int, optional): the number of photons to sue in the scatter simulation.  If zero, scatter is not simulated.
-            add_noise (bool, optional): whether to add Poisson noise. Defaults to False.
-            photon_count (int, optional): the average number of photons that hit each pixel. (The expected number of photons that hit each pixel is not uniform over each pixel because the detector is a flat panel.) Defaults to 10^4.
-            threads (int, optional): number of threads per "side" in a 2-D GPU block. Defaults to 8.
-            max_block_index (int, optional): maximum GPU block. Defaults to 1024. TODO: determine from compute capability.
-            collected_energy (bool, optional): Whether to return data of "intensity" (energy deposited per photon, [keV]) or "collected energy" (energy deposited on pixel, [keV / mm^2]). Defaults to False ("intensity").
-=======
             volume (Union[Volume, List[Volume]]): a volume object with materials segmented, or a list of volume objects.
             priorities (Optional[List[int]], optional): Denotes the 'priority level' of the volumes in projection. At each position, if volumes with lower priority-integers are sampled from as long as they have a non-null 
                                 segmentation at that location. valid priority levels are in the range [0, NUM_VOLUMES), with priority 0 being prioritized over other priority levels. Note that multiple volumes can share a 
                                 priority level.  If a list of priorities is provided, the priorities are associated in-order to the provided volumes.  If no list is provided (the default), the volumes are assumed to have
                                 distinct priority levels, and each volume is prioritized over the preceding volumes. (This behavior is equivalent to passing in the list: [NUM_VOLUMES - 1, ..., 1, 0].)
             camera_intrinsics (CameraIntrinsicTransform): intrinsics of the projector's camera. (used for sensor size). If None, the CArm object must be provided and have a camera_intrinsics attribute. Defaults to None.
-            carm (Optional[MobileCArm], optional): Optional C-arm device, for convenience which can be used to get projections from C-Arm pose. If not provided, camera pose must be defined by user. Defaults to None.
+            carm (MobileCArm, optional): Optional C-arm device, for convenience which can be used to get projections from C-Arm pose. If not provided, camera pose must be defined by user. Defaults to None.
             step (float, optional): size of the step along projection ray in voxels. Defaults to 0.1.
             mode (str): Interpolation mode for the kernel. Defaults to "linear".
-            spectrum (Union[np.ndarray, str], optional): Spectrum array or name of spectrum to use for projection. Defaults to '90KV_AL40'.
-            add_scatter (bool, optional): Whether to add scatter noise from artifacts. Defaults to False.
+            spectrum (Union[np.ndarray, str], optional): Spectrum array or name of spectrum to use for projection. Options are `'60KV_AL35'`, `'90KV_AL40'`, and `'120KV_AL43'`. Defaults to '90KV_AL40'.
+            add_scatter (bool, optional): Whether to add scatter noise from artifacts. This is deprecated in favor of `scatter_num`. Defaults to None.
+            scatter_num (int, optional): the number of photons to sue in the scatter simulation.  If zero, scatter is not simulated.
             add_noise: (bool, optional): Whether to add Poisson noise. Defaults to False.
+            photon_count (int, optional): the average number of photons that hit each pixel. (The expected number of photons that hit each pixel is not uniform over each pixel because the detector is a flat panel.) Defaults to 10^4.
             threads (int, optional): Number of threads to use. Defaults to 8.
             max_block_index (int, optional): Maximum GPU block. Defaults to 1024. TODO: determine from compute capability.
->>>>>>> dev
+            collected_energy (bool, optional): Whether to return data of "intensity" (energy deposited per photon, [keV]) or "collected energy" (energy deposited on pixel, [keV / mm^2]). Defaults to False ("intensity").
             neglog (bool, optional): whether to apply negative log transform to intensity images. If True, outputs are in range [0, 1]. Recommended for easy viewing. Defaults to False.
-            intensity_upper_bound (Optional[float], optional): Maximum intensity, clipped before neglog, after noise and scatter. Defaults to 40 keV / sr.
+            intensity_upper_bound (float, optional): Maximum intensity, clipped before neglog, after noise and scatter. A good value is 40 keV / photon. Defaults to None.
         """
-<<<<<<< HEAD
-        logger.warning('Previously, projector.Projector used add_scatter as the switch to control scatter. Now, use the scatter_num switch. add_scatter=True is currently equivalent to scatter_num=(10**6)')
-                    
-=======
 
->>>>>>> dev
         # set variables
         volume = utils.listify(volume)
         self.volumes = []
@@ -714,6 +614,7 @@ class Projector(object):
         for _vol in volume:
             assert isinstance(_vol, vol.Volume)
             self.volumes.append(_vol)
+
         if priorities is None:
             self.priorities = [len(self.volumes) - 1 - i for i in range(len(self.volumes))]
         else:
@@ -724,16 +625,28 @@ class Projector(object):
         assert len(self.volumes) == len(self.priorities)
 
         self.camera_intrinsics = camera_intrinsics
-        self.source_to_detector_distance = source_to_detector_distance
+        # TODO: fix the source_to_detector_distance
+        # self.source_to_detector_distance = source_to_detector_distance
         self.carm = carm
         self.step = step
         self.mode = mode
         self.spectrum = _get_spectrum(spectrum)
 
-        if (scatter_num == 0) and add_scatter:
-            self.scatter_num = 1000000 # 10^6
+        if add_scatter is not None:
+            logger.warning('add_scatter is deprecated. Set scatter_num instead.')
+            if scatter_num != 0:
+                raise ValueError("Only set scatter_num.")
+            self.scatter_num = 1e6 if add_scatter else 0
+        elif scatter_num < 0:
+            raise ValueError(f"scatter_num must be non-negative.")
         else:
-            self.scatter_num = max(scatter_num, 0) # in case scatter_num < 0
+            self.scatter_num = scatter_num
+
+        if self.scatter_num > 0:
+            self.scatter_mod = _get_kernel_scatter_module(self.num_materials)
+            self.simulate_scatter = self.scatter_mod.get_function("simulate_scatter")
+
+        # TODO (mjudish): Initialize the single scatter volume here or in initialize function.
 
         self.add_noise = add_noise
         self.photon_count = photon_count
@@ -746,25 +659,6 @@ class Projector(object):
 
         assert len(self.volumes) > 0
 
-<<<<<<< HEAD
-        self.projectors = [
-            SingleProjector(
-                volume,
-                self.camera_intrinsics,
-                self.source_to_detector_distance,
-                step=step,
-                photon_count=photon_count,
-                mode=mode,
-                spectrum=spectrum,
-                threads=threads,
-                max_block_index=max_block_index,
-                attenuation=(1 == len(self.volumes)),
-                collected_energy=self.collected_energy,
-                add_scatter=add_scatter,
-                scatter_num=self.scatter_num
-            ) for volume in self.volumes
-        ]
-=======
         all_mats = []
         for _vol in self.volumes:
             all_mats.extend(list(_vol.materials.keys()))
@@ -785,13 +679,7 @@ class Projector(object):
             assert self.carm is not None and hasattr(self.carm, "camera_intrinsics")
             self.camera_intrinsics = self.carm.camera_intrinsics
         
-        self.is_initialized = False
->>>>>>> dev
-
-    @property
-    def initialized(self):
-        # Has the cuda memory been allocated?
-        return self.is_initialized
+        self.initialized = False
 
     @property
     def volume(self):
@@ -1081,7 +969,7 @@ class Projector(object):
             self.volumes_gpu.append(vol_gpu)
             self.volumes_texref.append(vol_texref)
         
-        # set the (interpolation?) mode
+        # set the interpolation mode
         if self.mode == 'linear':
             for texref in self.volumes_texref:
                 texref.set_filter_mode(cuda.filter_mode.LINEAR)
@@ -1164,6 +1052,8 @@ class Projector(object):
         self.photon_prob_gpu = cuda.mem_alloc(self.output_size * 4)
         logger.debug(f"bytes alloc'd for self.photon_prob_gpu: {self.output_size * 4}")
 
+        
+
         # allocate and transfer spectrum energies (4 bytes to a float32)
         assert isinstance(self.spectrum, np.ndarray)
         noncont_energies = self.spectrum[:,0].copy() / 1000
@@ -1192,7 +1082,7 @@ class Projector(object):
         logger.debug(f"size alloc'd for self.absorption_coef_table_gpu: {n_bins * len(self.all_materials) * 4}")
 
         # Mark self as initialized.
-        self.is_initialized = True
+        self.initialized = True
 
     def free(self):
         """Free the allocated GPU memory."""
@@ -1215,7 +1105,7 @@ class Projector(object):
             self.pdf_gpu.free()
             self.absorption_coef_table_gpu.free()
 
-        self.is_initialized = False
+        self.initialized = False
 
     def __enter__(self):
         self.initialize()
