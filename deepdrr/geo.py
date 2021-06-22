@@ -18,7 +18,7 @@ along with DeepDRR.  If not, see <https://www.gnu.org/licenses/>.
 
 from __future__ import annotations
 
-from typing import Union, Tuple, Optional, Type, List, Generic, TypeVar
+from typing import Union, Tuple, Optional, Type, List, Generic, TypeVar, TYPE_CHECKING
 
 import logging
 from abc import ABC, abstractmethod
@@ -26,8 +26,10 @@ import numpy as np
 import scipy.spatial.distance
 from scipy.spatial.transform import Rotation
 
-from . import vol
 from . import utils
+
+if TYPE_CHECKING:
+    from .vol import AnyVolume
 
 
 logger = logging.getLogger(__name__)
@@ -1030,28 +1032,33 @@ class CameraProjection(Transform):
     def center_in_world(self) -> Point3D:
         return self.get_center_in_world()
 
-    def get_center_in_volume(self, volume: vol.Volume) -> Point3D:
+    def get_center_in_volume(self, volume: AnyVolume) -> Point3D:
         """Get the camera center in IJK-space.
 
         In original deepdrr, this is the `source_point` of `get_canonical_proj_matrix()`
 
         Args:
-            volume (Volume): the volume to get the camera center in.
+            volume (AnyVolume): the volume to get the camera center in.
 
         Returns:
             Point3D: the camera center in the volume's IJK-space.
         """
         return volume.ijk_from_world @ self.center_in_world
 
-    def get_ray_transform(self, volume: vol.Volume) -> Transform:
+    def get_ray_transform(self, volume: AnyVolume) -> Transform:
         """Get the ray transform for the camera, in IJK-space.
 
         ijk_from_index transformation that goes from Point2D to Vector3D, with the vector in the
         Point2D frame.
 
-        The ray transform takes a Point2D and converts it to a Vector3D.
+        The ray transform takes a Point2D and converts it to a Vector3D. This is the vector in 
+        the direction pointing between the camera center (or source) and a given index-space 
+        point on the detector.
 
-        Analogous to get_canonical_projection_matrix. Gets "RT_Kinv" for CUDA kernel.
+        Args:
+            volume (AnyVolume): the volume to get get the ray transfrom through.
 
+        Returns:
+            Transform: the `ijk_from_index` transform.
         """
         return volume.ijk_from_world @ self.world_from_index
