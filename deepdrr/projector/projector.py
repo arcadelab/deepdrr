@@ -634,12 +634,7 @@ class Projector(object):
         volume: Union[vol.Volume, List[vol.Volume]],
         priorities: Optional[List[int]] = None,
         camera_intrinsics: Optional[geo.CameraIntrinsicTransform] = None,
-<<<<<<< HEAD
-        source_to_detector_distance: float = 1200, 
-        carm: Optional[CArm] = None,
-=======
         carm: Optional[MobileCArm] = None,
->>>>>>> dev
         step: float = 0.1,
         mode: str = "linear",
         spectrum: Union[np.ndarray, str] = "90KV_AL40",
@@ -649,11 +644,7 @@ class Projector(object):
         photon_count: int = 10000,
         threads: int = 8,
         max_block_index: int = 1024,
-<<<<<<< HEAD
         collected_energy: bool = False,
-=======
-        collected_energy: bool = False,  # convert to keV / cm^2 or keV / mm^2
->>>>>>> dev
         neglog: bool = True,
         intensity_upper_bound: Optional[float] = None,
     ) -> None:
@@ -667,10 +658,12 @@ class Projector(object):
         ```
 
         Args:
-<<<<<<< HEAD
             volume (Union[Volume, List[Volume]]): a volume object with materials segmented. If multiple volumes are provided, they should have mutually exclusive materials (not checked).
+            priorities (Optional[List[int]], optional): Denotes the 'priority level' of the volumes in projection. At each position, if volumes with lower priority-integers are sampled from as long as they have a non-null 
+                                segmentation at that location. valid priority levels are in the range [0, NUM_VOLUMES), with priority 0 being prioritized over other priority levels. Note that multiple volumes can share a 
+                                priority level.  If a list of priorities is provided, the priorities are associated in-order to the provided volumes.  If no list is provided (the default), the volumes are assumed to have
+                                distinct priority levels, and each volume is prioritized over the preceding volumes. (This behavior is equivalent to passing in the list: [NUM_VOLUMES - 1, ..., 1, 0].)
             camera_intrinsics (CameraIntrinsicTransform): intrinsics of the projector's camera. (used for sensor size). None is NotImplemented. Defaults to None.
-            source_to_detector_distance (float): distance from source to detector in millimeters.
             carm (Optional[CArm], optional): Optional C-arm device, for convenience which can be used to get projections from C-Arm pose. If not provided, camera pose must be defined by user. Defaults to None.
             step (float, optional): size of the step along projection ray in voxels. Defaults to 0.1.
             mode (Literal['linear']): [description].
@@ -682,31 +675,11 @@ class Projector(object):
             threads (int, optional): number of threads per "side" in a 2-D GPU block. Defaults to 8.
             max_block_index (int, optional): maximum GPU block. Defaults to 1024. TODO: determine from compute capability.
             collected_energy (bool, optional): Whether to return data of "intensity" (energy deposited per photon, [keV]) or "collected energy" (energy deposited on pixel, [keV / mm^2]). Defaults to False ("intensity").
-=======
-            volume (Union[Volume, List[Volume]]): a volume object with materials segmented, or a list of volume objects.
-            priorities (Optional[List[int]], optional): Denotes the 'priority level' of the volumes in projection. At each position, if volumes with lower priority-integers are sampled from as long as they have a non-null 
-                                segmentation at that location. valid priority levels are in the range [0, NUM_VOLUMES), with priority 0 being prioritized over other priority levels. Note that multiple volumes can share a 
-                                priority level.  If a list of priorities is provided, the priorities are associated in-order to the provided volumes.  If no list is provided (the default), the volumes are assumed to have
-                                distinct priority levels, and each volume is prioritized over the preceding volumes. (This behavior is equivalent to passing in the list: [NUM_VOLUMES - 1, ..., 1, 0].)
-            camera_intrinsics (CameraIntrinsicTransform): intrinsics of the projector's camera. (used for sensor size). If None, the CArm object must be provided and have a camera_intrinsics attribute. Defaults to None.
-            carm (Optional[MobileCArm], optional): Optional C-arm device, for convenience which can be used to get projections from C-Arm pose. If not provided, camera pose must be defined by user. Defaults to None.
-            step (float, optional): size of the step along projection ray in voxels. Defaults to 0.1.
-            mode (str): Interpolation mode for the kernel. Defaults to "linear".
-            spectrum (Union[np.ndarray, str], optional): Spectrum array or name of spectrum to use for projection. Defaults to '90KV_AL40'.
-            add_scatter (bool, optional): Whether to add scatter noise from artifacts. Defaults to False.
-            add_noise: (bool, optional): Whether to add Poisson noise. Defaults to False.
-            threads (int, optional): Number of threads to use. Defaults to 8.
-            max_block_index (int, optional): Maximum GPU block. Defaults to 1024. TODO: determine from compute capability.
->>>>>>> dev
             neglog (bool, optional): whether to apply negative log transform to intensity images. If True, outputs are in range [0, 1]. Recommended for easy viewing. Defaults to False.
             intensity_upper_bound (Optional[float], optional): Maximum intensity, clipped before neglog, after noise and scatter. Defaults to 40 keV / sr.
         """
-<<<<<<< HEAD
         logger.warning('Previously, projector.Projector used add_scatter as the switch to control scatter. Now, use the scatter_num switch. add_scatter=True is currently equivalent to scatter_num=(10**6)')
                     
-=======
-
->>>>>>> dev
         # set variables
         volume = utils.listify(volume)
         self.volumes = []
@@ -746,25 +719,6 @@ class Projector(object):
 
         assert len(self.volumes) > 0
 
-<<<<<<< HEAD
-        self.projectors = [
-            SingleProjector(
-                volume,
-                self.camera_intrinsics,
-                self.source_to_detector_distance,
-                step=step,
-                photon_count=photon_count,
-                mode=mode,
-                spectrum=spectrum,
-                threads=threads,
-                max_block_index=max_block_index,
-                attenuation=(1 == len(self.volumes)),
-                collected_energy=self.collected_energy,
-                add_scatter=add_scatter,
-                scatter_num=self.scatter_num
-            ) for volume in self.volumes
-        ]
-=======
         all_mats = []
         for _vol in self.volumes:
             all_mats.extend(list(_vol.materials.keys()))
@@ -786,7 +740,6 @@ class Projector(object):
             self.camera_intrinsics = self.carm.camera_intrinsics
         
         self.is_initialized = False
->>>>>>> dev
 
     @property
     def initialized(self):
@@ -835,55 +788,6 @@ class Projector(object):
         
         logger.info("Initiating projection and attenuation...")
 
-<<<<<<< HEAD
-        # TODO: handle multiple volumes more elegantly, i.e. in the kernel. (!)
-        if len(self.projectors) == 1:
-            projector = self.projectors[0]
-            images = []
-            photon_probs = []
-            for i, proj in enumerate(camera_projections):
-                logger.info(f"Projecting and attenuating camera position {i+1} / {len(camera_projections)}")
-                image, photon_prob = projector.project(proj)
-                images.append(image)
-                photon_probs.append(photon_prob)
-
-            images = np.stack(images)
-            photon_prob = np.stack(photon_probs)
-            logger.info("Completed projection and attenuation")
-        else:
-            # Separate the projection and mass attenuation
-            forward_projections = dict()
-            for pidx, projector in enumerate(self.projectors):
-                outputs = []
-                for proj in camera_projections:
-                    outputs.append(projector.project(proj))
-
-                outputs = np.stack(outputs)
-
-                # convert forward_projections to dict over materials
-                _forward_projections = dict((mat, outputs[:, :, :, m]) for m, mat in enumerate(projector.volume.materials))
-                # if len(set(_forward_projections.keys()).intersection(set(forward_projections.keys()))) > 0:
-                #     logger.error(f'{_forward_projections.keys()}')
-                #     raise NotImplementedError(f'non mutually exclusive materials in multiple volumes.')
-
-                # TODO: this is actively terrible.
-                if isinstance(projector.volume, vol.MetalVolume):
-                    for mat in ['air', 'soft tissue', 'bone']:
-                        if mat not in forward_projections:
-                            logger.warning(f'existing projections does not contain material: {mat}')
-                            continue
-                        elif mat not in _forward_projections:
-                            logger.warning(f'new projections does not contain material: {mat}')
-                            continue
-                        forward_projections[mat] -= _forward_projections[mat]
-
-                    if 'titanium' in forward_projections:
-                        forward_projections['titanium'] += _forward_projections['titanium']
-                    else:
-                        forward_projections['titanium'] = _forward_projections['titanium']
-                else:
-                    forward_projections.update(_forward_projections)
-=======
         intensities = []
         photon_probs = []
         for i, proj in enumerate(camera_projections):
@@ -983,7 +887,6 @@ class Projector(object):
                         offset_h = np.int32(h * self.max_block_index)
                         self.project_kernel(*args, offset_w, offset_h, block=block, grid=(self.max_block_index, self.max_block_index))
                         context.synchronize() 
->>>>>>> dev
 
             intensity = np.empty(self.output_shape, dtype=np.float32)
             cuda.memcpy_dtoh(intensity, self.intensity_gpu)
@@ -1001,8 +904,8 @@ class Projector(object):
         photon_prob = np.stack(photon_probs)
         logger.info("Completed projection and attenuation")
 
-<<<<<<< HEAD
-=======
+        # TODO: add call to scatter here
+
         if self.add_scatter:
             # lfkj('adding scatter (may cause Nan errors)')
             noise = self.scatter_net.add_scatter(images, self.camera)
@@ -1017,7 +920,6 @@ class Projector(object):
                 / (self.camera.pixel_size[0] * self.camera.pixel_size[1])
             )
 
->>>>>>> dev
         if self.add_noise:
             logger.info("adding Poisson noise")
             images = analytic_generators.add_noise(
