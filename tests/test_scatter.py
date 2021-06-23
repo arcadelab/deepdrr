@@ -1,7 +1,7 @@
 import deepdrr
 from deepdrr import geo
-from deepdrr.utils import testing
+from deepdrr.utils import test_utils
 
 
 def test_scatter():
-    file_path = testing.download_sampledata("CT-chest")
+    file_path = test_utils.download_sampledata("CT-chest")
