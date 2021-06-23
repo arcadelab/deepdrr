@@ -889,7 +889,7 @@ class CameraIntrinsicTransform(FrameTransform):
         Args:
             sensor_size (Union[float, Tuple[float, float]]): (width, height) of the sensor, or a single value for both, in pixels.
             pixel_size (Union[float, Tuple[float, float]]): (width, height) of a pixel, or a single value for both, in world units (e.g. mm).
-            source_to_detector_distance (int): distance from source to detector in world units.
+            source_to_detector_distance (float): distance from source to detector in world units.
 
         Returns:
 

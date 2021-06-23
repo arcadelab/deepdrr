@@ -97,10 +97,10 @@ def main():
     )
 
     # Angles to take projections over
-    min_theta = 0
-    max_theta = 120
-    min_phi = 0
-    max_phi = 91
+    min_theta = 0#30#0
+    max_theta = 121#31#120
+    min_phi = 0#60#0
+    max_phi = 91#61#91
     spacing_theta = 30
     spacing_phi = 90
 
@@ -114,10 +114,12 @@ def main():
         mode='linear',
         max_block_index=200,
         spectrum='90KV_AL40',
-        photon_count=100000,
+        photon_count=10000, # 10^4
         add_scatter=False,
+        scatter_num=(10**7),
         threads=8,
         neglog=True,
+        collected_energy=False
     ) as projector:
         images = projector.project_over_carm_range(
             (min_phi, max_phi, spacing_phi),
@@ -131,8 +133,10 @@ def main():
         (min_phi, max_phi, spacing_phi),
         (min_theta, max_theta, spacing_theta))
 
+    print(f"phis: {phis}, thetas: {thetas}")
+
     # save results as matplotlib plots
-    output_dir = Path(f'examples')
+    output_dir = Path(f'examples/scatter-examples')
     output_dir.mkdir(exist_ok=True)
     for i, image in enumerate(images):
         plt.imshow(image, cmap="gray")
@@ -140,7 +144,6 @@ def main():
         output_path = output_dir / f'image_phi={int(phis[i])}_theta={int(thetas[i])}.png'
         logger.info(f'writing image {output_path}')
         plt.savefig(output_path)
-
 
 if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO)
