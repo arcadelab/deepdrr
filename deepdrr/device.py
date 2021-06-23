@@ -58,7 +58,8 @@ def make_detector_rotation(phi: float, theta: float, rho: float):
 
     rho = -phi + np.pi * 0.5 + rho
     R_principle = np.array(
-        [[np.cos(rho), -np.sin(rho), 0], [np.sin(rho), np.cos(rho), 0], [0, 0, 1]]
+        [[np.cos(rho), -np.sin(rho), 0],
+         [np.sin(rho), np.cos(rho), 0], [0, 0, 1]]
     )
     R = np.matmul(R_principle, R)
 
@@ -100,14 +101,19 @@ class MobileCArm(object):
         vertical_travel: float = 430,  # width of window in Z plane.
         min_alpha: float = -40,
         max_alpha: float = 110,
-        min_beta: float = -225,  # note that this would collide with the patient. Suggested to limit to +/- 45
+        # note that this would collide with the patient. Suggested to limit to +/- 45
+        min_beta: float = -225,
         max_beta: float = 225,
         degrees: bool = True,
         source_to_detector_distance: float = 1020,
-        source_to_isocenter_vertical_distance: float = 530,  # vertical component of the source point offset from the isocenter of rotation, in -Z. Previously called `isocenter_distance`
-        source_to_isocenter_horizontal_offset: float = 0,  # horizontal offset of the principle ray from the isocenter of rotation, in +Y. Defaults to 9, but should be 200 in document.
-        immersion_depth: float = 730,  # horizontal distance from principle ray to inner C-arm circumference. Used for visualization
-        free_space: float = 820,  # distance from central ray to edge of arm. Used for visualization
+        # vertical component of the source point offset from the isocenter of rotation, in -Z. Previously called `isocenter_distance`
+        source_to_isocenter_vertical_distance: float = 530,
+        # horizontal offset of the principle ray from the isocenter of rotation, in +Y. Defaults to 9, but should be 200 in document.
+        source_to_isocenter_horizontal_offset: float = 0,
+        # horizontal distance from principle ray to inner C-arm circumference. Used for visualization
+        immersion_depth: float = 730,
+        # distance from central ray to edge of arm. Used for visualization
+        free_space: float = 820,
         sensor_height: int = 1536,
         sensor_width: int = 1536,
         pixel_size: float = 0.194,
@@ -352,8 +358,10 @@ class MobileCArm(object):
         self.move_to(isocenter=[0, 0, 0], alpha=0, beta=0, degrees=False)
         if device_in_world is None:
             assert viewpoint_in_world is not None
-            device_in_world = viewpoint_in_world - geo.vector(*self.viewpoint_in_arm)
-        self.world_from_device = geo.FrameTransform.from_translation(device_in_world)
+            device_in_world = viewpoint_in_world - \
+                geo.vector(*self.viewpoint_in_arm)
+        self.world_from_device = geo.FrameTransform.from_translation(
+            device_in_world)
 
     # shape parameters
     source_height = 200
@@ -379,12 +387,14 @@ class MobileCArm(object):
             self.source_to_isocenter_horizontal_offset,
             -self.source_to_isocenter_vertical_distance,
         )
-        center_point = geo.point(0, self.source_to_isocenter_horizontal_offset, 0)
+        center_point = geo.point(
+            0, self.source_to_isocenter_horizontal_offset, 0)
 
         mesh = (
             pv.Line(
                 list(source_point),
-                list(source_point + geo.vector(0, 0, self.source_to_detector_distance)),
+                list(source_point + geo.vector(0, 0,
+                     self.source_to_detector_distance)),
             )
             + pv.Line(
                 list(center_point + geo.vector(-100, 0, 0)),
@@ -465,9 +475,9 @@ class MobileCArm(object):
 
 class CArm(object):
     """C-arm device for positioning a camera in space.
-    
+
     It is suggested to use MobileCArm instead.
-    
+
     """
 
     def __init__(
@@ -485,7 +495,8 @@ class CArm(object):
 
         self.isocenter_distance = isocenter_distance
         self.isocenter = geo.point(0, 0, 0) if isocenter is None else isocenter
-        self.phi, self.theta, self.rho = utils.radians(phi, theta, rho, degrees=degrees)
+        self.phi, self.theta, self.rho = utils.radians(
+            phi, theta, rho, degrees=degrees)
 
     def move_to(
         self,
@@ -578,7 +589,7 @@ class CArm(object):
         """Get the FrameTransform for the C-Arm device at the given pose.
 
         This ignores the internal state except for the isocenter_distance.
-        
+
         Args:
             isocenter (geo.Point3D): isocenter of the device.
             phi (float): CRAN/CAUD angle of the C-Arm (along the actual arc of the arm)
