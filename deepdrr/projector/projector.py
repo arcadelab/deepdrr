@@ -107,194 +107,6 @@ def _get_kernel_scatter_module(num_materials) -> SourceModule:
     logger.debug(f"compiling {source_path} with NUM_MATERIALS={num_materials}")
     return SourceModule(source, include_dirs=[str(d)], no_extern_c=True, options=['-D', f'NUM_MATERIALS={num_materials}'])
 
-
-<<<<<<< HEAD
-
-class SingleProjector(object):
-    def initialize(self):
-        """Allocate GPU memory and transfer the volume, segmentations to GPU."""
-        if self.initialized:
-            raise RuntimeError("Close projector before initializing again.")
-
-        # allocate and transfer volume texture to GPU
-        # TODO: this axis-swap is messy and actually may be messing things up. Maybe use a FrameTransform in the Volume class instead?
-        volume = np.array(self.volume)
-        volume = np.moveaxis(volume, [0, 1, 2], [2, 1, 0]).copy() # TODO: is this axis swap necessary?
-        self.volume_gpu = cuda.np_to_array(volume, order='C')
-        self.volume_texref = self.mod.get_texref("volume")
-        cuda.bind_array_to_texref(self.volume_gpu, self.volume_texref)
-        
-        # set the (interpolation?) mode
-        if self.mode == 'linear':
-            self.volume_texref.set_filter_mode(cuda.filter_mode.LINEAR)
-        else:
-            raise RuntimeError
-
-        # allocate and transfer segmentation texture to GPU
-        # TODO: remove axis swap?
-        # self.segmentations_gpu = [cuda.np_to_array(seg, order='C') for mat, seg in self.volume.materials.items()]
-        self.segmentations_gpu = [cuda.np_to_array(np.moveaxis(seg, [0, 1, 2], [2, 1, 0]).copy(), order='C') for mat, seg in self.volume.materials.items()]
-        self.segmentations_texref = [self.mod.get_texref(f"seg_{m}") for m, _ in enumerate(self.volume.materials)]
-        for seg, texref in zip(self.segmentations_gpu, self.segmentations_texref):
-            cuda.bind_array_to_texref(seg, texref)
-            if self.mode == 'linear':
-                texref.set_filter_mode(cuda.filter_mode.LINEAR)
-            else:
-                raise RuntimeError
-
-        # allocate ijk_from_index matrix array on GPU (3x3 array x 4 bytes per float32)
-        self.rt_kinv_gpu = cuda.mem_alloc(3 * 3 * 4)
-
-        if self.attenuation:
-            # allocate deposited_energy array on GPU (4 bytes to a float32)
-            self.intensity_gpu = cuda.mem_alloc(self.output_size * 4)
-            logger.debug(f"bytes alloc'd for self.intensity_gpu: {self.output_size * 4}")
-
-            # allocate photon_prob array on GPU (4 bytes to a float32)
-            self.photon_prob_gpu = cuda.mem_alloc(self.output_size * 4)
-            logger.debug(f"bytes alloc'd for self.photon_prob_gpu: {self.output_size * 4}")
-
-            # allocate solid_angle array on GPU as needed (4 bytes to a float32)
-            if self.collected_energy:
-                self.solid_angle_gpu = cuda.mem_alloc(self.output_size * 4)
-                logger.debug(f"bytes alloc'd for self.solid_angle_gpu: {self.output_size * 4}")
-            else:
-                self.solid_angle_gpu = np.int32(0) # NULL. Don't need to do solid angle calculation
-
-            # allocate and transfer spectrum energies (4 bytes to a float32)
-            assert isinstance(self.spectrum, np.ndarray)
-            noncont_energies = self.spectrum[:,0].copy() / 1000 # [keV]
-            contiguous_energies = np.ascontiguousarray(noncont_energies, dtype=np.float32) # [keV]
-            n_bins = contiguous_energies.shape[0]
-            self.energies_gpu = cuda.mem_alloc(n_bins * 4)
-            cuda.memcpy_htod(self.energies_gpu, contiguous_energies)
-            logger.debug(f"bytes alloc'd for self.energies_gpu: {n_bins * 4}")
-
-            # allocate and transfer spectrum pdf (4 bytes to a float32)
-            noncont_pdf = self.spectrum[:, 1]  / np.sum(self.spectrum[:, 1])
-            contiguous_pdf = np.ascontiguousarray(noncont_pdf.copy(), dtype=np.float32)
-            assert contiguous_pdf.shape == contiguous_energies.shape
-            assert contiguous_pdf.shape[0] == n_bins
-            self.pdf_gpu = cuda.mem_alloc(n_bins * 4)
-            cuda.memcpy_htod(self.pdf_gpu, contiguous_pdf)
-            logger.debug(f"bytes alloc'd for self.pdf_gpu {n_bins * 4}")
-
-            # precompute, allocate, and transfer the get_absorption_coef(energy, material) table (4 bytes to a float32)
-            absorption_coef_table = np.empty(n_bins * self.num_materials).astype(np.float32)
-            for bin in range(n_bins): #, energy in enumerate(energies):
-                for m, mat_name in enumerate(self.volume.materials):
-                    absorption_coef_table[bin * self.num_materials + m] = mass_attenuation.get_absorption_coefs(contiguous_energies[bin], mat_name)
-            self.absorption_coef_table_gpu = cuda.mem_alloc(n_bins * self.num_materials * 4)
-            cuda.memcpy_htod(self.absorption_coef_table_gpu, absorption_coef_table)
-            logger.debug(f"size alloc'd for self.absorption_coef_table_gpu: {n_bins * self.num_materials * 4}")
-        else:
-            # allocate output image array on GPU (4 bytes to a float32)
-            self.output_gpu = cuda.mem_alloc(self.output_size * 4)
-            logger.debug(f"bytes alloc'd for self.output_gpu {self.output_size * 4}")
-        
-        if self.scatter_num > 0:
-            my_materials = list(self.volume.materials.keys())
-            print(f"my_materials: {my_materials}")
-
-            # Material MFP structs
-            self.mat_mfp_struct_dict = dict()
-            self.mat_mfp_structs_gpu = cuda.mem_alloc(self.num_materials * CudaMatMfpStruct.MEMSIZE)
-            for i, mat in enumerate(my_materials):
-                struct_gpu_ptr = int(self.mat_mfp_structs_gpu) + (i * CudaMatMfpStruct.MEMSIZE)
-                self.mat_mfp_struct_dict[mat] = CudaMatMfpStruct(MFP_DATA[mat], struct_gpu_ptr)
-
-            # Woodcock MFP struct
-            wc_np_arr = scatter.make_woodcock_mfp(my_materials)
-            self.woodcock_struct_gpu = cuda.mem_alloc(CudaWoodcockStruct.MEMSIZE)
-            self.woodcock_struct = CudaWoodcockStruct(wc_np_arr, int(self.woodcock_struct_gpu))
-
-            # Material Compton structs
-            self.compton_struct_dict = dict()
-            self.compton_structs_gpu = cuda.mem_alloc(self.num_materials * CudaComptonStruct.MEMSIZE)
-            for i, mat in enumerate(my_materials):
-                struct_gpu_ptr = int(self.compton_structs_gpu) + (i * CudaComptonStruct.MEMSIZE)
-                self.compton_struct_dict[mat] = CudaComptonStruct(COMPTON_DATA[mat], struct_gpu_ptr)
-            
-            # Material RITA structs
-            self.rita_struct_dict = dict()
-            self.rita_structs_gpu = cuda.mem_alloc(self.num_materials * CudaRitaStruct.MEMSIZE)
-            for i, mat in enumerate(my_materials):
-                struct_gpu_ptr = int(self.rita_structs_gpu) + (i * CudaRitaStruct.MEMSIZE)
-                self.rita_struct_dict[mat] = CudaRitaStruct(rita_samplers[mat], struct_gpu_ptr)
-                #print(f"for material [{mat}], RITA structure at location {struct_gpu_ptr}")
-                #for g in range(self.rita_struct_dict[mat].n_gridpts):
-                #    print(f"[{self.rita_struct_dict[mat].x[g]}, {self.rita_struct_dict[mat].y[g]}, {self.rita_struct_dict[mat].a[g]}, {self.rita_struct_dict[mat].b[g]}]")
-            
-            # Labeled segmentation
-            num_voxels = self.volume.shape[0] * self.volume.shape[1] * self.volume.shape[2]
-            labeled_seg = np.zeros(self.volume.shape).astype(np.int8)
-            for i, mat in enumerate(my_materials):
-                labeled_seg = np.add(labeled_seg, i * self.volume.materials[mat]).astype(np.int8)
-            labeled_seg = np.moveaxis(labeled_seg, [0, 1, 2], [2, 1, 0]).copy() # TODO: is this axis swap necessary?
-            self.labeled_segmentation_gpu = cuda.mem_alloc(num_voxels)
-            cuda.memcpy_htod(self.labeled_segmentation_gpu, labeled_seg)
-
-            # Detector plane
-            self.detector_plane_gpu = cuda.mem_alloc(CudaPlaneSurfaceStruct.MEMSIZE)
-
-            # index_from_ijk
-            self.index_from_ijk_gpu = cuda.mem_alloc(2 * 3 * 4) # (2, 3) array of floats
-
-            # spectrum cdf
-            n_bins = self.spectrum.shape[0]
-            #spectrum_cdf = np.array([np.sum(self.spectrum[0:i+1, 1]) for i in range(n_bins)])
-            #spectrum_cdf = (spectrum_cdf / np.sum(self.spectrum[:, 1])).astype(np.float32)
-            spectrum_cdf = np.array([np.sum(contiguous_pdf[0:i+1]) for i in range(n_bins)])
-            #print(f"spectrum CDF:\n{spectrum_cdf}")
-            self.cdf_gpu = cuda.mem_alloc(n_bins * 4)
-            cuda.memcpy_htod(self.cdf_gpu, spectrum_cdf)
-
-            # output
-            self.scatter_deposits_gpu = cuda.mem_alloc(self.output_size * 4)
-            self.num_scattered_hits_gpu = cuda.mem_alloc(self.output_size * 4)
-            self.num_unscattered_hits_gpu = cuda.mem_alloc(self.output_size * 4)
-
-        # Mark self as initialized.
-        self.initialized = True
-
-    def free(self):
-        if self.initialized:
-            self.volume_gpu.free()
-            for seg in self.segmentations_gpu:
-                seg.free()
-            self.rt_kinv_gpu.free()
-
-            if self.attenuation:
-                self.intensity_gpu.free()
-                self.photon_prob_gpu.free()
-                if self.collected_energy:
-                    self.solid_angle_gpu.free()
-                else:
-                    assert np.int32(0) == self.solid_angle_gpu
-                self.energies_gpu.free()
-                self.pdf_gpu.free()
-                self.absorption_coef_table_gpu.free()
-            else:
-                self.output_gpu.free()
-            
-            if self.scatter_num > 0:
-                self.mat_mfp_structs_gpu.free()
-                self.woodcock_struct_gpu.free()
-                self.compton_structs_gpu.free()
-                self.rita_structs_gpu.free()
-                self.labeled_segmentation_gpu.free()
-                self.detector_plane_gpu.free()
-                self.index_from_ijk_gpu.free()
-                self.cdf_gpu.free()
-                self.scatter_deposits_gpu.free()
-                self.num_scattered_hits_gpu.free()
-                self.num_unscattered_hits_gpu.free()
-
-        self.initialized = False
-=======
->>>>>>> dev
-
-
 class Projector(object):
     def __init__(
         self,
@@ -380,11 +192,7 @@ class Projector(object):
         else:
             self.scatter_num = scatter_num
 
-        if self.scatter_num > 0:
-            self.scatter_mod = _get_kernel_scatter_module(self.num_materials)
-            self.simulate_scatter = self.scatter_mod.get_function("simulate_scatter")
-
-        # TODO (mjudish): Initialize the single scatter volume here or in initialize function.
+        # TODO (mjudish): Initialize the single scatter volume here or in initialize function. ANSWER: do this in the initialize() function
 
         self.add_noise = add_noise
         self.photon_count = photon_count
@@ -408,6 +216,10 @@ class Projector(object):
         # compile the module
         self.mod = _get_kernel_projector_module(len(self.volumes), len(self.all_materials))
         self.project_kernel = self.mod.get_function("projectKernel")
+
+        if self.scatter_num > 0:
+            self.scatter_mod = _get_kernel_scatter_module(len(self.all_materials))
+            self.simulate_scatter = self.scatter_mod.get_function("simulate_scatter")
 
         # assertions
         for mat in self.all_materials:
@@ -796,6 +608,7 @@ class Projector(object):
                     seg = _vol.materials[mat]
                 else:
                     seg = np.zeros(_vol.shape).astype(np.float32)
+                # TODO: remove axis swap?
                 seg_for_vol.append(cuda.np_to_array(np.moveaxis(seg, [0, 1, 2], [2, 1, 0]).copy(), order='C'))
                 texref = self.mod.get_texref(f'seg_{vol_id}_{mat_id}')
                 texref_for_vol.append(texref)
@@ -861,7 +674,12 @@ class Projector(object):
         self.photon_prob_gpu = cuda.mem_alloc(self.output_size * 4)
         logger.debug(f"bytes alloc'd for self.photon_prob_gpu: {self.output_size * 4}")
 
-        
+        # allocate solid_angle array on GPU as needed (4 bytes to a float32)
+        if self.collected_energy:
+            self.solid_angle_gpu = cuda.mem_alloc(self.output_size * 4)
+            logger.debug(f"bytes alloc'd for self.solid_angle_gpu: {self.output_size * 4}")
+        else:
+            self.solid_angle_gpu = np.int32(0) # NULL. Don't need to do solid angle calculation
 
         # allocate and transfer spectrum energies (4 bytes to a float32)
         assert isinstance(self.spectrum, np.ndarray)
@@ -890,6 +708,67 @@ class Projector(object):
         cuda.memcpy_htod(self.absorption_coef_table_gpu, absorption_coef_table)
         logger.debug(f"size alloc'd for self.absorption_coef_table_gpu: {n_bins * len(self.all_materials) * 4}")
 
+        # Scatter-specific initializations
+
+        if self.scatter_num > 0:
+            # Material MFP structs
+            self.mat_mfp_struct_dict = dict()
+            self.mat_mfp_structs_gpu = cuda.mem_alloc(len(self.all_materials) * CudaMatMfpStruct.MEMSIZE)
+            for i, mat in enumerate(my_materials):
+                struct_gpu_ptr = int(self.mat_mfp_structs_gpu) + (i * CudaMatMfpStruct.MEMSIZE)
+                self.mat_mfp_struct_dict[mat] = CudaMatMfpStruct(MFP_DATA[mat], struct_gpu_ptr)
+
+            # Woodcock MFP struct
+            wc_np_arr = scatter.make_woodcock_mfp(my_materials)
+            self.woodcock_struct_gpu = cuda.mem_alloc(CudaWoodcockStruct.MEMSIZE)
+            self.woodcock_struct = CudaWoodcockStruct(wc_np_arr, int(self.woodcock_struct_gpu))
+
+            # Material Compton structs
+            self.compton_struct_dict = dict()
+            self.compton_structs_gpu = cuda.mem_alloc(len(self.all_materials) * CudaComptonStruct.MEMSIZE)
+            for i, mat in enumerate(my_materials):
+                struct_gpu_ptr = int(self.compton_structs_gpu) + (i * CudaComptonStruct.MEMSIZE)
+                self.compton_struct_dict[mat] = CudaComptonStruct(COMPTON_DATA[mat], struct_gpu_ptr)
+            
+            # Material RITA structs
+            self.rita_struct_dict = dict()
+            self.rita_structs_gpu = cuda.mem_alloc(len(self.all_materials) * CudaRitaStruct.MEMSIZE)
+            for i, mat in enumerate(my_materials):
+                struct_gpu_ptr = int(self.rita_structs_gpu) + (i * CudaRitaStruct.MEMSIZE)
+                self.rita_struct_dict[mat] = CudaRitaStruct(rita_samplers[mat], struct_gpu_ptr)
+                #print(f"for material [{mat}], RITA structure at location {struct_gpu_ptr}")
+                #for g in range(self.rita_struct_dict[mat].n_gridpts):
+                #    print(f"[{self.rita_struct_dict[mat].x[g]}, {self.rita_struct_dict[mat].y[g]}, {self.rita_struct_dict[mat].a[g]}, {self.rita_struct_dict[mat].b[g]}]")
+            
+            # Labeled segmentation -- TODO (mjudish): handle multi-volume input unification
+            num_voxels = self.volume.shape[0] * self.volume.shape[1] * self.volume.shape[2]
+            labeled_seg = np.zeros(self.volume.shape).astype(np.int8)
+            for i, mat in enumerate(my_materials):
+                labeled_seg = np.add(labeled_seg, i * self.volume.materials[mat]).astype(np.int8)
+            labeled_seg = np.moveaxis(labeled_seg, [0, 1, 2], [2, 1, 0]).copy() # TODO: is this axis swap necessary?
+            self.labeled_segmentation_gpu = cuda.mem_alloc(num_voxels)
+            cuda.memcpy_htod(self.labeled_segmentation_gpu, labeled_seg)
+
+            # Detector plane
+            self.detector_plane_gpu = cuda.mem_alloc(CudaPlaneSurfaceStruct.MEMSIZE)
+
+            # index_from_ijk
+            self.index_from_ijk_gpu = cuda.mem_alloc(2 * 3 * 4) # (2, 3) array of floats
+
+            # spectrum cdf
+            n_bins = self.spectrum.shape[0]
+            #spectrum_cdf = np.array([np.sum(self.spectrum[0:i+1, 1]) for i in range(n_bins)])
+            #spectrum_cdf = (spectrum_cdf / np.sum(self.spectrum[:, 1])).astype(np.float32)
+            spectrum_cdf = np.array([np.sum(contiguous_pdf[0:i+1]) for i in range(n_bins)])
+            #print(f"spectrum CDF:\n{spectrum_cdf}")
+            self.cdf_gpu = cuda.mem_alloc(n_bins * 4)
+            cuda.memcpy_htod(self.cdf_gpu, spectrum_cdf)
+
+            # output
+            self.scatter_deposits_gpu = cuda.mem_alloc(self.output_size * 4)
+            self.num_scattered_hits_gpu = cuda.mem_alloc(self.output_size * 4)
+            self.num_unscattered_hits_gpu = cuda.mem_alloc(self.output_size * 4)
+
         # Mark self as initialized.
         self.initialized = True
 
@@ -903,16 +782,46 @@ class Projector(object):
             
             if len(self.volumes) > 1:
                 self.priorities_gpu.free()
-                self.minPointX_gpu.free() # frees all of the gVolume, gVoxel data
-                self.sourceX_gpu.free() # also frees source{Y,Z}_gpu
+
+                self.minPointX_gpu.free()
+                self.minPointY_gpu.free()
+                self.minPointZ_gpu.free()
+
+                self.maxPointX_gpu.free()
+                self.maxPointY_gpu.free()
+                self.maxPointZ_gpu.free()
+
+                self.voxelSizeX_gpu.free()
+                self.voxelSizeY_gpu.free()
+                self.voxelSizeZ_gpu.free()
+
+                self.sourceX_gpu.free()
+                self.sourceY_gpu.free()
+                self.sourceZ_gpu.free()
 
             self.rt_kinv_gpu.free()
-
             self.intensity_gpu.free()
             self.photon_prob_gpu.free()
+
+            if self.collected_energy:
+                self.solid_angle_gpu.free()
+
             self.energies_gpu.free()
             self.pdf_gpu.free()
             self.absorption_coef_table_gpu.free()
+
+            if self.scatter_num > 0:
+                self.mat_mfp_structs_gpu.free()
+                self.woodcock_struct_gpu.free()
+                self.compton_structs_gpu.free()
+                self.rita_structs_gpu.free()
+                self.labeled_segmentation_gpu.free()
+                self.detector_plane_gpu.free()
+                self.index_from_ijk_gpu.free()
+                self.cdf_gpu.free()
+                self.scatter_deposits_gpu.free()
+                self.num_scattered_hits_gpu.free()
+                self.num_unscattered_hits_gpu.free()
 
         self.initialized = False
 
