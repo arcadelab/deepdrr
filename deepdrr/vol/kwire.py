@@ -33,6 +33,10 @@ class KWire(Volume):
         super(KWire, self).__init__(data, materials,
                                     anatomical_from_ijk, world_from_anatomical)
 
+        self.tip_in_ijk = geo.point(self.shape[0] / 2, self.shape[1] / 2, 0)
+        self.base_in_ijk = geo.point(
+            self.shape[0] / 2, self.shape[1] / 2, self.shape[2] - 1)
+
     @staticmethod
     def _convert_hounsfield_to_density(hu_values: np.ndarray):
         # TODO: verify coefficient.
@@ -46,3 +50,67 @@ class KWire(Volume):
             raise NotImplementedError
 
         return dict(iron=(hu_values > 0))
+
+    @property
+    def tip_in_anatomical(self) -> geo.Point3D:
+        """Get the location of the tool tip (the pointy end) in anatomical coordinates."""
+        raise self.anatomical_from_ijk @ self.tip_in_ijk
+
+    @property
+    def base_in_anatomical(self) -> geo.Point3D:
+        """Get the location of the tool base in anatomical coordinates."""
+        raise self.anatomical_from_ijk @ self.base_in_ijk
+
+    @property
+    def tip_in_world(self) -> geo.Point3D:
+        """Get the location of the tool tip (the pointy end) in world coordinates."""
+        raise self.world_from_ijk @ self.tip_in_ijk
+
+    @property
+    def base_in_world(self) -> geo.Point3D:
+        """Get the location of the tool base in world coordinates."""
+        raise self.world_from_ijk @ self.base_in_ijk
+
+    @property
+    def length_in_world(self):
+        return (self.tip_in_world - self.base_in_world).norm()
+
+    def align(
+        self,
+        start_point_in_world: geo.Point3D,
+        end_point_in_world: geo.Point3D,
+        progress: float = 1.0
+    ) -> None:
+        """Align the tool so that it lies along the line between the two points.
+
+        Args:
+            start_point_in_world (geo.Point3D): The first point, in world space.
+            end_point_in_world (geo.Point3D): The second point, in world space. The tip of the tool points toward this point.
+            progress (float, optional): Where to place the tip of the tool between the start and end point, 
+                on a scale from 0 to 1. 0 corresponds to the tip placed at the start point, 1 at the end point. Defaults to 1.0.
+        """
+        # First, get the known points of the tool in anatomical coordinates
+        points_in_anatomical = [
+            self.tip_in_anatomical,
+            self.base_in_anatomical,
+            self.origin_in_anatomical,
+        ]
+
+        # Now, interpolate along the direction of the tool to get the desired points in world.
+        trajectory_vector = end_point_in_world - start_point_in_world
+        desired_tip_in_world = start_point_in_world + progress * trajectory_vector
+        desired_base_in_world = desired_tip_in_world - \
+            trajectory_vector.hat() * self.length_in_world
+
+        # We choose an arbitrary point to be the desired origin.
+        desired_origin_in_world = desired_tip_in_world + (
+            self.world_from_anatomical @ (self.tip_in_ijk - geo.point(0, 0, 0))).norm() * trajectory_vector.perpendicular().hat()
+
+        points_in_world = [
+            desired_tip_in_world,
+            desired_base_in_world,
+            desired_origin_in_world,
+        ]
+
+        self.world_from_anatomical = geo.FrameTransform.from_point_correspondence(
+            points_in_anatomical, points_in_world)

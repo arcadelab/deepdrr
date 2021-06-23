@@ -492,6 +492,8 @@ class Volume(object):
         """The origin of the volume in anatomical space."""
         return geo.point(self.anatomical_from_ijk.t)
 
+    origin_in_anatomical = origin
+
     @property
     def origin_in_world(self) -> geo.Point3D:
         """The origin of the volume in world space."""
