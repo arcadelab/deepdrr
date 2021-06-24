@@ -3,6 +3,8 @@ import os
 import logging
 from pathlib import Path
 from torchvision.datasets.utils import download_url
+import urllib
+import subprocess
 
 
 logger = logging.getLogger(__name__)
@@ -30,5 +32,9 @@ def download(url: str, filename: Optional[str] = None, root: str = "~/datasets/D
     if filename is None:
         filename = os.path.basename(url)
 
-    download_url(url, root, filename=filename, md5=md5)
+    try:
+        download_url(url, root, filename=filename, md5=md5)
+    except urllib.error.HTTPError:
+        logger.warning(f"Pretty download failed. Attempting with wget...")
+        subprocess.call(["wget", "-O", str(root / filename), url])
     return root / filename

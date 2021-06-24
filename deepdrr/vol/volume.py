@@ -29,6 +29,7 @@ class Volume(object):
     materials: Dict[str, np.ndarray]
     anatomical_from_ijk: geo.FrameTransform
     world_from_anatomical: geo.FrameTransform
+    anatomical_coordinate_system: Optional[str]
 
     def __init__(
         self,
@@ -36,6 +37,8 @@ class Volume(object):
         materials: Dict[str, np.ndarray],
         anatomical_from_ijk: geo.FrameTransform,
         world_from_anatomical: Optional[geo.FrameTransform] = None,
+        anatomical_coordinate_system: Optional[str] = None,
+
     ) -> None:
         """A deepdrr Volume object with materials segmentation and orientation in world-space.
 
@@ -47,6 +50,8 @@ class Volume(object):
             materials (Dict[str, np.ndarray]): material segmentation of the volume, mapping material name to binary segmentation.
             anatomical_from_ijk (geo.FrameTransform): transformation from IJK space to anatomical (RAS or LPS).
             world_from_anatomical (Optional[geo.FrameTransform], optional): transformation from the anatomical space to world coordinates. If None, assumes identity. Defaults to None.
+            anatomical_coordinate_system (str, optional): String denoting the coordinate system. Either "LPS", "RAS", or None. 
+                This may be useful for ensuring compatibility with other data, but it is not checked or used internally (yet). Defaults to None.
         """
         self.data = np.array(data).astype(np.float32)
         self.materials = self._format_materials(materials)
@@ -56,6 +61,8 @@ class Volume(object):
             if world_from_anatomical is None
             else geo.frame_transform(world_from_anatomical)
         )
+        self.anatomical_coordinate_system = anatomical_coordinate_system
+        assert self.anatomical_coordinate_system in ["LPS", "RAS", None]
 
     @classmethod
     def from_parameters(
@@ -82,6 +89,7 @@ class Volume(object):
             anatomical_coordinate_system (Optional[str]): anatomical coordinate system convention, either "RAS" or "LPS". Defaults to None.
             world_from_anatomical (FrameTransform, optional): Optional transformation from anatomical to world coordinates. 
                 If None, then identity is used. Defaults to None.
+
         """
         origin = geo.point(origin)
         spacing = geo.vector(spacing)
@@ -117,6 +125,7 @@ class Volume(object):
             materials=materials,
             anatomical_from_ijk=anatomical_from_ijk,
             world_from_anatomical=world_from_anatomical,
+            anatomical_coordinate_system=anatomical_coordinate_system,
         )
 
     @classmethod
@@ -266,7 +275,7 @@ class Volume(object):
             cache_dir=cache_dir,
         )
 
-        return cls(data, materials, anatomical_from_ijk, world_from_anatomical)
+        return cls(data, materials, anatomical_from_ijk, world_from_anatomical, anatomical_coordinate_system="RAS")
 
     @classmethod
     def from_dicom(
@@ -469,7 +478,11 @@ class Volume(object):
             cache_dir=cache_dir,
         )
 
-        return cls(data, materials, anatomical_from_ijk, world_from_anatomical)
+        anatomical_coordinate_system = {
+            "right-anterior-superior": "RAS", "left-posterior-superior": "LPS"
+        }.get(header.get("space"))
+
+        return cls(data, materials, anatomical_from_ijk, world_from_anatomical, anatomical_coordinate_system=anatomical_coordinate_system)
 
     @property
     def world_from_ijk(self) -> geo.FrameTransform:
