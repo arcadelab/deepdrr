@@ -555,7 +555,7 @@ class Volume(object):
             self.world_from_anatomical.R
         ) @ geo.FrameTransform.from_origin(center_anatomical)
 
-    def translate(self, t: geo.Vector3D) -> None:
+    def translate(self, t: geo.Vector3D) -> Volume:
         """Translate the volume by `t`.
 
         Args:
@@ -564,10 +564,11 @@ class Volume(object):
         t = geo.vector(t)
         T = geo.FrameTransform.from_translation(t)
         self.world_from_anatomical = T @ self.world_from_anatomical
+        return self
 
     def rotate(
         self, r: Union[geo.Vector3D, Rotation], center: geo.Point3D = [0, 0, 0]
-    ) -> None:
+    ) -> Volume:
         """Rotate the volume by `r` about `x`.
 
         Args:
@@ -583,6 +584,7 @@ class Volume(object):
 
         T = geo.FrameTransform.from_translation(center)
         self.world_from_anatomical = T @ R @ T.inv @ self.world_from_anatomical
+        return self
 
     def __contains__(self, x: geo.Point3D) -> bool:
         """Determine whether the point x is inside the volume.

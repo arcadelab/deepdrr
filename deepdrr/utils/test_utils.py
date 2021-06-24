@@ -45,8 +45,9 @@ def download_sampledata(name: str = 'CT-chest', **kwargs) -> Path:
         _sampledata[name], filename=filename, **kwargs)
 
     if path.suffix == '.zip':
-        with zipfile.ZipFile(path, 'r') as zip_ref:
-            zip_ref.extractall(path.parent)
+        if not (path.parent / path.stem).exists():
+            with zipfile.ZipFile(path, 'r') as zip_ref:
+                zip_ref.extractall(path.parent)
         path = path.parent / path.stem
 
     return path
