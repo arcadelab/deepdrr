@@ -2,10 +2,12 @@ from PIL import Image
 import numpy as np
 from scipy.spatial.transform import Rotation
 import json
+import logging
 
 import deepdrr
 from deepdrr import geo
 from deepdrr.utils import test_utils, image_utils
+from deepdrr import vis
 
 # TODO: create a test case possibly using the new dataset, along with some annotations, that tests the KWire alignment code.
 # This will create a test case, demo that the annotations are correct, etc.
@@ -49,6 +51,9 @@ def test_kwire():
     # Then add a kwire
     kwire = deepdrr.vol.KWire.from_example()
     kwire.align(*points_in_world, 0.5)
+
+    vis.show(volume, kwire)
+
     with deepdrr.Projector([volume, kwire], carm=carm) as projector:
         image = projector()
         image = np.stack([image, image, image], axis=-1)
@@ -62,4 +67,5 @@ def test_kwire():
 
 
 if __name__ == "__main__":
+    logging.getLogger("deepdrr").setLevel(logging.DEBUG)
     test_kwire()

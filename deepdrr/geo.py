@@ -782,7 +782,7 @@ class FrameTransform(Transform):
 
         return (cls.from_translation(-x_B)
                 @ cls.from_scaling(x2y_B.norm() / x2y_A.norm())
-                @ cls.from_rotation(rot).inv
+                @ cls.from_rotation(rot)
                 @ cls.from_translation(x_A))
 
     @property
