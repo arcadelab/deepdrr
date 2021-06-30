@@ -17,31 +17,19 @@ def test_kwire():
     output_dir = test_utils.get_output_dir()
     data_dir = test_utils.download_sampledata("CTPelvic1K_sample")
     volume = deepdrr.Volume.from_nifti(
-        data_dir / "dataset6_CLINIC_0001_data.nii.gz", use_thresholding=False)
-    volume.rotate(Rotation.from_euler("x", 90, degrees=True))
-    annotation_paths = sorted(list(data_dir.glob("*.mrk.json")))
+        data_dir / "dataset6_CLINIC_0001_data.nii.gz", use_thresholding=False
+    )
+    volume.rotate(Rotation.from_euler("xz", [-90, 90], degrees=True))
 
-    with open(annotation_paths[1], 'r') as file:
-        ann = json.load(file)
-    control_points = ann["markups"][0]["controlPoints"]
-    control_points = dict((cp['label'], geo.point(cp['position']))
-                          for cp in control_points)
-    points = [control_points['entry'], control_points['exit']]
+    # load the line annotation for the trajectory
+    annotation_path = sorted(list(data_dir.glob("*.mrk.json")))[1]
+    annotation = deepdrr.LineAnnotation.from_markup(annotation_path, volume)
 
-    if ann["markups"][0]["coordinateSystem"] == "LPS":
-        points = [geo.RAS_from_LPS @ p for p in points]
-    elif ann["markups"][0]["coordinateSystem"] == "RAS":
-        pass
-    else:
-        raise TypeError(
-            "annotation in unknown coordinate system: {}".format(
-                ann["markups"][0]["coordinateSystem"]
-            )
-        )
+    # annotation.startpoint.data[1] *= -1
+    # annotation.endpoint.data[1] *= -1
 
-    points_in_world = list(map(volume.world_from_anatomical, points))
-    print(points_in_world)
-    carm = deepdrr.MobileCArm(points_in_world[0] + geo.point(30, -40, 0))
+    # define the simulated C-arm
+    carm = deepdrr.MobileCArm(volume.center_in_world + geo.vector(30, 20, 0))
 
     # first, just do the CT volume on its own
     # with deepdrr.Projector(volume, carm=carm) as projector:
@@ -50,20 +38,16 @@ def test_kwire():
 
     # Then add a kwire
     kwire = deepdrr.vol.KWire.from_example()
-    kwire.align(*points_in_world, 0.5)
+    kwire.align(annotation.startpoint_in_world, annotation.endpoint_in_world, 0.5)
+    print(annotation)
 
-    vis.show(volume, kwire)
+    # vis.show(volume, carm, annotation, kwire, full=True)
 
     with deepdrr.Projector([volume, kwire], carm=carm) as projector:
-        image = projector()
-        image = np.stack([image, image, image], axis=-1)
-
-        for p in points_in_world:
-            print(p)
-            i, j = carm.get_camera_projection().index_from_world @ p
-            print(i, j)
-            image[int(i), int(j)] = [1, 0, 0]
-        image_utils.save(output_dir / "test_kwire.png", image)
+        for alpha in [-30, -15, 0, 15, 30, 45, 60, 75, 90]:
+            carm.move_to(alpha=alpha, degrees=True)
+            image = projector()
+            image_utils.save(output_dir / f"test_kwire_alpha={alpha}.png", image)
 
 
 if __name__ == "__main__":

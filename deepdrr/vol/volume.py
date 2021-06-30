@@ -49,7 +49,7 @@ class Volume(object):
             materials (Dict[str, np.ndarray]): material segmentation of the volume, mapping material name to binary segmentation.
             anatomical_from_ijk (geo.FrameTransform): transformation from IJK space to anatomical (RAS or LPS).
             world_from_anatomical (Optional[geo.FrameTransform], optional): transformation from the anatomical space to world coordinates. If None, assumes identity. Defaults to None.
-            anatomical_coordinate_system (str, optional): String denoting the coordinate system. Either "LPS", "RAS", or None. 
+            anatomical_coordinate_system (str, optional): String denoting the coordinate system. Either "LPS", "RAS", or None.
                 This may be useful for ensuring compatibility with other data, but it is not checked or used internally (yet). Defaults to None.
         """
         self.data = np.array(data).astype(np.float32)
@@ -87,7 +87,7 @@ class Volume(object):
             origin (Point3D): Location of the volume's origin in the anatomical coordinate system.
             spacing (Tuple[float, float, float], optional): Spacing of the volume in the anatomical coordinate system. Defaults to (1, 1, 1).
             anatomical_coordinate_system (Optional[str]): anatomical coordinate system convention, either "RAS" or "LPS". Defaults to None.
-            world_from_anatomical (FrameTransform, optional): Optional transformation from anatomical to world coordinates. 
+            world_from_anatomical (FrameTransform, optional): Optional transformation from anatomical to world coordinates.
                 If None, then identity is used. Defaults to None.
 
         """
@@ -141,8 +141,7 @@ class Volume(object):
         **kwargs,
     ) -> None:
         data = cls._convert_hounsfield_to_density(hu_values)
-        materials = cls._segment_materials(
-            hu_values, use_thresholding=use_thresholding)
+        materials = cls._segment_materials(hu_values, use_thresholding=use_thresholding)
 
         return cls.from_parameters(
             data,
@@ -175,7 +174,8 @@ class Volume(object):
 
     @staticmethod
     def _segment_materials(
-        hu_values: np.ndarray, use_thresholding: bool = True,
+        hu_values: np.ndarray,
+        use_thresholding: bool = True,
     ) -> Dict[str, np.ndarray]:
         """Segment the materials.
 
@@ -222,8 +222,7 @@ class Volume(object):
         )
 
         if materials_path is not None and materials_path.exists() and use_cached:
-            logger.info(
-                f"using cached materials segmentation at {materials_path}")
+            logger.info(f"using cached materials segmentation at {materials_path}")
             materials = dict(np.load(materials_path))
         else:
             logger.info(f"segmenting materials in volume")
@@ -267,7 +266,8 @@ class Volume(object):
         img = nib.load(path)
         if img.header.get_xyzt_units()[0] != "mm":
             logger.warning(
-                f"got NifTi xyz units: {img.header.get_xyzt_units()[0]}. (Expected \"mm\").")
+                f'got NifTi xyz units: {img.header.get_xyzt_units()[0]}. (Expected "mm").'
+            )
 
         anatomical_from_ijk = geo.FrameTransform(img.affine)
         hu_values = img.get_fdata()
@@ -280,7 +280,14 @@ class Volume(object):
             cache_dir=cache_dir,
         )
 
-        return cls(data, materials, anatomical_from_ijk, world_from_anatomical, anatomical_coordinate_system="RAS", **kwargs)
+        return cls(
+            data,
+            materials,
+            anatomical_from_ijk,
+            world_from_anatomical,
+            anatomical_coordinate_system="RAS",
+            **kwargs,
+        )
 
     @classmethod
     def from_dicom(
@@ -335,14 +342,12 @@ class Volume(object):
         # volume specific tags
         shared = ds.SharedFunctionalGroupsSequence[0]
         RC = (
-            np.array(
-                shared.PlaneOrientationSequence[0].ImageOrientationPatient)
+            np.array(shared.PlaneOrientationSequence[0].ImageOrientationPatient)
             .reshape(2, 3)
             .T
         )
         PixelSpacing = np.array(shared.PixelMeasuresSequence[0].PixelSpacing)
-        SliceThickness = np.array(
-            shared.PixelMeasuresSequence[0].SliceThickness)
+        SliceThickness = np.array(shared.PixelMeasuresSequence[0].SliceThickness)
         offset = shared.PixelValueTransformationSequence[0].RescaleIntercept
         scale = shared.PixelValueTransformationSequence[0].RescaleSlope
 
@@ -375,19 +380,16 @@ class Volume(object):
         if use_thresholding:
             materials_path = cache_dir / f"{stem}_materials_thresholding.npz"
             if use_cached and materials_path.exists():
-                logger.info(
-                    f"found materials segmentation at {materials_path}.")
+                logger.info(f"found materials segmentation at {materials_path}.")
                 materials = dict(np.load(materials_path))
             else:
                 logger.info(f"segmenting materials in volume")
-                materials = load_dicom.conv_hu_to_materials_thresholding(
-                    hu_values)
+                materials = load_dicom.conv_hu_to_materials_thresholding(hu_values)
                 np.savez(materials_path, **materials)
         else:
             materials_path = cache_dir / f"{stem}_materials.npz"
             if use_cached and materials_path.exists():
-                logger.info(
-                    f"found materials segmentation at {materials_path}.")
+                logger.info(f"found materials segmentation at {materials_path}.")
                 materials = dict(np.load(materials_path))
             else:
                 logger.info(f"segmenting materials in volume")
@@ -460,8 +462,10 @@ class Volume(object):
         """
         hu_values, header = nrrd.read(path)
         ijk_from_anatomical = np.concatenate(
-            [header["space directions"],
-                header["space origin"].reshape(-1, 1), ],
+            [
+                header["space directions"],
+                header["space origin"].reshape(-1, 1),
+            ],
             axis=1,
         )
         anatomical_from_ijk = np.concatenate(
@@ -476,10 +480,18 @@ class Volume(object):
         )
 
         anatomical_coordinate_system = {
-            "right-anterior-superior": "RAS", "left-posterior-superior": "LPS"
+            "right-anterior-superior": "RAS",
+            "left-posterior-superior": "LPS",
         }.get(header.get("space"))
 
-        return cls(data, materials, anatomical_from_ijk, world_from_anatomical, anatomical_coordinate_system=anatomical_coordinate_system, **kwargs)
+        return cls(
+            data,
+            materials,
+            anatomical_from_ijk,
+            world_from_anatomical,
+            anatomical_coordinate_system=anatomical_coordinate_system,
+            **kwargs,
+        )
 
     @property
     def world_from_ijk(self) -> geo.FrameTransform:
@@ -519,7 +531,10 @@ class Volume(object):
         """The spacing of the voxels."""
         return geo.vector(np.abs(np.array(self.anatomical_from_ijk.R)).max(axis=0))
 
-    def _format_materials(self, materials: Dict[str, np.ndarray],) -> np.ndarray:
+    def _format_materials(
+        self,
+        materials: Dict[str, np.ndarray],
+    ) -> np.ndarray:
         """Standardize the input material segmentation."""
         for mat in materials:
             materials[mat] = np.array(materials[mat]).astype(np.float32)
@@ -536,7 +551,7 @@ class Volume(object):
     def translate_center_to(self, x: geo.Point3D) -> None:
         """Translate the volume so that its center is located at world-space point x.
 
-        Only changes the translation elements of the world_from_anatomical transform. Preserves the current rotation of the 
+        Only changes the translation elements of the world_from_anatomical transform. Preserves the current rotation of the
 
         Args:
             x (geo.Point3D): the world-space point.
@@ -564,20 +579,25 @@ class Volume(object):
         return self
 
     def rotate(
-        self, r: Union[geo.Vector3D, Rotation], center: geo.Point3D = [0, 0, 0]
+        self,
+        rotation: Union[geo.Vector3D, Rotation],
+        center: Optional[geo.Point3D] = None,
     ) -> Volume:
-        """Rotate the volume by `r` about `x`.
+        """Rotate the volume by `rotation` about `center`.
 
         Args:
-            r (Union[geo.Vector3D, Rotation]): the rotation in world-space. If it is a vector, `Rotation.from_rotvec(r)` is used.
-            center (geo.Point3D): the center of rotation in world space coordinates.
+            rotation (Union[geo.Vector3D, Rotation]): the rotation in world-space. If it is a vector, `Rotation.from_rotvec(rotation)` is used.
+            center (geo.Point3D, optional): the center of rotation in world space coordinates. If None, the center of the volume is used.
         """
-        if isinstance(r, Rotation):
-            R = geo.FrameTransform.from_rotation(r.as_matrix())
+
+        if isinstance(rotation, Rotation):
+            R = geo.FrameTransform.from_rotation(rotation.as_matrix())
         else:
-            r = geo.vector(r)
-            R = geo.FrameTransform.from_rotation(
-                Rotation.from_rotvec(r).as_matrix())
+            r = geo.vector(rotation)
+            R = geo.FrameTransform.from_rotation(Rotation.from_rotvec(r).as_matrix())
+
+        if center is None:
+            center = self.center_in_world
 
         T = geo.FrameTransform.from_translation(center)
         self.world_from_anatomical = T @ R @ T.inv @ self.world_from_anatomical
@@ -609,11 +629,14 @@ class Volume(object):
             segmentation.shape[0], segmentation.shape[1], segmentation.shape[2]
         )
         vol.SetOrigin(
-            -np.sign(R[0, 0]) * t[0], np.sign(R[1, 1]) *
-            t[1], np.sign(R[2, 2]) * t[2],
+            -np.sign(R[0, 0]) * t[0],
+            np.sign(R[1, 1]) * t[1],
+            np.sign(R[2, 2]) * t[2],
         )
         vol.SetSpacing(
-            -abs(R[0, 0]), abs(R[1, 1]), abs(R[2, 2]),
+            -abs(R[0, 0]),
+            abs(R[1, 1]),
+            abs(R[2, 2]),
         )
 
         segmentation = segmentation.astype(np.uint8)
@@ -657,8 +680,7 @@ class Volume(object):
         use_cached: bool = True,
     ):
         cache_path = (
-            None if cache_dir is None else Path(
-                cache_dir) / f"{material}_mesh.vtp"
+            None if cache_dir is None else Path(cache_dir) / f"{material}_mesh.vtp"
         )
         if use_cached and cache_path is not None and cache_path.exists():
             logger.info(f"reading cached {material} mesh from {cache_path}")
@@ -672,6 +694,8 @@ class Volume(object):
                 logger.info(f"caching {material} surface to {cache_path}.")
                 surface.save(cache_path)
         return surface
+
+    _mesh_material = "bone"
 
     def get_mesh_in_world(
         self,
@@ -723,7 +747,7 @@ class Volume(object):
         if full:
             logger.debug(f"getting full surface mesh for volume")
             material_mesh = self.get_surface(
-                material="bone", cache_dir=cache_dir, use_cached=use_cached
+                material=self._mesh_material, cache_dir=cache_dir, use_cached=use_cached
             )
             material_mesh.transform(geo.get_data(self.world_from_anatomical))
             mesh += material_mesh
@@ -732,9 +756,7 @@ class Volume(object):
 
 
 class MetalVolume(Volume):
-    """Same as a volume, but with a different segmentation for the materials.
-
-    """
+    """Same as a volume, but with a different segmentation for the materials."""
 
     @staticmethod
     def _convert_hounsfield_to_density(hu_values: np.ndarray):
@@ -749,5 +771,7 @@ class MetalVolume(Volume):
             raise NotImplementedError
 
         return dict(
-            air=(hu_values == 0), bone=(hu_values > 0), titanium=(hu_values > 0),
+            air=(hu_values == 0),
+            bone=(hu_values > 0),
+            titanium=(hu_values > 0),
         )

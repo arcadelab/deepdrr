@@ -14,12 +14,17 @@ Any object with the `get_mesh_in_world()` method can be visualized.
 """
 
 from typing import Any, Union, List
+import matplotlib.pyplot as plt
+
 from . import utils
 
 pv, pv_available = utils.try_import_pyvista()
 
 
-def show(*item: Any, full: Union[bool, List[bool]] = False) -> None:
+def show(
+    *item: Any,
+    full: Union[bool, List[bool]] = False,
+) -> None:
     """Show the given items in a pyvista window.
 
     Args:
@@ -28,12 +33,16 @@ def show(*item: Any, full: Union[bool, List[bool]] = False) -> None:
     renderer = pv.Plotter()
     renderer.show_axes()
     renderer.set_background("#4d94b0")
-    renderer.set_position([500, 1500, 1200])
-    renderer.set_viewup([0, 0, 1])
+    # renderer.set_position([500, 1500, 1200])
+    # renderer.set_viewup([0, 0, 1])
+
+    cmap = plt.get_cmap("rainbow")
 
     items = item
     fulls = utils.listify(full, len(items))
-    for item, full in zip(items, fulls):
-        renderer.add_mesh(item.get_mesh_in_world(full=full))
+    for i, (item, full) in enumerate(zip(items, fulls)):
+        color = cmap(i / (len(items) - 1))
+        renderer.add_mesh(item.get_mesh_in_world(full=full), color=color)
 
+    renderer.reset_camera()
     renderer.show()

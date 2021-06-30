@@ -4,4 +4,4 @@ from .kwire import KWire
 
 AnyVolume = TypeVar("AnyVolume", bound=Volume)
 
-__all__ = ["Volume", "MetalVolume", "KWire"]
+__all__ = ["Volume", "MetalVolume", "KWire", "AnyVolume"]

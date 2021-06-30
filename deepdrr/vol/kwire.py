@@ -14,6 +14,8 @@ class KWire(Volume):
     tip_in_ijk: geo.Point3D
     base_in_ijk: geo.Point3D
 
+    _mesh_material = "iron"
+
     def __init__(
         self,
         *args,
@@ -31,7 +33,9 @@ class KWire(Volume):
         """
 
         super(KWire, self).__init__(*args, **kwargs)
-        assert tip_in_ijk is not None and base_in_ijk is not None, "must provide points for the base and tip of the kwire"
+        assert (
+            tip_in_ijk is not None and base_in_ijk is not None
+        ), "must provide points for the base and tip of the kwire"
         self.tip_in_ijk = geo.point(tip_in_ijk)
         self.base_in_ijk = geo.point(base_in_ijk)
 
@@ -48,45 +52,47 @@ class KWire(Volume):
         path = data_utils.download(url, filename, md5=md5)
         shape = (100, 100, 2000)
         tip_in_ijk = geo.point(shape[0] / 2, shape[1] / 2, 0)
-        base_in_ijk = geo.point(
-            shape[0] / 2, shape[1] / 2, shape[2] - 1)
-        return cls.from_nifti(path, tip_in_ijk=tip_in_ijk, base_in_ijk=base_in_ijk, **kwargs)
+        base_in_ijk = geo.point(shape[0] / 2, shape[1] / 2, shape[2] - 1)
+        tool = cls.from_nifti(
+            path, tip_in_ijk=tip_in_ijk, base_in_ijk=base_in_ijk, **kwargs
+        )
+        return tool
 
-    @ staticmethod
+    @staticmethod
     def _convert_hounsfield_to_density(hu_values: np.ndarray):
-        # TODO: verify coefficient.
-        return 30 * hu_values
+        # TODO: coefficient should be 2?
+        return 2 * hu_values
 
-    @ staticmethod
+    @staticmethod
     def _segment_materials(
         hu_values: np.ndarray, use_thresholding: bool = True
     ) -> Dict[str, np.ndarray]:
         if not use_thresholding:
             raise NotImplementedError
 
-        return dict(iron=(hu_values > 0))
+        return dict(titanium=(hu_values > 0))
 
-    @ property
+    @property
     def tip_in_anatomical(self) -> geo.Point3D:
         """Get the location of the tool tip (the pointy end) in anatomical coordinates."""
         return self.anatomical_from_ijk @ self.tip_in_ijk
 
-    @ property
+    @property
     def base_in_anatomical(self) -> geo.Point3D:
         """Get the location of the tool base in anatomical coordinates."""
         return self.anatomical_from_ijk @ self.base_in_ijk
 
-    @ property
+    @property
     def tip_in_world(self) -> geo.Point3D:
         """Get the location of the tool tip (the pointy end) in world coordinates."""
         return self.world_from_ijk @ self.tip_in_ijk
 
-    @ property
+    @property
     def base_in_world(self) -> geo.Point3D:
         """Get the location of the tool base in world coordinates."""
         return self.world_from_ijk @ self.base_in_ijk
 
-    @ property
+    @property
     def length_in_world(self):
         return (self.tip_in_world - self.base_in_world).norm()
 
@@ -94,9 +100,9 @@ class KWire(Volume):
         self,
         start_point_in_world: geo.Point3D,
         end_point_in_world: geo.Point3D,
-        progress: float = 1.0
+        progress: float = 1.0,
     ) -> None:
-        """Align the tool so that it lies along the line between the two points.
+        """Align the tool so that it lies between the two points, tip pointing toward the endpoint.
 
         Args:
             start_point_in_world (geo.Point3D): The first point, in world space.
@@ -108,10 +114,15 @@ class KWire(Volume):
 
         # interpolate along the direction of the tool to get the desired points in world.
         trajectory_vector = end_point_in_world - start_point_in_world
-        desired_tip_in_world = start_point_in_world + progress * trajectory_vector
-        desired_base_in_world = desired_tip_in_world - \
-            trajectory_vector.hat() * self.length_in_world
+
+        desired_tip_in_world = end_point_in_world - (1 - progress) * trajectory_vector
+        desired_base_in_world = (
+            desired_tip_in_world - trajectory_vector.hat() * self.length_in_world
+        )
 
         self.world_from_anatomical = geo.FrameTransform.from_line_segments(
-            desired_base_in_world, desired_tip_in_world,
-            self.base_in_anatomical, self.tip_in_anatomical)
+            desired_tip_in_world,
+            desired_base_in_world,
+            self.tip_in_anatomical,
+            self.base_in_anatomical,
+        )

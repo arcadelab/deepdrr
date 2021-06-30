@@ -11,6 +11,6 @@ logger = logging.getLogger("deepdrr")
 ch = logging.StreamHandler()
 ch.setLevel(os.environ.get("DEEPDRR_LOG_LEVEL", logging.INFO))
 cf = ColoredFormatter(
-    "%(asctime)s %(log_color)s%(name)-20s %(levelname)-8s%(reset)s | %(log_color)s%(message)s%(reset)s")
+    "%(asctime)s %(cyan)s%(name)-30s%(reset)s %(log_color)s%(levelname)-8s%(reset)s | %(log_color)s%(message)s%(reset)s")
 ch.setFormatter(cf)
 logger.addHandler(ch)
