@@ -6,7 +6,6 @@ from torchvision.datasets.utils import download_url
 import urllib
 import subprocess
 
-
 logger = logging.getLogger(__name__)
 
 

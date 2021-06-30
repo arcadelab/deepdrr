@@ -38,7 +38,6 @@ class Volume(object):
         anatomical_from_ijk: geo.FrameTransform,
         world_from_anatomical: Optional[geo.FrameTransform] = None,
         anatomical_coordinate_system: Optional[str] = None,
-
     ) -> None:
         """A deepdrr Volume object with materials segmentation and orientation in world-space.
 
@@ -46,7 +45,7 @@ class Volume(object):
         `from_nifti()` or `from_nrrd()`.
 
         Args:
-            data (np.ndarray): the density data (a 3D array)
+            data (np.ndarray): The density data (a 3D array).
             materials (Dict[str, np.ndarray]): material segmentation of the volume, mapping material name to binary segmentation.
             anatomical_from_ijk (geo.FrameTransform): transformation from IJK space to anatomical (RAS or LPS).
             world_from_anatomical (Optional[geo.FrameTransform], optional): transformation from the anatomical space to world coordinates. If None, assumes identity. Defaults to None.
@@ -73,6 +72,7 @@ class Volume(object):
         spacing: Optional[geo.Vector3D] = [1, 1, 1],
         anatomical_coordinate_system: Optional[str] = None,
         world_from_anatomical: Optional[geo.FrameTransform] = None,
+        **kwargs,
     ):
         """Create a volume object with a segmentation of the materials, from parameters.
 
@@ -83,7 +83,7 @@ class Volume(object):
 
         Args:
             volume (np.ndarray): the volume density data.
-            materials (dict[str, np.ndarray]): mapping from material names to binary segmentation of that material.
+            materials (Dict[str, np.ndarray]): mapping from material names to binary segmentation of that material.
             origin (Point3D): Location of the volume's origin in the anatomical coordinate system.
             spacing (Tuple[float, float, float], optional): Spacing of the volume in the anatomical coordinate system. Defaults to (1, 1, 1).
             anatomical_coordinate_system (Optional[str]): anatomical coordinate system convention, either "RAS" or "LPS". Defaults to None.
@@ -126,6 +126,7 @@ class Volume(object):
             anatomical_from_ijk=anatomical_from_ijk,
             world_from_anatomical=world_from_anatomical,
             anatomical_coordinate_system=anatomical_coordinate_system,
+            **kwargs,
         )
 
     @classmethod
@@ -137,6 +138,7 @@ class Volume(object):
         spacing: Optional[geo.Vector3D] = (1, 1, 1),
         anatomical_coordinate_system: Optional[str] = None,
         world_from_anatomical: Optional[geo.FrameTransform] = None,
+        **kwargs,
     ) -> None:
         data = cls._convert_hounsfield_to_density(hu_values)
         materials = cls._segment_materials(
@@ -149,6 +151,7 @@ class Volume(object):
             spacing=spacing,
             anatomical_coordinate_system=anatomical_coordinate_system,
             world_from_anatomical=world_from_anatomical,
+            **kwargs,
         )
 
     @staticmethod
@@ -241,6 +244,7 @@ class Volume(object):
         use_thresholding: bool = True,
         use_cached: bool = True,
         cache_dir: Optional[Path] = None,
+        **kwargs,
     ):
         """Load a volume from NiFti file.
 
@@ -275,7 +279,7 @@ class Volume(object):
             cache_dir=cache_dir,
         )
 
-        return cls(data, materials, anatomical_from_ijk, world_from_anatomical, anatomical_coordinate_system="RAS")
+        return cls(data, materials, anatomical_from_ijk, world_from_anatomical, anatomical_coordinate_system="RAS", **kwargs)
 
     @classmethod
     def from_dicom(
@@ -285,6 +289,7 @@ class Volume(object):
         world_from_anatomical: Optional[geo.FrameTransform] = None,
         use_cached: bool = True,
         cache_dir: Optional[Path] = None,
+        **kwargs,
     ):
         """
         load a volume from a dicom file and compute the anatomical_from_ijk transform from metadata
@@ -428,17 +433,7 @@ class Volume(object):
         lps_from_ijk = geo.FrameTransform(affine)
 
         # constructing the volume
-        return cls(data, materials, lps_from_ijk, world_from_anatomical,)
-
-    def to_dicom(self, path: str):
-        """Write the volume to a DICOM file.
-
-        Args:
-            path (str): the path to the file.
-        """
-        path = Path(path)
-
-        raise NotImplementedError("save volume to dicom file")
+        return cls(data, materials, lps_from_ijk, world_from_anatomical, **kwargs)
 
     @classmethod
     def from_nrrd(
@@ -448,6 +443,7 @@ class Volume(object):
         use_thresholding: bool = True,
         use_cached: bool = True,
         cache_dir: Optional[Path] = None,
+        **kwargs,
     ):
         """Load a volume from a nrrd file.
 
@@ -482,7 +478,7 @@ class Volume(object):
             "right-anterior-superior": "RAS", "left-posterior-superior": "LPS"
         }.get(header.get("space"))
 
-        return cls(data, materials, anatomical_from_ijk, world_from_anatomical, anatomical_coordinate_system=anatomical_coordinate_system)
+        return cls(data, materials, anatomical_from_ijk, world_from_anatomical, anatomical_coordinate_system=anatomical_coordinate_system, **kwargs)
 
     @property
     def world_from_ijk(self) -> geo.FrameTransform:

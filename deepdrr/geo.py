@@ -156,6 +156,7 @@ class HomogeneousPointOrVector(HomogeneousObject):
         return _from_homogeneous(self.data, is_point=bool(self.data[-1]))
 
     def norm(self, *args, **kwargs):
+        """Get the norm of the vector. Pass any arguments to `np.linalg.norm`."""
         return np.linalg.norm(self, *args, **kwargs)
 
     def __len__(self) -> float:
@@ -237,6 +238,10 @@ class Point(HomogeneousPointOrVector):
             Point: the point that is `alpha` of the way between self and other.
         """
         return (1 - alpha) * self + alpha * other
+
+    def as_vector(self) -> Vector:
+        """Get the vector with the same numerical representation as this point."""
+        return vector(np.array(self))
 
 
 class Vector(HomogeneousPointOrVector):
@@ -325,6 +330,10 @@ class Vector(HomogeneousPointOrVector):
         #     c = -(x + y)/z
         return vector(1, 1, -1.0 * (self.x + self.y) / self.z).hat()
 
+    def angle(self, other: Vector) -> float:
+        """Get the angle between self and other in radians."""
+        return np.arccos(self.cross(other) / (self.norm() * other.norm()))
+
     def cosine_distance(self, other: Vector) -> float:
         """Get the cosine distance between the angles.
 
@@ -335,6 +344,11 @@ class Vector(HomogeneousPointOrVector):
             float: `1 - cos(angle)`, where `angle` is between self and other.
         """
         return scipy.spatial.distance.cosine(np.array(self), np.array(other))
+
+    def as_point(self) -> Point:
+        """Gets the point with the same numerical representation as this vector.
+        """
+        return point(np.array(self))
 
 
 class Point2D(Point):
@@ -590,7 +604,7 @@ class FrameTransform(Transform):
     @classmethod
     def from_rt(
         cls,
-        rotation: Optional[np.ndarray] = None,
+        rotation: Optional[Union[Rotation, np.ndarray]] = None,
         translation: Optional[Union[Point3D, np.ndarray]] = None,
         dim: Optional[int] = None,
     ) -> FrameTransform:
@@ -604,8 +618,10 @@ class FrameTransform(Transform):
         If both args are None,
 
         Returns:
-            FrameTransform: [description]
+            FrameTransform: The transformation `F` such that `F(x) = rotation @ x + translation`
         """
+        if isinstance(rotation, Rotation):
+            rotation = rotation.as_matrix()
 
         if rotation is not None:
             dim = np.array(rotation).shape[0]
@@ -655,7 +671,7 @@ class FrameTransform(Transform):
         return cls.from_rt(translation=translation)
 
     @classmethod
-    def from_rotation(cls, rotation: np.ndarray,) -> FrameTransform:
+    def from_rotation(cls, rotation: Union[Rotation, np.ndarray],) -> FrameTransform:
         """Wrapper around from_rt."""
         return cls.from_rt(rotation=rotation)
 
@@ -684,22 +700,22 @@ class FrameTransform(Transform):
     @classmethod
     def from_point_correspondence(
         cls,
-        points_A: Union[List[Point3D], np.ndarray],
         points_B: Union[List[Point3D], np.ndarray],
+        points_A: Union[List[Point3D], np.ndarray],
     ):
         """Create a frame transform from a known point correspondence.
 
         Args:
-            points_A: a list of N points in the A frame (or an array with shape [N, 3]).
             points_B: a list of N corresponding points in the B frame.
+            points_A: a list of N points in the A frame (or an array with shape [N, 3]).
 
         Returns:
             FrameTransform: the `B_from_A` transform that minimizes the mean squared distance
                 between matching points.
 
         """
-        a = np.ndarray(points_A)
-        b = np.ndarray(points_B)
+        a = np.array(points_A)
+        b = np.array(points_B)
 
         if a.shape != b.shape:
             raise ValueError(
@@ -734,6 +750,40 @@ class FrameTransform(Transform):
                 f"det(R) = {d}, should be +1 for rotation matrices.")
 
         return cls.from_rt(rotation=R, translation=t)
+
+    @classmethod
+    def from_line_segments(
+        cls,
+        x_B: Point3D,
+        y_B: Point3D,
+        x_A: Point3D,
+        y_A: Point3D,
+    ) -> FrameTransform:
+        """Get the `B_from_A` frame transform that aligns the line segments, given by endpoints.
+
+        Args:
+            x_B (Point3D): The first endpoint, in frame B.
+            y_B (Point3D): The second endpoint, in frame B.
+            x_A (Point3D): The first endpoint, in frame A.
+            y_A (Point3D): The second endpoint, in frame A.
+
+        Returns:
+            FrameTransform: A `B_from_A` transform that aligns the points. 
+                Note that this is not unique, due to rotation about the axis between the points.
+        """
+        # First, get the vectors pointing from x to y in each frame.
+        x2y_A = y_A - x_A
+        x2y_B = y_B - x_B
+
+        # Second, get the rotation between the vectors.
+        rotvec = x2y_A.cross(x2y_B).hat()
+        rotvec *= x2y_A.angle(x2y_B)
+        rot = Rotation.from_rotvec(rotvec)
+
+        return (cls.from_translation(-x_B)
+                @ cls.from_scaling(x2y_B.norm() / x2y_A.norm())
+                @ cls.from_rotation(rot).inv
+                @ cls.from_translation(x_A))
 
     @property
     def R(self):
