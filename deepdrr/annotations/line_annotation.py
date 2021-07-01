@@ -17,6 +17,7 @@ class LineAnnotation(object):
     def __init__(
         self, startpoint: geo.Point, endpoint: geo.Point, volume: AnyVolume
     ) -> None:
+        # all points in anatomical coordinates, matching the provided volume.
         self.startpoint = geo.point(startpoint)
         self.endpoint = geo.point(endpoint)
         self.volume = volume

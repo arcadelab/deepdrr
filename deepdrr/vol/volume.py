@@ -163,8 +163,10 @@ class Volume(object):
             None
             if cache_dir is None
             else Path(cache_dir)
-            / "{}materials{}.npz".format(
-                prefix, "_with_thresholding" if use_thresholding else ""
+            / "{}{}materials{}.npz".format(
+                prefix,
+                "_" if prefix else "",
+                "_with_thresholding" if use_thresholding else "",
             )
         )
 
@@ -203,8 +205,6 @@ class Volume(object):
         prefix: str = "",
     ) -> Dict[str, np.ndarray]:
         """Segment the materials in a volume, potentially caching.
-
-
 
         Args:
             hu_values (np.ndarray): volume data in Hounsfield Units.
@@ -278,6 +278,7 @@ class Volume(object):
             use_thresholding=use_thresholding,
             use_cached=use_cached,
             cache_dir=cache_dir,
+            prefix=path.stem,
         )
 
         return cls(
@@ -460,6 +461,7 @@ class Volume(object):
         Returns:
             Volume: A volume formed from the NRRD.
         """
+        path = Path(path)
         hu_values, header = nrrd.read(path)
         ijk_from_anatomical = np.concatenate(
             [
@@ -477,6 +479,7 @@ class Volume(object):
             use_thresholding=use_thresholding,
             use_cached=use_cached,
             cache_dir=cache_dir,
+            prefix=path.stem,
         )
 
         anatomical_coordinate_system = {
@@ -630,12 +633,12 @@ class Volume(object):
         )
         vol.SetOrigin(
             -np.sign(R[0, 0]) * t[0],
-            np.sign(R[1, 1]) * t[1],
+            -np.sign(R[1, 1]) * t[1],
             np.sign(R[2, 2]) * t[2],
         )
         vol.SetSpacing(
             -abs(R[0, 0]),
-            abs(R[1, 1]),
+            -abs(R[1, 1]),
             abs(R[2, 2]),
         )
 
