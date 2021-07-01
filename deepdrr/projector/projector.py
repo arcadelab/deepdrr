@@ -60,7 +60,7 @@ def _get_spectrum(spectrum: Union[np.ndarray, str]):
 def _get_kernel_projector_module(num_volumes: int, num_materials: int) -> SourceModule:
     """Compile the cuda code for the kernel projector.
 
-    Assumes `project_kernel.cu` and `cubic` interpolation library is in the same directory as THIS
+    Assumes `project_kernel.cu`, `kernel_vol_seg_data.cu`, and `cubic` interpolation library is in the same directory as THIS
     file.
 
     Args:
@@ -74,27 +74,19 @@ def _get_kernel_projector_module(num_volumes: int, num_materials: int) -> Source
     #path to files for cubic interpolation (folder cubic in DeepDRR)
     d = Path(__file__).resolve().parent
     bicubic_path = str(d / 'cubic')
-    source_path = None
-    if 1 == num_volumes:
-        source_path = str(d / 'project_kernel_single.cu')
-    else:
-        source_path = str(d / 'project_kernel_multi.cu')
+    source_path = str(d / 'project_kernel.cu')
 
     with open(source_path, "r") as file:
         source = file.read()
 
-    if 1 == num_volumes:
-        logger.debug(f'compiling {source_path} with NUM_MATERIALS={num_materials}')
-        return SourceModule(source, include_dirs=[bicubic_path], no_extern_c=True, options=['-D', f'NUM_MATERIALS={num_materials}'])
-    else:
-        logger.debug(f'compiling {source_path} with NUM_VOLUMES={num_volumes}, NUM_MATERIALS={num_materials}')
-        return SourceModule(source, include_dirs=[bicubic_path, str(d)], no_extern_c=True, options=['-D', f'NUM_VOLUMES={num_volumes}', '-D', f'NUM_MATERIALS={num_materials}'])
+    logger.debug(f'compiling {source_path} with NUM_VOLUMES={num_volumes}, NUM_MATERIALS={num_materials}')
+    return SourceModule(source, include_dirs=[bicubic_path, str(d)], no_extern_c=True, options=['-D', f'NUM_VOLUMES={num_volumes}', '-D', f'NUM_MATERIALS={num_materials}'])
 
 
 def _get_kernel_scatter_module(num_materials) -> SourceModule:
     """Compile the cuda code for the scatter simulation.
 
-    Assumes 'scatter_kernel.cu' and 'scatter_header.cu' are in the same directory as THIS file.
+    Assumes `scatter_kernel.cu` and `scatter_header.cu` are in the same directory as THIS file.
 
     Returns:
         SourceModule: pycuda SourceModule object.
@@ -111,7 +103,7 @@ def _get_kernel_scatter_module(num_materials) -> SourceModule:
 def _get_megavolume_resampling_module(num_volumes: int, num_materials: int) -> SourceModule:
     """Compile the cuda code for the megavolume resampling.
 
-    Assumes 'scatter_resampling_kernel.cu' is in the same directory as THIS file.
+    Assumes `scatter_resampling_kernel.cu` , `kernel_vol_seg_data.cu`, and `cubic` interpolation library is in the same directory as THIS file.
 
     Args:
         num_volumes (int): The number of volumes to assume
@@ -197,7 +189,7 @@ class Projector(object):
         assert len(self.volumes) == len(self.priorities)
 
         self.camera_intrinsics = camera_intrinsics
-        # TODO: fix the source_to_detector_distance
+        # TODO (mjudish): fix the source_to_detector_distance
         # self.source_to_detector_distance = source_to_detector_distance
         self.carm = carm
         self.step = step
@@ -214,8 +206,6 @@ class Projector(object):
         else:
             self.scatter_num = scatter_num
 
-        # TODO (mjudish): Initialize the single scatter volume here or in initialize function. ANSWER: do this in the initialize() function
-
         self.add_noise = add_noise
         self.photon_count = photon_count
         self.threads = threads
@@ -223,7 +213,7 @@ class Projector(object):
         self.collected_energy = collected_energy
         self.neglog = neglog
         self.intensity_upper_bound = intensity_upper_bound
-        # TODO: handle intensity_upper_bound when [collected_energy is True] -- I think this should be handled in the SingleProjector.project(...) method right after the solid-angle calculation?
+        # TODO (mjudish): handle intensity_upper_bound when [collected_energy is True] -- I think this should be handled in the SingleProjector.project(...) method right after the solid-angle calculation?
 
         assert len(self.volumes) > 0
 
@@ -303,35 +293,30 @@ class Projector(object):
         photon_probs = []
         for i, proj in enumerate(camera_projections):
             logger.info(f"Projecting and attenuating camera position {i+1} / {len(camera_projections)}")
-            # initialize projection-specific arguments
-            if 1 == len(self.volumes):
-                _vol = self.volumes[0]
-                source_ijk = np.array(proj.get_center_in_volume(_vol)).astype(np.float32)
-                logger.debug(f'source point for volume: {source_ijk}')
+                           
+            # for ease of creating the argument array, we do this calculations now
+            source_ijk_arr = [np.array(proj.get_center_in_volume(_vol)).astype(np.float32) for _vol in self.volumes]
+            ijk_from_index_arr = [np.array(proj.get_ray_transform(_vol)).astype(np.float32) for _vol in self.volumes]
 
-                ijk_from_index = proj.get_ray_transform(_vol)
-                logger.debug(f'center ray: {ijk_from_index @ geo.point(self.output_shape[0] / 2, self.output_shape[1] / 2)}')
-                ijk_from_index = np.array(ijk_from_index).astype(np.float32)
-                logger.debug(f'ijk_from_index (rt_kinv in kernel):\n{ijk_from_index}')
-                cuda.memcpy_htod(int(self.rt_kinv_gpu), ijk_from_index)
-
-                args = [
-                    np.int32(proj.sensor_width),        # out_width
-                    np.int32(proj.sensor_height),       # out_height
-                    np.float32(self.step),              # step
-                    np.float32(-0.5),                   # gVolumeEdgeMinPointX
-                    np.float32(-0.5),                   # gVolumeEdgeMinPointY
-                    np.float32(-0.5),                   # gVolumeEdgeMinPointZ
-                    np.float32(_vol.shape[0] - 0.5),    # gVolumeEdgeMaxPointX
-                    np.float32(_vol.shape[1] - 0.5),    # gVolumeEdgeMaxPointY
-                    np.float32(_vol.shape[2] - 0.5),    # gVolumeEdgeMaxPointZ
-                    np.float32(_vol.spacing[0]),        # gVoxelElementSizeX
-                    np.float32(_vol.spacing[1]),        # gVoxelElementSizeY
-                    np.float32(_vol.spacing[2]),        # gVoxelElementSizeZ
-                    np.float32(source_ijk[0]),       # sx
-                    np.float32(source_ijk[1]),       # sy
-                    np.float32(source_ijk[2]),       # sz
-                ]
+            args = [
+                np.int32(proj.sensor_width),        # out_width
+                np.int32(proj.sensor_height),       # out_height
+                np.float32(self.step),              # step
+            ]
+            args.extend([np.int32(prio) for prio in self.priorities]) # priority
+            args.extend([np.float32(-0.5) for i in range(len(self.volumes))]) # gVolumeEdgeMinPointX
+            args.extend([np.float32(-0.5) for i in range(len(self.volumes))]) # gVolumeEdgeMinPointY
+            args.extend([np.float32(-0.5) for i in range(len(self.volumes))]) # gVolumeEdgeMinPointZ
+            args.extend([np.float32(_vol.shape[0] - 0.5) for _vol in self.volumes]) # gVolumeEdgeMaxPointX
+            args.extend([np.float32(_vol.shape[1] - 0.5) for _vol in self.volumes]) # gVolumeEdgeMaxPointY
+            args.extend([np.float32(_vol.shape[2] - 0.5) for _vol in self.volumes]) # gVolumeEdgeMaxPointZ
+            args.extend([np.float32(_vol.spacing[0]) for _vol in self.volumes]) # gVoxelElementSizeX
+            args.extend([np.float32(_vol.spacing[1]) for _vol in self.volumes]) # gVoxelElementSizeY
+            args.extend([np.float32(_vol.spacing[2]) for _vol in self.volumes]) # gVoxelElementSizeZ
+            args.extend([np.float32(source_ijk[0]) for source_ijk in source_ijk_arr]) # sx
+            args.extend([np.float32(source_ijk[1]) for source_ijk in source_ijk_arr]) # sy
+            args.extend([np.float32(source_ijk[2]) for source_ijk in source_ijk_arr]) # sz
+            for ijk_from_index in ijk_from_index_arr: # rt_kinv
                 args.extend([
                     np.float32(ijk_from_index[0][0]),
                     np.float32(ijk_from_index[0][1]),
@@ -343,58 +328,15 @@ class Projector(object):
                     np.float32(ijk_from_index[2][1]),
                     np.float32(ijk_from_index[2][2])
                 ])
-                args.extend([
-                    np.int32(self.spectrum.shape[0]),   # n_bins
-                    self.energies_gpu,                  # energies
-                    self.pdf_gpu,                       # pdf
-                    self.absorption_coef_table_gpu,     # absorb_coef_table
-                    self.intensity_gpu,         # intensity
-                    self.photon_prob_gpu,       # photon_prob
-                ])
-            else:                
-                # for ease of creating the argument array, we do this calculations now
-                source_ijk_arr = [np.array(proj.get_center_in_volume(_vol)).astype(np.float32) for _vol in self.volumes]
-                ijk_from_index_arr = [np.array(proj.get_ray_transform(_vol)).astype(np.float32) for _vol in self.volumes]
-
-                args = [
-                    np.int32(proj.sensor_width),        # out_width
-                    np.int32(proj.sensor_height),       # out_height
-                    np.float32(self.step),              # step
-                ]
-                args.extend([np.int32(prio) for prio in self.priorities]) # priority
-                args.extend([np.float32(-0.5) for i in range(len(self.volumes))]) # gVolumeEdgeMinPointX
-                args.extend([np.float32(-0.5) for i in range(len(self.volumes))]) # gVolumeEdgeMinPointY
-                args.extend([np.float32(-0.5) for i in range(len(self.volumes))]) # gVolumeEdgeMinPointZ
-                args.extend([np.float32(_vol.shape[0] - 0.5) for _vol in self.volumes]) # gVolumeEdgeMaxPointX
-                args.extend([np.float32(_vol.shape[1] - 0.5) for _vol in self.volumes]) # gVolumeEdgeMaxPointY
-                args.extend([np.float32(_vol.shape[2] - 0.5) for _vol in self.volumes]) # gVolumeEdgeMaxPointZ
-                args.extend([np.float32(_vol.spacing[0]) for _vol in self.volumes]) # gVoxelElementSizeX
-                args.extend([np.float32(_vol.spacing[1]) for _vol in self.volumes]) # gVoxelElementSizeY
-                args.extend([np.float32(_vol.spacing[2]) for _vol in self.volumes]) # gVoxelElementSizeZ
-                args.extend([np.float32(source_ijk[0]) for source_ijk in source_ijk_arr]) # sx
-                args.extend([np.float32(source_ijk[1]) for source_ijk in source_ijk_arr]) # sy
-                args.extend([np.float32(source_ijk[2]) for source_ijk in source_ijk_arr]) # sz
-                for ijk_from_index in ijk_from_index_arr: # rt_kinv
-                    args.extend([
-                        np.float32(ijk_from_index[0][0]),
-                        np.float32(ijk_from_index[0][1]),
-                        np.float32(ijk_from_index[0][2]),
-                        np.float32(ijk_from_index[1][0]),
-                        np.float32(ijk_from_index[1][1]),
-                        np.float32(ijk_from_index[1][2]),
-                        np.float32(ijk_from_index[2][0]),
-                        np.float32(ijk_from_index[2][1]),
-                        np.float32(ijk_from_index[2][2])
-                    ])
-                args.extend([
-                    np.int32(self.spectrum.shape[0]),   # n_bins
-                    self.energies_gpu,                  # energies
-                    self.pdf_gpu,                       # pdf
-                    self.absorption_coef_table_gpu,     # absorb_coef_table
-                    self.intensity_gpu,         # intensity
-                    self.photon_prob_gpu,       # photon_prob
-                ])
-            # 'endif' for num_volumes > 1 
+            args.extend([
+                np.int32(self.spectrum.shape[0]),   # n_bins
+                self.energies_gpu,                  # energies
+                self.pdf_gpu,                       # pdf
+                self.absorption_coef_table_gpu,     # absorb_coef_table
+                self.intensity_gpu,         # intensity
+                self.photon_prob_gpu,       # photon_prob
+                self.solid_angle_gpu,       # solid_angle
+            ])
 
             # Calculate required blocks
             blocks_w = np.int(np.ceil(self.output_shape[0] / self.threads))
@@ -431,7 +373,7 @@ class Projector(object):
                 # BIG TODO (mjudish): make sure that all variables referenced get properly initialized, 
                 # and that all initialized variables in the class get properly referenced
                 logger.info(f"Starting scatter simulation, scatter_num={self.scatter_num}. Time: {time.asctime()}")
-                index_from_ijk = camera_projection.get_ray_transform(self.volume).inv
+                index_from_ijk = camera_projection.get_ray_transform(self.volume).inv # Urgent TODO: "self.volume" is incompatible with this version of the code 
                 index_from_ijk = np.ascontiguousarray(np.array(index_from_ijk)[0:2, 0:3]).astype(np.float32)
                 cuda.memcpy_htod(self.index_from_ijk_gpu, index_from_ijk)
 

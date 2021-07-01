@@ -1,7 +1,7 @@
 #include <stdio.h>
 #include <cubicTex3D.cu>
 
-#include "project_kernel_multi_data.cu"
+#include "kernel_vol_seg_data.cu"
 
 extern "C" {
     // TODO: refactor to take advantage of parallelization
