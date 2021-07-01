@@ -100,27 +100,6 @@ def _get_kernel_scatter_module(num_materials) -> SourceModule:
     logger.debug(f"compiling {source_path} with NUM_MATERIALS={num_materials}")
     return SourceModule(source, include_dirs=[str(d)], no_extern_c=True, options=['-D', f'NUM_MATERIALS={num_materials}'])
 
-def _get_megavolume_resampling_module(num_volumes: int, num_materials: int) -> SourceModule:
-    """Compile the cuda code for the megavolume resampling.
-
-    Assumes `scatter_resampling_kernel.cu` , `kernel_vol_seg_data.cu`, and `cubic` interpolation library is in the same directory as THIS file.
-
-    Args:
-        num_volumes (int): The number of volumes to assume
-        num_materials (int): The number of materials to assume
-
-    Returns:
-        SourceModule: pycuda SourceModule object.
-    """
-    d = Path(__file__).resolve().parent
-    source_path = str(d / 'scatter_resampling_kernel.cu')
-
-    with open(source_path, 'r') as file:
-        source = file.read()
-
-    logger.debug(f"compiling {source_path} with NUM_VOLUMES={num_volumes}, NUM_MATERIALS={num_materials}")
-    return SourceModule(source, include_dirs=[bicubic_path, str(d)], no_extern_c=True, options=['-D', f'NUM_VOLUMES={num_volumes}', '-D', f'NUM_MATERIALS={num_materials}'])
-
 class Projector(object):
     def __init__(
         self,
@@ -234,8 +213,7 @@ class Projector(object):
             self.simulate_scatter = self.scatter_mod.get_function("simulate_scatter")
 
             if len(self.volumes) > 1:
-                self.megavol_mod = _get_megavolume_resampling_module(len(self.volumes), len(self.all_materials))
-                self.resample_megavolume = self.megavol_mod.get_function("resample_megavolume")
+                self.resample_megavolume = self.mod.get_function("resample_megavolume")
 
         # assertions
         for mat in self.all_materials:
@@ -742,7 +720,30 @@ class Projector(object):
                     self.megavol_density_gpu,
                     self.megavol_labeled_seg_gpu
                 ])
-                self.resample_megavolume(*resampling_args, block=(1, 1, 1), grid=(1,1)) # TODO (mjudish): refactor to actually parallelize
+
+                # Calculate block and grid sizes: each block is a 4x4x4 cube of voxels
+                blocks_x = np.int(np.ceil(mega_x_len / 4))
+                blocks_y = np.int(np.ceil(mega_y_len / 4))
+                blocks_z = np.int(np.ceil(mega_z_len / 4))
+                logger.debug(f"Resampling: {blocks_x}x{blocks_y}x{blocks_z} blocks with 4x4x4 threads each")
+
+                if blocks_x <= self.max_block_index and blocks_y <= self.max_block_index and blocks_z <= self.max_block_index:
+                    offset_x = np.int32(0)
+                    offset_y = np.int32(0)
+                    offset_z = np.int32(0)
+                    self.resample_megavolume(*resampling_args, offset_x, offset_y, offset_z, block=(4,4,4), grid=(blocks_x, blocks_y, blocks_z))
+                else:
+                    logger.debug("Running kernel patchwise") # TODO: rewrite this
+                    for x in range((blocks_x - 1) // (self.max_block_index + 1)):
+                        for y in range((blocks_y - 1) // (self.max_block_index + 1)):
+                            for z in range((blocks_z - 1) // (self.max_block_index + 1)):
+                                offset_x = np.int32(x * self.max_block_index)
+                                offset_y = np.int32(y * self.max_block_index)
+                                offset_z = np.int32(z * self.max_block_index)
+                                self.resample_megavolume(*resampling_args, offset_x, offset_y, offset_z, block=(4,4,4), grid=(self.max_block_index, self.max_block_index, self.max_block_index))
+                                context.synchronize() 
+
+                self.resample_megavolume(*resampling_args, block=(4, 4, 4), grid=(1,1)) # TODO (mjudish): refactor to actually parallelize
             else:
                 self.megavol_spacing = self.volumes[0].spacing
 
