@@ -14,7 +14,7 @@ class KWire(Volume):
     tip_in_ijk: geo.Point3D
     base_in_ijk: geo.Point3D
 
-    _mesh_material = "iron"
+    _mesh_material = "titanium"
 
     def __init__(
         self,

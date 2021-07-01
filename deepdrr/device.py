@@ -58,8 +58,7 @@ def make_detector_rotation(phi: float, theta: float, rho: float):
 
     rho = -phi + np.pi * 0.5 + rho
     R_principle = np.array(
-        [[np.cos(rho), -np.sin(rho), 0],
-         [np.sin(rho), np.cos(rho), 0], [0, 0, 1]]
+        [[np.cos(rho), -np.sin(rho), 0], [np.sin(rho), np.cos(rho), 0], [0, 0, 1]]
     )
     R = np.matmul(R_principle, R)
 
@@ -93,10 +92,10 @@ class MobileCArm(object):
 
     def __init__(
         self,
+        world_from_device: Optional[geo.FrameTransform] = None,
         isocenter: geo.Point3D = [0, 0, 0],
         alpha: float = 0,
         beta: float = 0,
-        world_from_device: Optional[geo.FrameTransform] = None,
         horizontal_movement: float = 200,  # width of window in X and Y planes.
         vertical_travel: float = 430,  # width of window in Z plane.
         min_alpha: float = -40,
@@ -117,6 +116,7 @@ class MobileCArm(object):
         sensor_height: int = 1536,
         sensor_width: int = 1536,
         pixel_size: float = 0.194,
+        rotate_camera_left: bool = True,  # make it so that down in the image corresponds to -x, so that patient images appear as expected.
     ) -> None:
         """A simulated C-arm imaging device with orbital movement (alpha), angulation (beta) and 3D translation.
 
@@ -138,20 +138,20 @@ class MobileCArm(object):
         All length units are in millimeters.
 
         Args:
+            world_from_device: (Optional[geo.FrameTransform], optional): Transform that defines the device coordinate space in world coordinates. None is the identity transform. Defaults to None.
             isocenter (geo.Point3D): the initial isocenter of in the device frame. This is the point
                 about which rotations are performed.
             isocenter_distance (float): the distance from the X-ray source to the isocenter of the CAarm. (The center of rotation).
             alpha (float): initial LAO/RAO angle of the C-Arm. alpha > 0 is in the RAO direction. This is the angle along arm of the C-arm.
             beta (float): initial CRA/CAU angulation of the C-arm. beta > 0 is in the CAU direction.
             degrees (bool, optional): Whether given angles are in degrees. Defaults to False.
-            world_from_device: (Optional[geo.FrameTransform], optional): Transform that defines the device coordinate space in world coordinates. None is the identity transform. Defaults to None.
             camera_intrinsics: (Optional[Union[geo.CameraIntrinsicTransform, dict]], optional): either a CameraIntrinsicTransform instance or kwargs for CameraIntrinsicTransform.from_sizes
 
         """
+        self.world_from_device = geo.frame_transform(world_from_device)
         self.isocenter = geo.point(isocenter)
         self.alpha = utils.radians(alpha, degrees=degrees)
         self.beta = utils.radians(beta, degrees=degrees)
-        self.world_from_device = geo.frame_transform(world_from_device)
         self.horizontal_movement = horizontal_movement
         self.vertical_travel = vertical_travel
         self.min_alpha = utils.radians(min_alpha, degrees=degrees)
@@ -175,6 +175,15 @@ class MobileCArm(object):
             pixel_size=pixel_size,
             source_to_detector_distance=self.source_to_detector_distance,
         )
+        self.rotate_camera_left = rotate_camera_left
+
+        # May upset some code that was erroneously using isocenter to position the Carm.
+        if np.any(np.array(isocenter) < self.min_isocenter) or np.any(
+            np.array(isocenter) > self.max_isocenter
+        ):
+            raise ValueError(
+                f"isocenter {self.isocenter} is out of bounds. Use world_from_device transform to position the carm in the world."
+            )
 
         # points in the arm frame don't change.
         self.viewpoint_in_arm = geo.point(
@@ -222,8 +231,7 @@ class MobileCArm(object):
 
     @property
     def arm_from_device(self) -> geo.FrameTransform:
-        """Transformation from the device frame (which doesn't move) to the arm frame (which rotates and translates with the arm, origin at the isocenter).
-        """
+        """Transformation from the device frame (which doesn't move) to the arm frame (which rotates and translates with the arm, origin at the isocenter)."""
         return self.device_from_arm.inv
 
     @property
@@ -235,6 +243,12 @@ class MobileCArm(object):
                 self.source_to_isocenter_vertical_distance,
             )
         )
+        if self.rotate_camera_left:
+            camera3d_from_arm = (
+                geo.frame_transform(Rotation.from_euler("z", 90, degrees=True))
+                @ camera3d_from_arm
+            )
+
         return camera3d_from_arm @ self.arm_from_device
 
     @property
@@ -358,10 +372,8 @@ class MobileCArm(object):
         self.move_to(isocenter=[0, 0, 0], alpha=0, beta=0, degrees=False)
         if device_in_world is None:
             assert viewpoint_in_world is not None
-            device_in_world = viewpoint_in_world - \
-                geo.vector(*self.viewpoint_in_arm)
-        self.world_from_device = geo.FrameTransform.from_translation(
-            device_in_world)
+            device_in_world = viewpoint_in_world - geo.vector(*self.viewpoint_in_arm)
+        self.world_from_device = geo.FrameTransform.from_translation(device_in_world)
 
     # shape parameters
     source_height = 200
@@ -387,14 +399,12 @@ class MobileCArm(object):
             self.source_to_isocenter_horizontal_offset,
             -self.source_to_isocenter_vertical_distance,
         )
-        center_point = geo.point(
-            0, self.source_to_isocenter_horizontal_offset, 0)
+        center_point = geo.point(0, self.source_to_isocenter_horizontal_offset, 0)
 
         mesh = (
             pv.Line(
                 list(source_point),
-                list(source_point + geo.vector(0, 0,
-                     self.source_to_detector_distance)),
+                list(source_point + geo.vector(0, 0, self.source_to_detector_distance)),
             )
             + pv.Line(
                 list(center_point + geo.vector(-100, 0, 0)),
@@ -495,8 +505,7 @@ class CArm(object):
 
         self.isocenter_distance = isocenter_distance
         self.isocenter = geo.point(0, 0, 0) if isocenter is None else isocenter
-        self.phi, self.theta, self.rho = utils.radians(
-            phi, theta, rho, degrees=degrees)
+        self.phi, self.theta, self.rho = utils.radians(phi, theta, rho, degrees=degrees)
 
     def move_to(
         self,

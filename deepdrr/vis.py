@@ -13,36 +13,37 @@ Any object with the `get_mesh_in_world()` method can be visualized.
 
 """
 
+import logging
 from typing import Any, Union, List
-import matplotlib.pyplot as plt
+import numpy as np
 
 from . import utils
 
 pv, pv_available = utils.try_import_pyvista()
 
+logger = logging.getLogger(__name__)
+
 
 def show(
     *item: Any,
     full: Union[bool, List[bool]] = False,
-) -> None:
+    colors: List[str] = ["tan", "cyan", "green", "red"],
+) -> np.ndarray:
     """Show the given items in a pyvista window.
 
     Args:
         full (bool, optional): [description]. Defaults to True.
     """
-    renderer = pv.Plotter()
-    renderer.show_axes()
-    renderer.set_background("#4d94b0")
-    # renderer.set_position([500, 1500, 1200])
-    # renderer.set_viewup([0, 0, 1])
-
-    cmap = plt.get_cmap("rainbow")
+    plotter = pv.Plotter()
+    plotter.show_axes()
+    plotter.set_background("#4d94b0")
 
     items = item
     fulls = utils.listify(full, len(items))
     for i, (item, full) in enumerate(zip(items, fulls)):
-        color = cmap(i / (len(items) - 1))
-        renderer.add_mesh(item.get_mesh_in_world(full=full), color=color)
+        color = colors[i % len(colors)]
+        plotter.add_mesh(item.get_mesh_in_world(full=full), color=color)
 
-    renderer.reset_camera()
-    renderer.show()
+    plotter.reset_camera()
+    _, image = plotter.show(screenshot=True)
+    return image
