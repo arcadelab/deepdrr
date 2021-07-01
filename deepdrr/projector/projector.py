@@ -722,28 +722,27 @@ class Projector(object):
                 ])
 
                 # Calculate block and grid sizes: each block is a 4x4x4 cube of voxels
-                blocks_x = np.int(np.ceil(mega_x_len / 4))
-                blocks_y = np.int(np.ceil(mega_y_len / 4))
-                blocks_z = np.int(np.ceil(mega_z_len / 4))
-                logger.debug(f"Resampling: {blocks_x}x{blocks_y}x{blocks_z} blocks with 4x4x4 threads each")
+                block = (4, 4, 4)
+                blocks_x = np.int(np.ceil(mega_x_len / block[0]))
+                blocks_y = np.int(np.ceil(mega_y_len / block[1]))
+                blocks_z = np.int(np.ceil(mega_z_len / block[2]))
+                logger.debug(f"Resampling: {blocks_x}x{blocks_y}x{blocks_z} blocks with {block[0]}x{block[1]}x{block[2]} threads each")
 
                 if blocks_x <= self.max_block_index and blocks_y <= self.max_block_index and blocks_z <= self.max_block_index:
                     offset_x = np.int32(0)
                     offset_y = np.int32(0)
                     offset_z = np.int32(0)
-                    self.resample_megavolume(*resampling_args, offset_x, offset_y, offset_z, block=(4,4,4), grid=(blocks_x, blocks_y, blocks_z))
+                    self.resample_megavolume(*resampling_args, offset_x, offset_y, offset_z, block=block, grid=(blocks_x, blocks_y, blocks_z))
                 else:
-                    logger.debug("Running kernel patchwise") # TODO: rewrite this
+                    logger.debug("Running resampling kernel patchwise")
                     for x in range((blocks_x - 1) // (self.max_block_index + 1)):
                         for y in range((blocks_y - 1) // (self.max_block_index + 1)):
                             for z in range((blocks_z - 1) // (self.max_block_index + 1)):
                                 offset_x = np.int32(x * self.max_block_index)
                                 offset_y = np.int32(y * self.max_block_index)
                                 offset_z = np.int32(z * self.max_block_index)
-                                self.resample_megavolume(*resampling_args, offset_x, offset_y, offset_z, block=(4,4,4), grid=(self.max_block_index, self.max_block_index, self.max_block_index))
+                                self.resample_megavolume(*resampling_args, offset_x, offset_y, offset_z, block=block, grid=(self.max_block_index, self.max_block_index, self.max_block_index))
                                 context.synchronize() 
-
-                self.resample_megavolume(*resampling_args, block=(4, 4, 4), grid=(1,1)) # TODO (mjudish): refactor to actually parallelize
             else:
                 self.megavol_spacing = self.volumes[0].spacing
 
@@ -752,7 +751,7 @@ class Projector(object):
                 mega_z_len = self.volumes[0].shape[2]
                 num_voxels = mega_x_len * mega_y_len * mega_z_len
 
-                self.megavol_density_gpu = cuda.mem_alloc(4 * num_voxels) # Potential TODO (mjudish): refactor scatter kernel to use a CUDA texture instead of raw array
+                self.megavol_density_gpu = cuda.mem_alloc(4 * num_voxels)
                 self.megavol_labeled_seg_gpu = cuda.mem_alloc(1 * num_voxels)
 
                 # copy over from self.volumes[0] to the gpu

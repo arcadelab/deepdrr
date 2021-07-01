@@ -1185,9 +1185,6 @@ extern "C" {
         int inp_voxelBoundX[NUM_VOLUMES], // number of voxels in x direction for each volume
         int inp_voxelBoundY[NUM_VOLUMES],
         int inp_voxelBoundZ[NUM_VOLUMES],
-        //float inp_gVoxelElementSizeX[NUM_VOLUMES], // voxel size for input volumes, in world coordinates
-        //float inp_gVoxelElementSizeY[NUM_VOLUMES],
-        //float inp_gVoxelElementSizeZ[NUM_VOLUMES],
         float inp_ijk_from_world[9 * NUM_VOLUMES], // ijk_from_world transforms for input volumes TODO: is each transform 3x3?
         float megaMinX, // bounding box for output megavolume, in world coordinates
         float megaMinY,
@@ -1198,7 +1195,6 @@ extern "C" {
         float megaVoxelSizeX, // voxel size for output megavolume, in world coordinates
         float megaVoxelSizeY,
         float megaVoxelSizeZ,
-        //float mega_ijk_from_world[9], // TODO: is each transform 3x3? --- this never actually gets used
         int mega_x_len, // the (exclusive, upper) array index bound of the megavolume
         int mega_y_len,
         int mega_z_len,
@@ -1224,10 +1220,25 @@ extern "C" {
         float density_sample[NUM_VOLUMES];
         // local storage to store the results of the cubicTex3D calls
         float mat_sample[NUM_VOLUMES][NUM_MATERIALS];
+
+        int x_low = threadIdx.x + (blockIdx.x + offsetX) * blockDim.x; // the x-index of the lowest voxel
+        int y_low = threadIdx.y + (blockIdx.y + offsetY) * blockDim.y;
+        int z_low = threadIdx.z + (blockIdx.z + offsetZ) * blockDim.z;
+
+        int x_high = min(x_low + blockDim.x, mega_x_len);
+        int y_high = min(y_low + blockDim.y, mega_y_len);
+        int z_high = min(z_low + blockDim.z, mega_z_len);
+
+        if ((x_low == 0) && (y_low == 0) && (z_low == 0) && (threadIdx.x == 0) && (threadIdx.y == 0) && (threadIdx.z == 0)) {
+            printf("blockDim: {%d, %d, %d}\n", blockDim.x, blockDim.y, blockDim.z);
+        }
         
-        for (float x = megaMinX + (megaVoxelSizeX * 0.5), int x_ind = 0; x <= megaMaxX; x += megaVoxelSizeX, x_ind++) {
-            for (float y = megaMinY + (megaVoxelSizeY * 0.5), int y_ind = 0; y <= megaMaxY; y += megaVoxelSizeY, y_ind++) {
-                for (float z = megaMinZ + (megaVoxelSizeZ * 0.5), int z_ind = 0; z <= megaMaxZ; z += megaVoxelSizeZ, z_ind++) {
+        for (int x_ind = x_low; x_ind < x_high; x_ind++) {
+            for (int y_ind = y_low; y_ind < y_high; y_ind++) {
+                for (int z_ind = z_low; z_ind < z_high; z_ind++) {
+                    float x = megaMinX + (0.5f + (float)x_ind) * megaVoxelSizeX;
+                    float y = megaMinY + (0.5f + (float)y_ind) * megaVoxelSizeY;
+                    float z = megaMinZ + (0.5f + (float)z_ind) * megaVoxelSizeZ;
                     // for each volume, check whether we are inside its bounds
                     int curr_priority = NUM_VOLUMES;
 
