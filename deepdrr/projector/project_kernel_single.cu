@@ -234,7 +234,7 @@ extern "C" {
         float sx, // x-coordinate of source point for rays in world-space
         float sy,
         float sz,
-        float *rt_kinv, // (3, 3) array giving the image-to-world-ray transform.
+        float rt_kinv[9], // (3, 3) array giving the image-to-world-ray transform.
         int n_bins, // the number of spectral bins
         float *energies, // 1-D array -- size is the n_bins. Units: keV
         float *pdf, // 1-D array -- probability density function over the energies
