@@ -826,38 +826,40 @@ def frame_transform(*args) -> FrameTransform:
     frame_transform(scalar) -> FrameTransform.from_scaling(scalar)
     frame_transform(ft: FrameTransform) -> ft
     frame_transform(data: np.ndarray[4,4]) -> FrameTransform(data)
-    frame_transform(R: np.ndarray[3,3]) -> FrameTransform.from_rt(R)
-    frame_transform(t: np.ndarray[3]) -> FrameTransform.from_translation(t)
+    frame_transform(R: Rotation | np.ndarray[3,3]) -> FrameTransform.from_rt(R)
+    frame_transform(t: Point | np.ndarray[3]) -> FrameTransform.from_translation(t)
     frame_transform((R, t)) -> FrameTransform.from_rt(R, t)
     frame_transform(R, t) -> FrameTransform.from_rt(R, t)
 
     Returns:
         FrameTransform: [description]
     """
-    logger.debug(f"args: {args}")
 
     if len(args) == 0:
         return FrameTransform.identity()
     elif len(args) == 1:
-        if args[0] is None:
+        a = args[0]
+        if a is None:
             return FrameTransform.identity()
-        elif isinstance(args[0], FrameTransform):
-            return args[0]
-        elif isinstance(args[0], (int, float)):
-            return FrameTransform.from_scaling(args[0])
-        elif isinstance(args[0], np.ndarray):
-            if args[0].shape == (4, 4):
-                return FrameTransform(args[0])
-            elif args[0].shape == (3, 3):
-                return FrameTransform.from_rt(rotation=args[0])
-            elif args[0].shape == (3,) or args[0].shape == (1, 3):
-                return FrameTransform.from_rt(translation=args[0])
+        elif issubclass(type(a), Point):
+            return FrameTransform.from_translation(a)
+        elif isinstance(a, Rotation):
+            return FrameTransform.from_rotation(a)
+        elif isinstance(a, FrameTransform):
+            return a
+        elif isinstance(a, (int, float)):
+            return FrameTransform.from_scaling(a)
+        elif isinstance(a, np.ndarray):
+            if a.shape == (4, 4):
+                return FrameTransform(a)
+            elif a.shape == (3, 3):
+                return FrameTransform.from_rt(rotation=a)
+            elif a.shape == (3,) or a.shape == (1, 3):
+                return FrameTransform.from_rt(translation=a)
             else:
-                raise TypeError(
-                    f"couldn't convert numpy array to FrameTransform: {args[0]}"
-                )
-        elif isinstance(args[0], (tuple, list)) and len(args[0]) == 2:
-            return frame_transform(args[0][0], args[0][1])
+                raise TypeError(f"couldn't convert numpy array to FrameTransform: {a}")
+        elif isinstance(a, (tuple, list)) and len(a) == 2:
+            return frame_transform(a[0], a[1])
     elif len(args) == 2:
         if (
             isinstance(args[0], np.ndarray)
