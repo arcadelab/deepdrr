@@ -1,42 +1,20 @@
-from . import data_utils
-from . import test_utils
+import pickle
+from pathlib import Path
+from datetime import datetime
+import PIL.Image as Image
+import numpy as np
+import os
+import logging
+from typing import Optional, TypeVar, Any, Tuple, Union, List
 
+from . import data_utils, image_utils, test_utils
 
-__all__ = ["data_utils", "test_utils", "image_save",
-           "param_saver", "one_hot", "tuplify", "listify",
+__all__ = ["param_saver", "one_hot", "tuplify", "listify",
            "radians", "generate_uniform_angles", "neglog",
            "try_import_pyvista", "try_import_vtk"]
 
 
-from typing import Optional, TypeVar, Any, Tuple, Union, List
-
-import logging
-import os
-import numpy as np
-import PIL.Image as Image
-from datetime import datetime
-from pathlib import Path
-import pickle
-
 logger = logging.getLogger(__name__)
-
-
-def image_saver(images: np.ndarray, prefix: str, path: str) -> bool:
-    """Save the images as tiff
-
-    Args:
-        images (np.ndarray): array of images
-        prefix (str): prefix for each file name
-        path (str): path to directory to save the files in
-
-    Returns:
-        bool: return code.
-    """
-
-    for i in range(0, images.shape[0]):
-        image_pil = Image.fromarray(images[i, :, :])
-        image_pil.save(Path(path) / f"{prefix}{str(i).zfill(5)}.tiff")
-    return True
 
 
 def param_saver(

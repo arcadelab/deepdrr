@@ -11,36 +11,57 @@ logger = logging.getLogger(__name__)
 
 
 class KWire(Volume):
-    """A provided volume representing a steel K wire, based on a straight cylinder with a conical tip.
+    tip_in_ijk: geo.Point3D
+    base_in_ijk: geo.Point3D
 
-    Args:
-        world_from_anatomical (Optional[geo.FrameTransform], optional): transformation from the anatomical space to world coordinates. If None, assumes identity. Defaults to None.
-    """
-    url = "https://livejohnshopkins-my.sharepoint.com/:u:/g/personal/bkillee1_jh_edu/EUd4AAG7svFJotzyWjcjd7cBc-iuAfHL819iO8u0bCYN0A?e=rDWrM7"
-    filename = "Kwire2.nii.gz"
-
-    def __new__(cls, world_from_anatomical: Optional[geo.FrameTransform] = None):
-        path = data_utils.download(cls.url, filename=cls.filename)
-        return cls.from_nifti(path, world_from_anatomical=world_from_anatomical, use_thresholding=True)
+    _mesh_material = "iron"
 
     def __init__(
         self,
-        data: np.ndarray,
-        materials: Dict[str, np.ndarray],
-        anatomical_from_ijk: geo.FrameTransform,
-        world_from_anatomical: Optional[geo.FrameTransform] = None,
+        *args,
+        tip_in_ijk: Optional[geo.Point3D] = None,
+        base_in_ijk: Optional[geo.Point3D] = None,
+        **kwargs,
     ) -> None:
-        super(KWire, self).__init__(data, materials,
-                                    anatomical_from_ijk, world_from_anatomical)
+        """A special volume which can be positioned using the tip and base points.
 
-        self.tip_in_ijk = geo.point(self.shape[0] / 2, self.shape[1] / 2, 0)
-        self.base_in_ijk = geo.point(
-            self.shape[0] / 2, self.shape[1] / 2, self.shape[2] - 1)
+        Use the `from_example()` class method to create a KWire from the example volume (which will be downloaded).
+
+        Args:
+            tip_in_ijk (geo.Point3D): The location of the tool tip in IJK.
+            base_in_ijk (geo.Point3D): The location of the tool base in IJK.
+        """
+
+        super(KWire, self).__init__(*args, **kwargs)
+        assert (
+            tip_in_ijk is not None and base_in_ijk is not None
+        ), "must provide points for the base and tip of the kwire"
+        self.tip_in_ijk = geo.point(tip_in_ijk)
+        self.base_in_ijk = geo.point(base_in_ijk)
+
+    @classmethod
+    def from_example(cls, **kwargs):
+        """Creates a KWire from the provided download link.
+
+        Returns:
+            KWire: The example KWire built into DeepDRR.
+        """
+        url = "https://livejohnshopkins-my.sharepoint.com/:u:/g/personal/bkillee1_jh_edu/Ec2XGMXg_ItGtYWR_FfqHmUBwXJ1LmLBbbs4J_-3rJJQZg?e=fFWq6f&download=1"
+        md5 = "83ba7b63ebc0912d34ed5880460f81bd"
+        filename = "Kwire2.nii.gz"
+        path = data_utils.download(url, filename, md5=md5)
+        shape = (100, 100, 2000)
+        tip_in_ijk = geo.point(shape[0] / 2, shape[1] / 2, 0)
+        base_in_ijk = geo.point(shape[0] / 2, shape[1] / 2, shape[2] - 1)
+        tool = cls.from_nifti(
+            path, tip_in_ijk=tip_in_ijk, base_in_ijk=base_in_ijk, **kwargs
+        )
+        return tool
 
     @staticmethod
     def _convert_hounsfield_to_density(hu_values: np.ndarray):
-        # TODO: verify coefficient.
-        return 30 * hu_values
+        # TODO: coefficient should be 2?
+        return 2 * hu_values
 
     @staticmethod
     def _segment_materials(
@@ -49,27 +70,27 @@ class KWire(Volume):
         if not use_thresholding:
             raise NotImplementedError
 
-        return dict(iron=(hu_values > 0))
+        return dict(titanium=(hu_values > 0))
 
     @property
     def tip_in_anatomical(self) -> geo.Point3D:
         """Get the location of the tool tip (the pointy end) in anatomical coordinates."""
-        raise self.anatomical_from_ijk @ self.tip_in_ijk
+        return self.anatomical_from_ijk @ self.tip_in_ijk
 
     @property
     def base_in_anatomical(self) -> geo.Point3D:
         """Get the location of the tool base in anatomical coordinates."""
-        raise self.anatomical_from_ijk @ self.base_in_ijk
+        return self.anatomical_from_ijk @ self.base_in_ijk
 
     @property
     def tip_in_world(self) -> geo.Point3D:
         """Get the location of the tool tip (the pointy end) in world coordinates."""
-        raise self.world_from_ijk @ self.tip_in_ijk
+        return self.world_from_ijk @ self.tip_in_ijk
 
     @property
     def base_in_world(self) -> geo.Point3D:
         """Get the location of the tool base in world coordinates."""
-        raise self.world_from_ijk @ self.base_in_ijk
+        return self.world_from_ijk @ self.base_in_ijk
 
     @property
     def length_in_world(self):
@@ -79,38 +100,29 @@ class KWire(Volume):
         self,
         start_point_in_world: geo.Point3D,
         end_point_in_world: geo.Point3D,
-        progress: float = 1.0
+        progress: float = 1.0,
     ) -> None:
-        """Align the tool so that it lies along the line between the two points.
+        """Align the tool so that it lies between the two points, tip pointing toward the endpoint.
 
         Args:
             start_point_in_world (geo.Point3D): The first point, in world space.
             end_point_in_world (geo.Point3D): The second point, in world space. The tip of the tool points toward this point.
-            progress (float, optional): Where to place the tip of the tool between the start and end point, 
+            progress (float, optional): Where to place the tip of the tool between the start and end point,
                 on a scale from 0 to 1. 0 corresponds to the tip placed at the start point, 1 at the end point. Defaults to 1.0.
         """
-        # First, get the known points of the tool in anatomical coordinates
-        points_in_anatomical = [
-            self.tip_in_anatomical,
-            self.base_in_anatomical,
-            self.origin_in_anatomical,
-        ]
+        # useful: https://math.stackexchange.com/questions/180418/calculate-rotation-matrix-to-align-vector-a-to-vector-b-in-3d
 
-        # Now, interpolate along the direction of the tool to get the desired points in world.
+        # interpolate along the direction of the tool to get the desired points in world.
         trajectory_vector = end_point_in_world - start_point_in_world
-        desired_tip_in_world = start_point_in_world + progress * trajectory_vector
-        desired_base_in_world = desired_tip_in_world - \
-            trajectory_vector.hat() * self.length_in_world
 
-        # We choose an arbitrary point to be the desired origin.
-        desired_origin_in_world = desired_tip_in_world + (
-            self.world_from_anatomical @ (self.tip_in_ijk - geo.point(0, 0, 0))).norm() * trajectory_vector.perpendicular().hat()
+        desired_tip_in_world = end_point_in_world - (1 - progress) * trajectory_vector
+        desired_base_in_world = (
+            desired_tip_in_world - trajectory_vector.hat() * self.length_in_world
+        )
 
-        points_in_world = [
+        self.world_from_anatomical = geo.FrameTransform.from_line_segments(
             desired_tip_in_world,
             desired_base_in_world,
-            desired_origin_in_world,
-        ]
-
-        self.world_from_anatomical = geo.FrameTransform.from_point_correspondence(
-            points_in_anatomical, points_in_world)
+            self.tip_in_anatomical,
+            self.base_in_anatomical,
+        )
