@@ -358,7 +358,7 @@ extern "C" {
         for (t = 0, alpha = minAlpha; alpha < maxAlpha; t++, alpha += step)
         {
             // Get the current sample point in the volume voxel-space.
-            // In CUDA, voxel centeras are located at (xx.5, xx.5, xx.5), whereas SwVolume has voxel centers at integers.
+            // In CUDA, voxel centers are located at (xx.5, xx.5, xx.5), whereas SwVolume has voxel centers at integers.
             px = sx + alpha * rx + 0.5;
             py = sy + alpha * ry + 0.5;
             pz = sz + alpha * rz - gVolumeEdgeMinPointZ;
