@@ -1,7 +1,7 @@
 #include <stdio.h>
 #include <cubicTex3D.cu>
 
-#include "project_kernel_multi_data.cu"
+#include "kernel_vol_seg_data.cu"
 
 #define UPDATE(multiplier, vol_id, mat_id) do {\
     /* param. weight is set to 1.0f / (float)n_vols_at_curr_priority */\
@@ -832,20 +832,20 @@ extern "C" {
         int out_width, // width of the output image
         int out_height, // height of the output image
         float step,
-        int *priority, // volumes with smaller priority-ID have higher priority when determining which volume we are in
-        float *gVolumeEdgeMinPointX, // one value for each of the NUM_VOLUMES volumes
-        float *gVolumeEdgeMinPointY,
-        float *gVolumeEdgeMinPointZ,
-        float *gVolumeEdgeMaxPointX,
-        float *gVolumeEdgeMaxPointY,
-        float *gVolumeEdgeMaxPointZ,
-        float *gVoxelElementSizeX, // one value for each of the NUM_VOLUMES volumes
-        float *gVoxelElementSizeY,
-        float *gVoxelElementSizeZ,
-        float *sx, // x-coordinate of source point for rays in world-space
-        float *sy, // one value for each of the NUM_VOLUMES volumes
-        float *sz,
-        float *rt_kinv, // (NUM_VOLUMES, 3, 3) array giving the image-to-world-ray transform for each volume
+        int priority[NUM_VOLUMES], // volumes with smaller priority-ID have higher priority when determining which volume we are in
+        float gVolumeEdgeMinPointX[NUM_VOLUMES], // one value for each of the NUM_VOLUMES volumes
+        float gVolumeEdgeMinPointY[NUM_VOLUMES],
+        float gVolumeEdgeMinPointZ[NUM_VOLUMES],
+        float gVolumeEdgeMaxPointX[NUM_VOLUMES],
+        float gVolumeEdgeMaxPointY[NUM_VOLUMES],
+        float gVolumeEdgeMaxPointZ[NUM_VOLUMES],
+        float gVoxelElementSizeX[NUM_VOLUMES], // one value for each of the NUM_VOLUMES volumes
+        float gVoxelElementSizeY[NUM_VOLUMES],
+        float gVoxelElementSizeZ[NUM_VOLUMES],
+        float sx[NUM_VOLUMES], // x-coordinate of source point for rays in world-space
+        float sy[NUM_VOLUMES], // one value for each of the NUM_VOLUMES volumes
+        float sz[NUM_VOLUMES],
+        float rt_kinv[9 * NUM_VOLUMES], // (NUM_VOLUMES, 3, 3) array giving the image-to-world-ray transform for each volume
         int n_bins, // the number of spectral bins
         float *energies, // 1-D array -- size is the n_bins. Units: [keV]
         float *pdf, // 1-D array -- probability density function over the energies
@@ -854,6 +854,7 @@ extern "C" {
                         // index into the table as: table[bin * NUM_MATERIALS + mat]
         float *intensity, // flat array, with shape (out_height, out_width).
         float *photon_prob, // flat array, with shape (out_height, out_width).
+        float *solid_angle, // flat array, with shape (out_height, out_width). Could be NULL pointer
         int offsetW,
         int offsetH)
     {
@@ -1054,6 +1055,257 @@ extern "C" {
 
             photon_prob[img_dx] += photon_prob_tmp;
             intensity[img_dx] += energies[bin] * photon_prob_tmp; // units: [keV] per unit photon to hit the pixel
+        }
+
+        if (NULL != solid_angle) {
+            /**
+            * SOLID ANGLE CALCULATION
+            *
+            * Let the pixel's four corners be c0, c1, c2, c3.  Split the pixel into two right
+            * triangles.  These triangles each form a tetrahedron with the X-ray source S.  We
+            * can then use a solid-angle-of-tetrahedron formula.
+            * 
+            * From Wikipedia:
+            *      Let OABC be the vertices of a tetrahedron with an origin at O subtended by
+            * the triangular face ABC where \vec{a}, \vec{b}, \vec{c} are the vectors \vec{SA},
+            * \vec{SB}, \vec{SC} respectively.  Then,
+            *
+            * tan(\Omega / 2) = NUMERATOR / DENOMINATOR, with
+            *
+            * NUMERATOR = \vec{a} \cdot (\vec{b} \times \vec{c})
+            * DENOMINATOR = abc + (\vec{a} \cdot \vec{b}) c + (\vec{a} \cdot \vec{c}) b + (\vec{b} \cdot \vec{c}) a
+            * 
+            * where a,b,c are the magnitudes of their respective vectors.
+            *
+            * There are two potential pitfalls with the above formula.
+            * 1. The NUMERATOR (a scalar triple product) can be negative if \vec{a}, \vec{b}, 
+            *  \vec{c} have the wrong winding.  Since no other portion of the formula depends
+            *  on the winding, computing the absolute value of the scalar triple product is 
+            *  sufficient.
+            * 2. If the NUMERATOR is positive but the DENOMINATOR is negative, the formula 
+            *  returns a negative value that must be increased by \pi.
+            */
+
+            /*
+            * PIXEL DIAGRAM
+            *
+            * corner0 __ corner1
+            *        |__|
+            * corner3    corner2
+            */
+            float cx[4]; // source-to-corner vector x-values
+            float cy[4]; // source-to-corner vector y-values
+            float cz[4]; // source-to-corner vector z-values
+            float cmag[4]; // magnitude of source-to-corner vector
+
+            float cu_offset[4] = {0.f, 1.f, 1.f, 0.f};
+            float cv_offset[4] = {0.f, 0.f, 1.f, 1.f};
+
+            for (int i = 0; i < 4; i++) {
+                float cu = udx + cu_offset[i];
+                float cv = vdx + cv_offset[i];
+
+                cx[i] = cu * rt_kinv[0] + cv * rt_kinv[1] + rt_kinv[2];
+                cy[i] = cu * rt_kinv[3] + cv * rt_kinv[4] + rt_kinv[5];
+                cz[i] = cu * rt_kinv[6] + cv * rt_kinv[7] + rt_kinv[8];
+                
+                cmag[i] = (cx[i] * cx[i]) + (cy[i] * cy[i]) + (cz[i] * cz[i]);
+                cmag[i] = sqrtf(cmag[i]);
+            }
+    
+            /*
+            * The cross- and dot-products needed for the [c0, c1, c2] triangle are:
+            *
+            * - absolute value of triple product of c0,c1,c2 = c1 \cdot (c0 \times c2)
+            *      Since the magnitude of the triple product is invariant under reorderings
+            *      of the three vectors, we choose to cross-product c0,c2 so we can reuse
+            *      that result
+            * - dot product of c0, c1
+            * - dot product of c0, c2
+            * - dot product of c1, c2
+            * 
+            * The products needed for the [c0, c2, c3] triangle are:
+            *
+            * - absolute value of triple product of c0,c2,c3 = c3 \cdot (c0 \times c2)
+            *      Since the magnitude of the triple product is invariant under reorderings
+            *      of the three vectors, we choose to cross-product c0,c2 so we can reuse
+            *      that result
+            * - dot product of c0, c2
+            * - dot product of c0, c3
+            * - dot product of c2, c3
+            *
+            * Thus, the cross- and dot-products to compute are:
+            *  - c0 \times c2
+            *  - c0 \dot c1
+            *  - c0 \dot c2
+            *  - c0 \dot c3
+            *  - c1 \dot c2
+            *  - c2 \dot c3
+            */
+            float c0_cross_c2_x = (cy[0] * cz[2]) - (cz[0] * cy[2]);
+            float c0_cross_c2_y = (cz[0] * cx[2]) - (cx[0] * cz[2]);
+            float c0_cross_c2_z = (cx[0] * cy[2]) - (cy[0] * cx[2]);
+
+            float c0_dot_c1 = (cx[0] * cx[1]) + (cy[0] * cy[1]) + (cz[0] * cz[1]);
+            float c0_dot_c2 = (cx[0] * cx[2]) + (cy[0] * cy[2]) + (cz[0] * cz[2]);
+            float c0_dot_c3 = (cx[0] * cx[3]) + (cy[0] * cy[3]) + (cz[0] * cz[3]);
+            float c1_dot_c2 = (cx[1] * cx[2]) + (cy[1] * cy[2]) + (cz[1] * cz[2]);
+            float c2_dot_c3 = (cx[2] * cx[3]) + (cy[2] * cy[3]) + (cz[2] * cz[3]);
+
+            float numer_012 = fabs((cx[1] * c0_cross_c2_x) + (cy[1] * c0_cross_c2_y) + (cz[1] * c0_cross_c2_z));
+            float numer_023 = fabs((cx[3] * c0_cross_c2_x) + (cy[3] * c0_cross_c2_y) + (cz[3] * c0_cross_c2_z));
+
+            float denom_012 = (cmag[0] * cmag[1] * cmag[2]) + (c0_dot_c1 * cmag[2]) + (c0_dot_c2 * cmag[1]) + (c1_dot_c2 * cmag[0]);
+            float denom_023 = (cmag[0] * cmag[2] * cmag[3]) + (c0_dot_c2 * cmag[3]) + (c0_dot_c3 * cmag[2]) + (c2_dot_c3 * cmag[0]);
+
+            float solid_angle_012 = 2.f * atan2(numer_012, denom_012);
+            if (solid_angle_012 < 0.0f) {
+                solid_angle_012 += PI_FLOAT;
+            }
+            float solid_angle_023 = 2.f * atan2(numer_023, denom_023);
+            if (solid_angle_023 < 0.0f) {
+                solid_angle_023 += PI_FLOAT;
+            }
+
+            solid_angle[img_dx] = solid_angle_012 + solid_angle_023;
+        }
+
+        return;
+    }
+
+    /*** KERNEL RESAMPLING FUNCTION ***/
+    /**
+     * It's placed here so that it can properly access the CUDA textures of the volumes and segmentations
+     */
+
+    // TODO: write macros so that the calls to tex3D and cubicTex3D work
+
+    __device__ void resample_megavolume(
+        int inp_priority[NUM_VOLUMES],
+        int inp_voxelBoundX[NUM_VOLUMES], // number of voxels in x direction for each volume
+        int inp_voxelBoundY[NUM_VOLUMES],
+        int inp_voxelBoundZ[NUM_VOLUMES],
+        float inp_ijk_from_world[9 * NUM_VOLUMES], // ijk_from_world transforms for input volumes TODO: is each transform 3x3?
+        float megaMinX, // bounding box for output megavolume, in world coordinates
+        float megaMinY,
+        float megaMinZ,
+        float megaMaxX,
+        float megaMaxY,
+        float megaMaxZ,
+        float megaVoxelSizeX, // voxel size for output megavolume, in world coordinates
+        float megaVoxelSizeY,
+        float megaVoxelSizeZ,
+        int mega_x_len, // the (exclusive, upper) array index bound of the megavolume
+        int mega_y_len,
+        int mega_z_len,
+        float *output_density, // volume-sized array
+        char *output_mat_id // volume-sized array to hold the material IDs of the voxels,
+        int offsetX,
+        int offsetY,
+        int offsetZ
+    ) {
+        /*
+         * Sample in voxel centers.
+         * 
+         * Loop keeps track of {x,y,z} position in world coord.s as well as IJK indices for megavolume voxels.
+         * The first voxel has IJK indices (0,0,0) and is centered at (minX + 0.5 * voxX, minY + 0.5 * voxY, minZ + 0.5 * voxZ)
+         *
+         * The upper bound of the loop checking for:
+         *       {x,y,z} <= megaMax{X,Y,Z}
+         * is sufficient because the preprocessing of the boudning box ensured that the voxels fit neatly into the bounding box
+         */
+
+        // local storage to store the results of the tex3D calls.
+        // As a switch, we rely on the fact that the results of the tex3D calls should never be negative
+        float density_sample[NUM_VOLUMES];
+        // local storage to store the results of the cubicTex3D calls
+        float mat_sample[NUM_VOLUMES][NUM_MATERIALS];
+
+        int x_low = threadIdx.x + (blockIdx.x + offsetX) * blockDim.x; // the x-index of the lowest voxel
+        int y_low = threadIdx.y + (blockIdx.y + offsetY) * blockDim.y;
+        int z_low = threadIdx.z + (blockIdx.z + offsetZ) * blockDim.z;
+
+        int x_high = min(x_low + blockDim.x, mega_x_len);
+        int y_high = min(y_low + blockDim.y, mega_y_len);
+        int z_high = min(z_low + blockDim.z, mega_z_len);
+
+        if ((x_low == 0) && (y_low == 0) && (z_low == 0) && (threadIdx.x == 0) && (threadIdx.y == 0) && (threadIdx.z == 0)) {
+            printf("blockDim: {%d, %d, %d}\n", blockDim.x, blockDim.y, blockDim.z);
+        }
+        
+        for (int x_ind = x_low; x_ind < x_high; x_ind++) {
+            for (int y_ind = y_low; y_ind < y_high; y_ind++) {
+                for (int z_ind = z_low; z_ind < z_high; z_ind++) {
+                    float x = megaMinX + (0.5f + (float)x_ind) * megaVoxelSizeX;
+                    float y = megaMinY + (0.5f + (float)y_ind) * megaVoxelSizeY;
+                    float z = megaMinZ + (0.5f + (float)z_ind) * megaVoxelSizeZ;
+                    // for each volume, check whether we are inside its bounds
+                    int curr_priority = NUM_VOLUMES;
+
+                    for (int i = 0; i < NUM_VOLUMES; i++) {
+                        density_sample[i] = -1.0f; // "reset" this volume's sample
+
+                        int offset = 9 * i;
+                        float inp_x = (inp_ijk_from_world[offset + 0] * x) + (inp_ijk_from_world[offset + 1] * y) + (inp_ijk_from_world[offset + 2] * z);
+                        if ((inp_x < 0.0) || (inp_x >= inp_voxelBoundX[i])) continue; // TODO: make sure this behavior agrees with the behavior of ijk_from_world transforms
+
+                        float inp_y = (inp_ijk_from_world[offset + 3] * x) + (inp_ijk_from_world[offset + 4] * y) + (inp_ijk_from_world[offset + 5] * z);
+                        if ((inp_y < 0.0) || (inp_y >= inp_voxelBoundY[i])) continue;
+
+                        float inp_z = (inp_ijk_from_world[offset + 6] * x) + (inp_ijk_from_world[offset + 7] * y) + (inp_ijk_from_world[offset + 8] * z);
+                        if ((inp_z < 0.0) || (inp_z >= inp_voxelBoundZ[i])) continue;
+
+                        if (inp_priority[i] < curr_priority) curr_priority = inp_priority[i];
+                        else if (inp_priority[i] > curr_priority) continue;
+
+                        // TODO: macro-ify these calls to texture interpolation
+                        density_sample[i] = tex3D(VOLUME(i), inp_x, inp_y, inp_z);
+                        for (int m = 0; m < NUM_MATERIALS; m++) {
+                            mat_sample[i][m] = cubicTex3D(SEG(i, m), inp_x, inp_y, inp_z);
+                        }
+                    }
+
+                    int output_idx = x_ind + (y_ind * mega_x_len) + (z_ind * mega_x_len * mega_y_len);
+                    if (NUM_VOLUMES == curr_priority) {
+                        // no input volumes at the current point
+                        output_density[output_idx] = 0.0f;
+                        output_mat_id[output_idx] = NUM_MATERIALS; // out of range for mat id, so indicates no material
+                    } else {
+                        // for averaging the densities of the volumes to "mix"
+                        int n_vols_at_curr_priority = 0;
+                        float total_density = 0.0f;
+
+                        // for determining the material most 
+                        float total_mat_seg[NUM_MATERIALS];
+                        for (int m = 0; m < NUM_MATERIALS; m++) {
+                            total_mat_seg[m] = 0.0f;
+                        }
+
+                        for (int i = 0; i < NUM_VOLUMES; i++) {
+                            if (curr_priority == inp_priority[i]) {
+                                n_vols_at_curr_priority++;
+                                total_density += density_sample[i];
+
+                                for (int m = 0; m < NUM_MATERIALS; m++) {
+                                    total_mat_seg[m] = mat_sample[i][m];
+                                }
+                            }
+                        }
+
+                        int mat_id = NUM_MATERIALS;
+                        float highest_mat_seg = 0.0f;
+                        for (int m = 0; m < NUM_MATERIALS; m++) {
+                            if (total_mat_seg[m] > highest_mat_seg) {
+                                mat_id = m;
+                                highest_mat_seg = total_mat_seg[m];
+                            }
+                        }
+
+                        output_density[output_idx] = total_density / ((float) n_vols_at_curr_priority);
+                        output_mat_id[output_idx] = mat_id;
+                    }
+                }
+            }
         }
 
         return;
