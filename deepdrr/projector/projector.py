@@ -788,47 +788,45 @@ class Projector(object):
                 self.megavol_density_gpu = cuda.mem_alloc(4 * mega_x_len * mega_y_len * mega_z_len)
                 self.megavol_labeled_seg_gpu = cuda.mem_alloc(1 * mega_x_len * mega_y_len * mega_z_len)
 
+                inp_priority_gpu = cuda.mem_alloc(4 * len(self.volumes))
+                inp_voxelBoundX_gpu = cuda.mem_alloc(4 * len(self.volumes))
+                inp_voxelBoundY_gpu = cuda.mem_alloc(4 * len(self.volumes))
+                inp_voxelBoundZ_gpu = cuda.mem_alloc(4 * len(self.volumes))
+                inp_ijk_from_world_gpu = cuda.mem_alloc(4 * 9 * len(self.volumes))
+
+                for vol_id, _vol in enumerate(self.volumes):
+                    int_offset = 4 * vol_id
+                    arr_offset = 4 * 9 * vol_id
+                    cuda.memcpy_htod(int(inp_priority_gpu) + int_offset, np.int32(self.priorities[vol_id]))
+                    cuda.memcpy_htod(int(inp_voxelBoundX_gpu) + int_offset, np.int32(_vol.shape[0]))
+                    cuda.memcpy_htod(int(inp_voxelBoundY_gpu) + int_offset, np.int32(_vol.shape[1]))
+                    cuda.memcpy_htod(int(inp_voxelBoundZ_gpu) + int_offset, np.int32(_vol.shape[2]))
+                    inp_ijk_from_world = np.array(_vol.ijk_from_world).astype(np.float32)
+                    cuda.memcpy_htod(int(inp_ijk_from_world_gpu) + arr_offset, inp_ijk_from_world)
+
                 # call the resampling kernel
                 # TODO: handle axis swapping (???)
-                resampling_args = [np.int32(prio) for prio in self.priorities] # inp_priority
-                resampling_args.extend([np.int32(_vol.shape[0]) for _vol in self.volumes]) # inp_voxelBoundX
-                resampling_args.extend([np.int32(_vol.shape[1]) for _vol in self.volumes]) # inp_voxelBoundY
-                resampling_args.extend([np.int32(_vol.shape[2]) for _vol in self.volumes]) # inp_voxelBoundZ
-                for _vol in self.volumes: # inp_ijk_from_world
-                    inp_ijk_from_world = np.array(_vol.ijk_from_world).astype(np.float32)
-                    resampling_args.extend([
-                        inp_ijk_from_world[0][0],
-                        inp_ijk_from_world[0][1],
-                        inp_ijk_from_world[0][2],
-                        inp_ijk_from_world[1][0],
-                        inp_ijk_from_world[1][1],
-                        inp_ijk_from_world[1][2],
-                        inp_ijk_from_world[2][0],
-                        inp_ijk_from_world[2][1],
-                        inp_ijk_from_world[2][2]
-                    ])
-                resampling_args.extend([ # mega{Min,Max}{X,Y,Z}
-                    np.float32(min_world_point[0]),
+                resampling_args = [
+                    inp_priority_gpu,
+                    inp_voxelBoundX_gpu,
+                    inp_voxelBoundY_gpu,
+                    inp_voxelBoundZ_gpu,
+                    inp_ijk_from_world_gpu,
+                    np.float32(min_world_point[0]), # mega{Min,Max}{X,Y,Z}
                     np.float32(min_world_point[1]),
                     np.float32(min_world_point[2]),
                     np.float32(max_world_point[0]),
                     np.float32(max_world_point[1]),
-                    np.float32(max_world_point[2])
-                ])
-                resampling_args.extend([ # megaVoxelSize{X,Y,Z}
-                    np.float32(self.megavol_spacing[0]),
+                    np.float32(max_world_point[2]),
+                    np.float32(self.megavol_spacing[0]), # megaVoxelSize{X,Y,Z}
                     np.float32(self.megavol_spacing[1]),
-                    np.float32(self.megavol_spacing[2])
-                ])
-                resampling_args.extend([
+                    np.float32(self.megavol_spacing[2]),
                     np.int32(mega_x_len),
                     np.int32(mega_y_len),
-                    np.int32(mega_z_len)
-                ])
-                resampling_args.extend([
+                    np.int32(mega_z_len),
                     self.megavol_density_gpu,
                     self.megavol_labeled_seg_gpu
-                ])
+                ]
 
                 # Calculate block and grid sizes: each block is a 4x4x4 cube of voxels
                 block = (1, 1, 1)
@@ -852,6 +850,13 @@ class Projector(object):
                                 offset_z = np.int32(z * self.max_block_index)
                                 self.resample_megavolume(*resampling_args, offset_x, offset_y, offset_z, block=block, grid=(self.max_block_index, self.max_block_index, self.max_block_index))
                                 context.synchronize() 
+                
+                inp_priority_gpu.free()
+                inp_voxelBoundX_gpu.free()
+                inp_voxelBoundY_gpu.free()
+                inp_voxelBoundZ_gpu.free()
+                inp_ijk_from_world_gpu.free()
+
             else:
                 self.megavol_spacing = self.volumes[0].spacing
 

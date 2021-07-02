@@ -1352,11 +1352,11 @@ extern "C" {
     #endif
 
     __global__ void resample_megavolume(
-        int inp_priority[NUM_VOLUMES],
-        int inp_voxelBoundX[NUM_VOLUMES], // number of voxels in x direction for each volume
-        int inp_voxelBoundY[NUM_VOLUMES],
-        int inp_voxelBoundZ[NUM_VOLUMES],
-        float inp_ijk_from_world[9 * NUM_VOLUMES], // ijk_from_world transforms for input volumes TODO: is each transform 3x3?
+        int *inp_priority,
+        int *inp_voxelBoundX, // number of voxels in x direction for each volume
+        int *inp_voxelBoundY,
+        int *inp_voxelBoundZ,
+        float *inp_ijk_from_world, // ijk_from_world transforms for input volumes TODO: is each transform 3x3?
         float megaMinX, // bounding box for output megavolume, in world coordinates
         float megaMinY,
         float megaMinZ,
