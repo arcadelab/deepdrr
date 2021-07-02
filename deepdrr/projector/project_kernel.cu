@@ -835,20 +835,20 @@ extern "C" {
         int out_width, // width of the output image
         int out_height, // height of the output image
         float step,
-        int priority[NUM_VOLUMES], // volumes with smaller priority-ID have higher priority when determining which volume we are in
-        float gVolumeEdgeMinPointX[NUM_VOLUMES], // one value for each of the NUM_VOLUMES volumes
-        float gVolumeEdgeMinPointY[NUM_VOLUMES],
-        float gVolumeEdgeMinPointZ[NUM_VOLUMES],
-        float gVolumeEdgeMaxPointX[NUM_VOLUMES],
-        float gVolumeEdgeMaxPointY[NUM_VOLUMES],
-        float gVolumeEdgeMaxPointZ[NUM_VOLUMES],
-        float gVoxelElementSizeX[NUM_VOLUMES], // one value for each of the NUM_VOLUMES volumes
-        float gVoxelElementSizeY[NUM_VOLUMES],
-        float gVoxelElementSizeZ[NUM_VOLUMES],
-        float sx[NUM_VOLUMES], // x-coordinate of source point for rays in world-space
-        float sy[NUM_VOLUMES], // one value for each of the NUM_VOLUMES volumes
-        float sz[NUM_VOLUMES],
-        float rt_kinv[9 * NUM_VOLUMES], // (NUM_VOLUMES, 3, 3) array giving the image-to-world-ray transform for each volume
+        int *priority, // volumes with smaller priority-ID have higher priority when determining which volume we are in
+        float *gVolumeEdgeMinPointX, // one value for each of the NUM_VOLUMES volumes
+        float *gVolumeEdgeMinPointY,
+        float *gVolumeEdgeMinPointZ,
+        float *gVolumeEdgeMaxPointX,
+        float *gVolumeEdgeMaxPointY,
+        float *gVolumeEdgeMaxPointZ,
+        float *gVoxelElementSizeX, // one value for each of the NUM_VOLUMES volumes
+        float *gVoxelElementSizeY,
+        float *gVoxelElementSizeZ,
+        float *sx, // x-coordinate of source point for rays in world-space
+        float *sy, // one value for each of the NUM_VOLUMES volumes
+        float *sz,
+        float *rt_kinv, // (NUM_VOLUMES, 3, 3) array giving the image-to-world-ray transform for each volume
         int n_bins, // the number of spectral bins
         float *energies, // 1-D array -- size is the n_bins. Units: [keV]
         float *pdf, // 1-D array -- probability density function over the energies
