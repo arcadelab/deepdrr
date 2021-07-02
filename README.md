@@ -1,22 +1,13 @@
-<p align="center">
-  <a href="https://pypi.org/project/deepdrr/">
-    <img src="https://img.shields.io/pypi/v/deepdrr" alt="PyPI" />
-  </a>
-  <a href="#">
-    <img src="https://img.shields.io/pypi/l/deepdrr" alt="PyPI - License" />
-  </a>
-  <a href="https://pypi.python.org/pypi/deepdrr/">
-    <img src="https://img.shields.io/pypi/pyversions/deepdrr" alt="PyPI - Python Version" />
-  </a>
-  <a href="https://pypi.python.org/pypi/deepdrr/">
-    <img src="https://img.shields.io/pypi/dt/ansicolortags.svg" alt="Downloads" />
-  </a>
-  <a href="https://colab.research.google.com/github/arcadelab/deepdrr/blob/dev/deepdrr_demo.ipynb">
-    <img src="https://colab.research.google.com/assets/colab-badge.svg" alt="Open in Collab" />
-  </a>
-</p>
+<div align="center">
 
 # DeepDRR
+
+[![Paper](http://img.shields.io/badge/paper-arxiv.1803.08606-B31B1B.svg)](https://arxiv.org/abs/1803.08606)
+[![PyPI](https://img.shields.io/pypi/v/deepdrr)](https://pypi.org/project/deepdrr/)
+[![Open in Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/arcadelab/deepdrr/blob/dev/deepdrr_demo.ipynb)
+
+</div>
+
 
 DeepDRR provides state-of-the-art tools to generate realistic radiographs and fluoroscopy from 3D
 CTs on a training set scale.
