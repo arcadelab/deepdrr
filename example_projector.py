@@ -115,7 +115,6 @@ def main():
         max_block_index=200,
         spectrum='90KV_AL40',
         photon_count=10000, # 10^4
-        add_scatter=False,
         scatter_num=(10**7),
         threads=8,
         neglog=True,

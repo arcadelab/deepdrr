@@ -508,6 +508,9 @@
 } while (0)
 #endif
 
+#define PI_FLOAT  3.14159265358979323846f
+#define FOUR_PI_INV_FLOAT 0.0795774715459476678844f // 1 / (4 \pi), from Wolfram Alpha
+
 extern "C" {
     /* "return" variables point to an item in the array, not the beginning of the array */
     __device__ static void calculate_alpha(
@@ -1348,7 +1351,7 @@ extern "C" {
     } while (0)
     #endif
 
-    __device__ void resample_megavolume(
+    __global__ void resample_megavolume(
         int inp_priority[NUM_VOLUMES],
         int inp_voxelBoundX[NUM_VOLUMES], // number of voxels in x direction for each volume
         int inp_voxelBoundY[NUM_VOLUMES],
@@ -1367,7 +1370,7 @@ extern "C" {
         int mega_y_len,
         int mega_z_len,
         float *output_density, // volume-sized array
-        char *output_mat_id // volume-sized array to hold the material IDs of the voxels,
+        char *output_mat_id, // volume-sized array to hold the material IDs of the voxels,
         int offsetX,
         int offsetY,
         int offsetZ
@@ -1426,16 +1429,35 @@ extern "C" {
                         if (inp_priority[i] < curr_priority) curr_priority = inp_priority[i];
                         else if (inp_priority[i] > curr_priority) continue;
 
+			// mjudish understands that this is ugly, but it compiles 
                         if      (0 == i) { RESAMPLE_TEXTURES(0); }
-                        else if (1 == i) { RESAMPLE_TEXTURES(1); }
-                        else if (2 == i) { RESAMPLE_TEXTURES(2); }
+			#if NUM_VOLUMES > 1
+			else if (1 == i) { RESAMPLE_TEXTURES(1); }
+			#endif
+			#if NUM_VOLUMES > 2
+			else if (2 == i) { RESAMPLE_TEXTURES(2); }
+			#endif
+			#if NUM_VOLUMES > 3
                         else if (3 == i) { RESAMPLE_TEXTURES(3); }
+			#endif
+			#if NUM_VOLUMES > 4
                         else if (4 == i) { RESAMPLE_TEXTURES(4); }
+			#endif
+			#if NUM_VOLUMES > 5
                         else if (5 == i) { RESAMPLE_TEXTURES(5); }
+			#endif
+			#if NUM_VOLUMES > 6
                         else if (6 == i) { RESAMPLE_TEXTURES(6); }
+			#endif
+			#if NUM_VOLUMES > 7
                         else if (7 == i) { RESAMPLE_TEXTURES(7); }
+			#endif
+			#if NUM_VOLUMES > 8
                         else if (8 == i) { RESAMPLE_TEXTURES(8); }
+			#endif
+			#if NUM_VOLUMES > 9
                         else if (9 == i) { RESAMPLE_TEXTURES(9); }
+			#endif
                         // Maximum supported value of NUM_VOLUMES is 10
                     }
 

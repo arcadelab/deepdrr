@@ -701,6 +701,7 @@ class Projector(object):
                 z_points_world = []
 
                 for _vol in self.volumes:
+                    # TODO: hinky stuff here. Discuss with killeen
                     corners_ijk = [ # TODO: this assumes voxel-centered indexing
                         geo.point(0.5, 0.5, 0.5),
                         geo.point(0.5, 0.5, _vol.shape[2] - 0.5),
@@ -722,9 +723,9 @@ class Projector(object):
                 min_world_point = geo.point(min(x_points_world), min(y_points_world), min(z_points_world))
                 max_world_point = geo.point(max(x_points_world), max(y_points_world), max(z_points_world))
 
-                largest_spacing = max([_vol.spacing[0] for _vol in volume])
-                largest_spacing = max([largest_spacing] + [_vol.spacing[1] for _vol in volume])
-                largest_spacing = max([largest_spacing] + [_vol.spacing[2] for _vol in volume])
+                largest_spacing = max([_vol.spacing[0] for _vol in self.volumes])
+                largest_spacing = max([largest_spacing] + [_vol.spacing[1] for _vol in self.volumes])
+                largest_spacing = max([largest_spacing] + [_vol.spacing[2] for _vol in self.volumes])
 
                 self.megavol_spacing = geo.vector(largest_spacing, largest_spacing, largest_spacing)
 
@@ -734,9 +735,15 @@ class Projector(object):
                     if remainder > 0:
                         max_world_point[axis] = max_world_point[axis] + self.megavol_spacing[axis] - remainder
 
+                logger.info(f"megavol spacing: {self.megavol_spacing}")
+
                 mega_x_len = int(0.01 + ((max_world_point[0] - min_world_point[0]) / self.megavol_spacing[0]))
                 mega_y_len = int(0.01 + ((max_world_point[1] - min_world_point[1]) / self.megavol_spacing[1]))
                 mega_z_len = int(0.01 + ((max_world_point[2] - min_world_point[2]) / self.megavol_spacing[2]))
+
+                logger.info(f"max_world_point: {max_world_point}")
+                logger.info(f"min_world_point: {min_world_point}")
+                logger.info(f"mega_[x,y,z]_len: ({mega_x_len}, {mega_y_len}, {mega_z_len})")
 
                 # allocate megavolume data and labeled (i.e., not binary) segmentation
                 self.megavol_density_gpu = cuda.mem_alloc(4 * mega_x_len * mega_y_len * mega_z_len)
@@ -744,12 +751,12 @@ class Projector(object):
 
                 # call the resampling kernel
                 # TODO: handle axis swapping (???)
-                resampling_args = [prio for prio in self.priorities] # inp_priority
-                resampling_args.extend([_vol.shape[0] for _vol in self.volumes]) # inp_voxelBoundX
-                resampling_args.extend([_vol.shape[1] for _vol in self.volumes]) # inp_voxelBoundY
-                resampling_args.extend([_vol.shape[2] for _vol in self.volumes]) # inp_voxelBoundZ
+                resampling_args = [np.int32(prio) for prio in self.priorities] # inp_priority
+                resampling_args.extend([np.int32(_vol.shape[0]) for _vol in self.volumes]) # inp_voxelBoundX
+                resampling_args.extend([np.int32(_vol.shape[1]) for _vol in self.volumes]) # inp_voxelBoundY
+                resampling_args.extend([np.int32(_vol.shape[2]) for _vol in self.volumes]) # inp_voxelBoundZ
                 for _vol in self.volumes: # inp_ijk_from_world
-                    inp_ijk_from_world = np.array(_vol.ijk_from_world)
+                    inp_ijk_from_world = np.array(_vol.ijk_from_world).astype(np.float32)
                     resampling_args.extend([
                         inp_ijk_from_world[0][0],
                         inp_ijk_from_world[0][1],
@@ -762,22 +769,22 @@ class Projector(object):
                         inp_ijk_from_world[2][2]
                     ])
                 resampling_args.extend([ # mega{Min,Max}{X,Y,Z}
-                    min_world_point[0],
-                    min_world_point[1],
-                    min_world_point[2],
-                    max_world_point[0],
-                    max_world_point[1],
-                    max_world_point[2]
+                    np.float32(min_world_point[0]),
+                    np.float32(min_world_point[1]),
+                    np.float32(min_world_point[2]),
+                    np.float32(max_world_point[0]),
+                    np.float32(max_world_point[1]),
+                    np.float32(max_world_point[2])
                 ])
                 resampling_args.extend([ # megaVoxelSize{X,Y,Z}
-                    self.megavol_spacing[0],
-                    self.megavol_spacing[1],
-                    self.megavol_spacing[2]
+                    np.float32(self.megavol_spacing[0]),
+                    np.float32(self.megavol_spacing[1]),
+                    np.float32(self.megavol_spacing[2])
                 ])
                 resampling_args.extend([
-                    mega_x_len,
-                    mega_y_len,
-                    mega_z_len
+                    np.int32(mega_x_len),
+                    np.int32(mega_y_len),
+                    np.int32(mega_z_len)
                 ])
                 resampling_args.extend([
                     self.megavol_density_gpu,
@@ -785,11 +792,11 @@ class Projector(object):
                 ])
 
                 # Calculate block and grid sizes: each block is a 4x4x4 cube of voxels
-                block = (4, 4, 4)
+                block = (1, 1, 1)
                 blocks_x = np.int(np.ceil(mega_x_len / block[0]))
                 blocks_y = np.int(np.ceil(mega_y_len / block[1]))
                 blocks_z = np.int(np.ceil(mega_z_len / block[2]))
-                logger.debug(f"Resampling: {blocks_x}x{blocks_y}x{blocks_z} blocks with {block[0]}x{block[1]}x{block[2]} threads each")
+                logger.info(f"Resampling: {blocks_x}x{blocks_y}x{blocks_z} blocks with {block[0]}x{block[1]}x{block[2]} threads each")
 
                 if blocks_x <= self.max_block_index and blocks_y <= self.max_block_index and blocks_z <= self.max_block_index:
                     offset_x = np.int32(0)
@@ -825,6 +832,8 @@ class Projector(object):
                 cuda.memcpy_htod(self.megavol_labeled_seg_gpu, labeled_seg)
 
                 # TODO (mjudish): copy volume density info to self.megavol_density_gpu. How to deal with axis swaps?
+
+            
 
             # Material MFP structs
             self.mat_mfp_struct_dict = dict()
