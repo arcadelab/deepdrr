@@ -1,17 +1,22 @@
 import typing
+import logging
+
+logger = logging.getLogger(__name__)
 
 try:
     import pycuda.driver as cuda
 except ImportError:
-    logging.warning('pycuda unavailable')
+    logger.critical("pycuda unavailable")
 
 from .plane_surface import PlaneSurface
 from .rita import RITA
 from .mcgpu_compton_data import MAX_NSHELLS
 import numpy as np
 
+
 class CudaPlaneSurfaceStruct:
-    MEMSIZE = 80 # from using sizeof(plane_surface_t)
+    MEMSIZE = 80  # from using sizeof(plane_surface_t)
+
     def __init__(self, psurf: PlaneSurface, struct_gpu_ptr):
         """Copies the PlaneSurface to memory location 'struct_gpu_ptr' on the GPU 
         """
@@ -28,17 +33,25 @@ class CudaPlaneSurfaceStruct:
         cuda.memcpy_htod(int(struct_gpu_ptr) + (7 * 4), self.b1)
         cuda.memcpy_htod(int(struct_gpu_ptr) + (10 * 4), self.b2)
 
-        self.bound1 = np.ascontiguousarray(np.array(psurf.bounds[0, :])).astype(np.float32)
-        self.bound2 = np.ascontiguousarray(np.array(psurf.bounds[1, :])).astype(np.float32)
+        self.bound1 = np.ascontiguousarray(np.array(psurf.bounds[0, :])).astype(
+            np.float32
+        )
+        self.bound2 = np.ascontiguousarray(np.array(psurf.bounds[1, :])).astype(
+            np.float32
+        )
         cuda.memcpy_htod(int(struct_gpu_ptr) + (13 * 4), self.bound1)
         cuda.memcpy_htod(int(struct_gpu_ptr) + (15 * 4), self.bound2)
 
         self.orthogonal = np.int32(psurf.orthogonal)
         cuda.memcpy_htod(int(struct_gpu_ptr) + (17 * 4), self.orthogonal)
 
+
 MAX_RITA_N_PTS = 128
+
+
 class CudaRitaStruct:
-    MEMSIZE = 4104 # from using sizeof(rita_t)
+    MEMSIZE = 4104  # from using sizeof(rita_t)
+
     def __init__(self, rita_obj: RITA, struct_gpu_ptr):
         """Copies the RITA object to memory location 'struct_gpu_ptr' on the GPU
         """
@@ -54,9 +67,11 @@ class CudaRitaStruct:
         cuda.memcpy_htod(int(struct_gpu_ptr) + 8 + 1 * (8 * MAX_RITA_N_PTS), self.y)
         cuda.memcpy_htod(int(struct_gpu_ptr) + 8 + 2 * (8 * MAX_RITA_N_PTS), self.a)
         cuda.memcpy_htod(int(struct_gpu_ptr) + 8 + 3 * (8 * MAX_RITA_N_PTS), self.b)
-        
+
+
 class CudaComptonStruct:
-    MEMSIZE = 364 # from using sizeof(compton_data_t)
+    MEMSIZE = 364  # from using sizeof(compton_data_t)
+
     def __init__(self, compton_arr: np.ndarray, struct_gpu_ptr):
         """Copies the Compton data (see mcgpu_compton_data.py) to memory location 'struct_gpu_ptr' on the GPU
         """
@@ -71,9 +86,13 @@ class CudaComptonStruct:
         cuda.memcpy_htod(int(struct_gpu_ptr) + 4 + 1 * (4 * MAX_NSHELLS), self.ui)
         cuda.memcpy_htod(int(struct_gpu_ptr) + 4 + 2 * (4 * MAX_NSHELLS), self.jmc)
 
+
 MAX_MFP_BINS = 25005
+
+
 class CudaMatMfpStruct:
-    MEMSIZE = 400084 # from using sizeof(mat_mfp_data_t)
+    MEMSIZE = 400084  # from using sizeof(mat_mfp_data_t)
+
     def __init__(self, mfp_arr: np.ndarray, struct_gpu_ptr):
         """Copies the MFP data (see mcgpu_mfp_data.py) to memory location 'struct_gpu_ptr'
         """
@@ -90,8 +109,10 @@ class CudaMatMfpStruct:
         cuda.memcpy_htod(int(struct_gpu_ptr) + 4 + 2 * (4 * MAX_MFP_BINS), self.mfp_Co)
         cuda.memcpy_htod(int(struct_gpu_ptr) + 4 + 3 * (4 * MAX_MFP_BINS), self.mfp_Tot)
 
+
 class CudaWoodcockStruct:
-    MEMSIZE = 200044 # from using sizeof(wc_mfp_data_t)
+    MEMSIZE = 200044  # from using sizeof(wc_mfp_data_t)
+
     def __init__(self, mfp_arr: np.ndarray, struct_gpu_ptr):
         """Copies the Woodcock MFP data (see scatter.py:make_woodcock_mfp(...)) to memory location 'struct_gpu_ptr'
         """
