@@ -1,5 +1,5 @@
 from . import logging
-from . import vis, geo, projector, device, annotations
+from . import vis, geo, projector, device, annotations, utils
 from .projector import Projector
 from .vol import Volume
 from .device import CArm, MobileCArm
@@ -16,4 +16,5 @@ __all__ = [
     "projector",
     "device",
     "annotations",
+    "utils",
 ]
