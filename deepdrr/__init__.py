@@ -1,4 +1,4 @@
-from . import deepdrr_logging
+from . import logging
 from . import vis, geo, projector, device, annotations
 from .projector import Projector
 from .vol import Volume
