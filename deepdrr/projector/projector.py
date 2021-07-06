@@ -4,6 +4,8 @@ import logging
 import numpy as np
 from pathlib import Path
 
+logger = logging.getLogger(__name__)
+
 try:
     import pycuda.driver as cuda
     import pycuda.autoinit
@@ -14,7 +16,7 @@ try:
 except ImportError:
     pycuda_available = False
     SourceModule = Any
-    logging.warning("pycuda unavailable")
+    logger.warning("pycuda unavailable")
 
 from . import spectral_data
 from . import mass_attenuation
@@ -28,7 +30,13 @@ from .. import geo
 from .. import vol
 from ..device import MobileCArm
 from .. import utils
-from .cuda_scatter_structs import CudaPlaneSurfaceStruct, CudaRitaStruct, CudaComptonStruct, CudaMatMfpStruct, CudaWoodcockStruct
+from .cuda_scatter_structs import (
+    CudaPlaneSurfaceStruct,
+    CudaRitaStruct,
+    CudaComptonStruct,
+    CudaMatMfpStruct,
+    CudaWoodcockStruct,
+)
 import time
 
 
@@ -77,14 +85,26 @@ def _get_kernel_projector_module(num_volumes: int, num_materials: int) -> Source
     """
     # path to files for cubic interpolation (folder cubic in DeepDRR)
     d = Path(__file__).resolve().parent
-    bicubic_path = str(d / 'cubic')
-    source_path = str(d / 'project_kernel.cu')
+    bicubic_path = str(d / "cubic")
+    source_path = str(d / "project_kernel.cu")
 
     with open(source_path, "r") as file:
         source = file.read()
 
-    logger.debug(f'compiling {source_path} with NUM_VOLUMES={num_volumes}, NUM_MATERIALS={num_materials}')
-    return SourceModule(source, include_dirs=[bicubic_path, str(d)], no_extern_c=True, options=['-D', f'NUM_VOLUMES={num_volumes}', '-D', f'NUM_MATERIALS={num_materials}'])
+    logger.debug(
+        f"compiling {source_path} with NUM_VOLUMES={num_volumes}, NUM_MATERIALS={num_materials}"
+    )
+    return SourceModule(
+        source,
+        include_dirs=[bicubic_path, str(d)],
+        no_extern_c=True,
+        options=[
+            "-D",
+            f"NUM_VOLUMES={num_volumes}",
+            "-D",
+            f"NUM_MATERIALS={num_materials}",
+        ],
+    )
 
 
 def _get_kernel_scatter_module(num_materials) -> SourceModule:
@@ -96,13 +116,18 @@ def _get_kernel_scatter_module(num_materials) -> SourceModule:
         SourceModule: pycuda SourceModule object.
     """
     d = Path(__file__).resolve().parent
-    source_path = str(d / 'scatter_kernel.cu')
+    source_path = str(d / "scatter_kernel.cu")
 
-    with open(source_path, 'r') as file:
+    with open(source_path, "r") as file:
         source = file.read()
 
     logger.debug(f"compiling {source_path} with NUM_MATERIALS={num_materials}")
-    return SourceModule(source, include_dirs=[str(d)], no_extern_c=True, options=['-D', f'NUM_MATERIALS={num_materials}'])
+    return SourceModule(
+        source,
+        include_dirs=[str(d)],
+        no_extern_c=True,
+        options=["-D", f"NUM_MATERIALS={num_materials}"],
+    )
 
 
 class Projector(object):
@@ -181,7 +206,7 @@ class Projector(object):
         self.spectrum = _get_spectrum(spectrum)
 
         if add_scatter is not None:
-            logger.warning('add_scatter is deprecated. Set scatter_num instead.')
+            logger.warning("add_scatter is deprecated. Set scatter_num instead.")
             if scatter_num != 0:
                 raise ValueError("Only set scatter_num.")
             self.scatter_num = 1e6 if add_scatter else 0
@@ -222,7 +247,7 @@ class Projector(object):
 
         # assertions
         for mat in self.all_materials:
-            assert mat in material_coefficients, f'unrecognized material: {mat}'
+            assert mat in material_coefficients, f"unrecognized material: {mat}"
 
         if self.camera_intrinsics is None:
             assert self.carm is not None and hasattr(self.carm, "camera_intrinsics")
@@ -349,7 +374,7 @@ class Projector(object):
             intensities.append(intensity)
             photon_probs.append(photon_prob)
 
-            if (self.scatter_num > 0):
+            if self.scatter_num > 0:
                 # BIG TODO (mjudish): make sure that all variables referenced get properly initialized,
                 # and that all initialized variables in the class get properly referenced
                 logger.info(f"Starting scatter simulation, scatter_num={self.scatter_num}. Time: {time.asctime()}")
@@ -471,7 +496,7 @@ class Projector(object):
 
                 ### Reasoning: prob_tot = (f_pri * prob_pri) + (f_sc * prob_sc)
                 # such that: prob_tot / prob_pri = f_pri + f_sc * (prob_sc / prob_pri)
-                #photon_prob *= (f_pri + f_sc * (n_sc / n_pri))
+                # photon_prob *= (f_pri + f_sc * (n_sc / n_pri))
 
                 # total intensity = (f_pri * intensity_pri) * (f_sc * intensity_sc)
                 intensity = ((f_pri * intensity) + (f_sc * scatter_intensity))  # / f_pri
@@ -494,7 +519,7 @@ class Projector(object):
             # get energy deposited by multiplying [intensity] with [number of photons to hit each pixel]
             deposited_energy = np.multiply(intensity, solid_angle) * self.photon_count / np.average(solid_angle)
             # convert to keV / mm^2
-            deposited_energy /= (pixel_size_x * pixel_size_y)
+            deposited_energy /= pixel_size_x * pixel_size_y
             return deposited_energy, photon_prob
 
         if self.add_noise:
@@ -555,14 +580,14 @@ class Projector(object):
             volume = np.array(volume)
             # TODO: is this axis swap necessary?
             volume = np.moveaxis(volume, [0, 1, 2], [2, 1, 0]).copy()
-            vol_gpu = cuda.np_to_array(volume, order='C')
+            vol_gpu = cuda.np_to_array(volume, order="C")
             vol_texref = self.mod.get_texref(f"volume_{vol_id}")
             cuda.bind_array_to_texref(vol_gpu, vol_texref)
             self.volumes_gpu.append(vol_gpu)
             self.volumes_texref.append(vol_texref)
 
         # set the interpolation mode
-        if self.mode == 'linear':
+        if self.mode == "linear":
             for texref in self.volumes_texref:
                 texref.set_filter_mode(cuda.filter_mode.LINEAR)
         else:
@@ -582,14 +607,17 @@ class Projector(object):
                 else:
                     seg = np.zeros(_vol.shape).astype(np.float32)
                 # TODO: remove axis swap?
-                seg_for_vol.append(cuda.np_to_array(np.moveaxis(
-                    seg, [0, 1, 2], [2, 1, 0]).copy(), order='C'))
-                texref = self.mod.get_texref(f'seg_{vol_id}_{mat_id}')
+                seg_for_vol.append(
+                    cuda.np_to_array(
+                        np.moveaxis(seg, [0, 1, 2], [2, 1, 0]).copy(), order="C"
+                    )
+                )
+                texref = self.mod.get_texref(f"seg_{vol_id}_{mat_id}")
                 texref_for_vol.append(texref)
 
             for seg, texref in zip(seg_for_vol, texref_for_vol):
                 cuda.bind_array_to_texref(seg, texref)
-                if self.mode == 'linear':
+                if self.mode == "linear":
                     texref.set_filter_mode(cuda.filter_mode.LINEAR)
                 else:
                     raise RuntimeError("Invalid texref filter mode")
@@ -695,7 +723,7 @@ class Projector(object):
 
                 for _vol in self.volumes:
                     # TODO: hinky stuff here. Discuss with killeen
-                    corners_ijk = [ # TODO: this assumes voxel-centered indexing
+                    corners_ijk = [  # TODO: this assumes voxel-centered indexing
                         geo.point(0.5, 0.5, 0.5),
                         geo.point(0.5, 0.5, _vol.shape[2] - 0.5),
                         geo.point(0.5, _vol.shape[1] - 0.5, 0.5),
@@ -703,7 +731,11 @@ class Projector(object):
                         geo.point(_vol.shape[0] - 0.5, 0.5, 0.5),
                         geo.point(_vol.shape[0] - 0.5, 0.5, _vol.shape[2] - 0.5),
                         geo.point(_vol.shape[0] - 0.5, _vol.shape[1] - 0.5, 0.5),
-                        geo.point(_vol.shape[0] - 0.5, _vol.shape[1] - 0.5, _vol.shape[2] - 0.5)
+                        geo.point(
+                            _vol.shape[0] - 0.5,
+                            _vol.shape[1] - 0.5,
+                            _vol.shape[2] - 0.5,
+                        ),
                     ]
 
                     for ijk in corners_ijk:
@@ -712,33 +744,69 @@ class Projector(object):
                         y_points_world.append(corner[1])
                         z_points_world.append(corner[2])
 
-                # The points that define the bounding box of the combined volume            
-                min_world_point = geo.point(min(x_points_world), min(y_points_world), min(z_points_world))
-                max_world_point = geo.point(max(x_points_world), max(y_points_world), max(z_points_world))
+                # The points that define the bounding box of the combined volume
+                min_world_point = geo.point(
+                    min(x_points_world), min(y_points_world), min(z_points_world)
+                )
+                max_world_point = geo.point(
+                    max(x_points_world), max(y_points_world), max(z_points_world)
+                )
 
                 largest_spacing = max([_vol.spacing[0] for _vol in self.volumes])
-                largest_spacing = max([largest_spacing] + [_vol.spacing[1] for _vol in self.volumes])
-                largest_spacing = max([largest_spacing] + [_vol.spacing[2] for _vol in self.volumes])
+                largest_spacing = max(
+                    [largest_spacing] + [_vol.spacing[1] for _vol in self.volumes]
+                )
+                largest_spacing = max(
+                    [largest_spacing] + [_vol.spacing[2] for _vol in self.volumes]
+                )
 
-                self.megavol_spacing = geo.vector(largest_spacing, largest_spacing, largest_spacing)
+                self.megavol_spacing = geo.vector(
+                    largest_spacing, largest_spacing, largest_spacing
+                )
 
                 # readjust the bounding box so that the voxels fit evenly
                 for axis in range(3):
-                    remainder = (max_world_point[axis] - min_world_point[axis]) % self.megavol_spacing[axis]
+                    remainder = (
+                        max_world_point[axis] - min_world_point[axis]
+                    ) % self.megavol_spacing[axis]
                     if remainder > 0:
-                        max_world_point[axis] = max_world_point[axis] + self.megavol_spacing[axis] - remainder
+                        max_world_point[axis] = (
+                            max_world_point[axis]
+                            + self.megavol_spacing[axis]
+                            - remainder
+                        )
 
                 logger.info(f"megavol spacing: {self.megavol_spacing}")
 
-                mega_x_len = int(0.01 + ((max_world_point[0] - min_world_point[0]) / self.megavol_spacing[0]))
-                mega_y_len = int(0.01 + ((max_world_point[1] - min_world_point[1]) / self.megavol_spacing[1]))
-                mega_z_len = int(0.01 + ((max_world_point[2] - min_world_point[2]) / self.megavol_spacing[2]))
+                mega_x_len = int(
+                    0.01
+                    + (
+                        (max_world_point[0] - min_world_point[0])
+                        / self.megavol_spacing[0]
+                    )
+                )
+                mega_y_len = int(
+                    0.01
+                    + (
+                        (max_world_point[1] - min_world_point[1])
+                        / self.megavol_spacing[1]
+                    )
+                )
+                mega_z_len = int(
+                    0.01
+                    + (
+                        (max_world_point[2] - min_world_point[2])
+                        / self.megavol_spacing[2]
+                    )
+                )
 
                 self.megavol_shape = (mega_x_len, mega_y_len, mega_z_len)
 
                 logger.info(f"max_world_point: {max_world_point}")
                 logger.info(f"min_world_point: {min_world_point}")
-                logger.info(f"mega_[x,y,z]_len: ({mega_x_len}, {mega_y_len}, {mega_z_len})")
+                logger.info(
+                    f"mega_[x,y,z]_len: ({mega_x_len}, {mega_y_len}, {mega_z_len})"
+                )
 
                 # allocate megavolume data and labeled (i.e., not binary) segmentation
                 self.megavol_density_gpu = cuda.mem_alloc(NUMBYTES_FLOAT32 * mega_x_len * mega_y_len * mega_z_len)
@@ -791,18 +859,33 @@ class Projector(object):
                 blocks_x = np.int(np.ceil(mega_x_len / block[0]))
                 blocks_y = np.int(np.ceil(mega_y_len / block[1]))
                 blocks_z = np.int(np.ceil(mega_z_len / block[2]))
-                logger.info(f"Resampling: {blocks_x}x{blocks_y}x{blocks_z} blocks with {block[0]}x{block[1]}x{block[2]} threads each")
+                logger.info(
+                    f"Resampling: {blocks_x}x{blocks_y}x{blocks_z} blocks with {block[0]}x{block[1]}x{block[2]} threads each"
+                )
 
-                if blocks_x <= self.max_block_index and blocks_y <= self.max_block_index and blocks_z <= self.max_block_index:
+                if (
+                    blocks_x <= self.max_block_index
+                    and blocks_y <= self.max_block_index
+                    and blocks_z <= self.max_block_index
+                ):
                     offset_x = np.int32(0)
                     offset_y = np.int32(0)
                     offset_z = np.int32(0)
-                    self.resample_megavolume(*resampling_args, offset_x, offset_y, offset_z, block=block, grid=(blocks_x, blocks_y, blocks_z))
+                    self.resample_megavolume(
+                        *resampling_args,
+                        offset_x,
+                        offset_y,
+                        offset_z,
+                        block=block,
+                        grid=(blocks_x, blocks_y, blocks_z),
+                    )
                 else:
                     logger.debug("Running resampling kernel patchwise")
                     for x in range((blocks_x - 1) // (self.max_block_index + 1)):
                         for y in range((blocks_y - 1) // (self.max_block_index + 1)):
-                            for z in range((blocks_z - 1) // (self.max_block_index + 1)):
+                            for z in range(
+                                (blocks_z - 1) // (self.max_block_index + 1)
+                            ):
                                 offset_x = np.int32(x * self.max_block_index)
                                 offset_y = np.int32(y * self.max_block_index)
                                 offset_z = np.int32(z * self.max_block_index)
@@ -831,8 +914,12 @@ class Projector(object):
                 # copy over from self.volumes[0] to the gpu
                 labeled_seg = np.zeros(self.volume.shape).astype(np.int8)
                 for i, mat in enumerate(self.all_materials):
-                    labeled_seg = np.add(labeled_seg, i * self.volumes[0].materials[mat]).astype(np.int8)
-                labeled_seg = np.moveaxis(labeled_seg, [0, 1, 2], [2, 1, 0]).copy() # TODO: is this axis swap necessary?
+                    labeled_seg = np.add(
+                        labeled_seg, i * self.volumes[0].materials[mat]
+                    ).astype(np.int8)
+                labeled_seg = np.moveaxis(
+                    labeled_seg, [0, 1, 2], [2, 1, 0]
+                ).copy()  # TODO: is this axis swap necessary?
                 cuda.memcpy_htod(self.megavol_labeled_seg_gpu, labeled_seg)
 
                 # TODO (mjudish): copy volume density info to self.megavol_density_gpu. How to deal with axis swaps?
@@ -886,7 +973,7 @@ class Projector(object):
             self.scatter_deposits_gpu = cuda.mem_alloc(self.output_size * NUMBYTES_FLOAT32)
             self.num_scattered_hits_gpu = cuda.mem_alloc(self.output_size * NUMBYTES_INT32)
             self.num_unscattered_hits_gpu = cuda.mem_alloc(self.output_size * NUMBYTES_INT32)
-
+            
         # Mark self as initialized.
         self.initialized = True
 
