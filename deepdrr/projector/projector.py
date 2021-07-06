@@ -927,26 +927,26 @@ class Projector(object):
             # Material MFP structs
             self.mat_mfp_struct_dict = dict()
             self.mat_mfp_structs_gpu = cuda.mem_alloc(len(self.all_materials) * CudaMatMfpStruct.MEMSIZE)
-            for i, mat in enumerate(my_materials):
+            for i, mat in enumerate(self.all_materials):
                 struct_gpu_ptr = int(self.mat_mfp_structs_gpu) + (i * CudaMatMfpStruct.MEMSIZE)
                 self.mat_mfp_struct_dict[mat] = CudaMatMfpStruct(MFP_DATA[mat], struct_gpu_ptr)
 
             # Woodcock MFP struct
-            wc_np_arr = scatter.make_woodcock_mfp(my_materials)
+            wc_np_arr = scatter.make_woodcock_mfp(self.all_materials)
             self.woodcock_struct_gpu = cuda.mem_alloc(CudaWoodcockStruct.MEMSIZE)
             self.woodcock_struct = CudaWoodcockStruct(wc_np_arr, int(self.woodcock_struct_gpu))
 
             # Material Compton structs
             self.compton_struct_dict = dict()
             self.compton_structs_gpu = cuda.mem_alloc(len(self.all_materials) * CudaComptonStruct.MEMSIZE)
-            for i, mat in enumerate(my_materials):
+            for i, mat in enumerate(self.all_materials):
                 struct_gpu_ptr = int(self.compton_structs_gpu) + (i * CudaComptonStruct.MEMSIZE)
                 self.compton_struct_dict[mat] = CudaComptonStruct(COMPTON_DATA[mat], struct_gpu_ptr)
 
             # Material RITA structs
             self.rita_struct_dict = dict()
             self.rita_structs_gpu = cuda.mem_alloc(len(self.all_materials) * CudaRitaStruct.MEMSIZE)
-            for i, mat in enumerate(my_materials):
+            for i, mat in enumerate(self.all_materials):
                 struct_gpu_ptr = int(self.rita_structs_gpu) + (i * CudaRitaStruct.MEMSIZE)
                 self.rita_struct_dict[mat] = CudaRitaStruct(rita_samplers[mat], struct_gpu_ptr)
                 #print(f"for material [{mat}], RITA structure at location {struct_gpu_ptr}")
