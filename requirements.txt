@@ -1,6 +1,6 @@
 # development requirements
 numpy
-torch
+pytorch
 torchvision
 nibabel
 scikit-image
