@@ -835,20 +835,20 @@ extern "C" {
         int out_width, // width of the output image
         int out_height, // height of the output image
         float step,
-        int priority[NUM_VOLUMES], // volumes with smaller priority-ID have higher priority when determining which volume we are in
-        float gVolumeEdgeMinPointX[NUM_VOLUMES], // one value for each of the NUM_VOLUMES volumes
-        float gVolumeEdgeMinPointY[NUM_VOLUMES],
-        float gVolumeEdgeMinPointZ[NUM_VOLUMES],
-        float gVolumeEdgeMaxPointX[NUM_VOLUMES],
-        float gVolumeEdgeMaxPointY[NUM_VOLUMES],
-        float gVolumeEdgeMaxPointZ[NUM_VOLUMES],
-        float gVoxelElementSizeX[NUM_VOLUMES], // one value for each of the NUM_VOLUMES volumes
-        float gVoxelElementSizeY[NUM_VOLUMES],
-        float gVoxelElementSizeZ[NUM_VOLUMES],
-        float sx[NUM_VOLUMES], // x-coordinate of source point for rays in world-space
-        float sy[NUM_VOLUMES], // one value for each of the NUM_VOLUMES volumes
-        float sz[NUM_VOLUMES],
-        float rt_kinv[9 * NUM_VOLUMES], // (NUM_VOLUMES, 3, 3) array giving the image-to-world-ray transform for each volume
+        int *priority, // volumes with smaller priority-ID have higher priority when determining which volume we are in
+        float *gVolumeEdgeMinPointX, // one value for each of the NUM_VOLUMES volumes
+        float *gVolumeEdgeMinPointY,
+        float *gVolumeEdgeMinPointZ,
+        float *gVolumeEdgeMaxPointX,
+        float *gVolumeEdgeMaxPointY,
+        float *gVolumeEdgeMaxPointZ,
+        float *gVoxelElementSizeX, // one value for each of the NUM_VOLUMES volumes
+        float *gVoxelElementSizeY,
+        float *gVoxelElementSizeZ,
+        float *sx, // x-coordinate of source point for rays in world-space
+        float *sy, // one value for each of the NUM_VOLUMES volumes
+        float *sz,
+        float *rt_kinv, // (NUM_VOLUMES, 3, 3) array giving the image-to-world-ray transform for each volume
         int n_bins, // the number of spectral bins
         float *energies, // 1-D array -- size is the n_bins. Units: [keV]
         float *pdf, // 1-D array -- probability density function over the energies
@@ -1352,11 +1352,11 @@ extern "C" {
     #endif
 
     __global__ void resample_megavolume(
-        int inp_priority[NUM_VOLUMES],
-        int inp_voxelBoundX[NUM_VOLUMES], // number of voxels in x direction for each volume
-        int inp_voxelBoundY[NUM_VOLUMES],
-        int inp_voxelBoundZ[NUM_VOLUMES],
-        float inp_ijk_from_world[9 * NUM_VOLUMES], // ijk_from_world transforms for input volumes TODO: is each transform 3x3?
+        int *inp_priority,
+        int *inp_voxelBoundX, // number of voxels in x direction for each volume
+        int *inp_voxelBoundY,
+        int *inp_voxelBoundZ,
+        float *inp_ijk_from_world, // ijk_from_world transforms for input volumes TODO: is each transform 3x3?
         float megaMinX, // bounding box for output megavolume, in world coordinates
         float megaMinY,
         float megaMinZ,
@@ -1416,7 +1416,7 @@ extern "C" {
                     for (int i = 0; i < NUM_VOLUMES; i++) {
                         density_sample[i] = -1.0f; // "reset" this volume's sample
 
-                        int offset = 9 * i;
+                        int offset = 3 * 4 * i; // TODO: do the matrix multiplication proper
                         float inp_x = (inp_ijk_from_world[offset + 0] * x) + (inp_ijk_from_world[offset + 1] * y) + (inp_ijk_from_world[offset + 2] * z);
                         if ((inp_x < 0.0) || (inp_x >= inp_voxelBoundX[i])) continue; // TODO: make sure this behavior agrees with the behavior of ijk_from_world transforms
 
@@ -1429,35 +1429,35 @@ extern "C" {
                         if (inp_priority[i] < curr_priority) curr_priority = inp_priority[i];
                         else if (inp_priority[i] > curr_priority) continue;
 
-			// mjudish understands that this is ugly, but it compiles 
+                        // mjudish understands that this is ugly, but it compiles 
                         if      (0 == i) { RESAMPLE_TEXTURES(0); }
-			#if NUM_VOLUMES > 1
-			else if (1 == i) { RESAMPLE_TEXTURES(1); }
-			#endif
-			#if NUM_VOLUMES > 2
-			else if (2 == i) { RESAMPLE_TEXTURES(2); }
-			#endif
-			#if NUM_VOLUMES > 3
+                        #if NUM_VOLUMES > 1
+                        else if (1 == i) { RESAMPLE_TEXTURES(1); }
+                        #endif
+                        #if NUM_VOLUMES > 2
+                        else if (2 == i) { RESAMPLE_TEXTURES(2); }
+                        #endif
+                        #if NUM_VOLUMES > 3
                         else if (3 == i) { RESAMPLE_TEXTURES(3); }
-			#endif
-			#if NUM_VOLUMES > 4
+                        #endif
+                        #if NUM_VOLUMES > 4
                         else if (4 == i) { RESAMPLE_TEXTURES(4); }
-			#endif
-			#if NUM_VOLUMES > 5
+                        #endif
+                        #if NUM_VOLUMES > 5
                         else if (5 == i) { RESAMPLE_TEXTURES(5); }
-			#endif
-			#if NUM_VOLUMES > 6
+                        #endif
+                        #if NUM_VOLUMES > 6
                         else if (6 == i) { RESAMPLE_TEXTURES(6); }
-			#endif
-			#if NUM_VOLUMES > 7
+                        #endif
+                        #if NUM_VOLUMES > 7
                         else if (7 == i) { RESAMPLE_TEXTURES(7); }
-			#endif
-			#if NUM_VOLUMES > 8
+                        #endif
+                        #if NUM_VOLUMES > 8
                         else if (8 == i) { RESAMPLE_TEXTURES(8); }
-			#endif
-			#if NUM_VOLUMES > 9
+                        #endif
+                        #if NUM_VOLUMES > 9
                         else if (9 == i) { RESAMPLE_TEXTURES(9); }
-			#endif
+                        #endif
                         // Maximum supported value of NUM_VOLUMES is 10
                     }
 

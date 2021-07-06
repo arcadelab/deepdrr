@@ -40,6 +40,13 @@ from .cuda_scatter_structs import (
 import time
 
 
+logger = logging.getLogger(__name__)
+
+NUMBYTES_INT8 = 1
+NUMBYTES_INT32 = 4
+NUMBYTES_FLOAT32 = 4
+
+
 def _get_spectrum(spectrum: Union[np.ndarray, str]):
     """Get the data corresponding to the given spectrum name.
 
@@ -182,17 +189,11 @@ class Projector(object):
             self.volumes.append(_vol)
 
         if priorities is None:
-            self.priorities = [
-                len(self.volumes) - 1 - i for i in range(len(self.volumes))
-            ]
+            self.priorities = [len(self.volumes) - 1 - i for i in range(len(self.volumes))]
         else:
             for prio in priorities:
-                assert isinstance(
-                    prio, int
-                ), "missing priority, or priority is not an integer"
-                assert (0 <= prio) and (
-                    prio < len(volume)
-                ), "invalid priority outside range [0, NUM_VOLUMES)"
+                assert isinstance(prio, int), "missing priority, or priority is not an integer"
+                assert (0 <= prio) and (prio < len(volume)), "invalid priority outside range [0, NUM_VOLUMES)"
                 self.priorities.append(prio)
         assert len(self.volumes) == len(self.priorities)
 
@@ -234,9 +235,7 @@ class Projector(object):
         logger.info(f"ALL MATERIALS: {self.all_materials}")
 
         # compile the module
-        self.mod = _get_kernel_projector_module(
-            len(self.volumes), len(self.all_materials)
-        )
+        self.mod = _get_kernel_projector_module(len(self.volumes), len(self.all_materials))
         self.project_kernel = self.mod.get_function("projectKernel")
 
         if self.scatter_num > 0:
@@ -258,9 +257,7 @@ class Projector(object):
 
     @property
     def volume(self):
-        logger.warning(
-            f"volume is deprecated. Each projector can contain multiple volumes."
-        )
+        logger.warning(f'volume is deprecated. Each projector can contain multiple volumes.')
         if len(self.volumes) != 1:
             raise AttributeError
         return self.volumes[0]
@@ -294,9 +291,7 @@ class Projector(object):
             )
         elif not camera_projections and self.carm is not None:
             camera_projections = [self.carm.get_camera_projection()]
-            logger.debug(
-                f"projecting with source at {camera_projections[0].center_in_world}, pointing toward isocenter at {self.carm.isocenter}..."
-            )
+            logger.debug(f'projecting with source at {camera_projections[0].center_in_world}, pointing toward isocenter at {self.carm.isocenter}...')
 
         assert isinstance(self.spectrum, np.ndarray)
 
@@ -305,115 +300,66 @@ class Projector(object):
         intensities = []
         photon_probs = []
         for i, proj in enumerate(camera_projections):
-            logger.info(
-                f"Projecting and attenuating camera position {i+1} / {len(camera_projections)}"
-            )
+            logger.info(f"Projecting and attenuating camera position {i+1} / {len(camera_projections)}")
+                           
+            for vol_id, _vol in enumerate(self.volumes):
+                    source_ijk = np.array(proj.get_center_in_volume(_vol)).astype(np.float32)
+                    logger.debug(f'source point for volume #{vol_id}: {source_ijk}')
+                    cuda.memcpy_htod(int(self.sourceX_gpu) + int(NUMBYTES_INT32 * vol_id), np.array([source_ijk[0]]))
+                    cuda.memcpy_htod(int(self.sourceY_gpu) + int(NUMBYTES_INT32 * vol_id), np.array([source_ijk[1]]))
+                    cuda.memcpy_htod(int(self.sourceZ_gpu) + int(NUMBYTES_INT32 * vol_id), np.array([source_ijk[2]]))
 
-            # for ease of creating the argument array, we do this calculations now
-            source_ijk_arr = [
-                np.array(proj.get_center_in_volume(_vol)).astype(np.float32)
-                for _vol in self.volumes
-            ]
-            ijk_from_index_arr = [
-                np.array(proj.get_ray_transform(_vol)).astype(np.float32)
-                for _vol in self.volumes
-            ]
+                    ijk_from_index = proj.get_ray_transform(_vol)
+                    logger.debug(f'center ray: {ijk_from_index @ geo.point(self.output_shape[0] / 2, self.output_shape[1] / 2)}')
+                    ijk_from_index = np.array(ijk_from_index).astype(np.float32)
+                    logger.debug(f'ijk_from_index (rt_kinv in kernel):\n{ijk_from_index}')
+                    print(f"ijk_from_index.size: {ijk_from_index.size}") # mjudish (sanity checking)
+                    cuda.memcpy_htod(int(self.rt_kinv_gpu) + (ijk_from_index.size * NUMBYTES_FLOAT32) * vol_id, ijk_from_index)
 
             args = [
-                np.int32(proj.sensor_width),  # out_width
-                np.int32(proj.sensor_height),  # out_height
-                np.float32(self.step),  # step
+                np.int32(proj.sensor_width),        # out_width
+                np.int32(proj.sensor_height),       # out_height
+                np.float32(self.step),              # step
+                self.priorities_gpu,          # priority
+                self.minPointX_gpu,         # gVolumeEdgeMinPointX
+                self.minPointY_gpu,         # gVolumeEdgeMinPointY
+                self.minPointZ_gpu,         # gVolumeEdgeMinPointZ
+                self.maxPointX_gpu,         # gVolumeEdgeMaxPointX
+                self.maxPointY_gpu,         # gVolumeEdgeMaxPointY
+                self.maxPointZ_gpu,         # gVolumeEdgeMaxPointZ
+                self.voxelSizeX_gpu,        # gVoxelElementSizeX
+                self.voxelSizeY_gpu,        # gVoxelElementSizeY
+                self.voxelSizeZ_gpu,        # gVoxelElementSizeZ
+                self.sourceX_gpu,       # sx
+                self.sourceY_gpu,       # sy
+                self.sourceZ_gpu,       # sz
+                self.rt_kinv_gpu,           # RT_Kinv
+                np.int32(self.spectrum.shape[0]),   # n_bins
+                self.energies_gpu,                  # energies
+                self.pdf_gpu,                       # pdf
+                self.absorption_coef_table_gpu,     # absorb_coef_table
+                self.intensity_gpu,         # intensity
+                self.photon_prob_gpu,       # photon_prob
+                self.solid_angle_gpu,       # solid_angle
             ]
-            args.extend([np.int32(prio) for prio in self.priorities])  # priority
-            args.extend(
-                [np.float32(-0.5) for i in range(len(self.volumes))]
-            )  # gVolumeEdgeMinPointX
-            args.extend(
-                [np.float32(-0.5) for i in range(len(self.volumes))]
-            )  # gVolumeEdgeMinPointY
-            args.extend(
-                [np.float32(-0.5) for i in range(len(self.volumes))]
-            )  # gVolumeEdgeMinPointZ
-            args.extend(
-                [np.float32(_vol.shape[0] - 0.5) for _vol in self.volumes]
-            )  # gVolumeEdgeMaxPointX
-            args.extend(
-                [np.float32(_vol.shape[1] - 0.5) for _vol in self.volumes]
-            )  # gVolumeEdgeMaxPointY
-            args.extend(
-                [np.float32(_vol.shape[2] - 0.5) for _vol in self.volumes]
-            )  # gVolumeEdgeMaxPointZ
-            args.extend(
-                [np.float32(_vol.spacing[0]) for _vol in self.volumes]
-            )  # gVoxelElementSizeX
-            args.extend(
-                [np.float32(_vol.spacing[1]) for _vol in self.volumes]
-            )  # gVoxelElementSizeY
-            args.extend(
-                [np.float32(_vol.spacing[2]) for _vol in self.volumes]
-            )  # gVoxelElementSizeZ
-            args.extend(
-                [np.float32(source_ijk[0]) for source_ijk in source_ijk_arr]
-            )  # sx
-            args.extend(
-                [np.float32(source_ijk[1]) for source_ijk in source_ijk_arr]
-            )  # sy
-            args.extend(
-                [np.float32(source_ijk[2]) for source_ijk in source_ijk_arr]
-            )  # sz
-            for ijk_from_index in ijk_from_index_arr:  # rt_kinv
-                args.extend(
-                    [
-                        np.float32(ijk_from_index[0][0]),
-                        np.float32(ijk_from_index[0][1]),
-                        np.float32(ijk_from_index[0][2]),
-                        np.float32(ijk_from_index[1][0]),
-                        np.float32(ijk_from_index[1][1]),
-                        np.float32(ijk_from_index[1][2]),
-                        np.float32(ijk_from_index[2][0]),
-                        np.float32(ijk_from_index[2][1]),
-                        np.float32(ijk_from_index[2][2]),
-                    ]
-                )
-            args.extend(
-                [
-                    np.int32(self.spectrum.shape[0]),  # n_bins
-                    self.energies_gpu,  # energies
-                    self.pdf_gpu,  # pdf
-                    self.absorption_coef_table_gpu,  # absorb_coef_table
-                    self.intensity_gpu,  # intensity
-                    self.photon_prob_gpu,  # photon_prob
-                    self.solid_angle_gpu,  # solid_angle
-                ]
-            )
 
             # Calculate required blocks
             blocks_w = np.int(np.ceil(self.output_shape[0] / self.threads))
             blocks_h = np.int(np.ceil(self.output_shape[1] / self.threads))
             block = (self.threads, self.threads, 1)
-            logger.debug(
-                f"Running: {blocks_w}x{blocks_h} blocks with {self.threads}x{self.threads} threads each"
-            )
+            logger.debug(f"Running: {blocks_w}x{blocks_h} blocks with {self.threads}x{self.threads} threads each")
 
             if blocks_w <= self.max_block_index and blocks_h <= self.max_block_index:
                 offset_w = np.int32(0)
                 offset_h = np.int32(0)
-                self.project_kernel(
-                    *args, offset_w, offset_h, block=block, grid=(blocks_w, blocks_h)
-                )
+                self.project_kernel(*args, offset_w, offset_h, block=block, grid=(blocks_w, blocks_h))
             else:
                 logger.debug("Running kernel patchwise")
                 for w in range((blocks_w - 1) // (self.max_block_index + 1)):
                     for h in range((blocks_h - 1) // (self.max_block_index + 1)):
                         offset_w = np.int32(w * self.max_block_index)
                         offset_h = np.int32(h * self.max_block_index)
-                        self.project_kernel(
-                            *args,
-                            offset_w,
-                            offset_h,
-                            block=block,
-                            grid=(self.max_block_index, self.max_block_index),
-                        )
+                        self.project_kernel(*args, offset_w, offset_h, block=block, grid=(self.max_block_index, self.max_block_index))
                         context.synchronize()
 
             intensity = np.empty(self.output_shape, dtype=np.float32)
@@ -431,114 +377,83 @@ class Projector(object):
             if self.scatter_num > 0:
                 # BIG TODO (mjudish): make sure that all variables referenced get properly initialized,
                 # and that all initialized variables in the class get properly referenced
-                logger.info(
-                    f"Starting scatter simulation, scatter_num={self.scatter_num}. Time: {time.asctime()}"
-                )
-                index_from_ijk = camera_projection.get_ray_transform(
-                    self.volume
-                ).inv  # Urgent TODO: "self.volume" is incompatible with this version of the code
-                index_from_ijk = np.ascontiguousarray(
-                    np.array(index_from_ijk)[0:2, 0:3]
-                ).astype(np.float32)
+                logger.info(f"Starting scatter simulation, scatter_num={self.scatter_num}. Time: {time.asctime()}")
+                ###index_from_ijk = proj.get_ray_transform(self.megavolume).inv # Urgent TODO: "self.volume" is incompatible with this version of the code 
+                
+                index_from_ijk = (MEGAVOLUME.ijk_from_world @ proj.world_from_index).inv
+                index_from_ijk = np.ascontiguousarray(np.array(index_from_ijk)[0:2, 0:3]).astype(np.float32)
                 cuda.memcpy_htod(self.index_from_ijk_gpu, index_from_ijk)
+
+                scatter_source_ijk = np.array(proj.get_center_in_volume(self.megavolume)).astype(np.float32)
 
                 detector_plane = scatter.get_detector_plane(
                     ijk_from_index,
-                    camera_projection.index_from_camera2d,
+                    proj.index_from_camera2d,
                     self.source_to_detector_distance,
-                    geo.Point3D.from_any(camera_center_in_volume),
-                    self.output_shape,
+                    geo.Point3D.from_any(scatter_source_ijk),
+                    self.output_shape
                 )
-                detector_plane_struct = CudaPlaneSurfaceStruct(
-                    detector_plane, int(self.detector_plane_gpu)
-                )
+                detector_plane_struct = CudaPlaneSurfaceStruct(detector_plane, int(self.detector_plane_gpu))
 
                 E_abs_keV = 5  # E_abs == 5000 eV
-                histories_per_thread = int(
-                    np.ceil(self.scatter_num / (4 * self.threads * self.threads))
-                )
+                histories_per_thread = int(np.ceil(self.scatter_num / (4 * self.threads * self.threads)))
                 print(f"histories_per_thread: {histories_per_thread}")
 
                 scatter_args = [
-                    # detector_width
-                    np.int32(camera_projection.sensor_width),
-                    # detector_height
-                    np.int32(camera_projection.sensor_height),
-                    # histories_for_thread
-                    np.int32(histories_per_thread),
-                    # labeled_segmentation # TODO: make sure this is the unified scatter volume
-                    self.labeled_segmentation_gpu,
-                    camera_center_in_volume[0],  # sx
-                    camera_center_in_volume[1],  # sy
-                    camera_center_in_volume[2],  # sz
-                    np.float32(self.source_to_detector_distance),  # sdd
-                    # volume_shape_x
-                    np.int32(self.volume.shape[0]),
-                    # volume_shape_y
-                    np.int32(self.volume.shape[1]),
-                    # volume_shape_z
-                    np.int32(self.volume.shape[2]),
-                    # gVolumeEdgeMinPointX
-                    np.float32(-0.5),
-                    # gVolumeEdgeMinPointY
-                    np.float32(-0.5),
-                    # gVolumeEdgeMinPointZ
-                    np.float32(-0.5),
-                    # gVolumeEdgeMaxPointX
-                    np.float32(self.volume.shape[0] - 0.5),
-                    # gVolumeEdgeMaxPointY
-                    np.float32(self.volume.shape[1] - 0.5),
-                    # gVolumeEdgeMaxPointZ
-                    np.float32(self.volume.shape[2] - 0.5),
-                    # gVoxelElementSizeX
-                    np.float32(self.volume.spacing[0]),
-                    # gVoxelElementSizeY
-                    np.float32(self.volume.spacing[1]),
-                    # gVoxelElementSizeZ
-                    np.float32(self.volume.spacing[2]),
-                    self.index_from_ijk_gpu,  # index_from_ijk
-                    self.mat_mfp_structs_gpu,  # mat_mfp_arr
-                    self.woodcock_struct_gpu,  # woodcock_mfp
-                    self.compton_structs_gpu,  # compton_arr
-                    self.rita_structs_gpu,  # rita_arr
-                    self.detector_plane_gpu,  # detector_plane
-                    np.int32(self.spectrum.shape[0]),  # n_bins
-                    self.energies_gpu,  # spectrum_energies
-                    self.cdf_gpu,  # spectrum_cdf
-                    np.float32(E_abs_keV),  # E_abs
-                    # seed_input TODO
-                    np.int32(12345),
-                    self.scatter_deposits_gpu,  # deposited_energy
-                    self.num_scattered_hits_gpu,  # num_scattered_hits
-                    self.num_unscattered_hits_gpu,  # num_unscattered_hits
+                    np.int32(proj.sensor_width),       # detector_width
+                    np.int32(proj.sensor_height),      # detector_height
+                    np.int32(histories_per_thread),                 # histories_for_thread
+                    self.megavol_labeled_seg_gpu,                  # labeled_segmentation 
+                    scatter_source_ijk[0],                     # sx
+                    scatter_source_ijk[1],                     # sy
+                    scatter_source_ijk[2],                     # sz
+                    np.float32(self.source_to_detector_distance),   # sdd
+                    np.int32(self.megavolume.shape[0]),                 # volume_shape_x
+                    np.int32(self.megavolume.shape[1]),                 # volume_shape_y
+                    np.int32(self.megavolume.shape[2]),                 # volume_shape_z
+                    np.float32(-0.5),                               # gVolumeEdgeMinPointX
+                    np.float32(-0.5),                               # gVolumeEdgeMinPointY
+                    np.float32(-0.5),                               # gVolumeEdgeMinPointZ
+                    np.float32(self.megavol_shape[0] - 0.5),         # gVolumeEdgeMaxPointX
+                    np.float32(self.megavol_shape[1] - 0.5),         # gVolumeEdgeMaxPointY
+                    np.float32(self.megavol_shape[2] - 0.5),         # gVolumeEdgeMaxPointZ
+                    np.float32(self.megavol_spacing[0]),             # gVoxelElementSizeX
+                    np.float32(self.megavol_spacing[1]),             # gVoxelElementSizeY
+                    np.float32(self.megavol_spacing[2]),             # gVoxelElementSizeZ
+                    self.index_from_ijk_gpu,                        # index_from_ijk
+                    self.mat_mfp_structs_gpu,                       # mat_mfp_arr
+                    self.woodcock_struct_gpu,                       # woodcock_mfp
+                    self.compton_structs_gpu,                       # compton_arr
+                    self.rita_structs_gpu,                          # rita_arr
+                    self.detector_plane_gpu,                        # detector_plane
+                    np.int32(self.spectrum.shape[0]),               # n_bins
+                    self.energies_gpu,                              # spectrum_energies
+                    self.cdf_gpu,                                   # spectrum_cdf
+                    np.float32(E_abs_keV),                          # E_abs
+                    np.int32(12345),                                # seed_input TODO
+                    self.scatter_deposits_gpu,                      # deposited_energy
+                    self.num_scattered_hits_gpu,                    # num_scattered_hits
+                    self.num_unscattered_hits_gpu,                  # num_unscattered_hits
                 ]
 
                 seed_input_index = 30  # so we can change the seed_input for each simulation block--TODO
                 assert 12345 == scatter_args[seed_input_index]
 
                 # Calculate required blocks
-                histories_per_block = (
-                    4 * self.threads * self.threads
-                ) * histories_per_thread
-                blocks_n = np.int(np.ceil(self.scatter_num / histories_per_block))
+                histories_per_block = (4 * self.threads * self.threads) * histories_per_thread
+                blocks_n = np.int( np.ceil(self.scatter_num / histories_per_block))
                 # same number of threads per block as the ray-casting
                 block = (4 * self.threads * self.threads, 1, 1)
-                print(
-                    f"scatter_num: {self.scatter_num}. histories_per_block: {histories_per_block}. blocks_n: {blocks_n}"
-                )
+                print(f"scatter_num: {self.scatter_num}. histories_per_block: {histories_per_block}. blocks_n: {blocks_n}")
 
                 # Call the kernel
                 if blocks_n <= self.max_block_index:
-                    self.simulate_scatter(
-                        *scatter_args, block=block, grid=(blocks_n, 1)
-                    )
+                    self.simulate_scatter(*scatter_args, block=block, grid=(blocks_n, 1))
                 else:
                     for i in range(int(np.ceil(blocks_n / self.max_block_index))):
                         blocks_left_to_run = blocks_n - (i * self.max_block_index)
                         blocks_for_grid = min(blocks_left_to_run, self.max_block_index)
-                        self.simulate_scatter(
-                            *scatter_args, block=block, grid=(blocks_for_grid, 1)
-                        )
+                        self.simulate_scatter(*scatter_args, block=block, grid=(blocks_for_grid, 1))
                         context.synchronize()
 
                 # Copy results from the GPU
@@ -566,13 +481,9 @@ class Projector(object):
                 # Since [deposited_energy] is zero whenever [num_scattered_hits] is zero, we can add 1 to
                 # every pixel that [num_scattered_hits] is zero to avoid a "divide by zero" error
 
-                scatter_intensity = np.divide(
-                    scatter_intensity, 1 * (0 == n_sc) + n_sc * (0 != n_sc)
-                )
+                scatter_intensity = np.divide(scatter_intensity, 1 * (0 == n_sc) + n_sc * (0 != n_sc))
                 # scatter_intensity now actually reflects "intensity per photon"
-                logger.info(
-                    f"Finished scatter simulation, scatter_num={self.scatter_num}. Time: {time.asctime()}"
-                )
+                logger.info(f"Finished scatter simulation, scatter_num={self.scatter_num}. Time: {time.asctime()}")
 
                 hits_sc = np.sum(n_sc)  # total number of recorded scatter hits
                 # total number of recorded primary hits
@@ -588,7 +499,7 @@ class Projector(object):
                 # photon_prob *= (f_pri + f_sc * (n_sc / n_pri))
 
                 # total intensity = (f_pri * intensity_pri) * (f_sc * intensity_sc)
-                intensity = (f_pri * intensity) + (f_sc * scatter_intensity)  # / f_pri
+                intensity = ((f_pri * intensity) + (f_sc * scatter_intensity))  # / f_pri
 
         images = np.stack(intensities)
         photon_prob = np.stack(photon_probs)
@@ -602,21 +513,11 @@ class Projector(object):
             cuda.memcpy_dtoh(solid_angle, self.solid_angle_gpu)
             solid_angle = np.swapaxes(solid_angle, 0, 1).copy()
 
-            pixel_size_x = (
-                self.source_to_detector_distance
-                / camera_projection.index_from_camera2d.fx
-            )
-            pixel_size_y = (
-                self.source_to_detector_distance
-                / camera_projection.index_from_camera2d.fy
-            )
+            pixel_size_x = self.source_to_detector_distance / camera_projection.index_from_camera2d.fx
+            pixel_size_y = self.source_to_detector_distance / camera_projection.index_from_camera2d.fy
 
             # get energy deposited by multiplying [intensity] with [number of photons to hit each pixel]
-            deposited_energy = (
-                np.multiply(intensity, solid_angle)
-                * self.photon_count
-                / np.average(solid_angle)
-            )
+            deposited_energy = np.multiply(intensity, solid_angle) * self.photon_count / np.average(solid_angle)
             # convert to keV / mm^2
             deposited_energy /= pixel_size_x * pixel_size_y
             return deposited_energy, photon_prob
@@ -724,20 +625,62 @@ class Projector(object):
             self.segmentations_gpu.append(seg_for_vol)
             self.segmentations_texref.append(texref)
 
+        if len(self.volumes) > 1:
+            # allocate volumes' priority level on the GPU
+            self.priorities_gpu = cuda.mem_alloc(len(self.volumes) * NUMBYTES_INT32)
+            for vol_id, prio in enumerate(self.priorities):
+                cuda.memcpy_htod(int(self.priorities_gpu) + (NUMBYTES_INT32 * vol_id), np.int32(prio))
+
+            # allocate gVolumeEdge{Min,Max}Point{X,Y,Z} and gVoxelElementSize{X,Y,Z} on the GPU
+            self.minPointX_gpu = cuda.mem_alloc(len(self.volumes) * NUMBYTES_FLOAT32)
+            self.minPointY_gpu = cuda.mem_alloc(len(self.volumes) * NUMBYTES_FLOAT32)
+            self.minPointZ_gpu = cuda.mem_alloc(len(self.volumes) * NUMBYTES_FLOAT32)
+
+            self.maxPointX_gpu = cuda.mem_alloc(len(self.volumes) * NUMBYTES_FLOAT32)
+            self.maxPointY_gpu = cuda.mem_alloc(len(self.volumes) * NUMBYTES_FLOAT32)
+            self.maxPointZ_gpu = cuda.mem_alloc(len(self.volumes) * NUMBYTES_FLOAT32)
+
+            self.voxelSizeX_gpu = cuda.mem_alloc(len(self.volumes) * NUMBYTES_FLOAT32)
+            self.voxelSizeY_gpu = cuda.mem_alloc(len(self.volumes) * NUMBYTES_FLOAT32)
+            self.voxelSizeZ_gpu = cuda.mem_alloc(len(self.volumes) * NUMBYTES_FLOAT32)
+
+            for i, _vol in enumerate(self.volumes):
+                gpu_ptr_offset = (NUMBYTES_FLOAT32 * i)
+                cuda.memcpy_htod(int(self.minPointX_gpu) + gpu_ptr_offset, np.float32(-0.5))
+                cuda.memcpy_htod(int(self.minPointY_gpu) + gpu_ptr_offset, np.float32(-0.5))
+                cuda.memcpy_htod(int(self.minPointZ_gpu) + gpu_ptr_offset, np.float32(-0.5))
+
+                cuda.memcpy_htod(int(self.maxPointX_gpu) + gpu_ptr_offset, np.float32(_vol.shape[0] - 0.5))
+                cuda.memcpy_htod(int(self.maxPointY_gpu) + gpu_ptr_offset, np.float32(_vol.shape[1] - 0.5))
+                cuda.memcpy_htod(int(self.maxPointZ_gpu) + gpu_ptr_offset, np.float32(_vol.shape[2] - 0.5))
+
+                cuda.memcpy_htod(int(self.voxelSizeX_gpu) + gpu_ptr_offset, np.float32(_vol.spacing[0]))
+                cuda.memcpy_htod(int(self.voxelSizeY_gpu) + gpu_ptr_offset, np.float32(_vol.spacing[1]))
+                cuda.memcpy_htod(int(self.voxelSizeZ_gpu) + gpu_ptr_offset, np.float32(_vol.spacing[2]))
+            logger.debug(f"gVolume information allocated and copied to GPU")
+
+            # allocate source coord.s on GPU (4 bytes for each of {x,y,z} for each volume)
+            self.sourceX_gpu = cuda.mem_alloc(len(self.volumes) * NUMBYTES_FLOAT32)
+            self.sourceY_gpu = cuda.mem_alloc(len(self.volumes) * NUMBYTES_FLOAT32)
+            self.sourceZ_gpu = cuda.mem_alloc(len(self.volumes) * NUMBYTES_FLOAT32)
+        # 'endif' for multi-volume allocation
+
+        # allocate ijk_from_index matrix array on GPU (3x3 array x 4 bytes per float32)
+        # TODO: represent the factor of "3 x 3" in a more abstracted way
+        self.rt_kinv_gpu = cuda.mem_alloc(len(self.volumes) * 3 * 3 * NUMBYTES_FLOAT32)
+
         # allocate intensity array on GPU (4 bytes to a float32)
-        self.intensity_gpu = cuda.mem_alloc(self.output_size * 4)
-        logger.debug(f"bytes alloc'd for self.intensity_gpu: {self.output_size * 4}")
+        self.intensity_gpu = cuda.mem_alloc(self.output_size * NUMBYTES_FLOAT32)
+        logger.debug(f"bytes alloc'd for self.intensity_gpu: {self.output_size * NUMBYTES_FLOAT32}")
 
         # allocate photon_prob array on GPU (4 bytes to a float32)
-        self.photon_prob_gpu = cuda.mem_alloc(self.output_size * 4)
-        logger.debug(f"bytes alloc'd for self.photon_prob_gpu: {self.output_size * 4}")
+        self.photon_prob_gpu = cuda.mem_alloc(self.output_size * NUMBYTES_FLOAT32)
+        logger.debug(f"bytes alloc'd for self.photon_prob_gpu: {self.output_size * NUMBYTES_FLOAT32}")
 
         # allocate solid_angle array on GPU as needed (4 bytes to a float32)
         if self.collected_energy:
-            self.solid_angle_gpu = cuda.mem_alloc(self.output_size * 4)
-            logger.debug(
-                f"bytes alloc'd for self.solid_angle_gpu: {self.output_size * 4}"
-            )
+            self.solid_angle_gpu = cuda.mem_alloc(self.output_size * NUMBYTES_FLOAT32)
+            logger.debug(f"bytes alloc'd for self.solid_angle_gpu: {self.output_size * NUMBYTES_FLOAT32}")
         else:
             # NULL. Don't need to do solid angle calculation
             self.solid_angle_gpu = np.int32(0)
@@ -747,44 +690,33 @@ class Projector(object):
         noncont_energies = self.spectrum[:, 0].copy() / 1000
         contiguous_energies = np.ascontiguousarray(noncont_energies, dtype=np.float32)
         n_bins = contiguous_energies.shape[0]
-        self.energies_gpu = cuda.mem_alloc(n_bins * 4)
+        self.energies_gpu = cuda.mem_alloc(n_bins * NUMBYTES_FLOAT32)
         cuda.memcpy_htod(self.energies_gpu, contiguous_energies)
-        logger.debug(f"bytes alloc'd for self.energies_gpu: {n_bins * 4}")
+        logger.debug(f"bytes alloc'd for self.energies_gpu: {n_bins * NUMBYTES_FLOAT32}")
 
         # allocate and transfer spectrum pdf (4 bytes to a float32)
         noncont_pdf = self.spectrum[:, 1] / np.sum(self.spectrum[:, 1])
         contiguous_pdf = np.ascontiguousarray(noncont_pdf.copy(), dtype=np.float32)
         assert contiguous_pdf.shape == contiguous_energies.shape
         assert contiguous_pdf.shape[0] == n_bins
-        self.pdf_gpu = cuda.mem_alloc(n_bins * 4)
+        self.pdf_gpu = cuda.mem_alloc(n_bins * NUMBYTES_FLOAT32)
         cuda.memcpy_htod(self.pdf_gpu, contiguous_pdf)
-        logger.debug(f"bytes alloc'd for self.pdf_gpu {n_bins * 4}")
+        logger.debug(f"bytes alloc'd for self.pdf_gpu {n_bins * NUMBYTES_FLOAT32}")
 
         # precompute, allocate, and transfer the get_absorption_coef(energy, material) table (4 bytes to a float32)
-        absorption_coef_table = np.empty(n_bins * len(self.all_materials)).astype(
-            np.float32
-        )
+        absorption_coef_table = np.empty(n_bins * len(self.all_materials)).astype(np.float32)
         for bin in range(n_bins):  # , energy in enumerate(energies):
             for m, mat_name in enumerate(self.all_materials):
-                absorption_coef_table[
-                    bin * len(self.all_materials) + m
-                ] = mass_attenuation.get_absorption_coefs(
-                    contiguous_energies[bin], mat_name
-                )
-        self.absorption_coef_table_gpu = cuda.mem_alloc(
-            n_bins * len(self.all_materials) * 4
-        )
+                absorption_coef_table[bin * len(self.all_materials) + m] = mass_attenuation.get_absorption_coefs(contiguous_energies[bin], mat_name)
+        self.absorption_coef_table_gpu = cuda.mem_alloc(n_bins * len(self.all_materials) * NUMBYTES_FLOAT32)
         cuda.memcpy_htod(self.absorption_coef_table_gpu, absorption_coef_table)
-        logger.debug(
-            f"size alloc'd for self.absorption_coef_table_gpu: {n_bins * len(self.all_materials) * 4}"
-        )
+        logger.debug(f"size alloc'd for self.absorption_coef_table_gpu: {n_bins * len(self.all_materials) * NUMBYTES_FLOAT32}")
 
         # Scatter-specific initializations
 
         if self.scatter_num > 0:
             if len(self.volumes) > 1:
                 # Combine the multiple volumes into one single volume
-
                 x_points_world = []
                 y_points_world = []
                 z_points_world = []
@@ -868,6 +800,8 @@ class Projector(object):
                     )
                 )
 
+                self.megavol_shape = (mega_x_len, mega_y_len, mega_z_len)
+
                 logger.info(f"max_world_point: {max_world_point}")
                 logger.info(f"min_world_point: {min_world_point}")
                 logger.info(
@@ -875,67 +809,50 @@ class Projector(object):
                 )
 
                 # allocate megavolume data and labeled (i.e., not binary) segmentation
-                self.megavol_density_gpu = cuda.mem_alloc(
-                    4 * mega_x_len * mega_y_len * mega_z_len
-                )
-                self.megavol_labeled_seg_gpu = cuda.mem_alloc(
-                    1 * mega_x_len * mega_y_len * mega_z_len
-                )
+                self.megavol_density_gpu = cuda.mem_alloc(NUMBYTES_FLOAT32 * mega_x_len * mega_y_len * mega_z_len)
+                self.megavol_labeled_seg_gpu = cuda.mem_alloc(NUMBYTES_INT8 * mega_x_len * mega_y_len * mega_z_len)
+
+                inp_priority_gpu = cuda.mem_alloc(NUMBYTES_INT32 * len(self.volumes))
+                inp_voxelBoundX_gpu = cuda.mem_alloc(NUMBYTES_INT32 * len(self.volumes))
+                inp_voxelBoundY_gpu = cuda.mem_alloc(NUMBYTES_INT32 * len(self.volumes))
+                inp_voxelBoundZ_gpu = cuda.mem_alloc(NUMBYTES_INT32 * len(self.volumes))
+                inp_ijk_from_world_gpu = cuda.mem_alloc(NUMBYTES_INT32 * np.array(self.volumes[0].ijk_from_world).size * len(self.volumes))
+
+                for vol_id, _vol in enumerate(self.volumes):
+                    int_offset = NUMBYTES_INT32 * vol_id
+                    arr_offset = NUMBYTES_INT32 * np.array(_vol.ijk_from_world).size * vol_id
+                    cuda.memcpy_htod(int(inp_priority_gpu) + int_offset, np.int32(self.priorities[vol_id]))
+                    cuda.memcpy_htod(int(inp_voxelBoundX_gpu) + int_offset, np.int32(_vol.shape[0]))
+                    cuda.memcpy_htod(int(inp_voxelBoundY_gpu) + int_offset, np.int32(_vol.shape[1]))
+                    cuda.memcpy_htod(int(inp_voxelBoundZ_gpu) + int_offset, np.int32(_vol.shape[2]))
+                    inp_ijk_from_world = np.ascontiguousarray(np.array(_vol.ijk_from_world).astype(np.float32))
+                    print(inp_ijk_from_world)
+                    #cuda.memcpy_htod(int(inp_ijk_from_world_gpu) + arr_offset, inp_ijk_from_world)
+                    cuda.memcpy_htod(int(inp_ijk_from_world_gpu) + arr_offset, np.int32(12345))
 
                 # call the resampling kernel
                 # TODO: handle axis swapping (???)
                 resampling_args = [
-                    np.int32(prio) for prio in self.priorities
-                ]  # inp_priority
-                resampling_args.extend(
-                    [np.int32(_vol.shape[0]) for _vol in self.volumes]
-                )  # inp_voxelBoundX
-                resampling_args.extend(
-                    [np.int32(_vol.shape[1]) for _vol in self.volumes]
-                )  # inp_voxelBoundY
-                resampling_args.extend(
-                    [np.int32(_vol.shape[2]) for _vol in self.volumes]
-                )  # inp_voxelBoundZ
-                for _vol in self.volumes:  # inp_ijk_from_world
-                    inp_ijk_from_world = np.array(_vol.ijk_from_world).astype(
-                        np.float32
-                    )
-                    resampling_args.extend(
-                        [
-                            inp_ijk_from_world[0][0],
-                            inp_ijk_from_world[0][1],
-                            inp_ijk_from_world[0][2],
-                            inp_ijk_from_world[1][0],
-                            inp_ijk_from_world[1][1],
-                            inp_ijk_from_world[1][2],
-                            inp_ijk_from_world[2][0],
-                            inp_ijk_from_world[2][1],
-                            inp_ijk_from_world[2][2],
-                        ]
-                    )
-                resampling_args.extend(
-                    [  # mega{Min,Max}{X,Y,Z}
-                        np.float32(min_world_point[0]),
-                        np.float32(min_world_point[1]),
-                        np.float32(min_world_point[2]),
-                        np.float32(max_world_point[0]),
-                        np.float32(max_world_point[1]),
-                        np.float32(max_world_point[2]),
-                    ]
-                )
-                resampling_args.extend(
-                    [  # megaVoxelSize{X,Y,Z}
-                        np.float32(self.megavol_spacing[0]),
-                        np.float32(self.megavol_spacing[1]),
-                        np.float32(self.megavol_spacing[2]),
-                    ]
-                )
-                resampling_args.extend(
-                    [np.int32(mega_x_len), np.int32(mega_y_len), np.int32(mega_z_len)]
-                )
-                resampling_args.extend(
-                    [self.megavol_density_gpu, self.megavol_labeled_seg_gpu]
-                )
+                    inp_priority_gpu,
+                    inp_voxelBoundX_gpu,
+                    inp_voxelBoundY_gpu,
+                    inp_voxelBoundZ_gpu,
+                    inp_ijk_from_world_gpu,
+                    np.float32(min_world_point[0]), # mega{Min,Max}{X,Y,Z}
+                    np.float32(min_world_point[1]),
+                    np.float32(min_world_point[2]),
+                    np.float32(max_world_point[0]),
+                    np.float32(max_world_point[1]),
+                    np.float32(max_world_point[2]),
+                    np.float32(self.megavol_spacing[0]), # megaVoxelSize{X,Y,Z}
+                    np.float32(self.megavol_spacing[1]),
+                    np.float32(self.megavol_spacing[2]),
+                    np.int32(mega_x_len),
+                    np.int32(mega_y_len),
+                    np.int32(mega_z_len),
+                    self.megavol_density_gpu,
+                    self.megavol_labeled_seg_gpu
+                ]
 
                 # Calculate block and grid sizes: each block is a 4x4x4 cube of voxels
                 block = (1, 1, 1)
@@ -972,19 +889,15 @@ class Projector(object):
                                 offset_x = np.int32(x * self.max_block_index)
                                 offset_y = np.int32(y * self.max_block_index)
                                 offset_z = np.int32(z * self.max_block_index)
-                                self.resample_megavolume(
-                                    *resampling_args,
-                                    offset_x,
-                                    offset_y,
-                                    offset_z,
-                                    block=block,
-                                    grid=(
-                                        self.max_block_index,
-                                        self.max_block_index,
-                                        self.max_block_index,
-                                    ),
-                                )
-                                context.synchronize()
+                                self.resample_megavolume(*resampling_args, offset_x, offset_y, offset_z, block=block, grid=(self.max_block_index, self.max_block_index, self.max_block_index))
+                                context.synchronize() 
+                
+                inp_priority_gpu.free()
+                inp_voxelBoundX_gpu.free()
+                inp_voxelBoundY_gpu.free()
+                inp_voxelBoundZ_gpu.free()
+                inp_ijk_from_world_gpu.free()
+
             else:
                 self.megavol_spacing = self.volumes[0].spacing
 
@@ -993,8 +906,10 @@ class Projector(object):
                 mega_z_len = self.volumes[0].shape[2]
                 num_voxels = mega_x_len * mega_y_len * mega_z_len
 
-                self.megavol_density_gpu = cuda.mem_alloc(4 * num_voxels)
-                self.megavol_labeled_seg_gpu = cuda.mem_alloc(1 * num_voxels)
+                self.megavol_shape = (mega_x_len, mega_y_len, mega_z_len)
+
+                self.megavol_density_gpu = cuda.mem_alloc(NUMBYTES_FLOAT32 * num_voxels)
+                self.megavol_labeled_seg_gpu = cuda.mem_alloc(NUMBYTES_INT8 * num_voxels)
 
                 # copy over from self.volumes[0] to the gpu
                 labeled_seg = np.zeros(self.volume.shape).astype(np.int8)
@@ -1011,50 +926,30 @@ class Projector(object):
 
             # Material MFP structs
             self.mat_mfp_struct_dict = dict()
-            self.mat_mfp_structs_gpu = cuda.mem_alloc(
-                len(self.all_materials) * CudaMatMfpStruct.MEMSIZE
-            )
-            for i, mat in enumerate(my_materials):
-                struct_gpu_ptr = int(self.mat_mfp_structs_gpu) + (
-                    i * CudaMatMfpStruct.MEMSIZE
-                )
-                self.mat_mfp_struct_dict[mat] = CudaMatMfpStruct(
-                    MFP_DATA[mat], struct_gpu_ptr
-                )
+            self.mat_mfp_structs_gpu = cuda.mem_alloc(len(self.all_materials) * CudaMatMfpStruct.MEMSIZE)
+            for i, mat in enumerate(self.all_materials):
+                struct_gpu_ptr = int(self.mat_mfp_structs_gpu) + (i * CudaMatMfpStruct.MEMSIZE)
+                self.mat_mfp_struct_dict[mat] = CudaMatMfpStruct(MFP_DATA[mat], struct_gpu_ptr)
 
             # Woodcock MFP struct
-            wc_np_arr = scatter.make_woodcock_mfp(my_materials)
+            wc_np_arr = scatter.make_woodcock_mfp(self.all_materials)
             self.woodcock_struct_gpu = cuda.mem_alloc(CudaWoodcockStruct.MEMSIZE)
-            self.woodcock_struct = CudaWoodcockStruct(
-                wc_np_arr, int(self.woodcock_struct_gpu)
-            )
+            self.woodcock_struct = CudaWoodcockStruct(wc_np_arr, int(self.woodcock_struct_gpu))
 
             # Material Compton structs
             self.compton_struct_dict = dict()
-            self.compton_structs_gpu = cuda.mem_alloc(
-                len(self.all_materials) * CudaComptonStruct.MEMSIZE
-            )
-            for i, mat in enumerate(my_materials):
-                struct_gpu_ptr = int(self.compton_structs_gpu) + (
-                    i * CudaComptonStruct.MEMSIZE
-                )
-                self.compton_struct_dict[mat] = CudaComptonStruct(
-                    COMPTON_DATA[mat], struct_gpu_ptr
-                )
+            self.compton_structs_gpu = cuda.mem_alloc(len(self.all_materials) * CudaComptonStruct.MEMSIZE)
+            for i, mat in enumerate(self.all_materials):
+                struct_gpu_ptr = int(self.compton_structs_gpu) + (i * CudaComptonStruct.MEMSIZE)
+                self.compton_struct_dict[mat] = CudaComptonStruct(COMPTON_DATA[mat], struct_gpu_ptr)
 
             # Material RITA structs
             self.rita_struct_dict = dict()
-            self.rita_structs_gpu = cuda.mem_alloc(
-                len(self.all_materials) * CudaRitaStruct.MEMSIZE
-            )
-            for i, mat in enumerate(my_materials):
-                struct_gpu_ptr = int(self.rita_structs_gpu) + (
-                    i * CudaRitaStruct.MEMSIZE
-                )
-                self.rita_struct_dict[mat] = CudaRitaStruct(
-                    rita_samplers[mat], struct_gpu_ptr
-                )
-                # print(f"for material [{mat}], RITA structure at location {struct_gpu_ptr}")
+            self.rita_structs_gpu = cuda.mem_alloc(len(self.all_materials) * CudaRitaStruct.MEMSIZE)
+            for i, mat in enumerate(self.all_materials):
+                struct_gpu_ptr = int(self.rita_structs_gpu) + (i * CudaRitaStruct.MEMSIZE)
+                self.rita_struct_dict[mat] = CudaRitaStruct(rita_samplers[mat], struct_gpu_ptr)
+                #print(f"for material [{mat}], RITA structure at location {struct_gpu_ptr}")
                 # for g in range(self.rita_struct_dict[mat].n_gridpts):
                 #    print(f"[{self.rita_struct_dict[mat].x[g]}, {self.rita_struct_dict[mat].y[g]}, {self.rita_struct_dict[mat].a[g]}, {self.rita_struct_dict[mat].b[g]}]")
 
@@ -1062,26 +957,23 @@ class Projector(object):
             self.detector_plane_gpu = cuda.mem_alloc(CudaPlaneSurfaceStruct.MEMSIZE)
 
             # index_from_ijk
-            self.index_from_ijk_gpu = cuda.mem_alloc(
-                2 * 3 * 4
-            )  # (2, 3) array of floats
+            # TODO: get the factor of "2 x 3" from a more abstract source
+            self.index_from_ijk_gpu = cuda.mem_alloc(2 * 3 * NUMBYTES_FLOAT32)  # (2, 3) array of floats
 
             # spectrum cdf
             n_bins = self.spectrum.shape[0]
-            # spectrum_cdf = np.array([np.sum(self.spectrum[0:i+1, 1]) for i in range(n_bins)])
-            # spectrum_cdf = (spectrum_cdf / np.sum(self.spectrum[:, 1])).astype(np.float32)
-            spectrum_cdf = np.array(
-                [np.sum(contiguous_pdf[0 : i + 1]) for i in range(n_bins)]
-            )
-            # print(f"spectrum CDF:\n{spectrum_cdf}")
-            self.cdf_gpu = cuda.mem_alloc(n_bins * 4)
+            #spectrum_cdf = np.array([np.sum(self.spectrum[0:i+1, 1]) for i in range(n_bins)])
+            #spectrum_cdf = (spectrum_cdf / np.sum(self.spectrum[:, 1])).astype(np.float32)
+            spectrum_cdf = np.array([np.sum(contiguous_pdf[0:i+1]) for i in range(n_bins)])
+            #print(f"spectrum CDF:\n{spectrum_cdf}")
+            self.cdf_gpu = cuda.mem_alloc(n_bins * NUMBYTES_FLOAT32)
             cuda.memcpy_htod(self.cdf_gpu, spectrum_cdf)
 
             # output
-            self.scatter_deposits_gpu = cuda.mem_alloc(self.output_size * 4)
-            self.num_scattered_hits_gpu = cuda.mem_alloc(self.output_size * 4)
-            self.num_unscattered_hits_gpu = cuda.mem_alloc(self.output_size * 4)
-
+            self.scatter_deposits_gpu = cuda.mem_alloc(self.output_size * NUMBYTES_FLOAT32)
+            self.num_scattered_hits_gpu = cuda.mem_alloc(self.output_size * NUMBYTES_INT32)
+            self.num_unscattered_hits_gpu = cuda.mem_alloc(self.output_size * NUMBYTES_INT32)
+            
         # Mark self as initialized.
         self.initialized = True
 
@@ -1093,6 +985,26 @@ class Projector(object):
                 for seg in self.segmentations_gpu[vol_id]:
                     seg.free()
 
+            if len(self.volumes) > 1:
+                self.priorities_gpu.free()
+
+                self.minPointX_gpu.free()
+                self.minPointY_gpu.free()
+                self.minPointZ_gpu.free()
+
+                self.maxPointX_gpu.free()
+                self.maxPointY_gpu.free()
+                self.maxPointZ_gpu.free()
+
+                self.voxelSizeX_gpu.free()
+                self.voxelSizeY_gpu.free()
+                self.voxelSizeZ_gpu.free()
+
+                self.sourceX_gpu.free()
+                self.sourceY_gpu.free()
+                self.sourceZ_gpu.free()
+
+            self.rt_kinv_gpu.free()
             self.intensity_gpu.free()
             self.photon_prob_gpu.free()
 
@@ -1110,7 +1022,6 @@ class Projector(object):
                 self.woodcock_struct_gpu.free()
                 self.compton_structs_gpu.free()
                 self.rita_structs_gpu.free()
-                self.labeled_segmentation_gpu.free()
                 self.detector_plane_gpu.free()
                 self.index_from_ijk_gpu.free()
                 self.cdf_gpu.free()
