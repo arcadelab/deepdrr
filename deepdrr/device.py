@@ -190,6 +190,7 @@ class MobileCArm(object):
             0, self.source_to_isocenter_horizontal_offset, 0
         )
 
+        self._enforce_bounds()
         self._static_mesh = None
 
     def __str__(self):
@@ -286,6 +287,14 @@ class MobileCArm(object):
     def principle_ray_in_world(self) -> geo.Vector3D:
         return self.world_from_device @ self.principle_ray
 
+    def _enforce_bounds(self):
+        """Enforce the CArm movement bounds."""
+        self.isocenter = geo.point(
+            np.clip(self.isocenter, self.min_isocenter, self.max_isocenter)
+        )
+        self.alpha = np.clip(self.alpha, self.min_alpha, self.max_alpha)
+        self.beta = np.clip(self.beta, self.min_beta, self.max_beta)
+
     def move_by(
         self,
         delta_isocenter: Optional[geo.Vector3D] = None,
@@ -308,19 +317,14 @@ class MobileCArm(object):
 
         if delta_isocenter is not None:
             self.isocenter += geo.vector(delta_isocenter)
-            self.isocenter = geo.point(
-                np.clip(self.isocenter, self.min_isocenter, self.max_isocenter)
-            )
-
         if delta_alpha is not None:
             assert np.isscalar(delta_alpha)
             self.alpha += utils.radians(float(delta_alpha), degrees=degrees)
-            self.alpha = np.clip(self.alpha, self.min_alpha, self.max_alpha)
-
         if delta_beta is not None:
             assert np.isscalar(delta_beta)
             self.beta += utils.radians(float(delta_beta), degrees=degrees)
-            self.beta = np.clip(self.beta, self.min_beta, self.max_beta)
+
+        self._enforce_bounds()
 
     def move_to(
         self,
@@ -343,15 +347,12 @@ class MobileCArm(object):
 
         if isocenter is not None:
             self.isocenter = geo.point(isocenter)
-            self.isocenter = geo.point(
-                np.clip(self.isocenter, self.min_isocenter, self.max_isocenter)
-            )
         if alpha is not None:
             self.alpha = utils.radians(float(alpha), degrees=degrees)
-            self.alpha = np.clip(self.alpha, self.min_alpha, self.max_alpha)
         if beta is not None:
             self.beta = utils.radians(float(beta), degrees=degrees)
-            self.beta = np.clip(self.beta, self.min_beta, self.max_beta)
+
+        self._enforce_bounds()
 
     def reposition(
         self,
