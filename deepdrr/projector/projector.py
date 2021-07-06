@@ -757,8 +757,10 @@ class Projector(object):
                     cuda.memcpy_htod(int(inp_voxelBoundX_gpu) + int_offset, np.int32(_vol.shape[0]))
                     cuda.memcpy_htod(int(inp_voxelBoundY_gpu) + int_offset, np.int32(_vol.shape[1]))
                     cuda.memcpy_htod(int(inp_voxelBoundZ_gpu) + int_offset, np.int32(_vol.shape[2]))
-                    inp_ijk_from_world = np.array(_vol.ijk_from_world).astype(np.float32)
-                    cuda.memcpy_htod(int(inp_ijk_from_world_gpu) + arr_offset, inp_ijk_from_world)
+                    inp_ijk_from_world = np.ascontiguousarray(np.array(_vol.ijk_from_world).astype(np.float32))
+                    print(inp_ijk_from_world)
+                    #cuda.memcpy_htod(int(inp_ijk_from_world_gpu) + arr_offset, inp_ijk_from_world)
+                    cuda.memcpy_htod(int(inp_ijk_from_world_gpu) + arr_offset, np.int32(12345))
 
                 # call the resampling kernel
                 # TODO: handle axis swapping (???)
@@ -933,7 +935,6 @@ class Projector(object):
                 self.woodcock_struct_gpu.free()
                 self.compton_structs_gpu.free()
                 self.rita_structs_gpu.free()
-                self.labeled_segmentation_gpu.free()
                 self.detector_plane_gpu.free()
                 self.index_from_ijk_gpu.free()
                 self.cdf_gpu.free()
