@@ -361,7 +361,7 @@ class Projector(object):
                 # BIG TODO (mjudish): make sure that all variables referenced get properly initialized,
                 # and that all initialized variables in the class get properly referenced
                 logger.info(f"Starting scatter simulation, scatter_num={self.scatter_num}. Time: {time.asctime()}")
-                index_from_ijk = camera_projection.get_ray_transform(self.volume).inv # Urgent TODO: "self.volume" is incompatible with this version of the code 
+                index_from_ijk = proj.get_ray_transform(self.volume).inv # Urgent TODO: "self.volume" is incompatible with this version of the code 
                 index_from_ijk = np.ascontiguousarray(np.array(index_from_ijk)[0:2, 0:3]).astype(np.float32)
                 cuda.memcpy_htod(self.index_from_ijk_gpu, index_from_ijk)
 
@@ -792,17 +792,19 @@ class Projector(object):
                 inp_voxelBoundX_gpu = cuda.mem_alloc(4 * len(self.volumes))
                 inp_voxelBoundY_gpu = cuda.mem_alloc(4 * len(self.volumes))
                 inp_voxelBoundZ_gpu = cuda.mem_alloc(4 * len(self.volumes))
-                inp_ijk_from_world_gpu = cuda.mem_alloc(4 * 9 * len(self.volumes))
+                inp_ijk_from_world_gpu = cuda.mem_alloc(4 * np.array(self.volumes[0].ijk_from_world).size * len(self.volumes))
 
                 for vol_id, _vol in enumerate(self.volumes):
                     int_offset = 4 * vol_id
-                    arr_offset = 4 * 9 * vol_id
+                    arr_offset = 4 * np.array(_vol.ijk_from_world).size * vol_id
                     cuda.memcpy_htod(int(inp_priority_gpu) + int_offset, np.int32(self.priorities[vol_id]))
                     cuda.memcpy_htod(int(inp_voxelBoundX_gpu) + int_offset, np.int32(_vol.shape[0]))
                     cuda.memcpy_htod(int(inp_voxelBoundY_gpu) + int_offset, np.int32(_vol.shape[1]))
                     cuda.memcpy_htod(int(inp_voxelBoundZ_gpu) + int_offset, np.int32(_vol.shape[2]))
-                    inp_ijk_from_world = np.array(_vol.ijk_from_world).astype(np.float32)
-                    cuda.memcpy_htod(int(inp_ijk_from_world_gpu) + arr_offset, inp_ijk_from_world)
+                    inp_ijk_from_world = np.ascontiguousarray(np.array(_vol.ijk_from_world).astype(np.float32))
+                    print(inp_ijk_from_world)
+                    #cuda.memcpy_htod(int(inp_ijk_from_world_gpu) + arr_offset, inp_ijk_from_world)
+                    cuda.memcpy_htod(int(inp_ijk_from_world_gpu) + arr_offset, np.int32(12345))
 
                 # call the resampling kernel
                 # TODO: handle axis swapping (???)
@@ -883,14 +885,14 @@ class Projector(object):
             self.mat_mfp_struct_dict = dict()
             self.mat_mfp_structs_gpu = cuda.mem_alloc(
                 len(self.all_materials) * CudaMatMfpStruct.MEMSIZE)
-            for i, mat in enumerate(my_materials):
+            for i, mat in enumerate(self.all_materials):
                 struct_gpu_ptr = int(self.mat_mfp_structs_gpu) + \
                     (i * CudaMatMfpStruct.MEMSIZE)
                 self.mat_mfp_struct_dict[mat] = CudaMatMfpStruct(
                     MFP_DATA[mat], struct_gpu_ptr)
 
             # Woodcock MFP struct
-            wc_np_arr = scatter.make_woodcock_mfp(my_materials)
+            wc_np_arr = scatter.make_woodcock_mfp(self.all_materials)
             self.woodcock_struct_gpu = cuda.mem_alloc(
                 CudaWoodcockStruct.MEMSIZE)
             self.woodcock_struct = CudaWoodcockStruct(
@@ -900,7 +902,7 @@ class Projector(object):
             self.compton_struct_dict = dict()
             self.compton_structs_gpu = cuda.mem_alloc(
                 len(self.all_materials) * CudaComptonStruct.MEMSIZE)
-            for i, mat in enumerate(my_materials):
+            for i, mat in enumerate(self.all_materials):
                 struct_gpu_ptr = int(self.compton_structs_gpu) + \
                     (i * CudaComptonStruct.MEMSIZE)
                 self.compton_struct_dict[mat] = CudaComptonStruct(
@@ -910,7 +912,7 @@ class Projector(object):
             self.rita_struct_dict = dict()
             self.rita_structs_gpu = cuda.mem_alloc(
                 len(self.all_materials) * CudaRitaStruct.MEMSIZE)
-            for i, mat in enumerate(my_materials):
+            for i, mat in enumerate(self.all_materials):
                 struct_gpu_ptr = int(self.rita_structs_gpu) + \
                     (i * CudaRitaStruct.MEMSIZE)
                 self.rita_struct_dict[mat] = CudaRitaStruct(
@@ -991,7 +993,6 @@ class Projector(object):
                 self.woodcock_struct_gpu.free()
                 self.compton_structs_gpu.free()
                 self.rita_structs_gpu.free()
-                self.labeled_segmentation_gpu.free()
                 self.detector_plane_gpu.free()
                 self.index_from_ijk_gpu.free()
                 self.cdf_gpu.free()

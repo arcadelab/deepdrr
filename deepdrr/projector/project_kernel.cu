@@ -1416,7 +1416,7 @@ extern "C" {
                     for (int i = 0; i < NUM_VOLUMES; i++) {
                         density_sample[i] = -1.0f; // "reset" this volume's sample
 
-                        int offset = 9 * i;
+                        int offset = 3 * 4 * i; // TODO: do the matrix multiplication proper
                         float inp_x = (inp_ijk_from_world[offset + 0] * x) + (inp_ijk_from_world[offset + 1] * y) + (inp_ijk_from_world[offset + 2] * z);
                         if ((inp_x < 0.0) || (inp_x >= inp_voxelBoundX[i])) continue; // TODO: make sure this behavior agrees with the behavior of ijk_from_world transforms
 
