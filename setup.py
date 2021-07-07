@@ -24,6 +24,7 @@ setuptools.setup(
         "pynrrd",
         "pyvista",
         "pycuda",
+        "colorlog",
     ],
     include_package_data=True,
     python_requires=">=3.7",

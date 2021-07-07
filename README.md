@@ -8,7 +8,6 @@
 
 </div>
 
-
 DeepDRR provides state-of-the-art tools to generate realistic radiographs and fluoroscopy from 3D
 CTs on a training set scale.
 
@@ -17,7 +16,7 @@ CTs on a training set scale.
 DeepDRR requires an NVIDIA GPU, preferably with >11 GB of memory.
 
 1. Install CUDA. Version 11 is recommended, but DeepDRR has been used with 8.0
-2. Make sure your C compiler is on the path. DeepDRR has been used with `gcc 9.3.0`.
+2. Make sure your C compiler is on the path. DeepDRR has been used with `gcc 9.3.0`
 3. We recommend installing pycuda separately, as it may need to be built. If you are using [Anaconda](https://www.anaconda.com/), run
 
 ```bash
@@ -28,6 +27,25 @@ to install it in your environment. 4. You may also wish to [install PyTorch](htt
 
 ```bash
 pip install deepdrr
+```
+
+### Development
+
+Installing from the `dev` branch is risky, as it is unstable. However, this installation method can be used for the `main` branch as well, perhaps somewhat more reliably.
+
+Dependencies:
+
+1. CUDA 11.1
+2. Anaconda
+
+The `dev` branch contains the most up-to-date code and can be easily installed using Anaconda. To create an environment with DeepDRR, run
+
+```bash
+git clone https://github.com/arcadelab/deepdrr.git
+cd deepdrr
+git checkout dev
+conda env create -f environment.yaml
+conda activate deepdrr
 ```
 
 ## Documentation
