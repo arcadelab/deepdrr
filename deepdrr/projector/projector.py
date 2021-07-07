@@ -40,8 +40,6 @@ from .cuda_scatter_structs import (
 import time
 
 
-logger = logging.getLogger(__name__)
-
 NUMBYTES_INT8 = 1
 NUMBYTES_INT32 = 4
 NUMBYTES_FLOAT32 = 4
@@ -265,11 +263,10 @@ class Projector(object):
 
     @property
     def volume(self):
-        logger.warning(
-            f"volume is deprecated. Each projector can contain multiple volumes."
-        )
         if len(self.volumes) != 1:
-            raise AttributeError
+            raise AttributeError(
+                f"projector contains multiple volumes. Access them with `projector.volumes[i]`"
+            )
         return self.volumes[0]
 
     @property
