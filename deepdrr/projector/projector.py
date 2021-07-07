@@ -309,6 +309,8 @@ class Projector(object):
 
         logger.info("Initiating projection and attenuation...")
 
+        project_tick = time.perf_counter()
+
         intensities = []
         photon_probs = []
         for i, proj in enumerate(camera_projections):
@@ -404,6 +406,9 @@ class Projector(object):
                             grid=(self.max_block_index, self.max_block_index),
                         )
                         context.synchronize()
+            
+            project_tock = time.perf_counter()
+            print(f"projection #{i}: time elapsed after call to project_kernel: {project_tock - project_tick}")
 
             intensity = np.empty(self.output_shape, dtype=np.float32)
             cuda.memcpy_dtoh(intensity, self.intensity_gpu)
@@ -416,6 +421,9 @@ class Projector(object):
 
             intensities.append(intensity)
             photon_probs.append(photon_prob)
+
+            project_tock = time.perf_counter()
+            print(f"projection #{i}: time elpased after copy from kernel: {project_tock - project_tick}")
 
             if self.scatter_num > 0:
                 # BIG TODO (mjudish): make sure that all variables referenced get properly initialized,
@@ -650,6 +658,9 @@ class Projector(object):
         if self.initialized:
             raise RuntimeError("Close projector before initializing again.")
 
+        print(f"beginning call to Projector.initialize")
+        init_tick = time.perf_counter()
+
         # allocate and transfer the volume texture to GPU
         self.volumes_gpu = []
         self.volumes_texref = []
@@ -663,6 +674,9 @@ class Projector(object):
             cuda.bind_array_to_texref(vol_gpu, vol_texref)
             self.volumes_gpu.append(vol_gpu)
             self.volumes_texref.append(vol_texref)
+
+        init_tock = time.perf_counter()
+        print(f"time elapsed after intializing volumes: {init_tock - init_tick}")
 
         # set the interpolation mode
         if self.mode == "linear":
@@ -703,6 +717,9 @@ class Projector(object):
             self.segmentations_gpu.append(seg_for_vol)
             self.segmentations_texref.append(texref)
 
+        init_tock = time.perf_counter()
+        print(f"time elapsed after intializing segmentations: {init_tock - init_tick}")
+        
         # allocate volumes' priority level on the GPU
         self.priorities_gpu = cuda.mem_alloc(len(self.volumes) * NUMBYTES_INT32)
         for vol_id, prio in enumerate(self.priorities):
@@ -761,6 +778,9 @@ class Projector(object):
         self.sourceY_gpu = cuda.mem_alloc(len(self.volumes) * NUMBYTES_FLOAT32)
         self.sourceZ_gpu = cuda.mem_alloc(len(self.volumes) * NUMBYTES_FLOAT32)
 
+        init_tock = time.perf_counter()
+        print(f"time elapsed after intializing multivolume stuff: {init_tock - init_tick}")
+        
         # allocate ijk_from_index matrix array on GPU (3x3 array x 4 bytes per float32)
         # TODO: represent the factor of "3 x 3" in a more abstracted way
         self.rt_kinv_gpu = cuda.mem_alloc(len(self.volumes) * 3 * 3 * NUMBYTES_FLOAT32)
@@ -826,10 +846,15 @@ class Projector(object):
             f"size alloc'd for self.absorption_coef_table_gpu: {n_bins * len(self.all_materials) * NUMBYTES_FLOAT32}"
         )
 
+
+        init_tock = time.perf_counter()
+        print(f"time elapsed after intializing rest of primary-signal stuff: {init_tock - init_tick}")
+
         # Scatter-specific initializations
 
         if self.scatter_num > 0:
             if len(self.volumes) > 1:
+                print(f"beginning scatter resampling")
                 # Combine the multiple volumes into one single volume
                 x_points_world = []
                 y_points_world = []
@@ -991,6 +1016,9 @@ class Projector(object):
                     self.megavol_labeled_seg_gpu,
                 ]
 
+                init_tock = time.perf_counter()
+                print(f"resampling kernel args set. time elapsed: {init_tock - init_tick}")
+
                 # Calculate block and grid sizes: each block is a 4x4x4 cube of voxels
                 block = (1, 1, 1)
                 blocks_x = np.int(np.ceil(mega_x_len / block[0]))
@@ -1046,6 +1074,9 @@ class Projector(object):
                 inp_voxelBoundZ_gpu.free()
                 inp_ijk_from_world_gpu.free()
 
+                init_tock = time.perf_counter()
+                print(f"time elapsed after call to resampling kernel: {init_tock - init_tick}")
+
             else:
                 self.megavol_spacing = self.volumes[0].spacing
 
@@ -1072,6 +1103,9 @@ class Projector(object):
                 ).copy()  # TODO: is this axis swap necessary?
                 cuda.memcpy_htod(self.megavol_labeled_seg_gpu, labeled_seg)
 
+                init_tock = time.perf_counter()
+                print(f"time elapsed after copying megavolume to GPU: {init_tock - init_tick}")
+
                 # TODO (mjudish): copy volume density info to self.megavol_density_gpu. How to deal with axis swaps?
 
             # Material MFP structs
@@ -1087,12 +1121,18 @@ class Projector(object):
                     MFP_DATA[mat], struct_gpu_ptr
                 )
 
+            init_tock = time.perf_counter()
+            print(f"time elapsed after intializing MFP structs: {init_tock - init_tick}")
+
             # Woodcock MFP struct
             wc_np_arr = scatter.make_woodcock_mfp(self.all_materials)
             self.woodcock_struct_gpu = cuda.mem_alloc(CudaWoodcockStruct.MEMSIZE)
             self.woodcock_struct = CudaWoodcockStruct(
                 wc_np_arr, int(self.woodcock_struct_gpu)
             )
+            
+            init_tock = time.perf_counter()
+            print(f"time elapsed after intializing Woodcock struct: {init_tock - init_tick}")
 
             # Material Compton structs
             self.compton_struct_dict = dict()
@@ -1106,6 +1146,9 @@ class Projector(object):
                 self.compton_struct_dict[mat] = CudaComptonStruct(
                     COMPTON_DATA[mat], struct_gpu_ptr
                 )
+            
+            init_tock = time.perf_counter()
+            print(f"time elapsed after intializing Compton structs: {init_tock - init_tick}")
 
             # Material RITA structs
             self.rita_struct_dict = dict()
@@ -1123,6 +1166,9 @@ class Projector(object):
                 # for g in range(self.rita_struct_dict[mat].n_gridpts):
                 #    print(f"[{self.rita_struct_dict[mat].x[g]}, {self.rita_struct_dict[mat].y[g]}, {self.rita_struct_dict[mat].a[g]}, {self.rita_struct_dict[mat].b[g]}]")
 
+            init_tock = time.perf_counter()
+            print(f"time elapsed after intializing RITA structs: {init_tock - init_tick}")
+            
             # Detector plane
             self.detector_plane_gpu = cuda.mem_alloc(CudaPlaneSurfaceStruct.MEMSIZE)
 
@@ -1153,6 +1199,10 @@ class Projector(object):
             self.num_unscattered_hits_gpu = cuda.mem_alloc(
                 self.output_size * NUMBYTES_INT32
             )
+
+        
+        init_tock = time.perf_counter()
+        print(f"time elapsed after intializing rest of stuff: {init_tock - init_tick}")
 
         # Mark self as initialized.
         self.initialized = True
