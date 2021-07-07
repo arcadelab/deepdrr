@@ -2,13 +2,14 @@
 # Helper file to generate MCGPU inputs from a DeepDRR volume
 #
 import typing
+import numpy as np
 
 from .. import vol
 from .. import geo
 
 
 def get_mat_filename(deepDRR_mat_name: str) -> str:
-    """material names are those from the dictionary in material_coefficients.py file
+    """Material names are those from the dictionary in material_coefficients.py file
     """
     if "bone" == deepDRR_mat_name:
         return "bone_ICRP110"
