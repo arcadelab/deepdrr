@@ -1,4 +1,4 @@
-# development requirements
+# general (redundant) requirements
 numpy
 torch
 torchvision
@@ -10,3 +10,6 @@ pyvista
 pycuda
 pynrrd
 colorlog
+
+# development requirements
+black # proper python style
