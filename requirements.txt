@@ -13,3 +13,4 @@ colorlog
 
 # development requirements
 black # proper python style
+pytest
