@@ -31,7 +31,7 @@ pip install deepdrr
 
 ### Development
 
-Installing from the `dev` branch is risky, as it is unstable. However, this installation method can be used for the `main` branch as well.
+Installing from the `dev` branch is risky, as it is unstable. However, this installation method can be used for the `main` branch as well, perhaps somewhat more reliably.
 
 Dependencies:
 
@@ -46,7 +46,6 @@ cd deepdrr
 git checkout dev
 conda env create -f environment.yaml
 conda activate deepdrr
-pip install -e .
 ```
 
 ## Documentation
