@@ -1,4 +1,4 @@
-include deepdrr/projector/project_kernel.cu
+include deepdrr/projector/*
 include deepdrr/projector/cubic/GL/*
 include deepdrr/projector/cubic/internal/*
 include deepdrr/projector/cubic/lib/*
