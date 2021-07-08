@@ -429,21 +429,23 @@ class Projector(object):
             print(f"projection #{i}: time elpased after copy from kernel: {project_tock - project_tick}")
 
             if self.scatter_num > 0:
-                # BIG TODO (mjudish): make sure that all variables referenced get properly initialized,
-                # and that all initialized variables in the class get properly referenced
+                # TODO (mjudish): the resampled density never gets used in the scatter kernel
                 logger.info(
                     f"Starting scatter simulation, scatter_num={self.scatter_num}. Time: {time.asctime()}"
                 )
                 ###index_from_ijk = proj.get_ray_transform(self.megavolume).inv # Urgent TODO: "self.volume" is incompatible with this version of the code
 
-                index_from_ijk = (MEGAVOLUME.ijk_from_world @ proj.world_from_index).inv
+                index_from_ijk = (self.megavol_ijk_from_world @ proj.world_from_index).inv
                 index_from_ijk = np.ascontiguousarray(
                     np.array(index_from_ijk)[0:2, 0:3]
                 ).astype(np.float32)
                 cuda.memcpy_htod(self.index_from_ijk_gpu, index_from_ijk)
 
+                #scatter_source_ijk = np.array(
+                #    proj.get_center_in_volume(self.megavolume)
+                #).astype(np.float32)
                 scatter_source_ijk = np.array(
-                    proj.get_center_in_volume(self.megavolume)
+                    self.megavol_ijk_from_world @ proj.center_in_world
                 ).astype(np.float32)
 
                 detector_plane = scatter.get_detector_plane(
@@ -451,15 +453,17 @@ class Projector(object):
                     proj.index_from_camera2d,
                     self.source_to_detector_distance,
                     geo.Point3D.from_any(scatter_source_ijk),
-                    self.output_shape,
+                    self.output_shape
                 )
                 detector_plane_struct = CudaPlaneSurfaceStruct(
                     detector_plane, int(self.detector_plane_gpu)
                 )
 
+                # TODO (mjudish): re-vamp the block and grid structure of the scatter call
+
                 E_abs_keV = 5  # E_abs == 5000 eV
                 histories_per_thread = int(
-                    np.ceil(self.scatter_num / (4 * self.threads * self.threads))
+                    np.ceil(self.scatter_num / (self.threads * self.threads))
                 )
                 print(f"histories_per_thread: {histories_per_thread}")
 
@@ -504,12 +508,9 @@ class Projector(object):
                 assert 12345 == scatter_args[seed_input_index]
 
                 # Calculate required blocks
-                histories_per_block = (
-                    4 * self.threads * self.threads
-                ) * histories_per_thread
+                histories_per_block = (self.threads * self.threads) * histories_per_thread
                 blocks_n = np.int(np.ceil(self.scatter_num / histories_per_block))
-                # same number of threads per block as the ray-casting
-                block = (4 * self.threads * self.threads, 1, 1)
+                block = (self.threads * self.threads, 1, 1)
                 print(
                     f"scatter_num: {self.scatter_num}. histories_per_block: {histories_per_block}. blocks_n: {blocks_n}"
                 )
@@ -583,7 +584,7 @@ class Projector(object):
 
         # transform to collected energy in keV per cm^2 (or keV per mm^2)
         if self.collected_energy:
-            # TODO: ensure that everything here makes sense, e.g. the variables referenced exist
+            # TODO (mjudish): ensure that everything here makes sense, e.g. the variables referenced exist
             assert np.int32(0) != self.solid_angle_gpu
             solid_angle = np.empty(self.output_shape, dtype=np.float32)
             cuda.memcpy_dtoh(solid_angle, self.solid_angle_gpu)
@@ -864,15 +865,14 @@ class Projector(object):
                 z_points_world = []
 
                 for _vol in self.volumes:
-                    # TODO: hinky stuff here. Discuss with killeen
                     corners_ijk = [  # TODO: this assumes voxel-centered indexing
-                        geo.point(0.5, 0.5, 0.5),
-                        geo.point(0.5, 0.5, _vol.shape[2] - 0.5),
-                        geo.point(0.5, _vol.shape[1] - 0.5, 0.5),
-                        geo.point(0.5, _vol.shape[1] - 0.5, _vol.shape[2] - 0.5),
-                        geo.point(_vol.shape[0] - 0.5, 0.5, 0.5),
-                        geo.point(_vol.shape[0] - 0.5, 0.5, _vol.shape[2] - 0.5),
-                        geo.point(_vol.shape[0] - 0.5, _vol.shape[1] - 0.5, 0.5),
+                        geo.point(-0.5, -0.5, -0.5),
+                        geo.point(-0.5, -0.5, _vol.shape[2] - 0.5),
+                        geo.point(-0.5, _vol.shape[1] - 0.5, -0.5),
+                        geo.point(-0.5, _vol.shape[1] - 0.5, _vol.shape[2] - 0.5),
+                        geo.point(_vol.shape[0] - 0.5, -0.5, -0.5),
+                        geo.point(_vol.shape[0] - 0.5, -0.5, _vol.shape[2] - 0.5),
+                        geo.point(_vol.shape[0] - 0.5, _vol.shape[1] - 0.5, -0.5),
                         geo.point(
                             _vol.shape[0] - 0.5,
                             _vol.shape[1] - 0.5,
@@ -944,6 +944,15 @@ class Projector(object):
 
                 self.megavol_shape = (mega_x_len, mega_y_len, mega_z_len)
 
+                # megavol.world_from_ijk == megavol.world_from_anatomical @ megavol.anatomical_from_ijk
+                # We assume that megavol.world_from_anatomical is the identity transform
+                # We assume that the origin for the maegvol is voxel (0,0,0)
+                # Reference the Volume class for calculation of anatomical_from_ijk
+                megavol_world_from_ijk = geo.FrameTransform.from_scaling(
+                    scaling=self.megavol_spacing
+                )
+                self.megavol_ijk_from_world = megavol_world_from_ijk.inv
+
                 logger.info(f"max_world_point: {max_world_point}")
                 logger.info(f"min_world_point: {min_world_point}")
                 logger.info(
@@ -958,6 +967,8 @@ class Projector(object):
                     NUMBYTES_INT8 * mega_x_len * mega_y_len * mega_z_len
                 )
 
+                # TODO: discuss whether it is stylistically fine that these are allocated
+                # and freed entirely within the Projector.initialized function
                 inp_priority_gpu = cuda.mem_alloc(NUMBYTES_INT32 * len(self.volumes))
                 inp_voxelBoundX_gpu = cuda.mem_alloc(NUMBYTES_INT32 * len(self.volumes))
                 inp_voxelBoundY_gpu = cuda.mem_alloc(NUMBYTES_INT32 * len(self.volumes))
@@ -1081,6 +1092,7 @@ class Projector(object):
                 print(f"time elapsed after call to resampling kernel: {init_tock - init_tick}")
 
             else:
+                self.megavol_ijk_from_world = self.volumes[0].ijk_from_world
                 self.megavol_spacing = self.volumes[0].spacing
 
                 mega_x_len = self.volumes[0].shape[0]
@@ -1101,6 +1113,11 @@ class Projector(object):
                     labeled_seg = np.add(
                         labeled_seg, i * self.volumes[0].materials[mat]
                     ).astype(np.int8)
+                # a labeled_seg value of NUM_MATERIALS indicates a null segmentation
+                #labeled_seg = np.add( TODO: finish this step--may require a restructuring of the labeled_seg calculation
+                #    labeled_seg,
+                #    k
+                #)
                 labeled_seg = np.moveaxis(
                     labeled_seg, [0, 1, 2], [2, 1, 0]
                 ).copy()  # TODO: is this axis swap necessary?
