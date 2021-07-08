@@ -9,7 +9,7 @@ scipy
 pyvista
 pycuda
 pynrrd
-colorlog
+rich
 
 # development requirements
 black # proper python style
