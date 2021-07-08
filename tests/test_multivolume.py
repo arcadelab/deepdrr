@@ -1,3 +1,5 @@
+import logging
+
 import deepdrr
 from deepdrr import geo
 from PIL import Image
