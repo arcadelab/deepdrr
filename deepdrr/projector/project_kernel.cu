@@ -169,7 +169,7 @@
 } while (0)
 #else
 #define LOAD_SEGS_FOR_VOL(vol_id) do {\
-    fprintf(stderr, "NUM_MATERIALS not in [1, 14]");\
+    printf("NUM_MATERIALS not in [1, 14]");\
 } while (0)
 #endif
 
@@ -260,7 +260,7 @@
 } while (0)
 #else
 #define LOAD_SEGS_AT_ALPHA do {\
-    fprintf(stderr, "LOAD_SEGS_AT_ALPHA not supported for NUM_VOLUMES outside [1, 10]");\
+    printf("LOAD_SEGS_AT_ALPHA not supported for NUM_VOLUMES outside [1, 10]");\
 } while (0)
 #endif
 
@@ -413,7 +413,7 @@
 } while (0)
 #else
 #define INTERPOLATE_FOR_VOL(multiplier, vol_id) do {\
-    fprintf(stderr, "NUM_MATERIALS not in [1, 14]");\
+    printf("NUM_MATERIALS not in [1, 14]");\
 } while (0)
 #endif
 
@@ -567,11 +567,11 @@ extern "C" {
         float gVolumeEdgeMaxPointX[NUM_VOLUMES], float gVolumeEdgeMaxPointY[NUM_VOLUMES], float gVolumeEdgeMaxPointZ[NUM_VOLUMES]
     ) {
         #if NUM_VOLUMES <= 0
-        fprintf(stderr, "calculate_all_alphas not supported for NUM_VOLUMES outside [1, 10]"); return;
+        printf("calculate_all_alphas not supported for NUM_VOLUMES outside [1, 10]"); return;
         #endif
 
         #if NUM_VOLUMES > 10
-        fprintf(stderr, "calculate_all_alphas not supported for NUM_VOLUMES outside [1, 10]"); return;
+        printf("calculate_all_alphas not supported for NUM_VOLUMES outside [1, 10]"); return;
         #endif
 
         int i; 
@@ -715,11 +715,11 @@ extern "C" {
         float gVoxelElementSizeX[NUM_VOLUMES], float gVoxelElementSizeY[NUM_VOLUMES], float gVoxelElementSizeZ[NUM_VOLUMES]
     ) {
         #if NUM_VOLUMES <= 0
-        fprintf(stderr, "calculate_all_rays not supported for NUM_VOLUMES outside [1, 10]"); return;
+        printf("calculate_all_rays not supported for NUM_VOLUMES outside [1, 10]"); return;
         #endif
 
         #if NUM_VOLUMES > 10
-        fprintf(stderr, "calculate_all_rays not supported for NUM_VOLUMES outside [1, 10]"); return;
+        printf("calculate_all_rays not supported for NUM_VOLUMES outside [1, 10]"); return;
         #endif
 
         int i; 
@@ -877,6 +877,7 @@ extern "C" {
         //
         int udx = threadIdx.x + (blockIdx.x + offsetW) * blockDim.x; // index into output image width
         int vdx = threadIdx.y + (blockIdx.y + offsetH) * blockDim.y; // index into output image height
+        int debug = (udx == 0) && (vdx == 0);
 
         // if the current point is outside the output image, no computation needed
         if (udx >= out_width || vdx >= out_height)
@@ -891,6 +892,9 @@ extern "C" {
         float ry[NUM_VOLUMES];
         float rz[NUM_VOLUMES];
         float volume_normalization_factor[NUM_VOLUMES];
+        if (debug) {
+            printf("calculate_all_rays\n");
+        }
         calculate_all_rays(
             rx, ry, rz, volume_normalization_factor,
             u, v, rt_kinv, 
@@ -906,6 +910,9 @@ extern "C" {
         int do_trace[NUM_VOLUMES]; // for each volume, whether or not to perform the ray-tracing
         float globalMinAlpha = INFINITY; // the smallest of all the minAlpha's
         float globalMaxAlpha = 0.0f; // the largest of all the maxAlpha's
+        if (debug) {
+            printf("calc all alphas\n");
+        }
         calculate_all_alphas(
             minAlpha, maxAlpha, do_trace,
             &globalMinAlpha, &globalMaxAlpha,
@@ -947,6 +954,9 @@ extern "C" {
         int n_vols_at_curr_priority;//B[NUM_MATERIALS]; // how many volumes to consider at the location (for each material)
         float seg_at_alpha[NUM_VOLUMES][NUM_MATERIALS];
 
+        if (debug) {
+            printf("start trace\n");
+        }
         for (alpha = globalMinAlpha; alpha < globalMaxAlpha; alpha += step) {
             LOAD_SEGS_AT_ALPHA; // initializes p{x,y,z}[...] and seg_at_alpha[...][...]
             get_priority_at_alpha(
@@ -1049,6 +1059,9 @@ extern "C" {
          * can replace the "intensity" calcuation with simply the energies involved.  Later conversion to 
          * other physical quanities can be done outside of the kernel.
          */
+        if (debug) {
+            printf("attenuation\n");
+        }
         for (int bin = 0; bin < n_bins; bin++) {
             float beer_lambert_exp = 0.0f;
             for (int m = 0; m < NUM_MATERIALS; m++) {
@@ -1059,7 +1072,9 @@ extern "C" {
             photon_prob[img_dx] += photon_prob_tmp;
             intensity[img_dx] += energies[bin] * photon_prob_tmp; // units: [keV] per unit photon to hit the pixel
         }
-
+        if (debug) {
+            printf("done with attenuation\n");
+        }
         if (NULL != solid_angle) {
             /**
             * SOLID ANGLE CALCULATION
@@ -1103,7 +1118,9 @@ extern "C" {
 
             float cu_offset[4] = {0.f, 1.f, 1.f, 0.f};
             float cv_offset[4] = {0.f, 0.f, 1.f, 1.f};
-
+            if (debug) {
+                printf("solid angle\n");
+            }
             for (int i = 0; i < 4; i++) {
                 float cu = udx + cu_offset[i];
                 float cv = vdx + cv_offset[i];
@@ -1173,6 +1190,9 @@ extern "C" {
             solid_angle[img_dx] = solid_angle_012 + solid_angle_023;
         }
 
+        if (debug) {
+            printf("done with kernel thread\n");
+        }
         return;
     }
 
@@ -1180,9 +1200,6 @@ extern "C" {
     /**
      * It's placed here so that it can properly access the CUDA textures of the volumes and segmentations
      */
-
-    #define RESAMPLE_DENSITY_TEXTURE(vol_id) do {\
-    } while (0)
 
     #if NUM_MATERIALS == 1
     #define RESAMPLE_TEXTURES(vol_id) do {\
@@ -1347,7 +1364,7 @@ extern "C" {
     } while (0)
     #else /////////////////
     #define RESAMPLE_TEXTURES(vol_id) do {\
-        fprintf(stderr, "NUM_MATERIALS not in [1, 14]");\
+        printf("NUM_MATERIALS not in [1, 14]");\
     } while (0)
     #endif
 
@@ -1391,6 +1408,8 @@ extern "C" {
         float density_sample[NUM_VOLUMES];
         // local storage to store the results of the cubicTex3D calls
         float mat_sample[NUM_VOLUMES][NUM_MATERIALS];
+
+        printf("SCATTER resample\n");
 
         int x_low = threadIdx.x + (blockIdx.x + offsetX) * blockDim.x; // the x-index of the lowest voxel
         int y_low = threadIdx.y + (blockIdx.y + offsetY) * blockDim.y;
