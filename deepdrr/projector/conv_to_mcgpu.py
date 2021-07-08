@@ -2,10 +2,13 @@
 # Helper file to generate MCGPU inputs from a DeepDRR volume
 #
 import typing
+import logging
 import numpy as np
 
 from .. import vol
 from .. import geo
+
+log = logging.getLogger(__name__)
 
 
 def get_mat_filename(deepDRR_mat_name: str) -> str:
@@ -18,16 +21,16 @@ def get_mat_filename(deepDRR_mat_name: str) -> str:
     if "air" == deepDRR_mat_name:
         return "air"
     if "iron" == deepDRR_mat_name:
-        print(f"UNSUPPORTED MATERIAL FOR MCGPU: {deepDRR_mat_name}")
+        log.exception(f"UNSUPPORTED MATERIAL FOR MCGPU: {deepDRR_mat_name}")
         return "UNSUPPORTED_MATERIAL"
     if "lung" == deepDRR_mat_name:
         return "lung_ICRP110"
     if "titanium" == deepDRR_mat_name:
         return "titanium"
     if "teflon" == deepDRR_mat_name:
-        print(f"UNSUPPORTED MATERIAL FOR MCGPU: {deepDRR_mat_name}")
+        log.exception(f"UNSUPPORTED MATERIAL FOR MCGPU: {deepDRR_mat_name}")
         return "UNSUPPORTED_MATERIAL"
-    print(f"INVALID MATERIAL NAME: {deepDRR_mat_name}")
+    log.exception(f"INVALID MATERIAL NAME: {deepDRR_mat_name}")
     return "INVALID_MATERIAL_NAME"
 
 
@@ -131,8 +134,9 @@ def make_mcgpu_inputs(
     elif spectrum == "120KV_AL43":
         spctrm_mcgpu = "120kVp_4.3mmAl.spc"
     else:
-        print("INVALID SPECTRUM NAME")
+        log.exception("INVALID SPECTRUM NAME")
         return
+
     mcgpu_infile.write(f"{spctrm_mcgpu} # X-RAY ENERGY SPECTRUM FILE\n")
     mcgpu_infile.write(
         f"{source_xyz_cm[0]} {source_xyz_cm[1]} {source_xyz_cm[2]} # SOURCE POSITION: X Y Z [cm]\n"
