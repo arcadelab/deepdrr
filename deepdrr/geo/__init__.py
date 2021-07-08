@@ -36,6 +36,7 @@ from .core import (
 )
 from .camera_intrinsic_transform import CameraIntrinsicTransform
 from .camera_projection import CameraProjection
+from scipy.spatial.transform import Rotation
 
 __all__ = [
     "HomogeneousObject",
@@ -56,4 +57,5 @@ __all__ = [
     "LPS_from_RAS",
     "CameraIntrinsicTransform",
     "CameraProjection",
+    "Rotation",
 ]

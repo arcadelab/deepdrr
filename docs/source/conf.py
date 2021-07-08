@@ -27,7 +27,6 @@ author = "Benjamin D. Killeen, Cong Gao, Jan-Nico Zaech, and Mathias Unberath"
 release = "1.1.0a1"
 
 # -- General configuration ---------------------------------------------------
-
 # Add any Sphinx extension module names here, as strings. They can be
 # extensions coming with Sphinx (named 'sphinx.ext.*') or your custom
 # ones.

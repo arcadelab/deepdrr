@@ -4,7 +4,7 @@ import logging
 import numpy as np
 from pathlib import Path
 
-logger = logging.getLogger(__name__)
+log = logging.getLogger(__name__)
 
 try:
     import pycuda.driver as cuda
@@ -16,7 +16,7 @@ try:
 except ImportError:
     pycuda_available = False
     SourceModule = Any
-    logger.warning("pycuda unavailable")
+    log.warning("pycuda unavailable")
 
 from . import spectral_data
 from . import mass_attenuation
@@ -39,8 +39,6 @@ from .cuda_scatter_structs import (
 )
 import time
 
-
-logger = logging.getLogger(__name__)
 
 NUMBYTES_INT8 = 1
 NUMBYTES_INT32 = 4
@@ -91,7 +89,7 @@ def _get_kernel_projector_module(num_volumes: int, num_materials: int) -> Source
     with open(source_path, "r") as file:
         source = file.read()
 
-    logger.debug(
+    log.debug(
         f"compiling {source_path} with NUM_VOLUMES={num_volumes}, NUM_MATERIALS={num_materials}"
     )
     return SourceModule(
@@ -121,7 +119,7 @@ def _get_kernel_scatter_module(num_materials) -> SourceModule:
     with open(source_path, "r") as file:
         source = file.read()
 
-    logger.debug(f"compiling {source_path} with NUM_MATERIALS={num_materials}")
+    log.debug(f"compiling {source_path} with NUM_MATERIALS={num_materials}")
     return SourceModule(
         source,
         include_dirs=[str(d)],
@@ -212,7 +210,7 @@ class Projector(object):
         self.spectrum = _get_spectrum(spectrum)
 
         if add_scatter is not None:
-            logger.warning("add_scatter is deprecated. Set scatter_num instead.")
+            log.warning("add_scatter is deprecated. Set scatter_num instead.")
             if scatter_num != 0:
                 raise ValueError("Only set scatter_num.")
             self.scatter_num = 1e6 if add_scatter else 0
@@ -238,7 +236,7 @@ class Projector(object):
 
         self.all_materials = list(set(all_mats))
         self.all_materials.sort()
-        logger.info(f"ALL MATERIALS: {self.all_materials}")
+        log.info(f"ALL MATERIALS: {self.all_materials}")
 
         # compile the module
         self.mod = _get_kernel_projector_module(
@@ -265,11 +263,10 @@ class Projector(object):
 
     @property
     def volume(self):
-        logger.warning(
-            f"volume is deprecated. Each projector can contain multiple volumes."
-        )
         if len(self.volumes) != 1:
-            raise AttributeError
+            raise AttributeError(
+                f"projector contains multiple volumes. Access them with `projector.volumes[i]`"
+            )
         return self.volumes[0]
 
     @property
@@ -280,10 +277,7 @@ class Projector(object):
     def output_size(self) -> int:
         return int(np.prod(self.output_shape))
 
-    def project(
-        self,
-        *camera_projections: geo.CameraProjection,
-    ) -> np.ndarray:
+    def project(self, *camera_projections: geo.CameraProjection,) -> np.ndarray:
         """Perform the projection.
 
         Args:
@@ -304,20 +298,20 @@ class Projector(object):
             )
         elif not camera_projections and self.carm is not None:
             camera_projections = [self.carm.get_camera_projection()]
-            logger.debug(
+            log.debug(
                 f"projecting with source at {camera_projections[0].center_in_world}, pointing toward isocenter at {self.carm.isocenter}..."
             )
 
         assert isinstance(self.spectrum, np.ndarray)
 
-        logger.info("Initiating projection and attenuation...")
+        log.info("Initiating projection and attenuation...")
 
         project_tick = time.perf_counter()
 
         intensities = []
         photon_probs = []
         for i, proj in enumerate(camera_projections):
-            logger.info(
+            log.info(
                 f"Projecting and attenuating camera position {i+1} / {len(camera_projections)}"
             )
 
@@ -325,7 +319,7 @@ class Projector(object):
                 source_ijk = np.array(proj.get_center_in_volume(_vol)).astype(
                     np.float32
                 )
-                logger.debug(f"source point for volume #{vol_id}: {source_ijk}")
+                log.debug(f"source point for volume #{vol_id}: {source_ijk}")
                 cuda.memcpy_htod(
                     int(self.sourceX_gpu) + int(NUMBYTES_INT32 * vol_id),
                     np.array([source_ijk[0]]),
@@ -340,12 +334,12 @@ class Projector(object):
                 )
 
                 ijk_from_index = proj.get_ray_transform(_vol)
-                logger.debug(
+                log.debug(
                     f"center ray: {ijk_from_index @ geo.point(self.output_shape[0] / 2, self.output_shape[1] / 2)}"
                 )
                 ijk_from_index = np.array(ijk_from_index).astype(np.float32)
-                logger.debug(f"ijk_from_index (rt_kinv in kernel):\n{ijk_from_index}")
-                print(
+                log.debug(f"ijk_from_index (rt_kinv in kernel):\n{ijk_from_index}")
+                (
                     f"ijk_from_index.size: {ijk_from_index.size}"
                 )  # mjudish (sanity checking)
                 cuda.memcpy_htod(
@@ -385,7 +379,7 @@ class Projector(object):
             blocks_w = np.int(np.ceil(self.output_shape[0] / self.threads))
             blocks_h = np.int(np.ceil(self.output_shape[1] / self.threads))
             block = (self.threads, self.threads, 1)
-            logger.debug(
+            log.debug(
                 f"Running: {blocks_w}x{blocks_h} blocks with {self.threads}x{self.threads} threads each"
             )
 
@@ -396,7 +390,7 @@ class Projector(object):
                     *args, offset_w, offset_h, block=block, grid=(blocks_w, blocks_h)
                 )
             else:
-                logger.debug("Running kernel patchwise")
+                log.debug("Running kernel patchwise")
                 for w in range((blocks_w - 1) // (self.max_block_index + 1)):
                     for h in range((blocks_h - 1) // (self.max_block_index + 1)):
                         offset_w = np.int32(w * self.max_block_index)
@@ -409,9 +403,11 @@ class Projector(object):
                             grid=(self.max_block_index, self.max_block_index),
                         )
                         context.synchronize()
-            
+
             project_tock = time.perf_counter()
-            print(f"projection #{i}: time elapsed after call to project_kernel: {project_tock - project_tick}")
+            log.debug(
+                f"projection #{i}: time elapsed after call to project_kernel: {project_tock - project_tick}"
+            )
 
             intensity = np.empty(self.output_shape, dtype=np.float32)
             cuda.memcpy_dtoh(intensity, self.intensity_gpu)
@@ -426,11 +422,13 @@ class Projector(object):
             photon_probs.append(photon_prob)
 
             project_tock = time.perf_counter()
-            print(f"projection #{i}: time elpased after copy from kernel: {project_tock - project_tick}")
+            log.debug(
+                f"projection #{i}: time elpased after copy from kernel: {project_tock - project_tick}"
+            )
 
             if self.scatter_num > 0:
                 # TODO (mjudish): the resampled density never gets used in the scatter kernel
-                logger.info(
+                log.info(
                     f"Starting scatter simulation, scatter_num={self.scatter_num}. Time: {time.asctime()}"
                 )
                 ###index_from_ijk = proj.get_ray_transform(self.megavolume).inv # Urgent TODO: "self.volume" is incompatible with this version of the code
@@ -465,7 +463,7 @@ class Projector(object):
                 histories_per_thread = int(
                     np.ceil(self.scatter_num / (self.threads * self.threads))
                 )
-                print(f"histories_per_thread: {histories_per_thread}")
+                log.debug(f"histories_per_thread: {histories_per_thread}")
 
                 scatter_args = [
                     np.int32(proj.sensor_width),  # detector_width
@@ -510,8 +508,9 @@ class Projector(object):
                 # Calculate required blocks
                 histories_per_block = (self.threads * self.threads) * histories_per_thread
                 blocks_n = np.int(np.ceil(self.scatter_num / histories_per_block))
+                # same number of threads per block as the ray-casting
                 block = (self.threads * self.threads, 1, 1)
-                print(
+                log.debug(
                     f"scatter_num: {self.scatter_num}. histories_per_block: {histories_per_block}. blocks_n: {blocks_n}"
                 )
 
@@ -558,7 +557,7 @@ class Projector(object):
                     scatter_intensity, 1 * (0 == n_sc) + n_sc * (0 != n_sc)
                 )
                 # scatter_intensity now actually reflects "intensity per photon"
-                logger.info(
+                log.info(
                     f"Finished scatter simulation, scatter_num={self.scatter_num}. Time: {time.asctime()}"
                 )
 
@@ -566,7 +565,7 @@ class Projector(object):
                 # total number of recorded primary hits
                 hits_pri = np.sum(n_pri)
 
-                print(f"hits_sc: {hits_sc}, hits_pri: {hits_pri}")
+                log.debug(f"hits_sc: {hits_sc}, hits_pri: {hits_pri}")
 
                 f_sc = hits_sc / (hits_pri + hits_sc)
                 f_pri = hits_pri / (hits_pri + hits_sc)
@@ -580,7 +579,7 @@ class Projector(object):
 
         images = np.stack(intensities)
         photon_prob = np.stack(photon_probs)
-        logger.info("Completed projection and attenuation")
+        log.info("Completed projection and attenuation")
 
         # transform to collected energy in keV per cm^2 (or keV per mm^2)
         if self.collected_energy:
@@ -610,7 +609,7 @@ class Projector(object):
             return deposited_energy, photon_prob
 
         if self.add_noise:
-            logger.info("adding Poisson noise")
+            log.info("adding Poisson noise")
             images = analytic_generators.add_noise(
                 images, photon_prob, self.photon_count
             )
@@ -619,7 +618,7 @@ class Projector(object):
             images = np.clip(images, None, self.intensity_upper_bound)
 
         if self.neglog:
-            logger.info("applying negative log transform")
+            log.info("applying negative log transform")
             images = utils.neglog(images)
 
         if images.shape[0] == 1:
@@ -645,10 +644,7 @@ class Projector(object):
         phis, thetas = utils.generate_uniform_angles(phi_range, theta_range)
         for phi, theta in zip(phis, thetas):
             extrinsic = self.carm.get_camera3d_from_world(
-                self.carm.isocenter,
-                phi=phi,
-                theta=theta,
-                degrees=degrees,
+                self.carm.isocenter, phi=phi, theta=theta, degrees=degrees,
             )
 
             camera_projections.append(
@@ -662,7 +658,7 @@ class Projector(object):
         if self.initialized:
             raise RuntimeError("Close projector before initializing again.")
 
-        print(f"beginning call to Projector.initialize")
+        log.debug(f"beginning call to Projector.initialize")
         init_tick = time.perf_counter()
 
         # allocate and transfer the volume texture to GPU
@@ -680,7 +676,7 @@ class Projector(object):
             self.volumes_texref.append(vol_texref)
 
         init_tock = time.perf_counter()
-        print(f"time elapsed after intializing volumes: {init_tock - init_tick}")
+        log.debug(f"time elapsed after intializing volumes: {init_tock - init_tick}")
 
         # set the interpolation mode
         if self.mode == "linear":
@@ -722,8 +718,10 @@ class Projector(object):
             self.segmentations_texref.append(texref)
 
         init_tock = time.perf_counter()
-        print(f"time elapsed after intializing segmentations: {init_tock - init_tick}")
-        
+        log.debug(
+            f"time elapsed after intializing segmentations: {init_tock - init_tick}"
+        )
+
         # allocate volumes' priority level on the GPU
         self.priorities_gpu = cuda.mem_alloc(len(self.volumes) * NUMBYTES_INT32)
         for vol_id, prio in enumerate(self.priorities):
@@ -764,18 +762,15 @@ class Projector(object):
             )
 
             cuda.memcpy_htod(
-                int(self.voxelSizeX_gpu) + gpu_ptr_offset,
-                np.float32(_vol.spacing[0]),
+                int(self.voxelSizeX_gpu) + gpu_ptr_offset, np.float32(_vol.spacing[0]),
             )
             cuda.memcpy_htod(
-                int(self.voxelSizeY_gpu) + gpu_ptr_offset,
-                np.float32(_vol.spacing[1]),
+                int(self.voxelSizeY_gpu) + gpu_ptr_offset, np.float32(_vol.spacing[1]),
             )
             cuda.memcpy_htod(
-                int(self.voxelSizeZ_gpu) + gpu_ptr_offset,
-                np.float32(_vol.spacing[2]),
+                int(self.voxelSizeZ_gpu) + gpu_ptr_offset, np.float32(_vol.spacing[2]),
             )
-        logger.debug(f"gVolume information allocated and copied to GPU")
+        log.debug(f"gVolume information allocated and copied to GPU")
 
         # allocate source coord.s on GPU (4 bytes for each of {x,y,z} for each volume)
         self.sourceX_gpu = cuda.mem_alloc(len(self.volumes) * NUMBYTES_FLOAT32)
@@ -783,28 +778,30 @@ class Projector(object):
         self.sourceZ_gpu = cuda.mem_alloc(len(self.volumes) * NUMBYTES_FLOAT32)
 
         init_tock = time.perf_counter()
-        print(f"time elapsed after intializing multivolume stuff: {init_tock - init_tick}")
-        
+        log.debug(
+            f"time elapsed after intializing multivolume stuff: {init_tock - init_tick}"
+        )
+
         # allocate ijk_from_index matrix array on GPU (3x3 array x 4 bytes per float32)
         # TODO: represent the factor of "3 x 3" in a more abstracted way
         self.rt_kinv_gpu = cuda.mem_alloc(len(self.volumes) * 3 * 3 * NUMBYTES_FLOAT32)
 
         # allocate intensity array on GPU (4 bytes to a float32)
         self.intensity_gpu = cuda.mem_alloc(self.output_size * NUMBYTES_FLOAT32)
-        logger.debug(
+        log.debug(
             f"bytes alloc'd for self.intensity_gpu: {self.output_size * NUMBYTES_FLOAT32}"
         )
 
         # allocate photon_prob array on GPU (4 bytes to a float32)
         self.photon_prob_gpu = cuda.mem_alloc(self.output_size * NUMBYTES_FLOAT32)
-        logger.debug(
+        log.debug(
             f"bytes alloc'd for self.photon_prob_gpu: {self.output_size * NUMBYTES_FLOAT32}"
         )
 
         # allocate solid_angle array on GPU as needed (4 bytes to a float32)
         if self.collected_energy:
             self.solid_angle_gpu = cuda.mem_alloc(self.output_size * NUMBYTES_FLOAT32)
-            logger.debug(
+            log.debug(
                 f"bytes alloc'd for self.solid_angle_gpu: {self.output_size * NUMBYTES_FLOAT32}"
             )
         else:
@@ -818,9 +815,7 @@ class Projector(object):
         n_bins = contiguous_energies.shape[0]
         self.energies_gpu = cuda.mem_alloc(n_bins * NUMBYTES_FLOAT32)
         cuda.memcpy_htod(self.energies_gpu, contiguous_energies)
-        logger.debug(
-            f"bytes alloc'd for self.energies_gpu: {n_bins * NUMBYTES_FLOAT32}"
-        )
+        log.debug(f"bytes alloc'd for self.energies_gpu: {n_bins * NUMBYTES_FLOAT32}")
 
         # allocate and transfer spectrum pdf (4 bytes to a float32)
         noncont_pdf = self.spectrum[:, 1] / np.sum(self.spectrum[:, 1])
@@ -829,7 +824,7 @@ class Projector(object):
         assert contiguous_pdf.shape[0] == n_bins
         self.pdf_gpu = cuda.mem_alloc(n_bins * NUMBYTES_FLOAT32)
         cuda.memcpy_htod(self.pdf_gpu, contiguous_pdf)
-        logger.debug(f"bytes alloc'd for self.pdf_gpu {n_bins * NUMBYTES_FLOAT32}")
+        log.debug(f"bytes alloc'd for self.pdf_gpu {n_bins * NUMBYTES_FLOAT32}")
 
         # precompute, allocate, and transfer the get_absorption_coef(energy, material) table (4 bytes to a float32)
         absorption_coef_table = np.empty(n_bins * len(self.all_materials)).astype(
@@ -846,19 +841,20 @@ class Projector(object):
             n_bins * len(self.all_materials) * NUMBYTES_FLOAT32
         )
         cuda.memcpy_htod(self.absorption_coef_table_gpu, absorption_coef_table)
-        logger.debug(
+        log.debug(
             f"size alloc'd for self.absorption_coef_table_gpu: {n_bins * len(self.all_materials) * NUMBYTES_FLOAT32}"
         )
 
-
         init_tock = time.perf_counter()
-        print(f"time elapsed after intializing rest of primary-signal stuff: {init_tock - init_tick}")
+        log.debug(
+            f"time elapsed after intializing rest of primary-signal stuff: {init_tock - init_tick}"
+        )
 
         # Scatter-specific initializations
 
         if self.scatter_num > 0:
             if len(self.volumes) > 1:
-                print(f"beginning scatter resampling")
+                log.debug(f"beginning scatter resampling")
                 # Combine the multiple volumes into one single volume
                 x_points_world = []
                 y_points_world = []
@@ -918,7 +914,7 @@ class Projector(object):
                             - remainder
                         )
 
-                logger.info(f"megavol spacing: {self.megavol_spacing}")
+                log.info(f"megavol spacing: {self.megavol_spacing}")
 
                 mega_x_len = int(
                     0.01
@@ -953,9 +949,9 @@ class Projector(object):
                 )
                 self.megavol_ijk_from_world = megavol_world_from_ijk.inv
 
-                logger.info(f"max_world_point: {max_world_point}")
-                logger.info(f"min_world_point: {min_world_point}")
-                logger.info(
+                log.info(f"max_world_point: {max_world_point}")
+                log.info(f"min_world_point: {min_world_point}")
+                log.info(
                     f"mega_[x,y,z]_len: ({mega_x_len}, {mega_y_len}, {mega_z_len})"
                 )
 
@@ -1000,7 +996,7 @@ class Projector(object):
                     inp_ijk_from_world = np.ascontiguousarray(
                         np.array(_vol.ijk_from_world).astype(np.float32)
                     )
-                    print(inp_ijk_from_world)
+                    log.debug(inp_ijk_from_world)
                     # cuda.memcpy_htod(int(inp_ijk_from_world_gpu) + arr_offset, inp_ijk_from_world)
                     cuda.memcpy_htod(
                         int(inp_ijk_from_world_gpu) + arr_offset, np.int32(12345)
@@ -1031,14 +1027,16 @@ class Projector(object):
                 ]
 
                 init_tock = time.perf_counter()
-                print(f"resampling kernel args set. time elapsed: {init_tock - init_tick}")
+                log.debug(
+                    f"resampling kernel args set. time elapsed: {init_tock - init_tick}"
+                )
 
                 # Calculate block and grid sizes: each block is a 4x4x4 cube of voxels
                 block = (1, 1, 1)
                 blocks_x = np.int(np.ceil(mega_x_len / block[0]))
                 blocks_y = np.int(np.ceil(mega_y_len / block[1]))
                 blocks_z = np.int(np.ceil(mega_z_len / block[2]))
-                logger.info(
+                log.info(
                     f"Resampling: {blocks_x}x{blocks_y}x{blocks_z} blocks with {block[0]}x{block[1]}x{block[2]} threads each"
                 )
 
@@ -1059,7 +1057,7 @@ class Projector(object):
                         grid=(blocks_x, blocks_y, blocks_z),
                     )
                 else:
-                    logger.debug("Running resampling kernel patchwise")
+                    log.debug("Running resampling kernel patchwise")
                     for x in range((blocks_x - 1) // (self.max_block_index + 1)):
                         for y in range((blocks_y - 1) // (self.max_block_index + 1)):
                             for z in range(
@@ -1089,7 +1087,9 @@ class Projector(object):
                 inp_ijk_from_world_gpu.free()
 
                 init_tock = time.perf_counter()
-                print(f"time elapsed after call to resampling kernel: {init_tock - init_tick}")
+                log.debug(
+                    f"time elapsed after call to resampling kernel: {init_tock - init_tick}"
+                )
 
             else:
                 self.megavol_ijk_from_world = self.volumes[0].ijk_from_world
@@ -1124,7 +1124,9 @@ class Projector(object):
                 cuda.memcpy_htod(self.megavol_labeled_seg_gpu, labeled_seg)
 
                 init_tock = time.perf_counter()
-                print(f"time elapsed after copying megavolume to GPU: {init_tock - init_tick}")
+                log.debug(
+                    f"time elapsed after copying megavolume to GPU: {init_tock - init_tick}"
+                )
 
                 # TODO (mjudish): copy volume density info to self.megavol_density_gpu. How to deal with axis swaps?
 
@@ -1142,7 +1144,9 @@ class Projector(object):
                 )
 
             init_tock = time.perf_counter()
-            print(f"time elapsed after intializing MFP structs: {init_tock - init_tick}")
+            log.debug(
+                f"time elapsed after intializing MFP structs: {init_tock - init_tick}"
+            )
 
             # Woodcock MFP struct
             wc_np_arr = scatter.make_woodcock_mfp(self.all_materials)
@@ -1150,9 +1154,11 @@ class Projector(object):
             self.woodcock_struct = CudaWoodcockStruct(
                 wc_np_arr, int(self.woodcock_struct_gpu)
             )
-            
+
             init_tock = time.perf_counter()
-            print(f"time elapsed after intializing Woodcock struct: {init_tock - init_tick}")
+            log.debug(
+                f"time elapsed after intializing Woodcock struct: {init_tock - init_tick}"
+            )
 
             # Material Compton structs
             self.compton_struct_dict = dict()
@@ -1166,9 +1172,11 @@ class Projector(object):
                 self.compton_struct_dict[mat] = CudaComptonStruct(
                     COMPTON_DATA[mat], struct_gpu_ptr
                 )
-            
+
             init_tock = time.perf_counter()
-            print(f"time elapsed after intializing Compton structs: {init_tock - init_tick}")
+            log.debug(
+                f"time elapsed after intializing Compton structs: {init_tock - init_tick}"
+            )
 
             # Material RITA structs
             self.rita_struct_dict = dict()
@@ -1182,13 +1190,15 @@ class Projector(object):
                 self.rita_struct_dict[mat] = CudaRitaStruct(
                     rita_samplers[mat], struct_gpu_ptr
                 )
-                # print(f"for material [{mat}], RITA structure at location {struct_gpu_ptr}")
+                # log.debug(f"for material [{mat}], RITA structure at location {struct_gpu_ptr}")
                 # for g in range(self.rita_struct_dict[mat].n_gridpts):
-                #    print(f"[{self.rita_struct_dict[mat].x[g]}, {self.rita_struct_dict[mat].y[g]}, {self.rita_struct_dict[mat].a[g]}, {self.rita_struct_dict[mat].b[g]}]")
+                #    log.debug(f"[{self.rita_struct_dict[mat].x[g]}, {self.rita_struct_dict[mat].y[g]}, {self.rita_struct_dict[mat].a[g]}, {self.rita_struct_dict[mat].b[g]}]")
 
             init_tock = time.perf_counter()
-            print(f"time elapsed after intializing RITA structs: {init_tock - init_tick}")
-            
+            log.debug(
+                f"time elapsed after intializing RITA structs: {init_tock - init_tick}"
+            )
+
             # Detector plane
             self.detector_plane_gpu = cuda.mem_alloc(CudaPlaneSurfaceStruct.MEMSIZE)
 
@@ -1205,7 +1215,7 @@ class Projector(object):
             spectrum_cdf = np.array(
                 [np.sum(contiguous_pdf[0 : i + 1]) for i in range(n_bins)]
             )
-            # print(f"spectrum CDF:\n{spectrum_cdf}")
+            # log.debug(f"spectrum CDF:\n{spectrum_cdf}")
             self.cdf_gpu = cuda.mem_alloc(n_bins * NUMBYTES_FLOAT32)
             cuda.memcpy_htod(self.cdf_gpu, spectrum_cdf)
 
@@ -1220,9 +1230,10 @@ class Projector(object):
                 self.output_size * NUMBYTES_INT32
             )
 
-        
         init_tock = time.perf_counter()
-        print(f"time elapsed after intializing rest of stuff: {init_tock - init_tick}")
+        log.debug(
+            f"time elapsed after intializing rest of stuff: {init_tock - init_tick}"
+        )
 
         # Mark self as initialized.
         self.initialized = True

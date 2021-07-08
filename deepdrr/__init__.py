@@ -1,4 +1,11 @@
-from . import logging
+import logging
+from rich.logging import RichHandler
+
+log = logging.getLogger(__name__)
+ch = RichHandler(level=logging.NOTSET)
+log.addHandler(ch)
+
+
 from . import vis, geo, projector, device, annotations, utils
 from .projector import Projector
 from .vol import Volume
