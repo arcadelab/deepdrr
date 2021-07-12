@@ -276,7 +276,10 @@ class Projector(object):
     def output_size(self) -> int:
         return int(np.prod(self.output_shape))
 
-    def project(self, *camera_projections: geo.CameraProjection,) -> np.ndarray:
+    def project(
+        self,
+        *camera_projections: geo.CameraProjection,
+    ) -> np.ndarray:
         """Perform the projection.
 
         Args:
@@ -342,8 +345,8 @@ class Projector(object):
                     f"ijk_from_index.size: {ijk_from_index.size}"
                 )  # mjudish (sanity checking)
                 cuda.memcpy_htod(
-                    int(self.rt_kinv_gpu) +
-                    (ijk_from_index.size * NUMBYTES_FLOAT32) * vol_id,
+                    int(self.rt_kinv_gpu)
+                    + (ijk_from_index.size * NUMBYTES_FLOAT32) * vol_id,
                     ijk_from_index,
                 )
 
@@ -411,15 +414,15 @@ class Projector(object):
             intensity = np.empty(self.output_shape, dtype=np.float32)
             cuda.memcpy_dtoh(intensity, self.intensity_gpu)
             # transpose the axes, which previously have width on the slow dimension
-            log.debug('copied intensity from gpu')
+            log.debug("copied intensity from gpu")
             intensity = np.swapaxes(intensity, 0, 1).copy()
-            log.debug('swapped intensity')
+            log.debug("swapped intensity")
 
             photon_prob = np.empty(self.output_shape, dtype=np.float32)
             cuda.memcpy_dtoh(photon_prob, self.photon_prob_gpu)
-            log.debug('copied photon_prob')
+            log.debug("copied photon_prob")
             photon_prob = np.swapaxes(photon_prob, 0, 1).copy()
-            log.debug('swapped photon_prob')
+            log.debug("swapped photon_prob")
 
             intensities.append(intensity)
             photon_probs.append(photon_prob)
@@ -436,7 +439,9 @@ class Projector(object):
                 )
                 # index_from_ijk = proj.get_ray_transform(self.megavolume).inv # Urgent TODO: "self.volume" is incompatible with this version of the code
 
-                index_from_ijk = (self.megavol_ijk_from_world @ proj.world_from_index).inv
+                index_from_ijk = (
+                    self.megavol_ijk_from_world @ proj.world_from_index
+                ).inv
                 index_from_ijk = np.ascontiguousarray(
                     np.array(index_from_ijk)[0:2, 0:3]
                 ).astype(np.float32)
@@ -454,7 +459,7 @@ class Projector(object):
                     proj.index_from_camera2d,
                     self.source_to_detector_distance,
                     geo.Point3D.from_any(scatter_source_ijk),
-                    self.output_shape
+                    self.output_shape,
                 )
                 detector_plane_struct = CudaPlaneSurfaceStruct(
                     detector_plane, int(self.detector_plane_gpu)
@@ -509,7 +514,9 @@ class Projector(object):
                 assert 12345 == scatter_args[seed_input_index]
 
                 # Calculate required blocks
-                histories_per_block = (self.threads * self.threads) * histories_per_thread
+                histories_per_block = (
+                    self.threads * self.threads
+                ) * histories_per_thread
                 blocks_n = np.int(np.ceil(self.scatter_num / histories_per_block))
                 # same number of threads per block as the ray-casting
                 block = (self.threads * self.threads, 1, 1)
@@ -593,19 +600,19 @@ class Projector(object):
             solid_angle = np.swapaxes(solid_angle, 0, 1).copy()
 
             pixel_size_x = (
-                self.source_to_detector_distance /
-                camera_projection.index_from_camera2d.fx
+                self.source_to_detector_distance
+                / camera_projection.index_from_camera2d.fx
             )
             pixel_size_y = (
-                self.source_to_detector_distance /
-                camera_projection.index_from_camera2d.fy
+                self.source_to_detector_distance
+                / camera_projection.index_from_camera2d.fy
             )
 
             # get energy deposited by multiplying [intensity] with [number of photons to hit each pixel]
             deposited_energy = (
-                np.multiply(intensity, solid_angle) *
-                self.photon_count /
-                np.average(solid_angle)
+                np.multiply(intensity, solid_angle)
+                * self.photon_count
+                / np.average(solid_angle)
             )
             # convert to keV / mm^2
             deposited_energy /= pixel_size_x * pixel_size_y
@@ -647,7 +654,10 @@ class Projector(object):
         phis, thetas = utils.generate_uniform_angles(phi_range, theta_range)
         for phi, theta in zip(phis, thetas):
             extrinsic = self.carm.get_camera3d_from_world(
-                self.carm.isocenter, phi=phi, theta=theta, degrees=degrees,
+                self.carm.isocenter,
+                phi=phi,
+                theta=theta,
+                degrees=degrees,
             )
 
             camera_projections.append(
@@ -765,13 +775,16 @@ class Projector(object):
             )
 
             cuda.memcpy_htod(
-                int(self.voxelSizeX_gpu) + gpu_ptr_offset, np.float32(_vol.spacing[0]),
+                int(self.voxelSizeX_gpu) + gpu_ptr_offset,
+                np.float32(_vol.spacing[0]),
             )
             cuda.memcpy_htod(
-                int(self.voxelSizeY_gpu) + gpu_ptr_offset, np.float32(_vol.spacing[1]),
+                int(self.voxelSizeY_gpu) + gpu_ptr_offset,
+                np.float32(_vol.spacing[1]),
             )
             cuda.memcpy_htod(
-                int(self.voxelSizeZ_gpu) + gpu_ptr_offset, np.float32(_vol.spacing[2]),
+                int(self.voxelSizeZ_gpu) + gpu_ptr_offset,
+                np.float32(_vol.spacing[2]),
             )
         log.debug(f"gVolume information allocated and copied to GPU")
 
@@ -912,32 +925,32 @@ class Projector(object):
                     ) % self.megavol_spacing[axis]
                     if remainder > 0:
                         max_world_point[axis] = (
-                            max_world_point[axis] +
-                            self.megavol_spacing[axis] -
-                            remainder
+                            max_world_point[axis]
+                            + self.megavol_spacing[axis]
+                            - remainder
                         )
 
                 log.info(f"megavol spacing: {self.megavol_spacing}")
 
                 mega_x_len = int(
-                    0.01 +
-                    (
-                        (max_world_point[0] - min_world_point[0]) /
-                        self.megavol_spacing[0]
+                    0.01
+                    + (
+                        (max_world_point[0] - min_world_point[0])
+                        / self.megavol_spacing[0]
                     )
                 )
                 mega_y_len = int(
-                    0.01 +
-                    (
-                        (max_world_point[1] - min_world_point[1]) /
-                        self.megavol_spacing[1]
+                    0.01
+                    + (
+                        (max_world_point[1] - min_world_point[1])
+                        / self.megavol_spacing[1]
                     )
                 )
                 mega_z_len = int(
-                    0.01 +
-                    (
-                        (max_world_point[2] - min_world_point[2]) /
-                        self.megavol_spacing[2]
+                    0.01
+                    + (
+                        (max_world_point[2] - min_world_point[2])
+                        / self.megavol_spacing[2]
                     )
                 )
 
@@ -973,9 +986,9 @@ class Projector(object):
                 inp_voxelBoundY_gpu = cuda.mem_alloc(NUMBYTES_INT32 * len(self.volumes))
                 inp_voxelBoundZ_gpu = cuda.mem_alloc(NUMBYTES_INT32 * len(self.volumes))
                 inp_ijk_from_world_gpu = cuda.mem_alloc(
-                    NUMBYTES_INT32 *
-                    np.array(self.volumes[0].ijk_from_world).size *
-                    len(self.volumes)
+                    NUMBYTES_INT32
+                    * np.array(self.volumes[0].ijk_from_world).size
+                    * len(self.volumes)
                 )
 
                 for vol_id, _vol in enumerate(self.volumes):
@@ -1044,9 +1057,9 @@ class Projector(object):
                 )
 
                 if (
-                    blocks_x <= self.max_block_index and
-                    blocks_y <= self.max_block_index and
-                    blocks_z <= self.max_block_index
+                    blocks_x <= self.max_block_index
+                    and blocks_y <= self.max_block_index
+                    and blocks_z <= self.max_block_index
                 ):
                     offset_x = np.int32(0)
                     offset_y = np.int32(0)
@@ -1216,7 +1229,7 @@ class Projector(object):
             # spectrum_cdf = np.array([np.sum(self.spectrum[0:i+1, 1]) for i in range(n_bins)])
             # spectrum_cdf = (spectrum_cdf / np.sum(self.spectrum[:, 1])).astype(np.float32)
             spectrum_cdf = np.array(
-                [np.sum(contiguous_pdf[0: i + 1]) for i in range(n_bins)]
+                [np.sum(contiguous_pdf[0 : i + 1]) for i in range(n_bins)]
             )
             # log.debug(f"spectrum CDF:\n{spectrum_cdf}")
             self.cdf_gpu = cuda.mem_alloc(n_bins * NUMBYTES_FLOAT32)
