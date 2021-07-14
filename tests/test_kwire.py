@@ -51,6 +51,7 @@ def test_kwire():
 
     output_dir = output_dir / "test_kwire"
     output_dir.mkdir(exist_ok=True)
+    i = 0
     with deepdrr.Projector([volume, kwire], carm=carm) as projector:
         for alpha in [-30, -15, 0, 15, 30, 45, 60, 75, 90]:
             carm.move_to(alpha=alpha, degrees=True)
@@ -63,9 +64,10 @@ def test_kwire():
                 image = projector()
                 image_utils.save(
                     output_dir
-                    / f"test_kwire_only_alpha={alpha}_progress={int(100 * progress)}.png",
+                    / f"{i:03d}_test_kwire_only_alpha={alpha}_progress={int(100 * progress)}.png",
                     image,
                 )
+                i += 1
 
 
 if __name__ == "__main__":
