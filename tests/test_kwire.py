@@ -12,6 +12,8 @@ from deepdrr import vis
 # TODO: create a test case possibly using the new dataset, along with some annotations, that tests the KWire alignment code.
 # This will create a test case, demo that the annotations are correct, etc.
 
+log = logging.getLogger(__name__)
+
 
 def test_kwire():
     output_dir = test_utils.get_output_dir()
@@ -27,7 +29,10 @@ def test_kwire():
 
     # define the simulated C-arm
     carm = deepdrr.MobileCArm(
-        annotation.startpoint_in_world.lerp(annotation.endpoint_in_world, 0.3)
+        annotation.startpoint_in_world.lerp(annotation.endpoint_in_world, 0.3),
+        sensor_height=384,  # uncomment these for higher resolution images
+        sensor_width=384,
+        pixel_size=0.776,
     )
 
     # first, just do the CT volume on its own
@@ -67,7 +72,11 @@ def test_kwire():
                     / f"{i:03d}_test_kwire_only_alpha={alpha}_progress={int(100 * progress)}.png",
                     image,
                 )
+                log.info
                 i += 1
+
+                break
+            break
 
 
 if __name__ == "__main__":

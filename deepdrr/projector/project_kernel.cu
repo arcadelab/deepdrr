@@ -834,9 +834,9 @@ extern "C" {
     __global__  void projectKernel(
         int out_width, // width of the output image
         int out_height, // height of the output image
-        float step,
+        float step, // step size (TODO: in world)
         int *priority, // volumes with smaller priority-ID have higher priority when determining which volume we are in
-        float *gVolumeEdgeMinPointX, // one value for each of the NUM_VOLUMES volumes
+        float *gVolumeEdgeMinPointX, // These give a bounding box in world-space around each volume.
         float *gVolumeEdgeMinPointY,
         float *gVolumeEdgeMinPointZ,
         float *gVolumeEdgeMaxPointX,
@@ -845,10 +845,11 @@ extern "C" {
         float *gVoxelElementSizeX, // one value for each of the NUM_VOLUMES volumes
         float *gVoxelElementSizeY,
         float *gVoxelElementSizeZ,
-        float *sx, // x-coordinate of source point for rays in world-space
-        float *sy, // one value for each of the NUM_VOLUMES volumes
-        float *sz,
-        float *rt_kinv, // (NUM_VOLUMES, 3, 3) array giving the image-to-world-ray transform for each volume
+        float sx, // x-coordinate of source point for rays in world-space
+        float sy,
+        float sz,
+        float *rt_kinv, // (3, 3) array giving the ijk_from_index ray transform for each volume (todo: make it a single world_from_index array)
+        float *ijk_from_world, // (NUM_VOLUMES, 3, 4) transform giving the transform from world to IJK coordinates for each volume.
         int n_bins, // the number of spectral bins
         float *energies, // 1-D array -- size is the n_bins. Units: [keV]
         float *pdf, // 1-D array -- probability density function over the energies
@@ -863,8 +864,7 @@ extern "C" {
     {
         // The output image has the following coordinate system, with cell-centered sampling.
         // y is along the fast axis (columns), x along the slow (rows).
-        // Each point has NUM_MATERIALS elements at it.
-        // 
+        //
         //      x -->
         //    y *---------------------------*
         //    | |                           |
@@ -877,7 +877,8 @@ extern "C" {
         //
         int udx = threadIdx.x + (blockIdx.x + offsetW) * blockDim.x; // index into output image width
         int vdx = threadIdx.y + (blockIdx.y + offsetH) * blockDim.y; // index into output image height
-        int debug = (udx == 0) && (vdx == 0);
+        // int debug = (udx == 973) && (vdx == 598); // larger image size
+        int debug = (udx == 243) && (vdx == 149); // 4x4 binning
 
         // if the current point is outside the output image, no computation needed
         if (udx >= out_width || vdx >= out_height)
@@ -887,54 +888,74 @@ extern "C" {
         float u = (float) udx + 0.5;
         float v = (float) vdx + 0.5;
 
-        // Vector in voxel-space along ray from source-point to pixel at [u,v] on the detector plane.
-        float rx[NUM_VOLUMES];
-        float ry[NUM_VOLUMES];
-        float rz[NUM_VOLUMES];
-        float volume_normalization_factor[NUM_VOLUMES];
-        if (debug) {
-            printf("calculate_all_rays\n");
-        }
-        calculate_all_rays(
-            rx, ry, rz, volume_normalization_factor,
-            u, v, rt_kinv, 
-            gVoxelElementSizeX, gVoxelElementSizeY, gVoxelElementSizeZ
-        );
+        // Vector in world-space along ray from source-point to pixel at [u,v] on the detector plane.
+        float rx = u * rt_kinv[0] + v * rt_kinv[1] + rt_kinv[2];
+        float ry = u * rt_kinv[3] + v * rt_kinv[4] + rt_kinv[5];
+        float rz = u * rt_kinv[6] + v * rt_kinv[7] + rt_kinv[8];
+
+        /* make the ray a unit vector */
+        float ray_norm = sqrt(rx * rx + ry * ry + rz * rz);
+        rx /= ray_norm;
+        ry /= ray_norm;
+        rz /= ray_norm;
 
         // calculate projections
-        // Part 1: compute alpha value at entry and exit point of the volume on either side of the ray.
-        // minAlpha: the distance from source point to volume entry point of the ray.
-        // maxAlpha: the distance from source point to volume exit point of the ray.
-        float minAlpha[NUM_VOLUMES];
-        float maxAlpha[NUM_VOLUMES];
+        // Part 1: compute alpha value at entry and exit point of all volumes on either side of the ray, in world-space.
+        // minAlpha: the distance from source point to all-volumes entry point of the ray, in world-space.
+        // maxAlpha: the distance from source point to all-volumes exit point of the ray.
+        float minAlpha = 0; // the furthest along the ray we want to consider is the start point.
+        float maxAlpha = ray_norm; // closest point to consider is at the detector
         int do_trace[NUM_VOLUMES]; // for each volume, whether or not to perform the ray-tracing
-        float globalMinAlpha = INFINITY; // the smallest of all the minAlpha's
-        float globalMaxAlpha = 0.0f; // the largest of all the maxAlpha's
-        if (debug) {
-            printf("calc all alphas\n");
-        }
-        calculate_all_alphas(
-            minAlpha, maxAlpha, do_trace,
-            &globalMinAlpha, &globalMaxAlpha,
-            rx, ry, rz,
-            sx, sy, sz,
-            gVolumeEdgeMinPointX, gVolumeEdgeMinPointY, gVolumeEdgeMinPointZ,
-            gVolumeEdgeMaxPointX, gVolumeEdgeMaxPointY, gVolumeEdgeMaxPointZ
-        );
+        int do_return = 1;
 
-        // we start not at the exact entry point 
-        // => we can be sure to be inside the volume
-        // (this is commented out intentionally, seemingly)
-        //for (int i = 0; i < NUM_VOLUMES; i++) {
-        //    minAlpha[i] += step * 0.5f;
-        //}
-
-        // Determine whether to do any ray-tracing at all.
         for (int i = 0; i < NUM_VOLUMES; i++) {
-            if (do_trace[i]) { break; }
-            else if ((NUM_VOLUMES - 1) == i) { return; }
+            do_trace[i] = 1;
+
+            if (0.0f != rx) {
+                float reci = 1.0f / rx;
+                float alpha0 = (gVolumeEdgeMinPointX[i] - sx) * reci;
+                float alpha1 = (gVolumeEdgeMaxPointX[i] - sx) * reci;
+                minAlpha = fmax(minAlpha, fmin(alpha0, alpha1));
+                maxAlpha = fmin(maxAlpha, fmax(alpha0, alpha1));
+            } else if (gVolumeEdgeMinPointX[i] > sx || sx > gVolumeEdgeMaxPointX[i]) {
+                do_trace[i] = 0;
+                continue;
+            }
+
+            if (0.0f != ry) {
+                float reci = 1.0f / ry;
+                float alpha0 = (gVolumeEdgeMinPointY[i] - sy) * reci;
+                float alpha1 = (gVolumeEdgeMaxPointY[i] - sy) * reci;
+                minAlpha = fmax(minAlpha, fmin(alpha0, alpha1));
+                maxAlpha = fmin(maxAlpha, fmax(alpha0, alpha1));
+            } else if (gVolumeEdgeMinPointY[i] > sy || sy > gVolumeEdgeMaxPointY[i]) {
+                do_trace[i] = 0;
+                continue;
+            }
+
+            if (0.0f != rz) {
+                float reci = 1.0f / rz;
+                float alpha0 = (gVolumeEdgeMinPointZ[i] - sz) * reci;
+                float alpha1 = (gVolumeEdgeMaxPointZ[i] - sz) * reci;
+                minAlpha = fmax(minAlpha, fmin(alpha0, alpha1));
+                maxAlpha = fmin(maxAlpha, fmax(alpha0, alpha1));
+            } else if (gVolumeEdgeMinPointZ[i] > sz || sz > gVolumeEdgeMaxPointZ[i]) {
+                do_trace[i] = 0;
+                continue;
+            }
+
+            do_return = 0;
         }
-        
+
+        if (debug) printf("global min, max alphas: %f, %f", minAlpha, maxAlpha);
+
+        // Means none of the volumes have do_trace = 1.
+        if (do_return) return;
+
+        printf("CRITICAL: this kernel not finished");
+
+        // TODO: finish using world-space points.
+
         // Part 2: Cast ray if it intersects the volume
 
         // material projection-output channels
@@ -955,21 +976,24 @@ extern "C" {
         float seg_at_alpha[NUM_VOLUMES][NUM_MATERIALS];
 
         if (debug) {
-            printf("start trace\n");
+            printf("start trace\n"); // This is the one that seems to take a half a second.
         }
-        for (alpha = globalMinAlpha; alpha < globalMaxAlpha; alpha += step) {
+        int num_steps = 0;
+        for (alpha = globalMinAlpha; alpha < globalMaxAlpha; alpha += step, num_steps++) {
             LOAD_SEGS_AT_ALPHA; // initializes p{x,y,z}[...] and seg_at_alpha[...][...]
+            // if (debug) printf("  loaded segs\n"); // This is the one that seems to take a half a second.
             get_priority_at_alpha(
                 alpha, &curr_priority, &n_vols_at_curr_priority,
                 minAlpha, maxAlpha, do_trace,
                 seg_at_alpha, priority
             );
+            // if (debug) printf("  got priority at alpha, num vols\n"); // This is the one that seems to take a half a second.
             if (0 == n_vols_at_curr_priority) {
                 // Outside the bounds of all volumes to trace. Assume nominal density of air is 0.0f.
                 // Thus, we don't need to add to area_density
                 ;
             } else {
-                float weight = 1.0f / ((float)n_vols_at_curr_priority);
+                float weight = 1.0f / ((float) n_vols_at_curr_priority);
 
                 // For the entry boundary, multiply by 0.5. That is, for the initial interpolated value,
                 // only a half step-size is considered in the computation. For the second-to-last interpolation
@@ -978,7 +1002,10 @@ extern "C" {
 
                 INTERPOLATE(boundary_factor);
             }
+
+            // if (debug) printf("  interpolated\n"); // This is the one that seems to take a half a second.
         }
+       if (debug) printf("finished trace, num_steps: %d\n", num_steps);
 
         // Scaling by step
         for (int m = 0; m < NUM_MATERIALS; m++) {
