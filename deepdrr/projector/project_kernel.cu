@@ -4,22 +4,23 @@
 #include "kernel_vol_seg_data.cu"
 
 #define UPDATE(multiplier, vol_id, mat_id) do {\
-    /* param. weight is set to 1.0f / (float)n_vols_at_curr_priority */\
-    area_density[(mat_id)] += (multiplier) * tex3D(VOLUME(vol_id), px[vol_id], py[vol_id], pz[vol_id]) * seg_at_alpha[vol_id][mat_id] * volume_normalization_factor[vol_id] * weight;\
+    area_density[(mat_id)] += (multiplier) * tex3D(VOLUME(vol_id), px[vol_id], py[vol_id], pz[vol_id]) \
+        * seg_at_alpha[vol_id][mat_id] * step_ijk[vol_id]; \
 } while (0)
 
 #define GET_POSITION_FOR_VOL(vol_id) do {\
     /* Get the current sample point in the volume voxel-space. */\
     /* In CUDA, voxel centers are located at (xx.5, xx.5, xx.5), whereas SwVolume has voxel centers at integers. */\
-    px[vol_id] = sx[vol_id] + alpha * rx[vol_id] - gVolumeEdgeMinPointX[vol_id];\
-    py[vol_id] = sy[vol_id] + alpha * ry[vol_id] - gVolumeEdgeMinPointY[vol_id];\
-    pz[vol_id] = sz[vol_id] + alpha * rz[vol_id] - gVolumeEdgeMinPointZ[vol_id];\
+    px[vol_id] = sx_ijk[vol_id] + alpha[vol_id] * rx_ijk[vol_id] - gVolumeEdgeMinPointX[vol_id];\
+    py[vol_id] = sy_ijk[vol_id] + alpha[vol_id] * ry_ijk[vol_id] - gVolumeEdgeMinPointY[vol_id];\
+    pz[vol_id] = sz_ijk[vol_id] + alpha[vol_id] * rz_ijk[vol_id] - gVolumeEdgeMinPointZ[vol_id];\
 } while (0)
 
 #define LOAG_SEGS_FOR_VOL_MAT(vol_id, mat_id) do {\
     seg_at_alpha[vol_id][mat_id] = round(cubicTex3D(SEG(vol_id, mat_id), px[vol_id], py[vol_id], pz[vol_id]));\
 } while (0)
 
+// TODO: rather than having num vols lines for each macro, define the macro once with #if statements for each vol_id.
 #if NUM_MATERIALS == 1
 #define LOAD_SEGS_FOR_VOL(vol_id) do {\
     LOAG_SEGS_FOR_VOL_MAT(vol_id, 0);\
@@ -512,309 +513,16 @@
 #define FOUR_PI_INV_FLOAT 0.0795774715459476678844f // 1 / (4 \pi), from Wolfram Alpha
 
 extern "C" {
-    /* "return" variables point to an item in the array, not the beginning of the array */
-    __device__ static void calculate_alpha(
-        float *minAlpha, float *maxAlpha, int *do_trace, 
-        float *globalMinAlpha, float *globalMaxAlpha,
-        float rx, float ry, float rz,
-        float sx, float sy, float sz,
-        float minBoundX, float minBoundY, float minBoundZ,
-        float maxBoundX, float maxBoundY, float maxBoundZ
-    ) {
-        *minAlpha = 0.0f;
-        *maxAlpha = INFINITY;
-        *do_trace = 1;
-
-        if (0.0f != rx) {
-            float reci = 1.0f / rx;
-            float alpha0 = (minBoundX - sx) * reci;
-            float alpha1 = (maxBoundX - sx) * reci;
-            *minAlpha = fmin(alpha0, alpha1);
-            *maxAlpha = fmax(alpha0, alpha1);
-        } else if (minBoundX > sx || sx > maxBoundX) {
-            *do_trace = 0;
-        }
-    
-        if ((*do_trace) && (0.0f != ry)) {
-            float reci = 1.0f / ry;
-            float alpha0 = (minBoundY - sy) * reci;
-            float alpha1 = (maxBoundY - sy) * reci;
-            *minAlpha = fmax(*minAlpha, fmin(alpha0, alpha1));
-            *maxAlpha = fmin(*maxAlpha, fmax(alpha0, alpha1));
-        } else if (minBoundY > sy || sy > maxBoundY) {
-            *do_trace = 0;
-        }
-    
-        if ((*do_trace) && (0.0f != rz))  {
-            float reci = 1.0f / rz;
-            float alpha0 = (minBoundZ - sz) * reci;
-            float alpha1 = (maxBoundZ - sz) * reci;
-            *minAlpha = fmax(*minAlpha, fmin(alpha0, alpha1));
-            *maxAlpha = fmin(*maxAlpha, fmax(alpha0, alpha1));
-        } else if (minBoundZ > sz || sz > maxBoundZ) {
-            *do_trace = 0;
-        }
-        *globalMinAlpha = fmin(*minAlpha, *globalMinAlpha);
-        *globalMaxAlpha = fmax(*maxAlpha, *globalMaxAlpha);
-    }
-
-    __device__ static void calculate_all_alphas(
-        float minAlpha[NUM_VOLUMES], float maxAlpha[NUM_VOLUMES], int do_trace[NUM_VOLUMES],
-        float *globalMinAlpha, float *globalMaxAlpha, 
-        float rx[NUM_VOLUMES], float ry[NUM_VOLUMES], float rz[NUM_VOLUMES],
-        float sx[NUM_VOLUMES], float sy[NUM_VOLUMES], float sz[NUM_VOLUMES],
-        float gVolumeEdgeMinPointX[NUM_VOLUMES], float gVolumeEdgeMinPointY[NUM_VOLUMES], float gVolumeEdgeMinPointZ[NUM_VOLUMES], 
-        float gVolumeEdgeMaxPointX[NUM_VOLUMES], float gVolumeEdgeMaxPointY[NUM_VOLUMES], float gVolumeEdgeMaxPointZ[NUM_VOLUMES]
-    ) {
-        #if NUM_VOLUMES <= 0
-        printf("calculate_all_alphas not supported for NUM_VOLUMES outside [1, 10]"); return;
-        #endif
-
-        #if NUM_VOLUMES > 10
-        printf("calculate_all_alphas not supported for NUM_VOLUMES outside [1, 10]"); return;
-        #endif
-
-        int i; 
-        #if NUM_VOLUMES > 0
-        i = 0;
-        calculate_alpha(
-            &minAlpha[i], &maxAlpha[i], &do_trace[i],
-            globalMinAlpha, globalMaxAlpha,
-            rx[i], ry[i], rz[i],
-            sx[i], sy[i], sz[i],
-            gVolumeEdgeMinPointX[i], gVolumeEdgeMinPointY[i], gVolumeEdgeMinPointZ[i],
-            gVolumeEdgeMaxPointX[i], gVolumeEdgeMaxPointY[i], gVolumeEdgeMaxPointZ[i]
-        );
-        #endif
-        #if NUM_VOLUMES > 1
-        i = 1;
-        calculate_alpha(
-            &minAlpha[i], &maxAlpha[i], &do_trace[i],
-            globalMinAlpha, globalMaxAlpha,
-            rx[i], ry[i], rz[i],
-            sx[i], sy[i], sz[i],
-            gVolumeEdgeMinPointX[i], gVolumeEdgeMinPointY[i], gVolumeEdgeMinPointZ[i],
-            gVolumeEdgeMaxPointX[i], gVolumeEdgeMaxPointY[i], gVolumeEdgeMaxPointZ[i]
-        );
-        #endif
-        #if NUM_VOLUMES > 2
-        i = 2;
-        calculate_alpha(
-            &minAlpha[i], &maxAlpha[i], &do_trace[i],
-            globalMinAlpha, globalMaxAlpha,
-            rx[i], ry[i], rz[i],
-            sx[i], sy[i], sz[i],
-            gVolumeEdgeMinPointX[i], gVolumeEdgeMinPointY[i], gVolumeEdgeMinPointZ[i],
-            gVolumeEdgeMaxPointX[i], gVolumeEdgeMaxPointY[i], gVolumeEdgeMaxPointZ[i]
-        );
-        #endif
-        #if NUM_VOLUMES > 3
-        i = 3;
-        calculate_alpha(
-            &minAlpha[i], &maxAlpha[i], &do_trace[i],
-            globalMinAlpha, globalMaxAlpha,
-            rx[i], ry[i], rz[i],
-            sx[i], sy[i], sz[i],
-            gVolumeEdgeMinPointX[i], gVolumeEdgeMinPointY[i], gVolumeEdgeMinPointZ[i],
-            gVolumeEdgeMaxPointX[i], gVolumeEdgeMaxPointY[i], gVolumeEdgeMaxPointZ[i]
-        );
-        #endif
-        #if NUM_VOLUMES > 4
-        i = 4;
-        calculate_alpha(
-            &minAlpha[i], &maxAlpha[i], &do_trace[i],
-            globalMinAlpha, globalMaxAlpha,
-            rx[i], ry[i], rz[i],
-            sx[i], sy[i], sz[i],
-            gVolumeEdgeMinPointX[i], gVolumeEdgeMinPointY[i], gVolumeEdgeMinPointZ[i],
-            gVolumeEdgeMaxPointX[i], gVolumeEdgeMaxPointY[i], gVolumeEdgeMaxPointZ[i]
-        );
-        #endif
-        #if NUM_VOLUMES > 5
-        i = 5;
-        calculate_alpha(
-            &minAlpha[i], &maxAlpha[i], &do_trace[i],
-            globalMinAlpha, globalMaxAlpha,
-            rx[i], ry[i], rz[i],
-            sx[i], sy[i], sz[i],
-            gVolumeEdgeMinPointX[i], gVolumeEdgeMinPointY[i], gVolumeEdgeMinPointZ[i],
-            gVolumeEdgeMaxPointX[i], gVolumeEdgeMaxPointY[i], gVolumeEdgeMaxPointZ[i]
-        );
-        #endif
-        #if NUM_VOLUMES > 6
-        i = 6;
-        calculate_alpha(
-            &minAlpha[i], &maxAlpha[i], &do_trace[i],
-            globalMinAlpha, globalMaxAlpha,
-            rx[i], ry[i], rz[i],
-            sx[i], sy[i], sz[i],
-            gVolumeEdgeMinPointX[i], gVolumeEdgeMinPointY[i], gVolumeEdgeMinPointZ[i],
-            gVolumeEdgeMaxPointX[i], gVolumeEdgeMaxPointY[i], gVolumeEdgeMaxPointZ[i]
-        );
-        #endif
-        #if NUM_VOLUMES > 7
-        i = 7;
-        calculate_alpha(
-            &minAlpha[i], &maxAlpha[i], &do_trace[i],
-            globalMinAlpha, globalMaxAlpha,
-            rx[i], ry[i], rz[i],
-            sx[i], sy[i], sz[i],
-            gVolumeEdgeMinPointX[i], gVolumeEdgeMinPointY[i], gVolumeEdgeMinPointZ[i],
-            gVolumeEdgeMaxPointX[i], gVolumeEdgeMaxPointY[i], gVolumeEdgeMaxPointZ[i]
-        );
-        #endif
-        #if NUM_VOLUMES > 8
-        i = 8;
-        calculate_alpha(
-            &minAlpha[i], &maxAlpha[i], &do_trace[i],
-            globalMinAlpha, globalMaxAlpha,
-            rx[i], ry[i], rz[i],
-            sx[i], sy[i], sz[i],
-            gVolumeEdgeMinPointX[i], gVolumeEdgeMinPointY[i], gVolumeEdgeMinPointZ[i],
-            gVolumeEdgeMaxPointX[i], gVolumeEdgeMaxPointY[i], gVolumeEdgeMaxPointZ[i]
-        );
-        #endif
-        #if NUM_VOLUMES > 9
-        i = 9;
-        calculate_alpha(
-            &minAlpha[i], &maxAlpha[i], &do_trace[i],
-            globalMinAlpha, globalMaxAlpha,
-            rx[i], ry[i], rz[i],
-            sx[i], sy[i], sz[i],
-            gVolumeEdgeMinPointX[i], gVolumeEdgeMinPointY[i], gVolumeEdgeMinPointZ[i],
-            gVolumeEdgeMaxPointX[i], gVolumeEdgeMaxPointY[i], gVolumeEdgeMaxPointZ[i]
-        );
-        #endif
-    }
-
-    /* "return" variables point to an item in the array, not the beginning of the array */
-    __device__ static void calculate_ray(
-        float *rx, float *ry, float *rz, float *vnf,
-        float u, float v, float *rt_kinv_arr, int rt_kinv_offset,
-        float voxelSizeX, float voxelSizeY, float voxelSizeZ
-    ) {
-        *rx = u * rt_kinv_arr[rt_kinv_offset + 0] + v * rt_kinv_arr[rt_kinv_offset + 1] + rt_kinv_arr[rt_kinv_offset + 2];
-        *ry = u * rt_kinv_arr[rt_kinv_offset + 3] + v * rt_kinv_arr[rt_kinv_offset + 4] + rt_kinv_arr[rt_kinv_offset + 5];
-        *rz = u * rt_kinv_arr[rt_kinv_offset + 6] + v * rt_kinv_arr[rt_kinv_offset + 7] + rt_kinv_arr[rt_kinv_offset + 8];
-        /* make the ray a unit vector */
-        float normFactor = 1.0f / sqrt(((*rx) * (*rx)) + ((*ry) * (*ry)) + ((*rz) * (*rz)));
-        *rx *= normFactor;
-        *ry *= normFactor;
-        *rz *= normFactor;
-        
-        float tmp = 0.0f;
-        tmp += ((*rx) * voxelSizeX) * ((*rx) * voxelSizeX);
-        tmp += ((*ry) * voxelSizeY) * ((*ry) * voxelSizeY);
-        tmp += ((*rz) * voxelSizeZ) * ((*rz) * voxelSizeZ);
-        *vnf = sqrtf(tmp);
-    }
-
-    __device__ static void calculate_all_rays(
-        float rx[NUM_VOLUMES], float ry[NUM_VOLUMES], float rz[NUM_VOLUMES], float volume_normalization_factor[NUM_VOLUMES],
-        float u, float v, float rt_kinv_arr[9 * NUM_VOLUMES],
-        float gVoxelElementSizeX[NUM_VOLUMES], float gVoxelElementSizeY[NUM_VOLUMES], float gVoxelElementSizeZ[NUM_VOLUMES]
-    ) {
-        #if NUM_VOLUMES <= 0
-        printf("calculate_all_rays not supported for NUM_VOLUMES outside [1, 10]"); return;
-        #endif
-
-        #if NUM_VOLUMES > 10
-        printf("calculate_all_rays not supported for NUM_VOLUMES outside [1, 10]"); return;
-        #endif
-
-        int i; 
-        #if NUM_VOLUMES > 0
-        i = 0;
-        calculate_ray(
-            &rx[i], &ry[i], &rz[i], &volume_normalization_factor[i],
-            u, v, rt_kinv_arr, 9 * i,
-            gVoxelElementSizeX[i], gVoxelElementSizeY[i], gVoxelElementSizeZ[i]
-        );
-        #endif
-        #if NUM_VOLUMES > 1
-        i = 1;
-        calculate_ray(
-            &rx[i], &ry[i], &rz[i], &volume_normalization_factor[i],
-            u, v, rt_kinv_arr, 9 * i,
-            gVoxelElementSizeX[i], gVoxelElementSizeY[i], gVoxelElementSizeZ[i]
-        );
-        #endif
-        #if NUM_VOLUMES > 2
-        i = 2;
-        calculate_ray(
-            &rx[i], &ry[i], &rz[i], &volume_normalization_factor[i],
-            u, v, rt_kinv_arr, 9 * i,
-            gVoxelElementSizeX[i], gVoxelElementSizeY[i], gVoxelElementSizeZ[i]
-        );
-        #endif
-        #if NUM_VOLUMES > 3
-        i = 3;
-        calculate_ray(
-            &rx[i], &ry[i], &rz[i], &volume_normalization_factor[i],
-            u, v, rt_kinv_arr, 9 * i,
-            gVoxelElementSizeX[i], gVoxelElementSizeY[i], gVoxelElementSizeZ[i]
-        );
-        #endif
-        #if NUM_VOLUMES > 4
-        i = 4;
-        calculate_ray(
-            &rx[i], &ry[i], &rz[i], &volume_normalization_factor[i],
-            u, v, rt_kinv_arr, 9 * i,
-            gVoxelElementSizeX[i], gVoxelElementSizeY[i], gVoxelElementSizeZ[i]
-        );
-        #endif
-        #if NUM_VOLUMES > 5
-        i = 5;
-        calculate_ray(
-            &rx[i], &ry[i], &rz[i], &volume_normalization_factor[i],
-            u, v, rt_kinv_arr, 9 * i,
-            gVoxelElementSizeX[i], gVoxelElementSizeY[i], gVoxelElementSizeZ[i]
-        );
-        #endif
-        #if NUM_VOLUMES > 6
-        i = 6;
-        calculate_ray(
-            &rx[i], &ry[i], &rz[i], &volume_normalization_factor[i],
-            u, v, rt_kinv_arr, 9 * i,
-            gVoxelElementSizeX[i], gVoxelElementSizeY[i], gVoxelElementSizeZ[i]
-        );
-        #endif
-        #if NUM_VOLUMES > 7
-        i = 7;
-        calculate_ray(
-            &rx[i], &ry[i], &rz[i], &volume_normalization_factor[i],
-            u, v, rt_kinv_arr, 9 * i,
-            gVoxelElementSizeX[i], gVoxelElementSizeY[i], gVoxelElementSizeZ[i]
-        );
-        #endif
-        #if NUM_VOLUMES > 8
-        i = 8;
-        calculate_ray(
-            &rx[i], &ry[i], &rz[i], &volume_normalization_factor[i],
-            u, v, rt_kinv_arr, 9 * i,
-            gVoxelElementSizeX[i], gVoxelElementSizeY[i], gVoxelElementSizeZ[i]
-        );
-        #endif
-        #if NUM_VOLUMES > 9
-        i = 9;
-        calculate_ray(
-            &rx[i], &ry[i], &rz[i], &volume_normalization_factor[i],
-            u, v, rt_kinv_arr, 9 * i,
-            gVoxelElementSizeX[i], gVoxelElementSizeY[i], gVoxelElementSizeZ[i]
-        );
-        #endif
-    }
-
     __device__ static void get_priority_at_alpha(
-        float alpha, int *curr_priority, int *n_vols_at_curr_priority,
-        float minAlpha[NUM_VOLUMES], float maxAlpha[NUM_VOLUMES], int do_trace[NUM_VOLUMES],
+        float alpha[NUM_VOLUMES], int *curr_priority, int *n_vols_at_curr_priority,
+        float min_alpha_ijk[NUM_VOLUMES], float max_alpha_ijk[NUM_VOLUMES], int do_trace[NUM_VOLUMES],
         float seg_at_alpha[NUM_VOLUMES][NUM_MATERIALS], int priority[NUM_VOLUMES]
     ) {
         *curr_priority = NUM_VOLUMES;
         *n_vols_at_curr_priority = 0;
         for (int i = 0; i < NUM_VOLUMES; i++) {
             if (0 == do_trace[i]) { continue; }
-            if ((alpha < minAlpha[i]) || (alpha > maxAlpha[i])) { continue; }
+            if ((alpha[i] < min_alpha_ijk[i]) || (alpha[i] > max_alpha_ijk[i])) { continue; }
             float any_seg = 0.0f;
             for (int m = 0; m < NUM_MATERIALS; m++) {
                 any_seg += seg_at_alpha[i][m];
@@ -846,9 +554,12 @@ extern "C" {
         float *gVoxelElementSizeY,
         float *gVoxelElementSizeZ,
         float sx, // x-coordinate of source point for rays in world-space
-        float sy,
-        float sz,
-        float *rt_kinv, // (3, 3) array giving the ijk_from_index ray transform for each volume (todo: make it a single world_from_index array)
+        float sy, // y-coordinate of source point for rays in world-space
+        float sz, // z-coordinate of source point for rays in world-space
+        float *sx_ijk, // x-coordinate of source point in IJK space for each volume (NUM_VOLUMES,)
+        float *sy_ijk, // y-coordinate of source point in IJK space for each volume (NUM_VOLUMES,)
+        float *sz_ijk, // z-coordinate of source point in IJK space for each volume (NUM_VOLUMES,) (passed in to avoid re-computing on every thread)
+        float *rt_kinv, // (3, 3) array giving the world_from_index ray transform for the camera
         float *ijk_from_world, // (NUM_VOLUMES, 3, 4) transform giving the transform from world to IJK coordinates for each volume.
         int n_bins, // the number of spectral bins
         float *energies, // 1-D array -- size is the n_bins. Units: [keV]
@@ -894,7 +605,7 @@ extern "C" {
         float rz = u * rt_kinv[6] + v * rt_kinv[7] + rt_kinv[8];
 
         /* make the ray a unit vector */
-        float ray_norm = sqrt(rx * rx + ry * ry + rz * rz);
+        float ray_norm = sqrtf(rx * rx + ry * ry + rz * rz);
         rx /= ray_norm;
         ry /= ray_norm;
         rz /= ray_norm;
@@ -904,9 +615,12 @@ extern "C" {
         // minAlpha: the distance from source point to all-volumes entry point of the ray, in world-space.
         // maxAlpha: the distance from source point to all-volumes exit point of the ray.
         float minAlpha = 0; // the furthest along the ray we want to consider is the start point.
-        float maxAlpha = ray_norm; // closest point to consider is at the detector
+        float maxAlpha = INFINITY; // closest point to consider is at the detector
         int do_trace[NUM_VOLUMES]; // for each volume, whether or not to perform the ray-tracing
         int do_return = 1;
+
+
+        if (debug) printf("global min, max alphas: %f, %f\n", minAlpha, maxAlpha);
 
         for (int i = 0; i < NUM_VOLUMES; i++) {
             do_trace[i] = 1;
@@ -947,16 +661,47 @@ extern "C" {
             do_return = 0;
         }
 
-        if (debug) printf("global min, max alphas: %f, %f", minAlpha, maxAlpha);
+        int num_steps = ceil((maxAlpha - minAlpha) / step);
+
+        if (debug) printf("global min, max alphas: %f, %f\n", minAlpha, maxAlpha);
 
         // Means none of the volumes have do_trace = 1.
         if (do_return) return;
 
-        printf("CRITICAL: this kernel not finished");
-
-        // TODO: finish using world-space points.
-
         // Part 2: Cast ray if it intersects the volume
+
+        // Get the ray direction in the IJK space for each volume.
+        float rx_ijk[NUM_VOLUMES];
+        float ry_ijk[NUM_VOLUMES];
+        float rz_ijk[NUM_VOLUMES];
+        float step_ijk[NUM_VOLUMES];
+        float min_alpha_ijk[NUM_VOLUMES];
+        float max_alpha_ijk[NUM_VOLUMES];
+        int offs = 12; // TODO: fix bad style
+        float x, y, z; // tmp variables
+        for (int i = 0; i < NUM_VOLUMES; i++) {
+            // Homogeneous transform of a vector.
+            rx_ijk[i] = ijk_from_world[offs * i + 0] * rx + ijk_from_world[offs * i + 1] * ry + ijk_from_world[offs * i + 2] * rz + ijk_from_world[offs * i + 3] * 0;
+            ry_ijk[i] = ijk_from_world[offs * i + 4] * rx + ijk_from_world[offs * i + 5] * ry + ijk_from_world[offs * i + 6] * rz + ijk_from_world[offs * i + 7] * 0;
+            rz_ijk[i] = ijk_from_world[offs * i + 8] * rx + ijk_from_world[offs * i + 9] * ry + ijk_from_world[offs * i + 10] * rz + ijk_from_world[offs * i + 11] * 0;
+
+            // Homogeneous transform of a vector, then get norm.
+            x = step * rx_ijk[i];
+            y = step * ry_ijk[i];
+            z = step * rz_ijk[i];
+            step_ijk[i] = sqrtf(x*x + y*y + z*z);
+
+            // Homogeneous transform of a vector, then get norm.
+            x = minAlpha * rx_ijk[i];
+            y = minAlpha * ry_ijk[i];
+            z = minAlpha * rz_ijk[i];
+            min_alpha_ijk[i] = sqrtf(x*x + y*y + z*z);
+
+            x = maxAlpha * rx_ijk[i];
+            y = maxAlpha * ry_ijk[i];
+            z = maxAlpha * rz_ijk[i];
+            max_alpha_ijk[i] = sqrtf(x*x + y*y + z*z);
+        }
 
         // material projection-output channels
         float area_density[NUM_MATERIALS]; 
@@ -969,22 +714,24 @@ extern "C" {
         float px[NUM_VOLUMES]; // voxel-space point
         float py[NUM_VOLUMES];
         float pz[NUM_VOLUMES];
-        float alpha; // distance along ray (alpha = globalMinAlpha + step * t)
-        float boundary_factor; // factor to multiply at boundary
+        float alpha[NUM_VOLUMES]; // distance along each ray (alpha[i] = min_alpha_ijk[i] + step_ijk[i] * t)
         int curr_priority; // the priority at the location
         int n_vols_at_curr_priority;//B[NUM_MATERIALS]; // how many volumes to consider at the location (for each material)
         float seg_at_alpha[NUM_VOLUMES][NUM_MATERIALS];
 
-        if (debug) {
-            printf("start trace\n"); // This is the one that seems to take a half a second.
-        }
-        int num_steps = 0;
-        for (alpha = globalMinAlpha; alpha < globalMaxAlpha; alpha += step, num_steps++) {
+        if (debug) printf("start trace\n");
+
+        for (int i = 0; i < NUM_VOLUMES; i++)
+            alpha[i] = min_alpha_ijk[i];
+
+        // trace (if doing the last segment separately, need to use num_steps - 1
+        for (int t = 0; t < num_steps; t++) {
+
             LOAD_SEGS_AT_ALPHA; // initializes p{x,y,z}[...] and seg_at_alpha[...][...]
             // if (debug) printf("  loaded segs\n"); // This is the one that seems to take a half a second.
             get_priority_at_alpha(
                 alpha, &curr_priority, &n_vols_at_curr_priority,
-                minAlpha, maxAlpha, do_trace,
+                min_alpha_ijk, max_alpha_ijk, do_trace,
                 seg_at_alpha, priority
             );
             // if (debug) printf("  got priority at alpha, num vols\n"); // This is the one that seems to take a half a second.
@@ -995,39 +742,41 @@ extern "C" {
             } else {
                 float weight = 1.0f / ((float) n_vols_at_curr_priority);
 
+
                 // For the entry boundary, multiply by 0.5. That is, for the initial interpolated value,
                 // only a half step-size is considered in the computation. For the second-to-last interpolation
                 // point, also multiply by 0.5, since there will be a final step at the globalMaxAlpha boundary.
-                boundary_factor = ((alpha <= globalMinAlpha) || (alpha + step >= globalMaxAlpha)) ? 0.5f : 1.0f;
+                weight *= (0 == t || num_steps - 2 == t) ? 0.5f : 1.0f;
 
-                INTERPOLATE(boundary_factor);
+                INTERPOLATE(weight);
             }
 
+            // Advance the step
+            for (int i = 0; i < NUM_VOLUMES; i++)
+                alpha[i] += step_ijk[i];
             // if (debug) printf("  interpolated\n"); // This is the one that seems to take a half a second.
         }
-       if (debug) printf("finished trace, num_steps: %d\n", num_steps);
 
-        // Scaling by step
-        for (int m = 0; m < NUM_MATERIALS; m++) {
-            area_density[m] *= step;
-        }
+        // commented out because unnecessary?
+        // // Last segment of the line
+        // if (area_density[0] > 0.0f) {
+        //     alpha -= step;
+        //     float lastStepsize = globalMaxAlpha - alpha;
 
-        // Last segment of the line
-        if (area_density[0] > 0.0f) {
-            alpha -= step;
-            float lastStepsize = globalMaxAlpha - alpha;
-            
-            if (0 == n_vols_at_curr_priority) {
-                // Outside the bounds of all volumes to trace. Assume nominal density of air is 0.0f.
-                // Thus, we don't need to add to area_density
-                ;
-            } else {
-                float weight = 1.0f / ((float)n_vols_at_curr_priority);
+        //     if (0 == n_vols_at_curr_priority) {
+        //         // Outside the bounds of all volumes to trace. Assume nominal density of air is 0.0f.
+        //         // Thus, we don't need to add to area_density
+        //         ;
+        //     } else {
+        //         float weight = 1.0f / ((float)n_vols_at_curr_priority);
 
-                // Scaled last step interpolation (something weird?)
-                INTERPOLATE(lastStepsize);
-            }
-        }
+        //         // Scaled last step interpolation (something weird?)
+        //         INTERPOLATE(lastStepsize);
+        //     }
+        // }
+
+        if (debug)
+            printf("finished trace, num_steps: %d\n", num_steps);
 
         // Convert to centimeters
         for (int m = 0; m < NUM_MATERIALS; m++) {
@@ -1142,22 +891,27 @@ extern "C" {
             float cy[4]; // source-to-corner vector y-values
             float cz[4]; // source-to-corner vector z-values
             float cmag[4]; // magnitude of source-to-corner vector
+            int i = 0; // Which volume are we doing? Is this part even valid for multiple volumes?
+
+            assert(NUM_VOLUMES == 1);
 
             float cu_offset[4] = {0.f, 1.f, 1.f, 0.f};
             float cv_offset[4] = {0.f, 0.f, 1.f, 1.f};
-            if (debug) {
-                printf("solid angle\n");
-            }
-            for (int i = 0; i < 4; i++) {
-                float cu = udx + cu_offset[i];
-                float cv = vdx + cv_offset[i];
+            for (int c = 0; c < 4; c++) {
+                float cu = udx + cu_offset[c];
+                float cv = vdx + cv_offset[c];
 
-                cx[i] = cu * rt_kinv[0] + cv * rt_kinv[1] + rt_kinv[2];
-                cy[i] = cu * rt_kinv[3] + cv * rt_kinv[4] + rt_kinv[5];
-                cz[i] = cu * rt_kinv[6] + cv * rt_kinv[7] + rt_kinv[8];
-                
-                cmag[i] = (cx[i] * cx[i]) + (cy[i] * cy[i]) + (cz[i] * cz[i]);
-                cmag[i] = sqrtf(cmag[i]);
+                // to world space
+                x = cu * rt_kinv[0] + cv * rt_kinv[1] + rt_kinv[2];
+                y = cu * rt_kinv[3] + cv * rt_kinv[4] + rt_kinv[5];
+                z = cu * rt_kinv[6] + cv * rt_kinv[7] + rt_kinv[8];
+
+                // to ijk space for a chozen volume
+                cx[c] = ijk_from_world[offs * i + 0] * x + ijk_from_world[offs * i + 1] * y + ijk_from_world[offs * i + 2] * z + ijk_from_world[offs * i + 3] * 0;
+                cy[c] = ijk_from_world[offs * i + 4] * x + ijk_from_world[offs * i + 5] * y + ijk_from_world[offs * i + 6] * z + ijk_from_world[offs * i + 7] * 0;
+                cz[c] = ijk_from_world[offs * i + 8] * x + ijk_from_world[offs * i + 9] * y + ijk_from_world[offs * i + 10] * z + ijk_from_world[offs * i + 11] * 0;
+
+                cmag[c] = sqrtf((cx[c] * cx[c]) + (cy[c] * cy[c]) + (cz[c] * cz[c]));
             }
     
             /*

@@ -529,6 +529,32 @@ class Volume(object):
         """The center of the volume in world coorindates. Useful for debugging."""
         return self.world_from_ijk @ geo.point(np.array(self.shape) / 2)
 
+    def get_bounding_box_in_world(self) -> Tuple[geo.Point3D, geo.Point3D]:
+        """Get the corners of a bounding box enclosing the volume in world coordinates.
+
+        Assumes cell-centered sampling.
+
+        Returns:
+            geo.Point3D: The lower corner of the bounding box.
+            geo.Point3D: The upper corner of the bounding box.
+        """
+        x, y, z = np.array(self.shape) - 0.5
+        corners_ijk = [
+            geo.point(-0.5, -0.5, -0.5),
+            geo.point(-0.5, -0.5, z),
+            geo.point(-0.5, y, -0.5),
+            geo.point(-0.5, y, z),
+            geo.point(x, -0.5, -0.5),
+            geo.point(x, -0.5, z),
+            geo.point(x, y, -0.5),
+            geo.point(x, y, z),
+        ]
+
+        corners = np.array([np.array(self.world_from_ijk @ p) for p in corners_ijk])
+        min_corner = geo.point(corners.min(0))
+        max_corner = geo.point(corners.max(0))
+        return min_corner, max_corner
+
     @property
     def spacing(self) -> geo.Vector3D:
         """The spacing of the voxels."""

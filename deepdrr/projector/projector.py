@@ -317,6 +317,18 @@ class Projector(object):
                 f"Projecting and attenuating camera position {i+1} / {len(camera_projections)}"
             )
 
+            # TODO: get the volume min/max points in world coordinates.
+            sx, sy, sz = proj.get_center_in_world()
+            world_from_index = np.array(proj.world_from_index)
+            cuda.memcpy_htod(self.rt_kinv_gpu, world_from_index)
+
+            minPointX = np.empty(len(self.volumes), dtype=np.float32)
+            maxPointX = np.empty(len(self.volumes), dtype=np.float32)
+            minPointY = np.empty(len(self.volumes), dtype=np.float32)
+            maxPointY = np.empty(len(self.volumes), dtype=np.float32)
+            minPointZ = np.empty(len(self.volumes), dtype=np.float32)
+            maxPointZ = np.empty(len(self.volumes), dtype=np.float32)
+
             for vol_id, _vol in enumerate(self.volumes):
                 source_ijk = np.array(proj.get_center_in_volume(_vol)).astype(
                     np.float32
@@ -335,20 +347,34 @@ class Projector(object):
                     np.array([source_ijk[2]]),
                 )
 
-                ijk_from_index = proj.get_ray_transform(_vol)
-                log.debug(
-                    f"center ray: {ijk_from_index @ geo.point(self.output_shape[0] / 2, self.output_shape[1] / 2)}"
-                )
-                ijk_from_index = np.array(ijk_from_index).astype(np.float32)
-                log.debug(f"ijk_from_index (rt_kinv in kernel):\n{ijk_from_index}")
-                (
-                    f"ijk_from_index.size: {ijk_from_index.size}"
-                )  # mjudish (sanity checking)
+                ijk_from_world = np.array(_vol.ijk_from_world).astype(np.float32)
+                # log.debug(
+                #     f"center ray: {ijk_from_world @ world_from_index @ geo.point(self.output_shape[0] / 2, self.output_shape[1] / 2)}"
+                # )
                 cuda.memcpy_htod(
-                    int(self.rt_kinv_gpu)
-                    + (ijk_from_index.size * NUMBYTES_FLOAT32) * vol_id,
-                    ijk_from_index,
+                    int(self.ijk_from_world_gpu)
+                    + (ijk_from_world.size * NUMBYTES_FLOAT32) * vol_id,
+                    ijk_from_world,
                 )
+
+                min_corner, max_corner = _vol.get_bounding_box_in_world()
+                (
+                    minPointX[vol_id],
+                    minPointY[vol_id],
+                    minPointZ[vol_id],
+                ) = min_corner
+                (
+                    maxPointX[vol_id],
+                    maxPointY[vol_id],
+                    maxPointZ[vol_id],
+                ) = max_corner
+
+            cuda.memcpy_htod(self.minPointX_gpu, minPointX)
+            cuda.memcpy_htod(self.minPointY_gpu, minPointY)
+            cuda.memcpy_htod(self.minPointZ_gpu, minPointZ)
+            cuda.memcpy_htod(self.maxPointX_gpu, maxPointX)
+            cuda.memcpy_htod(self.maxPointY_gpu, maxPointY)
+            cuda.memcpy_htod(self.maxPointZ_gpu, maxPointZ)
 
             args = [
                 np.int32(proj.sensor_width),  # out_width
@@ -364,10 +390,14 @@ class Projector(object):
                 self.voxelSizeX_gpu,  # gVoxelElementSizeX
                 self.voxelSizeY_gpu,  # gVoxelElementSizeY
                 self.voxelSizeZ_gpu,  # gVoxelElementSizeZ
-                self.sourceX_gpu,  # sx
-                self.sourceY_gpu,  # sy
-                self.sourceZ_gpu,  # sz
-                self.rt_kinv_gpu,  # RT_Kinv
+                np.float32(sx),  # sx
+                np.float32(sy),  # sy
+                np.float32(sz),  # sz
+                self.sourceX_gpu,  # sx_ijk
+                self.sourceY_gpu,  # sy_ijk
+                self.sourceZ_gpu,  # sz_ijk
+                self.rt_kinv_gpu,  # rt_kinv
+                self.ijk_from_world_gpu,  # ijk_from_world
                 np.int32(self.spectrum.shape[0]),  # n_bins
                 self.energies_gpu,  # energies
                 self.pdf_gpu,  # pdf
@@ -455,7 +485,7 @@ class Projector(object):
                 ).astype(np.float32)
 
                 detector_plane = scatter.get_detector_plane(
-                    ijk_from_index,
+                    ijk_from_world @ world_from_index,
                     proj.index_from_camera2d,
                     self.source_to_detector_distance,
                     geo.Point3D.from_any(scatter_source_ijk),
@@ -757,23 +787,6 @@ class Projector(object):
 
         for i, _vol in enumerate(self.volumes):
             gpu_ptr_offset = NUMBYTES_FLOAT32 * i
-            cuda.memcpy_htod(int(self.minPointX_gpu) + gpu_ptr_offset, np.float32(-0.5))
-            cuda.memcpy_htod(int(self.minPointY_gpu) + gpu_ptr_offset, np.float32(-0.5))
-            cuda.memcpy_htod(int(self.minPointZ_gpu) + gpu_ptr_offset, np.float32(-0.5))
-
-            cuda.memcpy_htod(
-                int(self.maxPointX_gpu) + gpu_ptr_offset,
-                np.float32(_vol.shape[0] - 0.5),
-            )
-            cuda.memcpy_htod(
-                int(self.maxPointY_gpu) + gpu_ptr_offset,
-                np.float32(_vol.shape[1] - 0.5),
-            )
-            cuda.memcpy_htod(
-                int(self.maxPointZ_gpu) + gpu_ptr_offset,
-                np.float32(_vol.shape[2] - 0.5),
-            )
-
             cuda.memcpy_htod(
                 int(self.voxelSizeX_gpu) + gpu_ptr_offset,
                 np.float32(_vol.spacing[0]),
@@ -800,7 +813,12 @@ class Projector(object):
 
         # allocate ijk_from_index matrix array on GPU (3x3 array x 4 bytes per float32)
         # TODO: represent the factor of "3 x 3" in a more abstracted way
-        self.rt_kinv_gpu = cuda.mem_alloc(len(self.volumes) * 3 * 3 * NUMBYTES_FLOAT32)
+        self.rt_kinv_gpu = cuda.mem_alloc(3 * 3 * NUMBYTES_FLOAT32)
+
+        # allocate ijk_from_world for each volume.
+        self.ijk_from_world_gpu = cuda.mem_alloc(
+            len(self.volumes) * 3 * 4 * NUMBYTES_FLOAT32
+        )
 
         # allocate intensity array on GPU (4 bytes to a float32)
         self.intensity_gpu = cuda.mem_alloc(self.output_size * NUMBYTES_FLOAT32)
@@ -1281,6 +1299,7 @@ class Projector(object):
             self.sourceZ_gpu.free()
 
             self.rt_kinv_gpu.free()
+            self.ijk_from_world_gpu.free()
             self.intensity_gpu.free()
             self.photon_prob_gpu.free()
 
