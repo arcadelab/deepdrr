@@ -680,7 +680,7 @@ extern "C" {
         int udx = threadIdx.x + (blockIdx.x + offsetW) * blockDim.x; // index into output image width
         int vdx = threadIdx.y + (blockIdx.y + offsetH) * blockDim.y; // index into output image height
         // int debug = (udx == 973) && (vdx == 598); // larger image size
-        int debug = (udx == 243) && (vdx == 149); // 4x4 binning
+        // int debug = (udx == 243) && (vdx == 149); // 4x4 binning
 
         // if the current point is outside the output image, no computation needed
         if (udx >= out_width || vdx >= out_height)
@@ -780,11 +780,11 @@ extern "C" {
         // Means none of the volumes have do_trace = 1.
         if (do_return) return;
 
-        if (debug) printf("global min, max alphas: %f, %f\n", minAlpha, maxAlpha);
+        // if (debug) printf("global min, max alphas: %f, %f\n", minAlpha, maxAlpha);
 
         // Part 2: Cast ray if it intersects the volume
         int num_steps = ceil((maxAlpha - minAlpha) / step);
-        if (debug) printf("num_steps: %d\n", num_steps);
+        // if (debug) printf("num_steps: %d\n", num_steps);
 
         // initialize the projection-output to 0.
         float area_density[NUM_MATERIALS]; 
@@ -799,7 +799,7 @@ extern "C" {
         int curr_priority; // the priority at the location
         int n_vols_at_curr_priority; // how many volumes to consider at the location
         float seg_at_alpha[NUM_VOLUMES][NUM_MATERIALS];
-        if (debug) printf("start trace\n");
+        // if (debug) printf("start trace\n");
 
         // trace (if doing the last segment separately, need to use num_steps - 1
         for (int t = 0; t < num_steps; t++) {
@@ -845,8 +845,7 @@ extern "C" {
             alpha += step;
         }
 
-        if (debug)
-            printf("finished trace, num_steps: %d\n", num_steps);
+        // if (debug) printf("finished trace, num_steps: %d\n", num_steps);
 
         // Scaling by step
         for (int m = 0; m < NUM_MATERIALS; m++) {
@@ -903,9 +902,8 @@ extern "C" {
          * can replace the "intensity" calcuation with simply the energies involved.  Later conversion to 
          * other physical quanities can be done outside of the kernel.
          */
-        if (debug) {
-            printf("attenuation\n");
-        }
+        // if (debug)  printf("attenuation\n");
+
         for (int bin = 0; bin < n_bins; bin++) {
             float beer_lambert_exp = 0.0f;
             for (int m = 0; m < NUM_MATERIALS; m++) {
@@ -917,9 +915,7 @@ extern "C" {
             intensity[img_dx] += energies[bin] * photon_prob_tmp; // units: [keV] per unit photon to hit the pixel
         }
 
-        if (debug) {
-            printf("done with kernel thread\n");
-        }
+        // if (debug) printf("done with kernel thread\n");
         return;
     }
 
