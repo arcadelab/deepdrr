@@ -5,7 +5,7 @@
 
 #define UPDATE(multiplier, vol_id, mat_id) do {\
     area_density[(mat_id)] += (multiplier) * tex3D(VOLUME(vol_id), px[vol_id], py[vol_id], pz[vol_id]) \
-        * seg_at_alpha[vol_id][mat_id] * step_ijk[vol_id]; \
+        * seg_at_alpha[vol_id][mat_id]; \
 } while (0)
 
 #define GET_POSITION_FOR_VOL(vol_id) do {\
@@ -535,7 +535,6 @@ extern "C" {
         float *sz_ijk, // z-coordinate of source point in IJK space for each volume (NUM_VOLUMES,) (passed in to avoid re-computing on every thread)
         float *world_from_index, // (3, 3) array giving the world_from_index ray transform for the camera
         float *ijk_from_world, // (NUM_VOLUMES, 3, 4) transform giving the transform from world to IJK coordinates for each volume.
-        float *world_from_ijk, // (NUM_VOLUMES, 3, 4)
         int n_bins, // the number of spectral bins
         float *energies, // 1-D array -- size is the n_bins. Units: [keV]
         float *pdf, // 1-D array -- probability density function over the energies
@@ -588,9 +587,9 @@ extern "C" {
 
         /* make the ray a unit vector */
         float inv_ray_norm = 1.0f / sqrtf(rx * rx + ry * ry + rz * rz);
-        rx *= ray_norm;
-        ry *= ray_norm;
-        rz *= ray_norm;
+        rx *= inv_ray_norm;
+        ry *= inv_ray_norm;
+        rz *= inv_ray_norm;
 
         // calculate projections
         // Part 1: compute alpha value at entry and exit point of all volumes on either side of the ray, in world-space.
@@ -726,6 +725,11 @@ extern "C" {
 
         if (debug)
             printf("finished trace, num_steps: %d\n", num_steps);
+
+        // Scaling by step
+        for (int m = 0; m < NUM_MATERIALS; m++) {
+            area_density[m] *= step;
+        }
 
         // Convert to centimeters
         for (int m = 0; m < NUM_MATERIALS; m++) {
