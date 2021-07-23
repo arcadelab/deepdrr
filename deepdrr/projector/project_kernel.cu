@@ -513,6 +513,123 @@
 #define FOUR_PI_INV_FLOAT 0.0795774715459476678844f // 1 / (4 \pi), from Wolfram Alpha
 
 extern "C" {
+    __device__ static void calc_solid_angle(
+        float *world_from_index, // (3, 3) array giving the world_from_index ray transform for the camera
+        float *solid_angle, // flat array, with shape (out_height, out_width). 
+	int udx, // index into image width
+	int vdx, // index into image height
+	int img_dx // index into solid_angle
+    )  {
+        /**
+        * SOLID ANGLE CALCULATION
+        *
+        * Let the pixel's four corners be c0, c1, c2, c3.  Split the pixel into two right
+        * triangles.  These triangles each form a tetrahedron with the X-ray source S.  We
+        * can then use a solid-angle-of-tetrahedron formula.
+        * 
+        * From Wikipedia:
+        *      Let OABC be the vertices of a tetrahedron with an origin at O subtended by
+        * the triangular face ABC where \vec{a}, \vec{b}, \vec{c} are the vectors \vec{SA},
+        * \vec{SB}, \vec{SC} respectively.  Then,
+        *
+        * tan(\Omega / 2) = NUMERATOR / DENOMINATOR, with
+        *
+        * NUMERATOR = \vec{a} \cdot (\vec{b} \times \vec{c})
+        * DENOMINATOR = abc + (\vec{a} \cdot \vec{b}) c + (\vec{a} \cdot \vec{c}) b + (\vec{b} \cdot \vec{c}) a
+        * 
+        * where a,b,c are the magnitudes of their respective vectors.
+        *
+        * There are two potential pitfalls with the above formula.
+        * 1. The NUMERATOR (a scalar triple product) can be negative if \vec{a}, \vec{b}, 
+        *  \vec{c} have the wrong winding.  Since no other portion of the formula depends
+        *  on the winding, computing the absolute value of the scalar triple product is 
+        *  sufficient.
+        * 2. If the NUMERATOR is positive but the DENOMINATOR is negative, the formula 
+        *  returns a negative value that must be increased by \pi.
+        */
+
+        /*
+        * PIXEL DIAGRAM
+        *
+        * corner0 __ corner1
+        *        |__|
+        * corner3    corner2
+        */
+        float cx[4]; // source-to-corner vector x-values in world space
+        float cy[4]; // source-to-corner vector y-values in world space
+        float cz[4]; // source-to-corner vector z-values in world space
+        float cmag[4]; // magnitude of source-to-corner vector
+
+        float cu_offset[4] = {0.f, 1.f, 1.f, 0.f};
+        float cv_offset[4] = {0.f, 0.f, 1.f, 1.f};
+        for (int c = 0; c < 4; c++) {
+            float cu = udx + cu_offset[c];
+            float cv = vdx + cv_offset[c];
+
+            cx[c] = cu * world_from_index[0] + cv * world_from_index[1] + world_from_index[2];
+            cy[c] = cu * world_from_index[3] + cv * world_from_index[4] + world_from_index[5];
+            cz[c] = cu * world_from_index[6] + cv * world_from_index[7] + world_from_index[8];
+
+            cmag[c] = sqrtf((cx[c] * cx[c]) + (cy[c] * cy[c]) + (cz[c] * cz[c]));
+        }
+
+        /*
+        * The cross- and dot-products needed for the [c0, c1, c2] triangle are:
+        *
+        * - absolute value of triple product of c0,c1,c2 = c1 \cdot (c0 \times c2)
+        *      Since the magnitude of the triple product is invariant under reorderings
+        *      of the three vectors, we choose to cross-product c0,c2 so we can reuse
+        *      that result
+        * - dot product of c0, c1
+        * - dot product of c0, c2
+        * - dot product of c1, c2
+        * 
+        * The products needed for the [c0, c2, c3] triangle are:
+        *
+        * - absolute value of triple product of c0,c2,c3 = c3 \cdot (c0 \times c2)
+        *      Since the magnitude of the triple product is invariant under reorderings
+        *      of the three vectors, we choose to cross-product c0,c2 so we can reuse
+        *      that result
+        * - dot product of c0, c2
+        * - dot product of c0, c3
+        * - dot product of c2, c3
+        *
+        * Thus, the cross- and dot-products to compute are:
+        *  - c0 \times c2
+        *  - c0 \dot c1
+        *  - c0 \dot c2
+        *  - c0 \dot c3
+        *  - c1 \dot c2
+        *  - c2 \dot c3
+        */
+        float c0_cross_c2_x = (cy[0] * cz[2]) - (cz[0] * cy[2]);
+        float c0_cross_c2_y = (cz[0] * cx[2]) - (cx[0] * cz[2]);
+        float c0_cross_c2_z = (cx[0] * cy[2]) - (cy[0] * cx[2]);
+
+        float c0_dot_c1 = (cx[0] * cx[1]) + (cy[0] * cy[1]) + (cz[0] * cz[1]);
+        float c0_dot_c2 = (cx[0] * cx[2]) + (cy[0] * cy[2]) + (cz[0] * cz[2]);
+        float c0_dot_c3 = (cx[0] * cx[3]) + (cy[0] * cy[3]) + (cz[0] * cz[3]);
+        float c1_dot_c2 = (cx[1] * cx[2]) + (cy[1] * cy[2]) + (cz[1] * cz[2]);
+        float c2_dot_c3 = (cx[2] * cx[3]) + (cy[2] * cy[3]) + (cz[2] * cz[3]);
+
+        float numer_012 = fabs((cx[1] * c0_cross_c2_x) + (cy[1] * c0_cross_c2_y) + (cz[1] * c0_cross_c2_z));
+        float numer_023 = fabs((cx[3] * c0_cross_c2_x) + (cy[3] * c0_cross_c2_y) + (cz[3] * c0_cross_c2_z));
+
+        float denom_012 = (cmag[0] * cmag[1] * cmag[2]) + (c0_dot_c1 * cmag[2]) + (c0_dot_c2 * cmag[1]) + (c1_dot_c2 * cmag[0]);
+        float denom_023 = (cmag[0] * cmag[2] * cmag[3]) + (c0_dot_c2 * cmag[3]) + (c0_dot_c3 * cmag[2]) + (c2_dot_c3 * cmag[0]);
+
+        float solid_angle_012 = 2.f * atan2(numer_012, denom_012);
+        if (solid_angle_012 < 0.0f) {
+            solid_angle_012 += PI_FLOAT;
+        }
+        float solid_angle_023 = 2.f * atan2(numer_023, denom_023);
+        if (solid_angle_023 < 0.0f) {
+            solid_angle_023 += PI_FLOAT;
+        }
+
+        solid_angle[img_dx] = solid_angle_012 + solid_angle_023;
+    }
+
     __global__  void projectKernel(
         int out_width, // width of the output image
         int out_height, // height of the output image
@@ -576,6 +693,10 @@ extern "C" {
         // initialize intensity and photon_prob to 0
         intensity[img_dx] = 0;
         photon_prob[img_dx] = 0;
+
+	if (NULL != solid_angle) {
+	    calculate_solid_angle(world_from_index, solid_angle, udx, vdx, img_dx);
+	}
 
         // cell-centered sampling point corresponding to pixel index, in index-space.
         float u = (float) udx + 0.5;
@@ -789,128 +910,6 @@ extern "C" {
 
             photon_prob[img_dx] += photon_prob_tmp;
             intensity[img_dx] += energies[bin] * photon_prob_tmp; // units: [keV] per unit photon to hit the pixel
-        }
-        if (debug) {
-            printf("done with attenuation\n");
-        }
-        if (NULL != solid_angle) {
-            /**
-            * SOLID ANGLE CALCULATION
-            *
-            * Let the pixel's four corners be c0, c1, c2, c3.  Split the pixel into two right
-            * triangles.  These triangles each form a tetrahedron with the X-ray source S.  We
-            * can then use a solid-angle-of-tetrahedron formula.
-            * 
-            * From Wikipedia:
-            *      Let OABC be the vertices of a tetrahedron with an origin at O subtended by
-            * the triangular face ABC where \vec{a}, \vec{b}, \vec{c} are the vectors \vec{SA},
-            * \vec{SB}, \vec{SC} respectively.  Then,
-            *
-            * tan(\Omega / 2) = NUMERATOR / DENOMINATOR, with
-            *
-            * NUMERATOR = \vec{a} \cdot (\vec{b} \times \vec{c})
-            * DENOMINATOR = abc + (\vec{a} \cdot \vec{b}) c + (\vec{a} \cdot \vec{c}) b + (\vec{b} \cdot \vec{c}) a
-            * 
-            * where a,b,c are the magnitudes of their respective vectors.
-            *
-            * There are two potential pitfalls with the above formula.
-            * 1. The NUMERATOR (a scalar triple product) can be negative if \vec{a}, \vec{b}, 
-            *  \vec{c} have the wrong winding.  Since no other portion of the formula depends
-            *  on the winding, computing the absolute value of the scalar triple product is 
-            *  sufficient.
-            * 2. If the NUMERATOR is positive but the DENOMINATOR is negative, the formula 
-            *  returns a negative value that must be increased by \pi.
-            */
-
-            /*
-            * PIXEL DIAGRAM
-            *
-            * corner0 __ corner1
-            *        |__|
-            * corner3    corner2
-            */
-            float cx[4]; // source-to-corner vector x-values
-            float cy[4]; // source-to-corner vector y-values
-            float cz[4]; // source-to-corner vector z-values
-            float cmag[4]; // magnitude of source-to-corner vector
-            int i = 0; // Which volume are we doing? Is this part even valid for multiple volumes?
-
-            assert(NUM_VOLUMES == 1);
-
-            float cu_offset[4] = {0.f, 1.f, 1.f, 0.f};
-            float cv_offset[4] = {0.f, 0.f, 1.f, 1.f};
-            for (int c = 0; c < 4; c++) {
-                float cu = udx + cu_offset[c];
-                float cv = vdx + cv_offset[c];
-
-                // to world space
-                x = cu * world_from_index[0] + cv * world_from_index[1] + world_from_index[2];
-                y = cu * world_from_index[3] + cv * world_from_index[4] + world_from_index[5];
-                z = cu * world_from_index[6] + cv * world_from_index[7] + world_from_index[8];
-
-                // to ijk space for a chozen volume
-                cx[c] = ijk_from_world[offs * i + 0] * x + ijk_from_world[offs * i + 1] * y + ijk_from_world[offs * i + 2] * z + ijk_from_world[offs * i + 3] * 0;
-                cy[c] = ijk_from_world[offs * i + 4] * x + ijk_from_world[offs * i + 5] * y + ijk_from_world[offs * i + 6] * z + ijk_from_world[offs * i + 7] * 0;
-                cz[c] = ijk_from_world[offs * i + 8] * x + ijk_from_world[offs * i + 9] * y + ijk_from_world[offs * i + 10] * z + ijk_from_world[offs * i + 11] * 0;
-
-                cmag[c] = sqrtf((cx[c] * cx[c]) + (cy[c] * cy[c]) + (cz[c] * cz[c]));
-            }
-    
-            /*
-            * The cross- and dot-products needed for the [c0, c1, c2] triangle are:
-            *
-            * - absolute value of triple product of c0,c1,c2 = c1 \cdot (c0 \times c2)
-            *      Since the magnitude of the triple product is invariant under reorderings
-            *      of the three vectors, we choose to cross-product c0,c2 so we can reuse
-            *      that result
-            * - dot product of c0, c1
-            * - dot product of c0, c2
-            * - dot product of c1, c2
-            * 
-            * The products needed for the [c0, c2, c3] triangle are:
-            *
-            * - absolute value of triple product of c0,c2,c3 = c3 \cdot (c0 \times c2)
-            *      Since the magnitude of the triple product is invariant under reorderings
-            *      of the three vectors, we choose to cross-product c0,c2 so we can reuse
-            *      that result
-            * - dot product of c0, c2
-            * - dot product of c0, c3
-            * - dot product of c2, c3
-            *
-            * Thus, the cross- and dot-products to compute are:
-            *  - c0 \times c2
-            *  - c0 \dot c1
-            *  - c0 \dot c2
-            *  - c0 \dot c3
-            *  - c1 \dot c2
-            *  - c2 \dot c3
-            */
-            float c0_cross_c2_x = (cy[0] * cz[2]) - (cz[0] * cy[2]);
-            float c0_cross_c2_y = (cz[0] * cx[2]) - (cx[0] * cz[2]);
-            float c0_cross_c2_z = (cx[0] * cy[2]) - (cy[0] * cx[2]);
-
-            float c0_dot_c1 = (cx[0] * cx[1]) + (cy[0] * cy[1]) + (cz[0] * cz[1]);
-            float c0_dot_c2 = (cx[0] * cx[2]) + (cy[0] * cy[2]) + (cz[0] * cz[2]);
-            float c0_dot_c3 = (cx[0] * cx[3]) + (cy[0] * cy[3]) + (cz[0] * cz[3]);
-            float c1_dot_c2 = (cx[1] * cx[2]) + (cy[1] * cy[2]) + (cz[1] * cz[2]);
-            float c2_dot_c3 = (cx[2] * cx[3]) + (cy[2] * cy[3]) + (cz[2] * cz[3]);
-
-            float numer_012 = fabs((cx[1] * c0_cross_c2_x) + (cy[1] * c0_cross_c2_y) + (cz[1] * c0_cross_c2_z));
-            float numer_023 = fabs((cx[3] * c0_cross_c2_x) + (cy[3] * c0_cross_c2_y) + (cz[3] * c0_cross_c2_z));
-
-            float denom_012 = (cmag[0] * cmag[1] * cmag[2]) + (c0_dot_c1 * cmag[2]) + (c0_dot_c2 * cmag[1]) + (c1_dot_c2 * cmag[0]);
-            float denom_023 = (cmag[0] * cmag[2] * cmag[3]) + (c0_dot_c2 * cmag[3]) + (c0_dot_c3 * cmag[2]) + (c2_dot_c3 * cmag[0]);
-
-            float solid_angle_012 = 2.f * atan2(numer_012, denom_012);
-            if (solid_angle_012 < 0.0f) {
-                solid_angle_012 += PI_FLOAT;
-            }
-            float solid_angle_023 = 2.f * atan2(numer_023, denom_023);
-            if (solid_angle_023 < 0.0f) {
-                solid_angle_023 += PI_FLOAT;
-            }
-
-            solid_angle[img_dx] = solid_angle_012 + solid_angle_023;
         }
 
         if (debug) {
