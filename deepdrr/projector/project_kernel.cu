@@ -513,7 +513,7 @@
 #define FOUR_PI_INV_FLOAT 0.0795774715459476678844f // 1 / (4 \pi), from Wolfram Alpha
 
 extern "C" {
-    __device__ static void calc_solid_angle(
+    __device__ static void calculate_solid_angle(
         float *world_from_index, // (3, 3) array giving the world_from_index ray transform for the camera
         float *solid_angle, // flat array, with shape (out_height, out_width). 
 	int udx, // index into image width
@@ -693,9 +693,9 @@ extern "C" {
         intensity[img_dx] = 0;
         photon_prob[img_dx] = 0;
 
-	if (NULL != solid_angle) {
-	    calculate_solid_angle(world_from_index, solid_angle, udx, vdx, img_dx);
-	}
+        if (NULL != solid_angle) {
+            calculate_solid_angle(world_from_index, solid_angle, udx, vdx, img_dx);
+        }
 
         // cell-centered sampling point corresponding to pixel index, in index-space.
         float u = (float) udx + 0.5;
@@ -728,7 +728,6 @@ extern "C" {
         float ry_ijk[NUM_VOLUMES];
         float rz_ijk[NUM_VOLUMES];
         int offs = 12; // TODO: fix bad style
-        float x, y, z; // tmp variables
         for (int i = 0; i < NUM_VOLUMES; i++) {
             // Homogeneous transform of a vector.
             rx_ijk[i] = ijk_from_world[offs * i + 0] * rx + ijk_from_world[offs * i + 1] * ry + ijk_from_world[offs * i + 2] * rz + ijk_from_world[offs * i + 3] * 0;
@@ -785,6 +784,7 @@ extern "C" {
 
         // Part 2: Cast ray if it intersects the volume
         int num_steps = ceil((maxAlpha - minAlpha) / step);
+        if (debug) printf("num_steps: %d\n", num_steps);
 
         // initialize the projection-output to 0.
         float area_density[NUM_MATERIALS]; 
@@ -795,17 +795,17 @@ extern "C" {
         float px[NUM_VOLUMES]; // voxel-space point
         float py[NUM_VOLUMES];
         float pz[NUM_VOLUMES];
-        float alpha; // distance along the world space ray (alpha = minAlpha[i] + step * t)
+        float alpha = minAlpha; // distance along the world space ray (alpha = minAlpha[i] + step * t)
         int curr_priority; // the priority at the location
         int n_vols_at_curr_priority; // how many volumes to consider at the location
         float seg_at_alpha[NUM_VOLUMES][NUM_MATERIALS];
         if (debug) printf("start trace\n");
 
         // trace (if doing the last segment separately, need to use num_steps - 1
-        for (int t = 0, alpha = minAlpha; t < num_steps; t++, alpha += step) {
+        for (int t = 0; t < num_steps; t++) {
             LOAD_SEGS_AT_ALPHA; // initializes p{x,y,z}[...] and seg_at_alpha[...][...]
             // if (debug) printf("  loaded segs\n"); // This is the one that seems to take a half a second.
-
+// 
             curr_priority = NUM_VOLUMES;
             n_vols_at_curr_priority = 0;
             for (int i = 0; i < NUM_VOLUMES; i++) {
@@ -842,6 +842,7 @@ extern "C" {
 
                 INTERPOLATE(weight);
             }
+            alpha += step;
         }
 
         if (debug)
