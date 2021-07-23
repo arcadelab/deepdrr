@@ -344,34 +344,11 @@ class Projector(object):
                 )
 
                 ijk_from_world = np.array(_vol.ijk_from_world).astype(np.float32)
-                # log.debug(
-                #     f"center ray: {ijk_from_world @ world_from_index @ geo.point(self.output_shape[0] / 2, self.output_shape[1] / 2)}"
-                # )
                 cuda.memcpy_htod(
                     int(self.ijk_from_world_gpu)
                     + (ijk_from_world.size * NUMBYTES_FLOAT32) * vol_id,
                     ijk_from_world,
                 )
-
-                min_corner, max_corner = _vol.get_bounding_box_in_world()
-                log.debug(f"min, max corners:\n{min_corner}\n{max_corner}")
-                (
-                    minPointX[vol_id],
-                    minPointY[vol_id],
-                    minPointZ[vol_id],
-                ) = min_corner
-                (
-                    maxPointX[vol_id],
-                    maxPointY[vol_id],
-                    maxPointZ[vol_id],
-                ) = max_corner
-
-            cuda.memcpy_htod(self.minPointX_gpu, minPointX)
-            cuda.memcpy_htod(self.minPointY_gpu, minPointY)
-            cuda.memcpy_htod(self.minPointZ_gpu, minPointZ)
-            cuda.memcpy_htod(self.maxPointX_gpu, maxPointX)
-            cuda.memcpy_htod(self.maxPointY_gpu, maxPointY)
-            cuda.memcpy_htod(self.maxPointZ_gpu, maxPointZ)
 
             args = [
                 np.int32(proj.sensor_width),  # out_width
@@ -628,11 +605,11 @@ class Projector(object):
 
             pixel_size_x = (
                 self.source_to_detector_distance
-                / camera_projection.index_from_camera2d.fx
+                / proj.index_from_camera2d.fx
             )
             pixel_size_y = (
                 self.source_to_detector_distance
-                / camera_projection.index_from_camera2d.fy
+                / proj.index_from_camera2d.fy
             )
 
             # get energy deposited by multiplying [intensity] with [number of photons to hit each pixel]
@@ -784,6 +761,22 @@ class Projector(object):
 
         for i, _vol in enumerate(self.volumes):
             gpu_ptr_offset = NUMBYTES_FLOAT32 * i
+            cuda.memcpy_htod(int(self.minPointX_gpu) + gpu_ptr_offset, np.float32(-0.5))
+            cuda.memcpy_htod(int(self.minPointY_gpu) + gpu_ptr_offset, np.float32(-0.5))
+            cuda.memcpy_htod(int(self.minPointZ_gpu) + gpu_ptr_offset, np.float32(-0.5))
+
+            cuda.memcpy_htod(
+                int(self.maxPointX_gpu) + gpu_ptr_offset,
+                np.float32(_vol.shape[0] - 0.5),
+            )
+            cuda.memcpy_htod(
+                int(self.maxPointY_gpu) + gpu_ptr_offset,
+                np.float32(_vol.shape[1] - 0.5),
+            )
+            cuda.memcpy_htod(
+                int(self.maxPointZ_gpu) + gpu_ptr_offset,
+                np.float32(_vol.shape[2] - 0.5),
+            )
             cuda.memcpy_htod(
                 int(self.voxelSizeX_gpu) + gpu_ptr_offset,
                 np.float32(_vol.spacing[0]),
