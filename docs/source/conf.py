@@ -24,7 +24,7 @@ copyright = "2021, Benjamin D. Killeen, Cong Gao, Jan-Nico Zaech, and Mathias Un
 author = "Benjamin D. Killeen, Cong Gao, Jan-Nico Zaech, and Mathias Unberath"
 
 # The full version, including alpha/beta/rc tags
-release = "1.1.0a1"
+release = "1.1.0-alpha.2"
 
 # -- General configuration ---------------------------------------------------
 # Add any Sphinx extension module names here, as strings. They can be
