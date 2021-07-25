@@ -1,5 +1,27 @@
-from .device import CArm, MobileCArm
-from .vol import Volume
-from .projector import Projector
+import logging
+from rich.logging import RichHandler
 
-__all__ = ["MobileCArm", "CArm", "Volume", "Projector"]
+log = logging.getLogger(__name__)
+ch = RichHandler(level=logging.NOTSET)
+log.addHandler(ch)
+
+
+from . import vis, geo, projector, device, annotations, utils
+from .projector import Projector
+from .vol import Volume
+from .device import CArm, MobileCArm
+from .annotations import LineAnnotation
+
+
+__all__ = [
+    "MobileCArm",
+    "CArm",
+    "Volume",
+    "Projector",
+    "vis",
+    "geo",
+    "projector",
+    "device",
+    "annotations",
+    "utils",
+]

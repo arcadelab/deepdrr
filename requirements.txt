@@ -1,4 +1,4 @@
-# development requirements
+# general (redundant) requirements
 numpy
 torch
 torchvision
@@ -8,6 +8,9 @@ pydicom
 scipy
 pyvista
 pycuda
+pynrrd
+rich
 
-
-
+# development requirements
+black # proper python style
+pytest

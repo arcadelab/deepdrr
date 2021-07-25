@@ -1,0 +1,15 @@
+name: deepdrr
+channels:
+  - pytorch
+  - nvidia
+  - conda-forge
+dependencies:
+  - python=3.8
+  - pytorch
+  - torchvision
+  - cudatoolkit=11.1
+  - pycuda
+  - pip
+  - pip:
+      - -r requirements.txt
+      - -e .

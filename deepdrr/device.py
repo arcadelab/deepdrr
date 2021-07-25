@@ -83,38 +83,6 @@ def pose_vector_angles(pose: geo.Vector3D) -> Tuple[float, float]:
 
 
 class MobileCArm(object):
-    """A simulated C-arm imaging device with orbital movement (alpha), angulation (beta) and 3D translation.
-
-    A MobileCArm has its own `device` frame, which moves independent of the `arm` frame and the
-    `camera` frame, which actually defines the projection.
-
-    The geometry and default values, are based on the Cios Fusion device, specifically this_
-    document, with some exceptions. Rather than incorporating a swivel, this device allows for
-    simple horizontal translations. Additionally, by default the principle ray is not offset from
-    the isocenter.
-
-    .. _this: https://www.lomisa.com/app/download/10978681598/ARCO_EN_C_SIEMENS_CIOS_FUSION.pdf?t=1490962065
-
-    Additionall, the orbital movement and angulation are reversed from the convention used in `Kausch
-    et al`_, Figure 2.
-
-    .. _Kausch et al: https://pubmed.ncbi.nlm.nih.gov/32533315/
-
-    All length units are in millimeters.
-
-    TODO(killeen): finish documenting aruments.
-
-    Args:
-        isocenter (geo.Point3D): the initial isocenter of in the device frame. This is the point
-            about which rotations are performed.
-        isocenter_distance (float): the distance from the X-ray source to the isocenter of the CAarm. (The center of rotation).
-        alpha (float): initial LAO/RAO angle of the C-Arm. alpha > 0 is in the RAO direction. This is the angle along arm of the C-arm.
-        beta (float): initial CRA/CAU angulation of the C-arm. beta > 0 is in the CAU direction.
-        degrees (bool, optional): Whether given angles are in degrees. Defaults to False.
-        world_from_device: (Optional[geo.FrameTransform], optional): Transform that defines the device coordinate space in world coordinates. None is the identity transform. Defaults to None.
-        camera_intrinsics: (Optional[Union[geo.CameraIntrinsicTransform, dict]], optional): either a CameraIntrinsicTransform instance or kwargs for CameraIntrinsicTransform.from_sizes
-
-    """
 
     # basic parameters which can be safely set by user, but move_by() and reposition() are recommended.
     isocenter: geo.Point3D  # the isocenter point in the device frame
@@ -124,30 +92,66 @@ class MobileCArm(object):
 
     def __init__(
         self,
+        world_from_device: Optional[geo.FrameTransform] = None,
         isocenter: geo.Point3D = [0, 0, 0],
         alpha: float = 0,
         beta: float = 0,
-        world_from_device: Optional[geo.FrameTransform] = None,
         horizontal_movement: float = 200,  # width of window in X and Y planes.
         vertical_travel: float = 430,  # width of window in Z plane.
         min_alpha: float = -40,
         max_alpha: float = 110,
-        min_beta: float = -225,  # note that this would collide with the patient. Suggested to limit to +/- 45
+        # note that this would collide with the patient. Suggested to limit to +/- 45
+        min_beta: float = -225,
         max_beta: float = 225,
         degrees: bool = True,
         source_to_detector_distance: float = 1020,
-        source_to_isocenter_vertical_distance: float = 530,  # vertical component of the source point offset from the isocenter of rotation, in -Z. Previously called `isocenter_distance`
-        source_to_isocenter_horizontal_offset: float = 200,  # horizontal offset of the principle ray from the isocenter of rotation, in +Y
-        immersion_depth: float = 730,  # horizontal distance from principle ray to inner C-arm circumference. Used for visualization
-        free_space: float = 820,  # distance from central ray to edge of arm. Used for visualization
+        # vertical component of the source point offset from the isocenter of rotation, in -Z. Previously called `isocenter_distance`
+        source_to_isocenter_vertical_distance: float = 530,
+        # horizontal offset of the principle ray from the isocenter of rotation, in +Y. Defaults to 9, but should be 200 in document.
+        source_to_isocenter_horizontal_offset: float = 0,
+        # horizontal distance from principle ray to inner C-arm circumference. Used for visualization
+        immersion_depth: float = 730,
+        # distance from central ray to edge of arm. Used for visualization
+        free_space: float = 820,
         sensor_height: int = 1536,
         sensor_width: int = 1536,
         pixel_size: float = 0.194,
+        rotate_camera_left: bool = True,  # make it so that down in the image corresponds to -x, so that patient images appear as expected.
     ) -> None:
+        """A simulated C-arm imaging device with orbital movement (alpha), angulation (beta) and 3D translation.
+
+        A MobileCArm has its own `device` frame, which moves independent of the `arm` frame and the
+        `camera` frame, which actually defines the projection.
+
+        The geometry and default values, are based on the Cios Fusion device, specifically this_
+        document, with some exceptions. Rather than incorporating a swivel, this device allows for
+        simple horizontal translations. Additionally, by default the principle ray is not offset from
+        the isocenter.
+
+        .. _this: https://www.lomisa.com/app/download/10978681598/ARCO_EN_C_SIEMENS_CIOS_FUSION.pdf?t=1490962065
+
+        Additionall, the orbital movement and angulation are reversed from the convention used in `Kausch
+        et al`_, Figure 2.
+
+        .. _Kausch et al: https://pubmed.ncbi.nlm.nih.gov/32533315/
+
+        All length units are in millimeters.
+
+        Args:
+            world_from_device: (Optional[geo.FrameTransform], optional): Transform that defines the device coordinate space in world coordinates. None is the identity transform. Defaults to None.
+            isocenter (geo.Point3D): the initial isocenter of in the device frame. This is the point
+                about which rotations are performed.
+            isocenter_distance (float): the distance from the X-ray source to the isocenter of the CAarm. (The center of rotation).
+            alpha (float): initial LAO/RAO angle of the C-Arm. alpha > 0 is in the RAO direction. This is the angle along arm of the C-arm.
+            beta (float): initial CRA/CAU angulation of the C-arm. beta > 0 is in the CAU direction.
+            degrees (bool, optional): Whether given angles are in degrees. Defaults to False.
+            camera_intrinsics: (Optional[Union[geo.CameraIntrinsicTransform, dict]], optional): either a CameraIntrinsicTransform instance or kwargs for CameraIntrinsicTransform.from_sizes
+
+        """
+        self.world_from_device = geo.frame_transform(world_from_device)
         self.isocenter = geo.point(isocenter)
         self.alpha = utils.radians(alpha, degrees=degrees)
         self.beta = utils.radians(beta, degrees=degrees)
-        self.world_from_device = geo.frame_transform(world_from_device)
         self.horizontal_movement = horizontal_movement
         self.vertical_travel = vertical_travel
         self.min_alpha = utils.radians(min_alpha, degrees=degrees)
@@ -171,17 +175,29 @@ class MobileCArm(object):
             pixel_size=pixel_size,
             source_to_detector_distance=self.source_to_detector_distance,
         )
+        self.rotate_camera_left = rotate_camera_left
+
+        # May upset some code that was erroneously using isocenter to position the Carm.
+        if np.any(np.array(isocenter) < self.min_isocenter) or np.any(
+            np.array(isocenter) > self.max_isocenter
+        ):
+            raise ValueError(
+                f"isocenter {self.isocenter} is out of bounds. Use world_from_device transform to position the carm in the world."
+            )
 
         # points in the arm frame don't change.
         self.viewpoint_in_arm = geo.point(
             0, self.source_to_isocenter_horizontal_offset, 0
         )
 
+        self._enforce_bounds()
         self._static_mesh = None
 
     def __str__(self):
-        return (f"MobileCArm(isocenter={np.array_str(np.array(self.isocenter))}, "
-                f"alpha={np.degrees(self.alpha)}, beta={np.degrees(self.beta)}, degrees=True)")
+        return (
+            f"MobileCArm(isocenter={np.array_str(np.array(self.isocenter))}, "
+            f"alpha={np.degrees(self.alpha)}, beta={np.degrees(self.beta)}, degrees=True)"
+        )
 
     @property
     def max_isocenter(self) -> np.ndarray:
@@ -216,8 +232,7 @@ class MobileCArm(object):
 
     @property
     def arm_from_device(self) -> geo.FrameTransform:
-        """Transformation from the device frame (which doesn't move) to the arm frame (which rotates and translates with the arm, origin at the isocenter).
-        """
+        """Transformation from the device frame (which doesn't move) to the arm frame (which rotates and translates with the arm, origin at the isocenter)."""
         return self.device_from_arm.inv
 
     @property
@@ -229,6 +244,12 @@ class MobileCArm(object):
                 self.source_to_isocenter_vertical_distance,
             )
         )
+        if self.rotate_camera_left:
+            camera3d_from_arm = (
+                geo.frame_transform(Rotation.from_euler("z", 90, degrees=True))
+                @ camera3d_from_arm
+            )
+
         return camera3d_from_arm @ self.arm_from_device
 
     @property
@@ -266,6 +287,14 @@ class MobileCArm(object):
     def principle_ray_in_world(self) -> geo.Vector3D:
         return self.world_from_device @ self.principle_ray
 
+    def _enforce_bounds(self):
+        """Enforce the CArm movement bounds."""
+        self.isocenter = geo.point(
+            np.clip(self.isocenter, self.min_isocenter, self.max_isocenter)
+        )
+        self.alpha = np.clip(self.alpha, self.min_alpha, self.max_alpha)
+        self.beta = np.clip(self.beta, self.min_beta, self.max_beta)
+
     def move_by(
         self,
         delta_isocenter: Optional[geo.Vector3D] = None,
@@ -288,19 +317,14 @@ class MobileCArm(object):
 
         if delta_isocenter is not None:
             self.isocenter += geo.vector(delta_isocenter)
-            self.isocenter = geo.point(
-                np.clip(self.isocenter, self.min_isocenter, self.max_isocenter)
-            )
-
         if delta_alpha is not None:
             assert np.isscalar(delta_alpha)
             self.alpha += utils.radians(float(delta_alpha), degrees=degrees)
-            self.alpha = np.clip(self.alpha, self.min_alpha, self.max_alpha)
-
         if delta_beta is not None:
             assert np.isscalar(delta_beta)
             self.beta += utils.radians(float(delta_beta), degrees=degrees)
-            self.beta = np.clip(self.beta, self.min_beta, self.max_beta)
+
+        self._enforce_bounds()
 
     def move_to(
         self,
@@ -323,15 +347,12 @@ class MobileCArm(object):
 
         if isocenter is not None:
             self.isocenter = geo.point(isocenter)
-            self.isocenter = geo.point(
-                np.clip(self.isocenter, self.min_isocenter, self.max_isocenter)
-            )
         if alpha is not None:
             self.alpha = utils.radians(float(alpha), degrees=degrees)
-            self.alpha = np.clip(self.alpha, self.min_alpha, self.max_alpha)
         if beta is not None:
             self.beta = utils.radians(float(beta), degrees=degrees)
-            self.beta = np.clip(self.beta, self.min_beta, self.max_beta)
+
+        self._enforce_bounds()
 
     def reposition(
         self,
@@ -465,9 +486,9 @@ class MobileCArm(object):
 
 class CArm(object):
     """C-arm device for positioning a camera in space.
-    
+
     It is suggested to use MobileCArm instead.
-    
+
     """
 
     def __init__(
@@ -578,7 +599,7 @@ class CArm(object):
         """Get the FrameTransform for the C-Arm device at the given pose.
 
         This ignores the internal state except for the isocenter_distance.
-        
+
         Args:
             isocenter (geo.Point3D): isocenter of the device.
             phi (float): CRAN/CAUD angle of the C-Arm (along the actual arc of the arm)

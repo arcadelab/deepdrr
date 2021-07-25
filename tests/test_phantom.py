@@ -86,3 +86,6 @@ def test_phantom():
     #     )
     #     logger.info(f"writing image {output_path}")
     #     plt.savefig(output_path)
+
+if __name__ == "__main__":
+    test_phantom()

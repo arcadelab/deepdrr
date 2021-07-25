@@ -1,3 +1,5 @@
+"""Legacy code for loading DICOM files. See vol.Volume.from_dicom."""
+
 import glob
 
 import logging
@@ -8,13 +10,21 @@ import pydicom as dicom
 from . import segmentation
 
 
-logger = logging.getLogger(__name__)
+log = logging.getLogger(__name__)
 
 
 materials = {1: "air", 2: "soft tissue", 3: "cortical bone"}
 
 
-def load_dicom(source_path=r"./*/*/", fixed_slice_thinckness=None, new_resolution=None, truncate=None, smooth_air=False, use_thresholding_segmentation=False, file_extension=".dcm"):
+def load_dicom(
+    source_path=r"./*/*/",
+    fixed_slice_thinckness=None,
+    new_resolution=None,
+    truncate=None,
+    smooth_air=False,
+    use_thresholding_segmentation=False,
+    file_extension=".dcm",
+):
     source_path += "*" + file_extension
     files = np.array(glob.glob(source_path))
     one_slice = dicom.read_file(files[0])
@@ -34,11 +44,21 @@ def load_dicom(source_path=r"./*/*/", fixed_slice_thinckness=None, new_resolutio
     volume_size = [int(refDs.Rows), int(refDs.Columns), files.__len__()]
 
     if not hasattr(refDs, "SliceThickness"):
-        print('Volume has no attribute Slice Thickness, please provide it manually!')
-        print('using fixed slice thickness of:', fixed_slice_thinckness)
-        voxel_size = [float(refDs.PixelSpacing[1]), float(refDs.PixelSpacing[0]), fixed_slice_thinckness]
+        log.debug(
+            "Volume has no attribute Slice Thickness, please provide it manually!"
+        )
+        log.debug("using fixed slice thickness of:", fixed_slice_thinckness)
+        voxel_size = [
+            float(refDs.PixelSpacing[1]),
+            float(refDs.PixelSpacing[0]),
+            fixed_slice_thinckness,
+        ]
     else:
-        voxel_size = [float(refDs.PixelSpacing[1]), float(refDs.PixelSpacing[0]), float(refDs.SliceThickness)]
+        voxel_size = [
+            float(refDs.PixelSpacing[1]),
+            float(refDs.PixelSpacing[0]),
+            float(refDs.SliceThickness),
+        ]
 
     # The array is sized based on 'PixelDims'
     volume = np.zeros(volume_size, dtype=np.float64)
@@ -59,7 +79,11 @@ def load_dicom(source_path=r"./*/*/", fixed_slice_thinckness=None, new_resolutio
 
     # truncate
     if truncate:
-        volume = volume[truncate[0][0]:truncate[0][1], truncate[1][0]:truncate[1][1], truncate[2][0]:truncate[2][1]]
+        volume = volume[
+            truncate[0][0] : truncate[0][1],
+            truncate[1][0] : truncate[1][1],
+            truncate[2][0] : truncate[2][1],
+        ]
 
     # volume = np.flip(volume,2)
     # upsample Volume
@@ -75,11 +99,17 @@ def load_dicom(source_path=r"./*/*/", fixed_slice_thinckness=None, new_resolutio
     else:
         materials = conv_hu_to_materials_thresholding(volume)
 
-    return densities.astype(np.float32), materials, np.array(voxel_size, dtype=np.float32)
+    return (
+        densities.astype(np.float32),
+        materials,
+        np.array(voxel_size, dtype=np.float32),
+    )
 
 
 def upsample(volume, newResolution, voxelSize):
-    upsampled_voxel_size = list(np.array(voxelSize) * np.array(volume.shape) / newResolution)
+    upsampled_voxel_size = list(
+        np.array(voxelSize) * np.array(volume.shape) / newResolution
+    )
     upsampled_volume = resize(volume, newResolution, order=1, cval=-1000)
     return upsampled_volume, upsampled_voxel_size, upsampled_voxel_size
 
@@ -92,29 +122,30 @@ def conv_hu_to_density(hu_values, smoothAir=False):
     # set air densities
     if smoothAir:
         hu_values[hu_values <= -900] = -1000
-    #hu_values[hu_values > 600] = 5000;
-    densities = np.maximum(np.minimum(0.001029 * hu_values + 1.030, 0.0005886 * hu_values + 1.03), 0)
+    # hu_values[hu_values > 600] = 5000;
+    densities = np.maximum(
+        np.minimum(0.001029 * hu_values + 1.030, 0.0005886 * hu_values + 1.03), 0
+    )
     return densities
 
 
 def conv_hu_to_materials_thresholding(hu_values):
-    logger.info("segmenting volume with thresholding...")
+    log.info("segmenting volume with thresholding...")
     materials = {}
     # Air
     materials["air"] = hu_values <= -800
     # Soft Tissue
     materials["soft tissue"] = (-800 < hu_values) * (hu_values <= 350)
     # Bone
-    materials["bone"] = (350 < hu_values)
-    logger.info("done.")
+    materials["bone"] = 350 < hu_values
+    log.info("done.")
 
     return materials
 
 
 def conv_hu_to_materials(hu_values):
-    print("segmenting volume with Vnet")
+    log.info("segmenting volume with Vnet")
     segmentation_network = segmentation.SegmentationNet()
     materials = segmentation_network.segment(hu_values)
     segmentation_network = None
-
     return materials
