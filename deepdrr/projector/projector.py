@@ -231,7 +231,7 @@ class Projector(object):
 
         self.all_materials = list(set(all_mats))
         self.all_materials.sort()
-        log.info(f"ALL MATERIALS: {self.all_materials}")
+        log.debug(f"MATERIALS: {self.all_materials}")
 
         # compile the module
         self.mod = _get_kernel_projector_module(
@@ -309,7 +309,7 @@ class Projector(object):
         intensities = []
         photon_probs = []
         for i, proj in enumerate(camera_projections):
-            log.info(
+            log.debug(
                 f"Projecting and attenuating camera position {i+1} / {len(camera_projections)}"
             )
 
@@ -604,12 +604,10 @@ class Projector(object):
             solid_angle = np.swapaxes(solid_angle, 0, 1).copy()
 
             pixel_size_x = (
-                self.source_to_detector_distance
-                / proj.index_from_camera2d.fx
+                self.source_to_detector_distance / proj.index_from_camera2d.fx
             )
             pixel_size_y = (
-                self.source_to_detector_distance
-                / proj.index_from_camera2d.fy
+                self.source_to_detector_distance / proj.index_from_camera2d.fy
             )
 
             # get energy deposited by multiplying [intensity] with [number of photons to hit each pixel]
@@ -632,7 +630,7 @@ class Projector(object):
             images = np.clip(images, None, self.intensity_upper_bound)
 
         if self.neglog:
-            log.info("applying negative log transform")
+            log.debug("applying negative log transform")
             images = utils.neglog(images)
 
         if images.shape[0] == 1:
