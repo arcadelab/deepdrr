@@ -84,6 +84,7 @@ extern "C" {
         float jmc[MAX_NSHELLS]; // (J_{i,0} m_{e} c) for each shell i. Dimensionless.
     } compton_data_t;
     
+    // TODO: refactor the structs so that the energies don't have to be stored explicitly. xref MCGPU struct linear_interp
     typedef struct mat_mfp_data {
         int n_bins;
         float energy[MAX_MFP_BINS]; // Units: [eV]
@@ -140,7 +141,6 @@ extern "C" {
         float3_t *pos, // input: initial position in volume. output: end position of photon history
         float3_t *dir, // input: initial direction
         float *energy, // input: initial energy. output: energy at end of photon history. Units: [eV]
-        int e_index, // input: initial index into the MFP and Rayleigh p_max arrays. Update e_index whenever energy is updated
         int *hits_detector, // Boolean output.  Does the photon actually reach the detector plane?
         int *num_scatter_events, // should be passed a pointer to an int initialized to zero.  Returns the number of scatter events experienced by the photon
         float E_abs, // the energy level below which the photon is assumed to be absorbed. Units: [eV]
@@ -206,6 +206,7 @@ extern "C" {
 
     __device__ double sample_rita(
         const rayleigh_data_t *sampler,
+        const double pmax_current,
         rng_seed_t *seed
     );
 
@@ -247,7 +248,6 @@ extern "C" {
 
     __device__ double sample_Compton(
         float *energy, // serves as both input and output
-        int* e_index, // [in/out]: the index of the lower bound of the energy interval 
         const compton_data_t *compton_data,
         rng_seed_t *seed
     );

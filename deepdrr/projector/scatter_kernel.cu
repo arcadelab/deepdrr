@@ -68,7 +68,7 @@ extern "C" {
         gVoxelElementSize.z = gVoxelElementSizeZ;
 
         if (0 == thread_id) {
-            /*printf("volume_shape: {%d, %d, %d}\n", volume_shape.x, volume_shape.y, volume_shape.z);
+            printf("volume_shape: {%d, %d, %d}\n", volume_shape.x, volume_shape.y, volume_shape.z);
             printf("gVolumeEdgeMinPoint: {%f, %f, %f}\n", gVolumeEdgeMinPoint.x, gVolumeEdgeMinPoint.y, gVolumeEdgeMinPoint.z);
             printf("gVolumeEdgeMaxPoint: {%f, %f, %f}\n", gVolumeEdgeMaxPoint.x, gVolumeEdgeMaxPoint.y, gVolumeEdgeMaxPoint.z);
             printf("source: {%f, %f, %f}\n", sx, sy, sz);
@@ -77,7 +77,7 @@ extern "C" {
                 index_from_ijk[0], index_from_ijk[1], index_from_ijk[2], 
                 index_from_ijk[3], index_from_ijk[4], index_from_ijk[5]
             );
-            printf(
+            /*printf(
                 "detector_plane:\n"
                 "\t.n={%f, %f, %f}, .d=%f\n"
                 "\t.ori={%f, %f, %f}\n"
@@ -104,28 +104,20 @@ extern "C" {
                 );
             }*/
 
-            // printf("STRUCTURE SIZES:\n");
-            // printf("\tplane_surface_t: %llu\n", sizeof(plane_surface_t));
-            // printf("\trng_seed_t: %llu\n", sizeof(rng_seed_t));
-            // printf("\trayleigh_data_t: %llu\n", sizeof(rayleigh_data_t));
-            // printf("\tmat_mfp_data_t: %llu\n", sizeof(mat_mfp_data_t));
-            // printf("\twc_mfp_data_t: %llu\n", sizeof(wc_mfp_data_t));
-            // printf("\tcompton_data_t: %llu\n", sizeof(compton_data_t));
+            printf("STRUCTURE SIZES:\n");
+            printf("\tplane_surface_t: %llu\n", sizeof(plane_surface_t));
+            printf("\trng_seed_t: %llu\n", sizeof(rng_seed_t));
+            printf("\trayleigh_data_t: %llu\n", sizeof(rayleigh_data_t));
+            printf("\tmat_mfp_data_t: %llu\n", sizeof(mat_mfp_data_t));
+            printf("\twc_mfp_data_t: %llu\n", sizeof(wc_mfp_data_t));
+            printf("\tcompton_data_t: %llu\n", sizeof(compton_data_t));
 
-            /*for (int i = 0; i < NUM_MATERIALS; i++) {
-                printf("RITA PARAMS #%d: n_gridpts=%d. memloc: %llu\n", i, rita_arr[i].n_gridpts, &rita_arr[i]);
-                printf("&rita_arr[i].x[0]: %llu, &(...).y[0]: %llu\n", &rita_arr[i].x[0], &rita_arr[i].y[0]);
-                printf("&rita_arr[i].a[0]: %llu, &(...).b[0]: %llu\n", &rita_arr[i].a[0], &rita_arr[i].b[0]);
-                for (int g = 0; g < rita_arr[i].n_gridpts; g++) {
-                    printf(
-                        "\t[%8f, %8f, %8f, %8f]\n",
-                        rita_arr[i].x[g], 
-                        rita_arr[i].y[g], 
-                        rita_arr[i].a[g], 
-                        rita_arr[i].b[g]
-                    );
-                }
-            }*/
+            for (int i = 0; i < NUM_MATERIALS; i++) {
+                printf("RAYLEIGH DATA #%d: n_gridpts=%d. memloc: %llu\n", i, rayleigh_arr[i].n_gridpts, &rayleigh_arr[i]);
+                printf("&rayleigh_arr[i].x[0]: %llu, &(...).y[0]: %llu\n", &rayleigh_arr[i].x[0], &rayleigh_arr[i].y[0]);
+                printf("&rayleigh_arr[i].a[0]: %llu, &(...).b[0]: %llu\n", &rayleigh_arr[i].a[0], &rayleigh_arr[i].b[0]);
+                printf("&rayleigh_arr[i].pmax[0]: %llu, &(...).pmax[MAX_NSHELLS-1]: %llu\n", &rayleigh_arr[i].pmax[0], &rayleigh_arr[i].pmax[MAX_NSHELLS - 1]);
+            }
 
             /*for (int i = 0; i < NUM_MATERIALS; i++) {
                 printf("MATERIAL MFP #%d: n_bins=%d\n", i, mfp_data_arr[i].n_bins);
@@ -248,7 +240,6 @@ extern "C" {
         float3_t *pos, // input: initial position in volume. output: end position of photon history
         float3_t *dir, // input: initial direction
         float *energy, // input: initial energy. output: energy at end of photon history. Units: [eV]
-        int e_index, // input: initial index into the MFP and Rayleigh p_max arrays. Update e_index whenever energy is updated
         int *hits_detector, // Boolean output.  Does the photon actually reach the detector plane?
         int *num_scatter_events, // should be passed a pointer to an int initialized to zero.  Returns the number of scatter events experienced by the photon
         float E_abs, // the energy level below which the photon is assumed to be absorbed. Units: [eV]
@@ -263,19 +254,24 @@ extern "C" {
         float3_t *gVoxelElementSize, // world coordinate lengths of each dimension of a voxel
         plane_surface_t *detector_plane, 
         rng_seed_t *seed
-    ) { // TODO TODO TODO: incorporate e_index
+    ) {
+        // TODO TODO TODO: incorporate e_index
         // NOTE on e_index: it indicates the index of the lower bound of the energy interval the photon is in.
+        int e_index; // Update e_index whenever energy is updated
         int vox; // IJK voxel coord.s of photon, flattened for 1-D array labeled_segmentation
         float mfp_wc, mfp_Ra, mfp_Co, mfp_Tot;
         char curr_mat_id, old_mat_id = -1;
+
+        // Determine initial value of e_index
+        e_index = find_energy_index(*energy, mfp_data_arr[0].energies, 0, MAX_MFP_BINS); 
+
         //printf("dir on entry: {%f, %f, %f}\n", dir->x, dir->y, dir->z);
         while (1) {
             vox = get_voxel_1D(pos, gVolumeEdgeMinPoint, gVolumeEdgeMaxPoint, volume_shape);
             //printf("pos: {%f, %f, %f}. vox: %d\n", pos->x, pos->y, pos->z, vox);
             if (vox < 0) { break; } // photon escaped volume
 
-            // TODO TODO TODO: get the helper function signatures to match those in scatter_header.cu
-            get_wc_mfp_data(wc_data, *energy, &mfp_wc);
+            get_wc_mfp_data(wc_data, *energy, e_index, &mfp_wc);
 
             // Delta interactions
             do {
@@ -293,7 +289,7 @@ extern "C" {
                 curr_mat_id = labeled_segmentation[vox];
                 if (curr_mat_id != old_mat_id) {
                     // only read the mfp data when necessary
-                    get_mat_mfp_data(&mfp_data_arr[curr_mat_id], *energy, &mfp_Ra, &mfp_Co, &mfp_Tot);
+                    get_mat_mfp_data(&mfp_data_arr[curr_mat_id], *energy, e_index, &mfp_Ra, &mfp_Co, &mfp_Tot);
                     old_mat_id = curr_mat_id;
                 }
                 
@@ -346,8 +342,9 @@ extern "C" {
             float prob_Co = mfp_Tot / mfp_Co;
             if (rnd < prob_Co) {
                 cos_theta = sample_Compton(energy, &compton_arr[curr_mat_id], seed);
+                e_index = find_energy_index(*energy, &mfp_data_arr[0].energies, 0, e_index + 1);
             } else if (rnd < (prob_Co + (mfp_Tot / mfp_Ra))) {
-                cos_theta = sample_Rayleigh(*energy, &rita_arr[curr_mat_id], seed);
+                cos_theta = sample_Rayleigh(*energy, e_index, &rita_arr[curr_mat_id], seed);
             } else {
                 *hits_detector = 0;
                 return;
@@ -371,14 +368,13 @@ extern "C" {
         float dist_to_detector = psurface_check_ray_intersection(pos, dir, detector_plane);
         if (dist_to_detector < 0.0f) {
             *hits_detector = 0;
-            return;
+        } else {
+            pos->x += dist_to_detector * dir->x;
+            pos->y += dist_to_detector * dir->y;
+            pos->z += dist_to_detector * dir->z;
+            *hits_detector = 1;
+            // NOTE: the calculation for determine which pixel is done in caller function
         }
-
-        pos->x += dist_to_detector * dir->x;
-        pos->y += dist_to_detector * dir->y;
-        pos->z += dist_to_detector * dir->z;
-        *hits_detector = 1;
-        // NOTE: the calculation for determine which pixel is done in caller function
     }
 
     __device__ int get_voxel_1D(
@@ -391,7 +387,11 @@ extern "C" {
          * Returns index into a flattened 1-D array that represents the volume.  
          * If outside volume, returns a negative value.
          *
-         * volume_arr_3D[x, y, z] == volume_arr_1D[z * x_len * y_len + y * x_len + x]
+         * volume_arr_3D[x, y, z] == volume_arr_1D[z * y_len * z_len + y * z_len + z]
+         * 
+         * That way, it's like indexing into a 3D array:
+         *
+         * DTYPE volume_arr[x_len][y_len][z_len];
          */
         if ((pos->x < gVolumeEdgeMinPoint->x /*+ VOXEL_EPS*/) || (pos->x > gVolumeEdgeMaxPoint->x /*- VOXEL_EPS*/) ||
                 (pos->y < gVolumeEdgeMinPoint->y /*+ VOXEL_EPS*/) || (pos->y > gVolumeEdgeMaxPoint->y /*- VOXEL_EPS*/) ||
@@ -404,7 +404,7 @@ extern "C" {
         vox_y = (int)(pos->y - gVolumeEdgeMinPoint->y);
         vox_z = (int)(pos->z - gVolumeEdgeMinPoint->z);
 
-        return (vox_z * volume_shape->x * volume_shape->y) + (vox_y * volume_shape->x) + vox_x;
+        return (vox_x * volume_shape->y * volume_shape->z) + (vox_y * volume_shape->z) + vox_z;
     }
 
     __device__ void get_scattered_dir(
@@ -707,7 +707,7 @@ extern "C" {
         /**/
 
         double nu = y - sampler->y[i];
-        if (nu > 1e-16) {
+        if (nu > 1e-16) { // this logic takes great 'inspiration' from MCGPU
             double delta_i = sampler->y[i+1] - sampler->y[i];
 
             // Avoid multiple accesses to the same global variable
@@ -935,7 +935,7 @@ extern "C" {
         const compton_data_t *compton_data,
         rng_seed_t *seed
     ) {
-        float kappa = *energy * INV_ELECTRON_REST_ENERGY;
+        float kappa = (*energy) * INV_ELECTRON_REST_ENERGY;
         float one_p2k = 1.f + 2.f * kappa;
         float tau_min = 1.f / one_p2k;
 
