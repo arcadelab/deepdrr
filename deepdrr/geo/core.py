@@ -109,7 +109,7 @@ class HomogeneousObject(ABC):
         return self.data.__setitem__(key, value)
 
     def __iter__(self):
-        return iter(np.array(self))
+        return iter(np.array(self).tolist())
 
     def get_data(self) -> np.ndarray:
         return self.data
@@ -193,7 +193,7 @@ class Point(HomogeneousPointOrVector):
         other = self.from_any(other)
         return _point_or_vector(self.data - other.data)
 
-    def __add__(self, other: Vector):
+    def __add__(self, other: Vector) -> Point:
         """Can add a vector to a point, but cannot add two points. TODO: cannot add points together?"""
         if issubclass(type(other), Vector):
             return type(self)(self.data + other.data)
@@ -304,11 +304,17 @@ class Vector(HomogeneousPointOrVector):
         else:
             return NotImplemented
 
-    def perpendicular(self) -> Vector3D:
+    def perpendicular(self, random: bool = False) -> Vector3D:
         """Find an arbitrary perpendicular vector to self.
 
+        Args:
+            random: Whether to randomize the vector's direction in
+                the perpendicular plane, drawing from [0, 2pi).
+                Defaults to False.
+
         Returns:
-            Vector3D: An arbitrary vector in 3D space, perpendicular to the original.
+            Vector3D: A vector in 3D space, perpendicular
+                to the original.
 
         """
         # TODO: if the vector is 2D, return one of the other vectors in the plane, to keep it 2D.
@@ -329,7 +335,13 @@ class Vector(HomogeneousPointOrVector):
         # arbitrarily set a = b = 1
         # then the equation simplifies to
         #     c = -(x + y)/z
-        return vector(1, 1, -1.0 * (self.x + self.y) / self.z).hat()
+        v = vector(1, 1, -1.0 * (self.x + self.y) / self.z).hat()
+
+        if random:
+            angle = np.random.uniform(0, 2 * np.pi)
+            v = vector(Rotation.from_rotvec(angle * self.hat()).apply(v))
+
+        return v
 
     def angle(self, other: Vector) -> float:
         """Get the angle between self and other in radians."""

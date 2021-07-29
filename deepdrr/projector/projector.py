@@ -231,7 +231,7 @@ class Projector(object):
 
         self.all_materials = list(set(all_mats))
         self.all_materials.sort()
-        log.info(f"ALL MATERIALS: {self.all_materials}")
+        log.debug(f"MATERIALS: {self.all_materials}")
 
         # compile the module
         self.mod = _get_kernel_projector_module(
@@ -309,7 +309,7 @@ class Projector(object):
         intensities = []
         photon_probs = []
         for i, proj in enumerate(camera_projections):
-            log.info(
+            log.debug(
                 f"Projecting and attenuating camera position {i+1} / {len(camera_projections)}"
             )
 
@@ -317,13 +317,6 @@ class Projector(object):
             sx, sy, sz = proj.get_center_in_world()
             world_from_index = np.array(proj.world_from_index).astype(np.float32)
             cuda.memcpy_htod(self.world_from_index_gpu, world_from_index)
-
-            minPointX = np.empty(len(self.volumes), dtype=np.float32)
-            maxPointX = np.empty(len(self.volumes), dtype=np.float32)
-            minPointY = np.empty(len(self.volumes), dtype=np.float32)
-            maxPointY = np.empty(len(self.volumes), dtype=np.float32)
-            minPointZ = np.empty(len(self.volumes), dtype=np.float32)
-            maxPointZ = np.empty(len(self.volumes), dtype=np.float32)
 
             for vol_id, _vol in enumerate(self.volumes):
                 source_ijk = np.array(proj.get_center_in_volume(_vol)).astype(
@@ -604,12 +597,10 @@ class Projector(object):
             solid_angle = np.swapaxes(solid_angle, 0, 1).copy()
 
             pixel_size_x = (
-                self.source_to_detector_distance
-                / proj.index_from_camera2d.fx
+                self.source_to_detector_distance / proj.index_from_camera2d.fx
             )
             pixel_size_y = (
-                self.source_to_detector_distance
-                / proj.index_from_camera2d.fy
+                self.source_to_detector_distance / proj.index_from_camera2d.fy
             )
 
             # get energy deposited by multiplying [intensity] with [number of photons to hit each pixel]
@@ -632,7 +623,7 @@ class Projector(object):
             images = np.clip(images, None, self.intensity_upper_bound)
 
         if self.neglog:
-            log.info("applying negative log transform")
+            log.debug("applying negative log transform")
             images = utils.neglog(images)
 
         if images.shape[0] == 1:
@@ -914,16 +905,13 @@ class Projector(object):
                     max(x_points_world), max(y_points_world), max(z_points_world)
                 )
 
-                largest_spacing = max([_vol.spacing[0] for _vol in self.volumes])
-                largest_spacing = max(
-                    [largest_spacing] + [_vol.spacing[1] for _vol in self.volumes]
-                )
-                largest_spacing = max(
-                    [largest_spacing] + [_vol.spacing[2] for _vol in self.volumes]
-                )
+                # TODO: make this calculation more numpy-style
+                largest_spacing_x = max([_vol.spacing[0] for _vol in self.volumes])
+                largest_spacing_y = max([_vol.spacing[1] for _vol in self.volumes])
+                largest_spacing_z = max([_vol.spacing[2] for _vol in self.volumes])
 
                 self.megavol_spacing = geo.vector(
-                    largest_spacing, largest_spacing, largest_spacing
+                    largest_spacing_x, largest_spacing_y, largest_spacing_z
                 )
 
                 # readjust the bounding box so that the voxels fit evenly
@@ -1202,6 +1190,7 @@ class Projector(object):
                 f"time elapsed after intializing Compton structs: {init_tock - init_tick}"
             )
 
+            # TODO TODO TODO: convert these into Rayleigh structs
             # Material RITA structs
             self.rita_struct_dict = dict()
             self.rita_structs_gpu = cuda.mem_alloc(
@@ -1217,6 +1206,9 @@ class Projector(object):
                 # log.debug(f"for material [{mat}], RITA structure at location {struct_gpu_ptr}")
                 # for g in range(self.rita_struct_dict[mat].n_gridpts):
                 #    log.debug(f"[{self.rita_struct_dict[mat].x[g]}, {self.rita_struct_dict[mat].y[g]}, {self.rita_struct_dict[mat].a[g]}, {self.rita_struct_dict[mat].b[g]}]")
+
+            # TODO: handle Rayleigh structs with the p_max field. 
+            # (data should be found in the mcgpu_mean_free_path_data directory, in final columns)
 
             init_tock = time.perf_counter()
             log.debug(

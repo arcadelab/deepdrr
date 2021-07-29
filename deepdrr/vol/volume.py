@@ -12,6 +12,7 @@ import nibabel as nib
 from pydicom.filereader import dcmread
 import nrrd
 from scipy.spatial.transform import Rotation
+from scipy.interpolate import RegularGridInterpolator
 
 from .. import load_dicom
 from .. import geo
@@ -163,7 +164,7 @@ class Volume(object):
             None
             if cache_dir is None
             else Path(cache_dir)
-            / "{}{}materials{}.npz".format(
+            / "cached_{}{}materials{}.npz".format(
                 prefix,
                 "_" if prefix else "",
                 "_with_thresholding" if use_thresholding else "",
@@ -632,11 +633,81 @@ class Volume(object):
         self.world_from_anatomical = T @ R @ T.inv @ self.world_from_anatomical
         return self
 
+    def faceup(self):
+        """Turns the volume to be face up.
+
+        This aligns the patient so that, in world space,
+        the anterior side is toward +Z, inferior is toward +X,
+        and left is toward +Y.
+
+        Raises:
+            NotImplementedError: If the anatomical coordinate system is not "RAS".
+
+        """
+        if self.anatomical_coordinate_system == "RAS":
+            self.world_from_anatomical = geo.FrameTransform.from_rt(
+                rotation=Rotation.from_euler("xz", [90, -90], degrees=True)
+                .as_matrix()
+                .squeeze(),
+            )
+        else:
+            raise NotImplementedError
+
+    def facedown(self):
+        """Turns the volume to be face down.
+
+        This aligns the patient so that, in world space,
+        the posterior side is toward +Z, inferior is toward +X,
+        and right is toward +Y.
+
+        Raises:
+            NotImplementedError: If the anatomical coordinate system is not "RAS".
+
+        """
+        if self.anatomical_coordinate_system == "RAS":
+            self.world_from_anatomical = geo.FrameTransform.from_rt(
+                rotation=Rotation.from_euler("xz", [-90, 90], degrees=True)
+                .as_matrix()
+                .squeeze(),
+            )
+        else:
+            raise NotImplementedError
+
+    def interpolate(self, *x: geo.Point3D, method: str = "linear") -> np.ndarray:
+        """Interpolate the value of the volume at the point.
+
+        This is a *slow* version of interpolation, using scipy under the hood. DeepDRR uses cubic
+        spline interpolation on the GPU for rendering. This function is provided as a convenience.
+
+        Args:
+            x (geo.Point3D): The point or points in world-space.
+            method (str): The interpolation method to be used.
+                Accepted values are "linear" and "nearest".
+                Defaults to "linear."
+
+        Returns:
+            Union[float, np.ndarray]: The interpolated value(s) of the point(s)
+                in the Volume. If a point is outside the volume, the value is NaN.
+        """
+        if not hasattr(self, "_interpolator"):
+            self._interpolator = RegularGridInterpolator(
+                (range(self.shape[0]), range(self.shape[1]), range(self.shape[2])),
+                self.data,
+            )
+
+        ps = np.array([self.ijk_from_world @ geo.point(p) for p in x])
+        out = self._interpolator(ps, method=method)
+        if out.shape[0] == 1:
+            return float(out[0])
+        else:
+            return out
+
     def __contains__(self, x: geo.Point3D) -> bool:
         """Determine whether the point x is inside the volume.
 
         Args:
-            x (geo.Point3D): world-space point.
+            x (geo.Point3D)world': [-1346.4464, -65.99151, 8.187973], 'fractured': False,
+                             'cortical_breach': 'TODO'}: world-space point.
 
         """
         x_ijk = self.ijk_from_world @ geo.point(x)
@@ -709,7 +780,9 @@ class Volume(object):
         use_cached: bool = True,
     ):
         cache_path = (
-            None if cache_dir is None else Path(cache_dir) / f"{material}_mesh.vtp"
+            None
+            if cache_dir is None
+            else Path(cache_dir) / f"cached_{material}_mesh.vtp"
         )
         if use_cached and cache_path is not None and cache_path.exists():
             logger.info(f"reading cached {material} mesh from {cache_path}")

@@ -65,14 +65,17 @@ extern "C" {
     typedef struct rng_seed {
         int x, y;
     } rng_seed_t;
-    
-    typedef struct rita {
-        int n_gridpts;
+
+    typedef struct rayleigh_data {
+        // RITA portion
         double x[MAX_RITA_N_PTS];
         double y[MAX_RITA_N_PTS];
         double a[MAX_RITA_N_PTS];
         double b[MAX_RITA_N_PTS];
-    } rita_t;
+        int n_gridpts;
+        // Form factor data 
+        float pmax[MAX_NSHELLS];
+    } rayleigh_data_t;
     
     typedef struct compton_data {
         int nshells;
@@ -81,6 +84,7 @@ extern "C" {
         float jmc[MAX_NSHELLS]; // (J_{i,0} m_{e} c) for each shell i. Dimensionless.
     } compton_data_t;
     
+    // TODO: refactor the structs so that the energies don't have to be stored explicitly. xref MCGPU struct linear_interp
     typedef struct mat_mfp_data {
         int n_bins;
         float energy[MAX_MFP_BINS]; // Units: [eV]
@@ -121,7 +125,7 @@ extern "C" {
         mat_mfp_data_t *mfp_data_arr,
         wc_mfp_data_t *woodcock_mfp,
         compton_data_t *compton_arr,
-        rita_t *rita_arr,
+        rayleigh_t *rayleigh_arr,
         plane_surface_t *detector_plane,
         int n_bins, // the number of spectral bins
         float *spectrum_energies, // 1-D array -- size is the n_bins. Units: [keV]
@@ -143,12 +147,12 @@ extern "C" {
         char *labeled_segmentation, // [0..2]-labeled segmentation obtained by thresholding: [-infty, -500, 300, infty]
         mat_mfp_data_t *mfp_data_arr, // 3-element array of pointers to mat_mfp_data_t structs. Idx NOM_SEG_AIR_ID associated with air, etc
         wc_mfp_data_t *wc_data,
-        compton_data_t *compton_arr, // 3-element array of pointers to compton_data_t.  Material associations as with mfp_data_arr
-        rita_t *rita_arr, // 3-element array of pointers to rita_t.  Material associations as with mfp_data_arr
+        compton_data_t *compton_arr, // NUM_MATERIALS-element array of pointers to compton_data_t.  Material associations as with mfp_data_arr
+        rayleigh_data_t *rayleigh_arr, // NUM_MATERIALS-element array of pointers to rayleigh_t.  Material associations as with mfp_data_arr
         int3_t *volume_shape, // number of voxels in each direction IJK
         float3_t *gVolumeEdgeMinPoint, // IJK coordinate of minimum bounds of volume
         float3_t *gVolumeEdgeMaxPoint, // IJK coordinate of maximum bounds of volume
-        float3_t *gVoxelElementSize, // IJK coordinate lengths of each dimension of a voxel
+        float3_t *gVoxelElementSize, // world coordinate lengths of each dimension of a voxel
         plane_surface_t *detector_plane, 
         rng_seed_t *seed
     );
@@ -157,14 +161,15 @@ extern "C" {
         float3_t *pos,
         float3_t *gVolumeEdgeMinPoint,
         float3_t *gVolumeEdgeMaxPoint,
-        float3_t *gVoxelElementSize,
         int3_t *volume_shape
     );
 
     __device__ void get_scattered_dir(
         float3_t *dir, // direction: both input and output
         double cos_theta, // polar scattering angle
-        double phi // azimuthal scattering angle
+        double phi, // azimuthal scattering angle
+        float *world_from_ijk, // 3x4 transformation matrix TODO: reduce to 3x3
+        float *ijk_from_world // 3x4 transformation matrix TODO: reduce to 3x3
     );
 
     __device__ void move_photon_to_volume(
@@ -175,10 +180,22 @@ extern "C" {
         float3_t *gVolumeEdgeMaxPoint  // IJK coordinate of maximum bounds of volume
     );
 
-    __device__ void sample_initial_dir(
+    __device__ void sample_initial_dir_world(
         float3_t *dir, // output: the sampled direction
         rng_seed_t *seed
     );
+
+    __device__ void shift_vector_frame_3x4_transform(
+        float3_t *vec, // [in/out]: the vector to be transformed
+        float *transform
+    );
+
+    /*
+    __device__ void normalize_dir_to_world(
+        float3_t *dir, // input and output
+        float3_t *gVoxelElementSize
+    );
+    */
 
     __device__ float sample_initial_energy(
         const int n_bins,
@@ -188,7 +205,8 @@ extern "C" {
     );
 
     __device__ double sample_rita(
-        const rita_t *sampler,
+        const rayleigh_data_t *sampler,
+        const double pmax_current,
         rng_seed_t *seed
     );
 
@@ -198,9 +216,17 @@ extern "C" {
         const plane_surface_t *psur
     );
 
+    __device__ int find_energy_index(
+        float nrg, 
+        float *energy_arr, 
+        int lo_idx,
+        int hi_idx
+    );
+
     __device__ void get_mat_mfp_data(
         mat_mfp_data_t *data,
         float nrg, // energy of the photon
+        int e_index, // the index of the lower bound of the energy interval 
         float *ra, // output: MFP for Rayleigh scatter. Units: [mm]
         float *co, // output: MFP for Compton scatter. Units: [mm]
         float *tot // output: MFP (total). Units: [mm]
@@ -209,12 +235,14 @@ extern "C" {
     __device__ void get_wc_mfp_data(
         wc_mfp_data_t *data,
         float nrg, // energy of the photon [eV]
+        int e_index, // the index of the lower bound of the energy interval 
         float *mfp // output: Woodcock MFP. Units: [mm]
     );
 
     __device__ double sample_Rayleigh(
         float energy,
-        const rita_t *ff_sampler,
+        int e_index, // the index of the lower bound of the energy interval 
+        const rayleigh_data_t *rayleigh_data,
         rng_seed_t *seed
     );
 

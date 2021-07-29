@@ -5,9 +5,9 @@
 <a href="https://arxiv.org/abs/1803.08606">
 <img src="http://img.shields.io/badge/paper-arxiv.1803.08606-B31B1B.svg" alt="Paper" />
 </a>
-<!-- <a href="https://github.com/arcadelab/deepdrr/releases/"> -->
-<!-- <img src="https://img.shields.io/github/downloads/arcadelab/deepdrr/total.svg" alt="Downloads" /> -->
-<!-- </a> -->
+<a href="https://pepy.tech/project/deepdrr">
+<img src="https://pepy.tech/badge/deepdrr/month" alt="Downloads" />
+</a>
 <a href="https://github.com/arcadelab/deepdrr/releases/">
 <img src="https://img.shields.io/github/release/arcadelab/deepdrr.svg" alt="GitHub release" />
 </a>
