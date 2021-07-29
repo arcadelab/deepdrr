@@ -912,16 +912,13 @@ class Projector(object):
                     max(x_points_world), max(y_points_world), max(z_points_world)
                 )
 
-                largest_spacing = max([_vol.spacing[0] for _vol in self.volumes])
-                largest_spacing = max(
-                    [largest_spacing] + [_vol.spacing[1] for _vol in self.volumes]
-                )
-                largest_spacing = max(
-                    [largest_spacing] + [_vol.spacing[2] for _vol in self.volumes]
-                )
+                # TODO: make this calculation more numpy-style
+                largest_spacing_x = max([_vol.spacing[0] for _vol in self.volumes])
+                largest_spacing_y = max([_vol.spacing[1] for _vol in self.volumes])
+                largest_spacing_z = max([_vol.spacing[2] for _vol in self.volumes])
 
                 self.megavol_spacing = geo.vector(
-                    largest_spacing, largest_spacing, largest_spacing
+                    largest_spacing_x, largest_spacing_y, largest_spacing_z
                 )
 
                 # readjust the bounding box so that the voxels fit evenly
