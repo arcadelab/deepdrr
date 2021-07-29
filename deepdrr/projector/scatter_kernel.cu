@@ -32,7 +32,7 @@ extern "C" {
         mat_mfp_data_t *mfp_data_arr,
         wc_mfp_data_t *woodcock_mfp,
         compton_data_t *compton_arr,
-        rita_t *rita_arr,
+        rayleigh_t *rayleigh_arr,
         plane_surface_t *detector_plane,
         int n_bins, // the number of spectral bins
         float *spectrum_energies, // 1-D array -- size is the n_bins. Units: [keV]
@@ -160,7 +160,7 @@ extern "C" {
                 track_photon(
                     &pos, &dir, &energy, &is_hit, &num_scatter_events,
                     (1000.f * E_abs), labeled_segmentation,             // Pass in E_abs in [eV]
-                    mfp_data_arr, woodcock_mfp, compton_arr, rita_arr,
+                    mfp_data_arr, woodcock_mfp, compton_arr, rayleigh_arr,
                     &volume_shape, 
                     &gVolumeEdgeMinPoint, &gVolumeEdgeMaxPoint,
                     detector_plane, &seed
@@ -248,6 +248,7 @@ extern "C" {
         float3_t *pos, // input: initial position in volume. output: end position of photon history
         float3_t *dir, // input: initial direction
         float *energy, // input: initial energy. output: energy at end of photon history. Units: [eV]
+        int e_index, // input: initial index into the MFP and Rayleigh p_max arrays. Update e_index whenever energy is updated
         int *hits_detector, // Boolean output.  Does the photon actually reach the detector plane?
         int *num_scatter_events, // should be passed a pointer to an int initialized to zero.  Returns the number of scatter events experienced by the photon
         float E_abs, // the energy level below which the photon is assumed to be absorbed. Units: [eV]
@@ -255,13 +256,14 @@ extern "C" {
         mat_mfp_data_t *mfp_data_arr, // NUM_MATERIALS-element array of pointers to mat_mfp_data_t structs. Material associations based on labeled_segmentation
         wc_mfp_data_t *wc_data,
         compton_data_t *compton_arr, // NUM_MATERIALS-element array of pointers to compton_data_t.  Material associations as with mfp_data_arr
-        rita_t *rita_arr, // NUM_MATERIALS-element array of pointers to rita_t.  Material associations as with mfp_data_arr
+        rayleigh_data_t *rayleigh_arr, // NUM_MATERIALS-element array of pointers to rayleigh_t.  Material associations as with mfp_data_arr
         int3_t *volume_shape, // number of voxels in each direction IJK
         float3_t *gVolumeEdgeMinPoint, // IJK coordinate of minimum bounds of volume
         float3_t *gVolumeEdgeMaxPoint, // IJK coordinate of maximum bounds of volume
         plane_surface_t *detector_plane, 
         rng_seed_t *seed
-    ) {
+    ) { // TODO TODO TODO: incorporate e_index
+        // NOTE on e_index: it indicates the index of the lower bound of the energy interval the photon is in.
         int vox; // IJK voxel coord.s of photon, flattened for 1-D array labeled_segmentation
         float mfp_wc, mfp_Ra, mfp_Co, mfp_Tot;
         char curr_mat_id, old_mat_id = -1;
@@ -271,6 +273,7 @@ extern "C" {
             //printf("pos: {%f, %f, %f}. vox: %d\n", pos->x, pos->y, pos->z, vox);
             if (vox < 0) { break; } // photon escaped volume
 
+            // TODO TODO TODO: get the helper function signatures to match those in scatter_header.cu
             get_wc_mfp_data(wc_data, *energy, &mfp_wc);
 
             // Delta interactions
@@ -357,7 +360,7 @@ extern "C" {
             (*num_scatter_events)++;
 
             double phi = TWO_PI_DOUBLE * ranecu_double(seed);
-            get_scattered_dir(dir, cos_theta, phi);
+            get_scattered_dir(dir, cos_theta, phi, world_from_ijk, ijk_from_world);
             //printf("dir has changed to: {%f, %f, %f}\n", dir->x, dir->y, dir->z);
         }
 
@@ -404,10 +407,17 @@ extern "C" {
     }
 
     __device__ void get_scattered_dir(
-        float3_t *dir, // direction: both input and output
+        float3_t *dir, // direction: both input and output. IJK space
         double cos_theta, // polar scattering angle
-        double phi // azimuthal scattering angle
+        double phi, // azimuthal scattering angle
+        float *world_from_ijk, // 3x4 transformation matrix TODO: reduce to 3x3
+        float *ijk_from_world // 3x4 transformation matrix TODO: reduce to 3x3
     ) {
+        float3_t wsd; // "world-space dir"
+        wsd->x = (world_from_ijk[0] * dir->x) + (world_from_ijk[1] * dir->y) + (world_from_ijk[2] * dir->z) + (world_from_ijk[3] * 0.0f);
+        wsd->y = (world_from_ijk[4] * dir->x) + (world_from_ijk[5] * dir->y) + (world_from_ijk[6] * dir->z) + (world_from_ijk[7] * 0.0f);
+        wsd->z = (world_from_ijk[8] * dir->x) + (world_from_ijk[9] * dir->y) + (world_from_ijk[10] * dir->z) + (world_from_ijk[11] * 0.0f);
+
         // Since \theta is restricted to [0,\pi], sin_theta is restricted to [0,1]
         float cos_th  = (float)cos_theta;
         float sin_th  = (float)sqrt(1.0 - cos_theta * cos_theta);
@@ -418,28 +428,33 @@ extern "C" {
             printf("cos_th outside valid range of [-1,1]. cos_th=%f\n", cos_th);
         }
 
-        float tmp = sqrtf(1.f - dir->z * dir->z);
+        float tmp = sqrtf(1.f - wsd->z * wsd->z);
 
         if (tmp < 1.0e-8f) {
             tmp = 1.0e-8f; // to avoid divide-by-zero errors
         }
 
-        float orig_x = dir->x;
+        float orig_x = wsd->x;
 
-        dir->x = dir->x * cos_th + sin_th * (dir->x * dir->z * cos_phi - dir->y * sin_phi) / tmp;
-        dir->y = dir->y * cos_th + sin_th * (dir->y * dir->z * cos_phi - orig_x * sin_phi) / tmp;
-        dir->z = dir->z * cos_th - sin_th * tmp * cos_phi;
+        wsd->x = wsd->x * cos_th + sin_th * (wsd->x * wsd->z * cos_phi - wsd->y * sin_phi) / tmp;
+        wsd->y = wsd->y * cos_th + sin_th * (wsd->y * wsd->z * cos_phi - orig_x * sin_phi) / tmp;
+        wsd->z = wsd->z * cos_th - sin_th * tmp * cos_phi;
 
-        float mag = (dir->x * dir->x) + (dir->y * dir->y) + (dir->z * dir->z); // actually magnitude^2
+        float mag = (wsd->x * wsd->x) + (wsd->y * wsd->y) + (wsd->z * wsd->z); // actually magnitude^2
 
         if (fabs(mag - 1.0f) > 1.0e-14) {
             // Only do the computationally expensive normalization when necessary
             mag = sqrtf(mag);
 
-            dir->x /= mag;
-            dir->y /= mag;
-            dir->z /= mag;
+            wsd->x /= mag;
+            wsd->y /= mag;
+            wsd->z /= mag;
         }
+
+        // convert back to IJK
+        dir->x = (ijk_from_world[0] * wsd->x) + (ijk_from_world[1] * wsd->y) + (ijk_from_world[2] * wsd->z) + (ijk_from_world[3] * 0.0f);
+        dir->y = (ijk_from_world[4] * wsd->x) + (ijk_from_world[5] * wsd->y) + (ijk_from_world[6] * wsd->z) + (ijk_from_world[7] * 0.0f);
+        dir->z = (ijk_from_world[8] * wsd->x) + (ijk_from_world[9] * wsd->y) + (ijk_from_world[10] * wsd->z) + (ijk_from_world[11] * 0.0f);
     }
 
     __device__ void move_photon_to_volume(

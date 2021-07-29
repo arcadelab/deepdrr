@@ -1213,6 +1213,9 @@ class Projector(object):
                 # for g in range(self.rita_struct_dict[mat].n_gridpts):
                 #    log.debug(f"[{self.rita_struct_dict[mat].x[g]}, {self.rita_struct_dict[mat].y[g]}, {self.rita_struct_dict[mat].a[g]}, {self.rita_struct_dict[mat].b[g]}]")
 
+            # TODO: handle Rayleigh structs with the p_max field. 
+            # (data should be found in the mcgpu_mean_free_path_data directory, in final columns)
+
             init_tock = time.perf_counter()
             log.debug(
                 f"time elapsed after intializing RITA structs: {init_tock - init_tick}"

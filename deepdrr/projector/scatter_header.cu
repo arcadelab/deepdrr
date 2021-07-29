@@ -73,6 +73,11 @@ extern "C" {
         double a[MAX_RITA_N_PTS];
         double b[MAX_RITA_N_PTS];
     } rita_t;
+
+    typedef struct rayleigh_data {
+        rita_t rita;
+        float pmax[MAX_NSHELLS];
+    }
     
     typedef struct compton_data {
         int nshells;
@@ -137,6 +142,7 @@ extern "C" {
         float3_t *pos, // input: initial position in volume. output: end position of photon history
         float3_t *dir, // input: initial direction
         float *energy, // input: initial energy. output: energy at end of photon history. Units: [eV]
+        int e_index, // input: initial index into the MFP and Rayleigh p_max arrays. Update e_index whenever energy is updated
         int *hits_detector, // Boolean output.  Does the photon actually reach the detector plane?
         int *num_scatter_events, // should be passed a pointer to an int initialized to zero.  Returns the number of scatter events experienced by the photon
         float E_abs, // the energy level below which the photon is assumed to be absorbed. Units: [eV]
@@ -185,7 +191,9 @@ extern "C" {
         float3_t *gVoxelElementSize
     );
 
-    __device__ float sample_initial_energy(
+    __device__ void sample_initial_energy(
+        float *energy, // [out]: the sampled energy
+        int *e_index. // [out]: the index of the lower bound of the energy interval
         const int n_bins,
         const float *spectrum_energies,
         const float *spectrum_cdf,
@@ -206,6 +214,7 @@ extern "C" {
     __device__ void get_mat_mfp_data(
         mat_mfp_data_t *data,
         float nrg, // energy of the photon
+        int e_index, // the index of the lower bound of the energy interval 
         float *ra, // output: MFP for Rayleigh scatter. Units: [mm]
         float *co, // output: MFP for Compton scatter. Units: [mm]
         float *tot // output: MFP (total). Units: [mm]
@@ -214,17 +223,20 @@ extern "C" {
     __device__ void get_wc_mfp_data(
         wc_mfp_data_t *data,
         float nrg, // energy of the photon [eV]
+        int e_index, // the index of the lower bound of the energy interval 
         float *mfp // output: Woodcock MFP. Units: [mm]
     );
 
     __device__ double sample_Rayleigh(
         float energy,
+        int e_index, // the index of the lower bound of the energy interval 
         const rita_t *ff_sampler,
         rng_seed_t *seed
     );
 
     __device__ double sample_Compton(
         float *energy, // serves as both input and output
+        int* e_index, // [in/out]: the index of the lower bound of the energy interval 
         const compton_data_t *compton_data,
         rng_seed_t *seed
     );
