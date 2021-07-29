@@ -12,7 +12,7 @@ extern "C" {
         int detector_height,
         int histories_for_thread, // number of photons for -this- thread to track
         char *labeled_segmentation, // [0..NUM_MATERIALS-1]-labeled segmentation
-        float sx, // coordinates of source in world space
+        float sx, // coordinates of source in IJK
         float sy, // (not in a float3_t for ease of calling from Python wrapper)
         float sz,
         float sdd, // source-to-detector distance [mm]
@@ -25,9 +25,9 @@ extern "C" {
         float gVolumeEdgeMaxPointX,
         float gVolumeEdgeMaxPointY,
         float gVolumeEdgeMaxPointZ,
-        //float gVoxelElementSizeX, // voxel size in world coordinates
-        //float gVoxelElementSizeY, // THESE AREN'T NECESSARY -- if everything is in IJK, the conversion never needs to happen
-        //float gVoxelElementSizeZ,
+        float gVoxelElementSizeX, // voxel size in world coordinates
+        float gVoxelElementSizeY,
+        float gVoxelElementSizeZ,
         float *index_from_ijk, // (2, 3) array giving the IJK-homogeneous-coord.s-to-pixel-coord.s transformation
         mat_mfp_data_t *mfp_data_arr,
         wc_mfp_data_t *woodcock_mfp,
@@ -61,6 +61,11 @@ extern "C" {
         gVolumeEdgeMaxPoint.x = gVolumeEdgeMaxPointX;
         gVolumeEdgeMaxPoint.y = gVolumeEdgeMaxPointY;
         gVolumeEdgeMaxPoint.z = gVolumeEdgeMaxPointZ;
+
+        float3_t gVoxelElementSize;
+        gVoxelElementSize.x = gVoxelElementSizeX;
+        gVoxelElementSize.y = gVoxelElementSizeY;
+        gVoxelElementSize.z = gVoxelElementSizeZ;
 
         if (0 == thread_id) {
             /*printf("volume_shape: {%d, %d, %d}\n", volume_shape.x, volume_shape.y, volume_shape.z);
@@ -147,6 +152,7 @@ extern "C" {
             int is_hit;
             move_photon_to_volume(&pos, &dir, &is_hit, &gVolumeEdgeMinPoint, &gVolumeEdgeMaxPoint);
             if (is_hit) {
+                normalize_dir_to_world(&dir, &gVoxelElementSize);
                 //printf("hit volume\n"); // many of these get printed out
                 float energy = 1000.f * sample_initial_energy(n_bins, spectrum_energies, spectrum_cdf, &seed); // [eV]
                 // is_hit gets repurposed since we don't need it anymore for 'did the photon hit the volume'
@@ -443,11 +449,6 @@ extern "C" {
         float3_t *gVolumeEdgeMinPoint, // IJK coordinate of minimum bounds of volume
         float3_t *gVolumeEdgeMaxPoint  // IJK coordinate of maximum bounds of volume
     ) {
-        float3_t pos_ijk;
-        // TODO: mat mult
-        float3_t dir_ijk;
-        // TODO: mat mult
-
         /*
          * Strategy: calculate the which direction out of {x,y,z} needs to travel the most to get
          * to the volume.  This determines how far the photon must travel if it has any hope of 
@@ -456,21 +457,21 @@ extern "C" {
          */
         float dist_x, dist_y, dist_z;
         /* Calculations for x-direction */
-        if (dir_ijk->x > VOXEL_EPS) {
-            if (pos_ijk->x > gVolumeEdgeMinPoint->x) {
+        if (dir->x > VOXEL_EPS) {
+            if (pos->x > gVolumeEdgeMinPoint->x) {
                 // Photon inside or past volume
                 dist_x = 0.0f;
             } else {
                 // Add VOXEL_EPS to make super sure that the photon reaches the volume
-                dist_x = VOXEL_EPS + (gVolumeEdgeMinPoint->x - pos_ijk->x) / dir_ijk->x;
+                dist_x = VOXEL_EPS + (gVolumeEdgeMinPoint->x - pos->x) / dir->x;
             }
-        } else if (dir_ijk->x < NEG_VOXEL_EPS) {
-            if (pos_ijk->x < gVolumeEdgeMaxPoint->x) {
+        } else if (dir->x < NEG_VOXEL_EPS) {
+            if (pos->x < gVolumeEdgeMaxPoint->x) {
                 dist_x = 0.0f;
             } else {
                 // In order to ensure that dist_x is positive, we divide the negative 
                 // quantity (gVolumeEdgeMaxPoint->x - pos->x) by the negative quantity 'dir->x'.
-                dist_x = VOXEL_EPS + (gVolumeEdgeMaxPoint->x - pos_ijk->x) / dir_ijk->x;
+                dist_x = VOXEL_EPS + (gVolumeEdgeMaxPoint->x - pos->x) / dir->x;
             }
         } else {
             // No collision with an x-normal-plane possible
@@ -478,21 +479,21 @@ extern "C" {
         }
 
         /* Calculations for y-direction */
-        if (dir_ijk->y > VOXEL_EPS) {
-            if (pos_ijk->y > gVolumeEdgeMinPoint->y) {
+        if (dir->y > VOXEL_EPS) {
+            if (pos->y > gVolumeEdgeMinPoint->y) {
                 // Photon inside or past volume
                 dist_y = 0.0f;
             } else {
                 // Add VOXEL_EPS to make super sure that the photon reaches the volume
-                dist_y = VOXEL_EPS + (gVolumeEdgeMinPoint->y - pos_ijk->y) / dir_ijk->y;
+                dist_y = VOXEL_EPS + (gVolumeEdgeMinPoint->y - pos->y) / dir->y;
             }
-        } else if (dir_ijk->y < NEG_VOXEL_EPS) {
-            if (pos_ijk->y < gVolumeEdgeMaxPoint->y) {
+        } else if (dir->y < NEG_VOXEL_EPS) {
+            if (pos->y < gVolumeEdgeMaxPoint->y) {
                 dist_y = 0.0f;
             } else {
                 // In order to ensure that dist_y is positive, we divide the negative 
                 // quantity (gVolumeEdgeMaxPoint->y - pos->y) by the negative quantity 'dir->y'.
-                dist_y = VOXEL_EPS + (gVolumeEdgeMaxPoint->y - pos_ijk->y) / dir_ijk->y;
+                dist_y = VOXEL_EPS + (gVolumeEdgeMaxPoint->y - pos->y) / dir->y;
             }
         } else {
             // No collision with an y-normal-plane possible
@@ -500,21 +501,21 @@ extern "C" {
         }
 
         /* Calculations for z-direction */
-        if (dir_ijk->z > VOXEL_EPS) {
-            if (pos_ijk->z > gVolumeEdgeMinPoint->z) {
+        if (dir->z > VOXEL_EPS) {
+            if (pos->z > gVolumeEdgeMinPoint->z) {
                 // Photon inside or past volume
                 dist_z = 0.0f;
             } else {
                 // Add VOXEL_EPS to make super sure that the photon reaches the volume
-                dist_z = VOXEL_EPS + (gVolumeEdgeMinPoint->z - pos_ijk->z) / dir_ijk->z;
+                dist_z = VOXEL_EPS + (gVolumeEdgeMinPoint->z - pos->z) / dir->z;
             }
-        } else if (dir_ijk->z < NEG_VOXEL_EPS) {
-            if (pos_ijk->z < gVolumeEdgeMaxPoint->z) {
+        } else if (dir->z < NEG_VOXEL_EPS) {
+            if (pos->z < gVolumeEdgeMaxPoint->z) {
                 dist_z = 0.0f;
             } else {
                 // In order to ensure that dist_z is positive, we divide the negative 
                 // quantity (gVolumeEdgeMaxPoint->z - pos->z) by the negative quantity 'dir->z'.
-                dist_z = VOXEL_EPS + (gVolumeEdgeMaxPoint->z - pos_ijk->z) / dir_ijk->z;
+                dist_z = VOXEL_EPS + (gVolumeEdgeMaxPoint->z - pos->z) / dir->z;
             }
         } else {
             // No collision with an y-normal-plane possible
@@ -528,38 +529,30 @@ extern "C" {
          */
         dist_z = MAX_VAL(dist_z, MAX_VAL(dist_x, dist_y));
 
-        // TODO TODO: update the comments
-
-        // Test moving the photon to the volume
-        pos_ijk->x += dist_z * dir_ijk->x;
-        pos_ijk->y += dist_z * dir_ijk->y;
-        pos_ijk->z += dist_z * dir_ijk->z;
-
-        
+        // Move the photon to the volume (yay! the whole purpose of the function!)
+        pos->x += dist_z * dir->x;
+        pos->y += dist_z * dir->y;
+        pos->z += dist_z * dir->z;
 
         /*
          * Final error checking. Check if the new position is outside the volume.
          * If so, move the particle back to original position and set the intersection
          * flag to false.
          */
-        if ((pos_ijk->x < gVolumeEdgeMinPoint->x) || (pos_ijk->x > gVolumeEdgeMaxPoint->x) ||
-                (pos_ijk->y < gVolumeEdgeMinPoint->y) || (pos_ijk->y > gVolumeEdgeMaxPoint->y) ||
-                (pos_ijk->z < gVolumeEdgeMinPoint->z) || (pos_ijk->z > gVolumeEdgeMaxPoint->z) ) {
+        if ((pos->x < gVolumeEdgeMinPoint->x) || (pos->x > gVolumeEdgeMaxPoint->x) ||
+                (pos->y < gVolumeEdgeMinPoint->y) || (pos->y > gVolumeEdgeMaxPoint->y) ||
+                (pos->z < gVolumeEdgeMinPoint->z) || (pos->z > gVolumeEdgeMaxPoint->z) ) {
+            pos->x -= dist_z * dir->x;
+            pos->y -= dist_z * dir->y;
+            pos->z -= dist_z * dir->z;
             *hits_volume = 0;
         } else {
-            // Can actually move the photon to the volume (yay! the whole purpose of the function!)
-
-            // NOTE: this operation is valid because the function, up to this point, calculated
-            // the number of times that dir_ijk fit between original_pos_ijk and the volume
-            pos->x += dist_z * dir->x;
-            pos->y += dist_z * dir->y;
-            pos->z += dist_z * dir->z;
             *hits_volume = 1;
         }
     }
 
     __device__ void sample_initial_dir(
-        float3_t *dir, // output: the sampled direction
+        float3_t *dir, // output: the direction, sampled uniformly from the unit sphere
         rng_seed_t *seed
     ) {
         // Sampling explanation here: http://corysimon.github.io/articles/uniformdistn-on-sphere/
@@ -571,6 +564,37 @@ extern "C" {
         dir->x = (float)(sin_theta * cos(phi));
         dir->y = (float)(sin_theta * sin(phi));
         dir->z = (float)(cos(theta));
+    }
+
+    __device__ void normalize_dir_to_world(
+        float3_t *dir, // input and output
+        float3_t *gVoxelElementSize
+    ) {
+        /**
+         * We desire that the dir vector, which exists in IJK space, not necessarily be a unit vector
+         * in IJK space. What we actually desire is that the world-space vector corresponding to dir
+         * has length 1 [mm]  //// TODO: centimeters instead?
+         *
+         * EXPLANATION OF THE MATH
+         *  The input vector dir is \vec{d} = (x, y, z), with magnitude D = x*x + y*y + z*z
+         *  Voxel size is (p, q, r).
+         *  We desire dir = (i, j, k) = s(x, y ,z), with 's' a scalar, such that
+         *      magnitude{(i * p, j * q, k * r)} = 1 [mm]
+         *
+         *      magnitude{s (x * p, y * q, z * r)} = 1 [mm]
+         *
+         *      s = 1 [mm] / magnitude{(x * p, y * q, z * r)}
+         */
+        float mag2 = 0.0f;
+        mag2 += (dir->x * dir->x) * (gVoxelElementSize->x * gVoxelElementSize->x);
+        mag2 += (dir->y * dir->y) * (gVoxelElementSize->y * gVoxelElementSize->y);
+        mag2 += (dir->z * dir->z) * (gVoxelElementSize->z * gVoxelElementSize->z);
+
+        float s = 1.0f / sqrtf(mag2);
+        
+        dir->x *= s;
+        dir->y *= s;
+        dir->z *= s;
     }
 
     __device__ float sample_initial_energy(

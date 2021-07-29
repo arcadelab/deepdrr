@@ -180,6 +180,11 @@ extern "C" {
         rng_seed_t *seed
     );
 
+    __device__ void normalize_dir_to_world(
+        float3_t *dir, // input and output
+        float3_t *gVoxelElementSize
+    );
+
     __device__ float sample_initial_energy(
         const int n_bins,
         const float *spectrum_energies,
