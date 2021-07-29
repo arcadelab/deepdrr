@@ -1197,6 +1197,7 @@ class Projector(object):
                 f"time elapsed after intializing Compton structs: {init_tock - init_tick}"
             )
 
+            # TODO TODO TODO: convert these into Rayleigh structs
             # Material RITA structs
             self.rita_struct_dict = dict()
             self.rita_structs_gpu = cuda.mem_alloc(

@@ -107,7 +107,7 @@ extern "C" {
             // printf("STRUCTURE SIZES:\n");
             // printf("\tplane_surface_t: %llu\n", sizeof(plane_surface_t));
             // printf("\trng_seed_t: %llu\n", sizeof(rng_seed_t));
-            // printf("\trita_t: %llu\n", sizeof(rita_t));
+            // printf("\trayleigh_data_t: %llu\n", sizeof(rayleigh_data_t));
             // printf("\tmat_mfp_data_t: %llu\n", sizeof(mat_mfp_data_t));
             // printf("\twc_mfp_data_t: %llu\n", sizeof(wc_mfp_data_t));
             // printf("\tcompton_data_t: %llu\n", sizeof(compton_data_t));
@@ -148,7 +148,7 @@ extern "C" {
             pos.z = sz;
 
             float3_t dir;
-            sample_initial_dir(&dir, &seed);
+            sample_initial_dir_world(&dir, &seed);
             int is_hit;
             move_photon_to_volume(&pos, &dir, &is_hit, &gVolumeEdgeMinPoint, &gVolumeEdgeMaxPoint);
             if (is_hit) {
@@ -260,6 +260,7 @@ extern "C" {
         int3_t *volume_shape, // number of voxels in each direction IJK
         float3_t *gVolumeEdgeMinPoint, // IJK coordinate of minimum bounds of volume
         float3_t *gVolumeEdgeMaxPoint, // IJK coordinate of maximum bounds of volume
+        float3_t *gVoxelElementSize, // world coordinate lengths of each dimension of a voxel
         plane_surface_t *detector_plane, 
         rng_seed_t *seed
     ) { // TODO TODO TODO: incorporate e_index
@@ -413,11 +414,10 @@ extern "C" {
         float *world_from_ijk, // 3x4 transformation matrix TODO: reduce to 3x3
         float *ijk_from_world // 3x4 transformation matrix TODO: reduce to 3x3
     ) {
-        float3_t wsd; // "world-space dir"
-        wsd->x = (world_from_ijk[0] * dir->x) + (world_from_ijk[1] * dir->y) + (world_from_ijk[2] * dir->z) + (world_from_ijk[3] * 0.0f);
-        wsd->y = (world_from_ijk[4] * dir->x) + (world_from_ijk[5] * dir->y) + (world_from_ijk[6] * dir->z) + (world_from_ijk[7] * 0.0f);
-        wsd->z = (world_from_ijk[8] * dir->x) + (world_from_ijk[9] * dir->y) + (world_from_ijk[10] * dir->z) + (world_from_ijk[11] * 0.0f);
-
+        // TODO: once scatter is working, this can be sped up by keeping track of both "dir_world" and "dir_ijk" 
+        //  in the main track_photon(...) loop, which would eliminate about of the mat mult frame conversion
+        shift_vector_frame_3x4_transform(dir, world_from_ijk);
+        
         // Since \theta is restricted to [0,\pi], sin_theta is restricted to [0,1]
         float cos_th  = (float)cos_theta;
         float sin_th  = (float)sqrt(1.0 - cos_theta * cos_theta);
@@ -428,33 +428,31 @@ extern "C" {
             printf("cos_th outside valid range of [-1,1]. cos_th=%f\n", cos_th);
         }
 
-        float tmp = sqrtf(1.f - wsd->z * wsd->z);
+        float tmp = sqrtf(1.f - dir->z * dir->z);
 
         if (tmp < 1.0e-8f) {
             tmp = 1.0e-8f; // to avoid divide-by-zero errors
         }
 
-        float orig_x = wsd->x;
+        float orig_x = dir->x;
 
-        wsd->x = wsd->x * cos_th + sin_th * (wsd->x * wsd->z * cos_phi - wsd->y * sin_phi) / tmp;
-        wsd->y = wsd->y * cos_th + sin_th * (wsd->y * wsd->z * cos_phi - orig_x * sin_phi) / tmp;
-        wsd->z = wsd->z * cos_th - sin_th * tmp * cos_phi;
+        dir->x = dir->x * cos_th + sin_th * (dir->x * dir->z * cos_phi - dir->y * sin_phi) / tmp;
+        dir->y = dir->y * cos_th + sin_th * (dir->y * dir->z * cos_phi - orig_x * sin_phi) / tmp;
+        dir->z = dir->z * cos_th - sin_th * tmp * cos_phi;
 
-        float mag = (wsd->x * wsd->x) + (wsd->y * wsd->y) + (wsd->z * wsd->z); // actually magnitude^2
+        float mag = (dir->x * dir->x) + (dir->y * dir->y) + (dir->z * dir->z); // actually magnitude^2
 
         if (fabs(mag - 1.0f) > 1.0e-14) {
             // Only do the computationally expensive normalization when necessary
             mag = sqrtf(mag);
 
-            wsd->x /= mag;
-            wsd->y /= mag;
-            wsd->z /= mag;
+            dir->x /= mag;
+            dir->y /= mag;
+            dir->z /= mag;
         }
 
         // convert back to IJK
-        dir->x = (ijk_from_world[0] * wsd->x) + (ijk_from_world[1] * wsd->y) + (ijk_from_world[2] * wsd->z) + (ijk_from_world[3] * 0.0f);
-        dir->y = (ijk_from_world[4] * wsd->x) + (ijk_from_world[5] * wsd->y) + (ijk_from_world[6] * wsd->z) + (ijk_from_world[7] * 0.0f);
-        dir->z = (ijk_from_world[8] * wsd->x) + (ijk_from_world[9] * wsd->y) + (ijk_from_world[10] * wsd->z) + (ijk_from_world[11] * 0.0f);
+        shift_vector_frame_3x4_transform(dir, ijk_from_world);
     }
 
     __device__ void move_photon_to_volume(
@@ -566,8 +564,8 @@ extern "C" {
         }
     }
 
-    __device__ void sample_initial_dir(
-        float3_t *dir, // output: the direction, sampled uniformly from the unit sphere
+    __device__ void sample_initial_dir_world(
+        float3_t *dir, // output: the direction in world coordinates, sampled uniformly from the unit sphere
         rng_seed_t *seed
     ) {
         // Sampling explanation here: http://corysimon.github.io/articles/uniformdistn-on-sphere/
@@ -581,7 +579,20 @@ extern "C" {
         dir->z = (float)(cos(theta));
     }
 
-    __device__ void normalize_dir_to_world(
+    __device__ void shift_vector_frame_3x4_transform(
+        float3_t *vec, // [in/out]: the vector to be transformed
+        float *transform
+    ) {
+        float x = vec->x;
+        float y = vec->y;
+        float z = vec->z;
+
+        vec->x = (transform[0] * x) + (transform[1] * y) + (transform[2] * z) + (transform[3] * 0.0f);
+        vec->y = (transform[4] * x) + (transform[5] * y) + (transform[6] * z) + (transform[7] * 0.0f);
+        vec->z = (transform[8] * x) + (transform[9] * y) + (transform[10] * z) + (transform[11] * 0.0f);
+    }
+
+    __device__ void normalize_dir_to_world( // TODO: this is likely an unnecessary function
         float3_t *dir, // input and output
         float3_t *gVoxelElementSize
     ) {
@@ -661,10 +672,11 @@ extern "C" {
     }
 
     __device__ double sample_rita(
-        const rita_t *sampler,
+        const rayleigh_data_t *sampler,
+        const double pmax_current,
         rng_seed_t *seed
     ) {
-        double y = ranecu_double(seed);
+        double y = ranecu_double(seed) * pmax_current;
 
         // Binary search to find the interval [y_i, y_{i+1}] that contains y
         int lo_idx = 0; // inclusive
@@ -695,12 +707,20 @@ extern "C" {
         /**/
 
         double nu = y - sampler->y[i];
-        double delta_i = sampler->y[i+1] - sampler->y[i];
+        if (nu > 1e-16) {
+            double delta_i = sampler->y[i+1] - sampler->y[i];
 
-        double tmp = (delta_i * delta_i) + (sampler->a[i] * delta_i * nu) + (sampler->b[i] * nu * nu); // denominator
-        tmp = (1.0 + sampler->a[i] + sampler->b[i]) * delta_i * nu / tmp; // numerator / denominator
+            // Avoid multiple accesses to the same global variable
+            float a_i = sampler->a[i];
+            float b_i = sampler->b[i];
+            float x_i = sampler->x[i];
 
-        return sampler->x[i] + (tmp * (sampler->x[i+1] - sampler->x[i]));
+            double tmp = (delta_i * delta_i) + ((a_i * delta_i) + (b_i * nu)) * nu; // denominator
+            tmp = (1.0 + a_i + b_i) * delta_i * nu / tmp; // numerator / denominator
+            return (double)x_i + (tmp * (double)(sampler->x[i+1] - x_i));
+        } else {
+            return sampler->x[i];
+        }
     }
 
     __device__ float psurface_check_ray_intersection(
@@ -731,9 +751,40 @@ extern "C" {
         return -1.f * r_dot_m / d_dot_m;
     }
 
+    __device__ int find_energy_index(
+        float nrg, 
+        float *energy_arr, 
+        int lo_idx, // inclusive
+        int hi_idx  // exclusive
+    ) {
+        // Binary search to find the interval [E_i, E_{i+1} that contains nrg]
+        // NOTE: param energy_arr is generally a field of mat_mfp_data_t, etc
+        if ((nrg < energy_arr[lo_idx]) || (nrg >= energy_arr[hi_idx])) {
+            return -1;
+        }
+
+        int i;
+        while (lo_idx < hi_idx) {
+            i = (lo_idx + hi_idx) / 2;
+
+            // Check if 'i' is the lower bound of the correct interval
+            if (nrg < data->energy[i]) {
+                // Need to check lower intervals
+                hi_idx = i;
+            } else if (nrg < data->energy[i+1]) {
+                // Found the correct interval
+                return lo_idx;
+            } else {
+                // Need to check higher intervals
+                lo_idx = i + 1;
+            }
+        } 
+    }
+
     __device__ void get_mat_mfp_data(
         mat_mfp_data_t *data,
         float nrg, // energy of the photon
+        int e_index, // the index of the lower bound of the energy interval
         float *ra, // output: MFP for Rayleigh scatter. Units: [mm]
         float *co, // output: MFP for Compton scatter. Units: [mm]
         float *tot // output: MFP (total). Units: [mm]
@@ -751,50 +802,28 @@ extern "C" {
                 nrg, data->energy[data->n_bins - 1]
             );
         }
+        if (e_index < 0) {
+            printf(
+                "ERROR: e_index (%d) less than minimum (0), energy level = %6f\n",
+                e_index, nrg
+            );
+        } else if (e_index >= data->n_bins - 1) {
+            printf(
+                "ERROR: e_index (%d) more than maximum (%d), energy level = %6f\n",
+                e_index, data->n_bins - 2, nrg
+            );
+        }
         /**/
 
-        // Binary search to find the interval [E_i, E_{i+1} that contains nrg]
-        int lo_idx = 0; // inclusive
-        int hi_idx = data->n_bins; // exclusive
-        int i;
-        while (lo_idx < hi_idx) {
-            i = (lo_idx + hi_idx) / 2;
-
-            // Check if 'i' is the lower bound of the correct interval
-            if (nrg < data->energy[i]) {
-                // Need to check lower intervals
-                hi_idx = i;
-            } else if (nrg < data->energy[i+1]) {
-                // Found the correct interval
-                break;
-            } else {
-                // Need to check higher intervals
-                lo_idx = i + 1;
-            }
-        }
         //printf("i=%d. energy[i]=%f, nrg=%f, energy[i+1]=%f\n", i, data->energy[i], nrg, data->energy[i+1]);
 
-        /* DEBUG STATEMENT *
-        if (data->energy[i] > nrg) {
-            printf(
-                "ERROR: Material MFP data identified too-high energy bin. "
-                "nrg=%6e, data->energy[i]=%6e\n", nrg, data->energy[i]
-            );
-        } else if (data->energy[i+1] <= nrg) {
-            printf(
-                "ERROR: Material MFP data identified too-low energy bin. "
-                "nrg=%6e, data->energy[i+1]=%6e\n", nrg, data->energy[i+1]
-            );
-        }
-        /**/
-
         // linear interpolation
-        float alpha = (nrg - data->energy[i]) / (data->energy[i+1] - data->energy[i]);
+        float alpha = (nrg - data->energy[e_index]) / (data->energy[e_index+1] - data->energy[e_index]);
         float one_minus_alpha = 1.f - alpha;
         
-        *ra = (one_minus_alpha * data->mfp_Ra[i]) + (alpha * data->mfp_Ra[i+1]);
-        *co = (one_minus_alpha * data->mfp_Co[i]) + (alpha * data->mfp_Co[i+1]);
-        *tot = (one_minus_alpha * data->mfp_Tot[i]) + (alpha * data->mfp_Tot[i+1]);
+        *ra = (one_minus_alpha * data->mfp_Ra[e_index]) + (alpha * data->mfp_Ra[e_index+1]);
+        *co = (one_minus_alpha * data->mfp_Co[e_index]) + (alpha * data->mfp_Co[e_index+1]);
+        *tot = (one_minus_alpha * data->mfp_Tot[e_index]) + (alpha * data->mfp_Tot[e_index+1]);
 
         // printf(
         //     "alpha: %f, i: %d. mfp_Tot[i]=%f, mfp_Tot[i+1]=%f"
@@ -809,6 +838,7 @@ extern "C" {
     __device__ void get_wc_mfp_data(
         wc_mfp_data_t *data,
         float nrg, // energy of the photon [eV]
+        int e_index, // the index of the lower bound of the energy interval 
         float *mfp // output: Woodcock MFP. Units: [mm]
     ) {
         /* DEBUG STATEMENT *
@@ -824,27 +854,18 @@ extern "C" {
                 nrg, data->energy[data->n_bins - 1]
             );
         }
-        /**/
-
-        // Binary search to find the interval [E_i, E_{i+1} that contains nrg]
-        int lo_idx = 0; // inclusive
-        int hi_idx = data->n_bins; // exclusive
-        int i;
-        while (lo_idx < hi_idx) {
-            i = (lo_idx + hi_idx) / 2;
-
-            // Check if 'i' is the lower bound of the correct interval
-            if (nrg < data->energy[i]) {
-                // Need to check lower intervals
-                hi_idx = i;
-            } else if (nrg < data->energy[i+1]) {
-                // Found the correct interval
-                break;
-            } else {
-                // Need to check higher intervals
-                lo_idx = i + 1;
-            }
+        if (e_index < 0) {
+            printf(
+                "ERROR: e_index (%d) less than minimum (0), energy level = %6f\n",
+                e_index, nrg
+            );
+        } else if (e_index >= data->n_bins - 1) {
+            printf(
+                "ERROR: e_index (%d) more than maximum (%d), energy level = %6f\n",
+                e_index, data->n_bins - 2, nrg
+            );
         }
+        /**/
 
         /* DEBUG STATEMENT *
         if (data->energy[i] > nrg) {
@@ -861,38 +882,52 @@ extern "C" {
         /**/
 
         // linear interpolation
-        float alpha = (nrg - data->energy[i]) / (data->energy[i+1] - data->energy[i]);
+        float alpha = (nrg - data->energy[e_index]) / (data->energy[e_index+1] - data->energy[e_index]);
 
-        *mfp = ((1.f - alpha) * data->mfp_wc[i]) + (alpha * data->mfp_wc[i+1]);
+        *mfp = ((1.f - alpha) * data->mfp_wc[e_index]) + (alpha * data->mfp_wc[e_index+1]);
 
         return;
     }
 
     __device__ double sample_Rayleigh(
         float energy,
-        const rita_t *ff_sampler,
+        int e_index, // the index of the lower bound of the energy interval 
+        const rayleigh_data_t *rayleigh_data,
         rng_seed_t *seed
     ) {
-        double kappa = ((double)energy) * (double)INV_ELECTRON_REST_ENERGY;
+        double pmax_current = (double)rayleigh_data->pmax[e_index + 1];
+
         // Sample a random value of x^2 from the distribution pi(x^2), restricted to the interval (0, x_{max}^2)
-        double x_max2 = 424.66493476 * 4.0 * kappa * kappa;
-        float x2;
-        do {
-            x2 = sample_rita(ff_sampler, seed);
-        } while (x2 > x_max2);
+        double x_max2;
+        //double kappa = ((double)energy) * (double)INV_ELECTRON_REST_ENERGY;
+        //x_max2 = 424.66493476 * 4.0 * kappa * kappa;
+        x_max2 = (energy * energy) * 6.50528656295084103e-9; // the constant is (2.0 * 20.6074 / 510998.918) ^ 2
+        x_max2 = MIN(x_max2, (double)rayleigh_data->x[rayleigh_data->n_gridpts - 1]);
 
         double cos_theta;
-        do {
-            // Set cos_theta
-            cos_theta = 1.0 - (2.0 * x2 / x_max2);
+        if (x_max2 < 0.0001) {
+            do {
+                cos_theta = 1.0 - ranecu_double(seed) * 2.0;
+            } while (ranecu_double(seed) > 0.5 * (1.0 + (cos_theta * cos_theta)));
+            return cos_theta;
+        }
 
-            // Test cos_theta
-            //double g = (1.0 + cos_theta * cos_theta) * 0.5;
-            
-            // Reject and re-sample if \xi > g
-        } while (ranecu_double(seed) > ((1.0 + cos_theta * cos_theta) * 0.5));
+        float x2;
+        while (1) { // Loop will iterate every time the sampled value is rejected or above maximum
+            x2 = sample_rita(rayleigh_data, pmax_current, seed);
 
-        return cos_theta;
+            if (x2 < x_max2)
+                // Set cos_theta
+                cos_theta = 1.0 - (2.0 * x2 / x_max2);
+
+                // Test cos_theta
+                //double g = (1.0 + cos_theta * cos_theta) * 0.5;
+                // Reject and re-sample if \xi > g; accept if \xi < g
+                if (ranecu_double(seed) < ((1.0 + cos_theta * cos_theta) * 0.5)) {
+                    return cos_theta;
+                }
+            }
+        }
     }
 
     __device__ double sample_Compton(

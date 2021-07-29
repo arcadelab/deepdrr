@@ -49,7 +49,7 @@ class CudaPlaneSurfaceStruct:
 MAX_RITA_N_PTS = 128
 
 
-class CudaRitaStruct:
+class CudaRitaStruct: # TODO TODO TODO convert this to a Rayleigh struct
     MEMSIZE = 4104  # from using sizeof(rita_t)
 
     def __init__(self, rita_obj: RITA, struct_gpu_ptr):
