@@ -73,6 +73,12 @@ class LineAnnotation(object):
     def endpoint_in_world(self) -> geo.Point:
         return self.volume.world_from_anatomical @ self.endpoint
 
+    @property
+    def midpoint_in_world(self) -> geo.Point:
+        return self.volume.world_from_anatomical @ self.startpoint.lerp(
+            self.endpoint, 0.5
+        )
+
     def get_mesh_in_world(self, full: bool = True):
         u = self.startpoint_in_world
         v = self.endpoint_in_world

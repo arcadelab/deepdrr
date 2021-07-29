@@ -117,6 +117,7 @@ class MobileCArm(object):
         sensor_width: int = 1536,
         pixel_size: float = 0.194,
         rotate_camera_left: bool = True,  # make it so that down in the image corresponds to -x, so that patient images appear as expected.
+        enforce_isocenter_bounds: bool = True,
     ) -> None:
         """A simulated C-arm imaging device with orbital movement (alpha), angulation (beta) and 3D translation.
 
@@ -176,6 +177,7 @@ class MobileCArm(object):
             source_to_detector_distance=self.source_to_detector_distance,
         )
         self.rotate_camera_left = rotate_camera_left
+        self.enforce_isocenter_bounds = enforce_isocenter_bounds
 
         # May upset some code that was erroneously using isocenter to position the Carm.
         if np.any(np.array(isocenter) < self.min_isocenter) or np.any(
@@ -289,9 +291,10 @@ class MobileCArm(object):
 
     def _enforce_bounds(self):
         """Enforce the CArm movement bounds."""
-        self.isocenter = geo.point(
-            np.clip(self.isocenter, self.min_isocenter, self.max_isocenter)
-        )
+        if self.enforce_isocenter_bounds:
+            self.isocenter = geo.point(
+                np.clip(self.isocenter, self.min_isocenter, self.max_isocenter)
+            )
         self.alpha = np.clip(self.alpha, self.min_alpha, self.max_alpha)
         self.beta = np.clip(self.beta, self.min_beta, self.max_beta)
 
@@ -337,7 +340,9 @@ class MobileCArm(object):
         """Move to the specified point.
 
         Args:
-            isocenter_in_world (Optional[geo.Point3D], optional): the desired isocenter in world coordinates. Defaults to None.
+            isocenter_in_world (Optional[geo.Point3D], optional): the desired isocenter in world coordinates.
+                Overrides `isocenter` if provided. Defaults to None.
+            isocenter: Desired isocenter in device coordinates.
             alpha (Optional[float], optional): the desired alpha angulation. Defaults to None.
             beta (Optional[float], optional): the desired secondary angulation. Defaults to None.
             degrees (bool, optional): whether angles are in degrees or radians. Defaults to False.

@@ -164,7 +164,7 @@ class Volume(object):
             None
             if cache_dir is None
             else Path(cache_dir)
-            / "{}{}materials{}.npz".format(
+            / "cached_{}{}materials{}.npz".format(
                 prefix,
                 "_" if prefix else "",
                 "_with_thresholding" if use_thresholding else "",
@@ -780,7 +780,9 @@ class Volume(object):
         use_cached: bool = True,
     ):
         cache_path = (
-            None if cache_dir is None else Path(cache_dir) / f"{material}_mesh.vtp"
+            None
+            if cache_dir is None
+            else Path(cache_dir) / f"cached_{material}_mesh.vtp"
         )
         if use_cached and cache_path is not None and cache_path.exists():
             logger.info(f"reading cached {material} mesh from {cache_path}")
