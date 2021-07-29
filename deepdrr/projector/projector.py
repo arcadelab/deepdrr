@@ -318,13 +318,6 @@ class Projector(object):
             world_from_index = np.array(proj.world_from_index).astype(np.float32)
             cuda.memcpy_htod(self.world_from_index_gpu, world_from_index)
 
-            minPointX = np.empty(len(self.volumes), dtype=np.float32)
-            maxPointX = np.empty(len(self.volumes), dtype=np.float32)
-            minPointY = np.empty(len(self.volumes), dtype=np.float32)
-            maxPointY = np.empty(len(self.volumes), dtype=np.float32)
-            minPointZ = np.empty(len(self.volumes), dtype=np.float32)
-            maxPointZ = np.empty(len(self.volumes), dtype=np.float32)
-
             for vol_id, _vol in enumerate(self.volumes):
                 source_ijk = np.array(proj.get_center_in_volume(_vol)).astype(
                     np.float32
