@@ -12,7 +12,7 @@ from .cuda_scatter_structs import (
     CudaComptonStruct,
     CudaMatMfpStruct,
     CudaPlaneSurfaceStruct,
-    CudaRitaStruct,
+    CudaRayleighStruct,
     CudaWoodcockStruct,
 )
 from .material_coefficients import material_coefficients
@@ -200,7 +200,6 @@ class Projector(object):
         if carm is not None:
             self.source_to_detector_distance = carm.source_to_detector_distance
         else:
-            # TODO (mjudish): figure out if there is another way to get the source_to_detector_distance
             log.warning("No way to specify source-to-detector distance without a MobileCArm parameter")
             raise ValueError("No source_to_detector_distance")
         self.carm = carm
@@ -439,6 +438,7 @@ class Projector(object):
                     f"Starting scatter simulation, scatter_num={self.scatter_num}. Time: {time.asctime()}"
                 )
 
+                # TODO: add in the last column and just acknowledge in the kernel that I'm multiplying a vector
                 index_from_ijk = (
                     self.megavol_ijk_from_world @ proj.world_from_index
                 ).inv
@@ -456,9 +456,10 @@ class Projector(object):
 
                 print(f"np.array(self.megavol_ijk_from_world) dims:{np.array(self.megavol_ijk_from_world).shape}\n{np.array(self.megavol_ijk_from_world)}")
                 print(f"world_from_index dims: {world_from_index.shape}\n{world_from_index}")
+                print(f"ray transform:\n{np.array(self.megavol_ijk_from_world @ proj.world_from_index)}")
 
                 detector_plane = scatter.get_detector_plane(
-                    np.array(self.megavol_ijk_from_world)[0:3,0:3] @ world_from_index,
+                    np.array(self.megavol_ijk_from_world @ proj.world_from_index),
                     proj.index_from_camera2d,
                     self.source_to_detector_distance,
                     geo.Point3D.from_any(scatter_source_ijk),
@@ -1157,7 +1158,9 @@ class Projector(object):
                     f"time elapsed after copying megavolume to GPU: {init_tock - init_tick}"
                 )
 
-                # TODO (mjudish): copy volume density info to self.megavol_density_gpu. How to deal with axis swaps?
+                # TODO (mjudish): copy volume density info to self.megavol_density_gpu.
+                # How to deal with axis swaps?
+            # end initialization of megavolume
 
             # Material MFP structs
             self.mat_mfp_struct_dict = dict()

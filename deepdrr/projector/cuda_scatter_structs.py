@@ -70,7 +70,7 @@ class CudaRayleighStruct:
         self.n_gridpts = np.int32(rita_obj.n_grid_points)
         cuda.memcpy_htod(int(struct_gpu_ptr) + 4 * (8 * MAX_RITA_N_PTS), self.n_gridpts)
         
-        self.pmax = np.ascontiguousarray(MFP_DATA[:,RAYLEIGH_FF_COLUMN]).astype(np.float32)
+        self.pmax = np.array([MFP_DATA[mat_name][i, RAYLEIGH_FF_COLUMN] for i in range(MFP_DATA[mat_name].shape[0])]).astype(np.float32)
         cuda.memcpy_htod(int(struct_gpu_ptr) + 4 * (8 * MAX_RITA_N_PTS) + 4, self.pmax)
 
 

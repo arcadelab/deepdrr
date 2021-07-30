@@ -1,12 +1,4 @@
-import logging
-from rich.logging import RichHandler
-
-log = logging.getLogger(__name__)
-ch = RichHandler(level=logging.WARNING)
-log.addHandler(ch)
-
-
-from . import vis, geo, projector, device, annotations, utils
+from . import vis, geo, projector, device, annotations, utils, logging
 from .projector import Projector
 from .vol import Volume
 from .device import CArm, MobileCArm
