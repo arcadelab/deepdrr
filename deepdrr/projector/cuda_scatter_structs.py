@@ -11,6 +11,7 @@ except ImportError:
 from .plane_surface import PlaneSurface
 from .rita import RITA
 from .mcgpu_compton_data import MAX_NSHELLS
+from .mcgpu_mfp_data import MFP_DATA
 import numpy as np
 
 
@@ -47,26 +48,30 @@ class CudaPlaneSurfaceStruct:
 
 
 MAX_RITA_N_PTS = 128
+MAX_MFP_BINS = 25005
+RAYLEIGH_FF_COLUMN = 5
 
+class CudaRayleighStruct:
+    MEMSIZE = 104120  # from using sizeof(rayleigh_data_t)
 
-class CudaRitaStruct: # TODO TODO TODO convert this to a Rayleigh struct
-    MEMSIZE = 4104  # from using sizeof(rita_t)
-
-    def __init__(self, rita_obj: RITA, struct_gpu_ptr):
+    def __init__(self, rita_obj: RITA, mat_name: str, struct_gpu_ptr):
         """Copies the RITA object to memory location 'struct_gpu_ptr' on the GPU
         """
-        self.n_gridpts = np.int32(rita_obj.n_grid_points)
-        cuda.memcpy_htod(int(struct_gpu_ptr), self.n_gridpts)
-
         self.x = rita_obj.x_arr.copy().astype(np.float64)
         self.y = rita_obj.y_arr.copy().astype(np.float64)
         self.a = rita_obj.a_arr.copy().astype(np.float64)
         self.b = rita_obj.b_arr.copy().astype(np.float64)
 
-        cuda.memcpy_htod(int(struct_gpu_ptr) + 8 + 0 * (8 * MAX_RITA_N_PTS), self.x)
-        cuda.memcpy_htod(int(struct_gpu_ptr) + 8 + 1 * (8 * MAX_RITA_N_PTS), self.y)
-        cuda.memcpy_htod(int(struct_gpu_ptr) + 8 + 2 * (8 * MAX_RITA_N_PTS), self.a)
-        cuda.memcpy_htod(int(struct_gpu_ptr) + 8 + 3 * (8 * MAX_RITA_N_PTS), self.b)
+        cuda.memcpy_htod(int(struct_gpu_ptr) + 0 * (8 * MAX_RITA_N_PTS), self.x)
+        cuda.memcpy_htod(int(struct_gpu_ptr) + 1 * (8 * MAX_RITA_N_PTS), self.y)
+        cuda.memcpy_htod(int(struct_gpu_ptr) + 2 * (8 * MAX_RITA_N_PTS), self.a)
+        cuda.memcpy_htod(int(struct_gpu_ptr) + 3 * (8 * MAX_RITA_N_PTS), self.b)
+        
+        self.n_gridpts = np.int32(rita_obj.n_grid_points)
+        cuda.memcpy_htod(int(struct_gpu_ptr) + 4 * (8 * MAX_RITA_N_PTS), self.n_gridpts)
+        
+        self.pmax = np.ascontiguousarray(MFP_DATA[:,RAYLEIGH_FF_COLUMN]).astype(np.float32)
+        cuda.memcpy_htod(int(struct_gpu_ptr) + 4 * (8 * MAX_RITA_N_PTS) + 4, self.pmax)
 
 
 class CudaComptonStruct:
@@ -85,9 +90,6 @@ class CudaComptonStruct:
         cuda.memcpy_htod(int(struct_gpu_ptr) + 4 + 0 * (4 * MAX_NSHELLS), self.f)
         cuda.memcpy_htod(int(struct_gpu_ptr) + 4 + 1 * (4 * MAX_NSHELLS), self.ui)
         cuda.memcpy_htod(int(struct_gpu_ptr) + 4 + 2 * (4 * MAX_NSHELLS), self.jmc)
-
-
-MAX_MFP_BINS = 25005
 
 
 class CudaMatMfpStruct:

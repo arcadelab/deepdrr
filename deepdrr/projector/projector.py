@@ -317,7 +317,7 @@ class Projector(object):
                 f"Projecting and attenuating camera position {i+1} / {len(camera_projections)}"
             )
 
-            # TODO: get the volume min/max points in world coordinates.
+            # Get the volume min/max points in world coordinates.
             sx, sy, sz = proj.get_center_in_world()
             world_from_index = np.array(proj.world_from_index).astype(np.float32)
             cuda.memcpy_htod(self.world_from_index_gpu, world_from_index)
@@ -438,7 +438,6 @@ class Projector(object):
                 log.info(
                     f"Starting scatter simulation, scatter_num={self.scatter_num}. Time: {time.asctime()}"
                 )
-                # index_from_ijk = proj.get_ray_transform(self.megavolume).inv # Urgent TODO: "self.volume" is incompatible with this version of the code
 
                 index_from_ijk = (
                     self.megavol_ijk_from_world @ proj.world_from_index
@@ -510,7 +509,7 @@ class Projector(object):
                     self.mat_mfp_structs_gpu,  # mat_mfp_arr
                     self.woodcock_struct_gpu,  # woodcock_mfp
                     self.compton_structs_gpu,  # compton_arr
-                    self.rita_structs_gpu,  # rita_arr
+                    self.rayleigh_structs_gpu,  # rayleigh_arr
                     self.detector_plane_gpu,  # detector_plane
                     self.world_from_ijk_gpu, # world_from_ijk
                     self.ijk_from_world_gpu, # ijk_from_world
@@ -893,7 +892,7 @@ class Projector(object):
                 z_points_world = []
 
                 for _vol in self.volumes:
-                    corners_ijk = [  # TODO: this assumes voxel-centered indexing
+                    corners_ijk = [
                         geo.point(-0.5, -0.5, -0.5),
                         geo.point(-0.5, -0.5, _vol.shape[2] - 0.5),
                         geo.point(-0.5, _vol.shape[1] - 0.5, -0.5),
@@ -1208,25 +1207,18 @@ class Projector(object):
                 f"time elapsed after intializing Compton structs: {init_tock - init_tick}"
             )
 
-            # TODO TODO TODO: convert these into Rayleigh structs
-            # Material RITA structs
-            self.rita_struct_dict = dict()
-            self.rita_structs_gpu = cuda.mem_alloc(
-                len(self.all_materials) * CudaRitaStruct.MEMSIZE
+            # Material Rayleigh structs
+            self.rayleigh_struct_dict = dict()
+            self.rayleigh_structs_gpu = cuda.mem_alloc(
+                len(self.all_materials) * CudaRayleighStruct.MEMSIZE
             )
             for i, mat in enumerate(self.all_materials):
-                struct_gpu_ptr = int(self.rita_structs_gpu) + (
-                    i * CudaRitaStruct.MEMSIZE
+                struct_gpu_ptr = int(self.rayleigh_structs_gpu) + (
+                    i * CudaRayleighStruct.MEMSIZE
                 )
-                self.rita_struct_dict[mat] = CudaRitaStruct(
-                    rita_samplers[mat], struct_gpu_ptr
+                self.rayleigh_struct_dict[mat] = CudaRayleighStruct(
+                    rita_samplers[mat], mat, struct_gpu_ptr
                 )
-                # log.debug(f"for material [{mat}], RITA structure at location {struct_gpu_ptr}")
-                # for g in range(self.rita_struct_dict[mat].n_gridpts):
-                #    log.debug(f"[{self.rita_struct_dict[mat].x[g]}, {self.rita_struct_dict[mat].y[g]}, {self.rita_struct_dict[mat].a[g]}, {self.rita_struct_dict[mat].b[g]}]")
-
-            # TODO: handle Rayleigh structs with the p_max field. 
-            # (data should be found in the mcgpu_mean_free_path_data directory, in final columns)
 
             init_tock = time.perf_counter()
             log.debug(
@@ -1319,7 +1311,7 @@ class Projector(object):
                 self.mat_mfp_structs_gpu.free()
                 self.woodcock_struct_gpu.free()
                 self.compton_structs_gpu.free()
-                self.rita_structs_gpu.free()
+                self.rayleigh_structs_gpu.free()
                 self.detector_plane_gpu.free()
                 self.index_from_ijk_gpu.free()
                 self.cdf_gpu.free()
