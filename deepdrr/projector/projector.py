@@ -197,8 +197,12 @@ class Projector(object):
         assert len(self.volumes) == len(self.priorities)
 
         self.camera_intrinsics = camera_intrinsics
-        # TODO (mjudish): fix the source_to_detector_distance
-        # self.source_to_detector_distance = source_to_detector_distance
+        if carm is not None:
+            self.source_to_detector_distance = carm.source_to_detector_distance
+        else:
+            # TODO (mjudish): figure out if there is another way to get the source_to_detector_distance
+            log.warning("No way to specify source-to-detector distance without a MobileCArm parameter")
+            raise ValueError("No source_to_detector_distance")
         self.carm = carm
         self.step = step
         self.mode = mode
@@ -451,8 +455,11 @@ class Projector(object):
                     self.megavol_ijk_from_world @ proj.center_in_world
                 ).astype(np.float32)
 
+                print(f"np.array(self.megavol_ijk_from_world) dims:{np.array(self.megavol_ijk_from_world).shape}\n{np.array(self.megavol_ijk_from_world)}")
+                print(f"world_from_index dims: {world_from_index.shape}\n{world_from_index}")
+
                 detector_plane = scatter.get_detector_plane(
-                    ijk_from_world @ world_from_index,
+                    np.array(self.megavol_ijk_from_world)[0:3,0:3] @ world_from_index,
                     proj.index_from_camera2d,
                     self.source_to_detector_distance,
                     geo.Point3D.from_any(scatter_source_ijk),
@@ -461,6 +468,14 @@ class Projector(object):
                 detector_plane_struct = CudaPlaneSurfaceStruct(
                     detector_plane, int(self.detector_plane_gpu)
                 )
+
+                world_from_ijk_arr = np.array(self.megavol_ijk_from_world.inv)
+                cuda.memcpy_htod(self.world_from_ijk_gpu, world_from_ijk_arr)
+                print(f"world_from_ijk_arr:\n{world_from_ijk_arr}")
+
+                ijk_from_world_arr = np.array(self.megavol_ijk_from_world)
+                cuda.memcpy_htod(self.ijk_from_world_gpu, ijk_from_world_arr)
+                print(f"ijk_from_world_arr:\n{ijk_from_world_arr}")
 
                 # TODO (mjudish): re-vamp the block and grid structure of the scatter call
 
@@ -479,9 +494,9 @@ class Projector(object):
                     scatter_source_ijk[1],  # sy
                     scatter_source_ijk[2],  # sz
                     np.float32(self.source_to_detector_distance),  # sdd
-                    np.int32(self.megavolume.shape[0]),  # volume_shape_x
-                    np.int32(self.megavolume.shape[1]),  # volume_shape_y
-                    np.int32(self.megavolume.shape[2]),  # volume_shape_z
+                    np.int32(self.megavol_shape[0]),  # volume_shape_x
+                    np.int32(self.megavol_shape[1]),  # volume_shape_y
+                    np.int32(self.megavol_shape[2]),  # volume_shape_z
                     np.float32(-0.5),  # gVolumeEdgeMinPointX
                     np.float32(-0.5),  # gVolumeEdgeMinPointY
                     np.float32(-0.5),  # gVolumeEdgeMinPointZ
@@ -497,6 +512,8 @@ class Projector(object):
                     self.compton_structs_gpu,  # compton_arr
                     self.rita_structs_gpu,  # rita_arr
                     self.detector_plane_gpu,  # detector_plane
+                    self.world_from_ijk_gpu, # world_from_ijk
+                    self.ijk_from_world_gpu, # ijk_from_world
                     np.int32(self.spectrum.shape[0]),  # n_bins
                     self.energies_gpu,  # spectrum_energies
                     self.cdf_gpu,  # spectrum_cdf
@@ -507,7 +524,7 @@ class Projector(object):
                     self.num_unscattered_hits_gpu,  # num_unscattered_hits
                 ]
 
-                seed_input_index = 30  # so we can change the seed_input for each simulation block--TODO
+                seed_input_index = 32  # so we can change the seed_input for each simulation block--TODO
                 assert 12345 == scatter_args[seed_input_index]
 
                 # Calculate required blocks
@@ -1105,6 +1122,7 @@ class Projector(object):
 
             else:
                 self.megavol_ijk_from_world = self.volumes[0].ijk_from_world
+                print(f"self.volumes[0].ijk_from_world dim:{self.volumes[0].ijk_from_world.dim}\n{self.volumes[0].ijk_from_world}")
                 self.megavol_spacing = self.volumes[0].spacing
 
                 mega_x_len = self.volumes[0].shape[0]
@@ -1217,6 +1235,9 @@ class Projector(object):
 
             # Detector plane
             self.detector_plane_gpu = cuda.mem_alloc(CudaPlaneSurfaceStruct.MEMSIZE)
+
+            # world_from_ijk
+            self.world_from_ijk_gpu = cuda.mem_alloc(3 * 4 * NUMBYTES_FLOAT32)
 
             # index_from_ijk
             # TODO: get the factor of "2 x 3" from a more abstract source

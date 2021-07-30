@@ -5,8 +5,6 @@
 #include "scatter_header.cu"
 
 extern "C" {
-    // TODO: since I'm dealing with world space, I need to make sure that the distances are either all in centimeters or all in millimeters
-
     __global__ void simulate_scatter(
         int detector_width, // size of detector in pixels 
         int detector_height,
@@ -28,12 +26,14 @@ extern "C" {
         float gVoxelElementSizeX, // voxel size in world coordinates
         float gVoxelElementSizeY,
         float gVoxelElementSizeZ,
-        float *index_from_ijk, // (2, 3) array giving the IJK-homogeneous-coord.s-to-pixel-coord.s transformation
+        float *index_from_ijk, // (2, 3) array giving the inverse of the ray transform
         mat_mfp_data_t *mfp_data_arr,
         wc_mfp_data_t *woodcock_mfp,
         compton_data_t *compton_arr,
-        rayleigh_t *rayleigh_arr,
+        rayleigh_data_t *rayleigh_arr,
         plane_surface_t *detector_plane,
+	float *world_from_ijk, // 3x4 transform
+	float *ijk_from_world, // 3x4 transform
         int n_bins, // the number of spectral bins
         float *spectrum_energies, // 1-D array -- size is the n_bins. Units: [keV]
         float *spectrum_cdf, // 1-D array -- cumulative density function over the energies
@@ -62,10 +62,10 @@ extern "C" {
         gVolumeEdgeMaxPoint.y = gVolumeEdgeMaxPointY;
         gVolumeEdgeMaxPoint.z = gVolumeEdgeMaxPointZ;
 
-        float3_t gVoxelElementSize;
+        /*float3_t gVoxelElementSize; // TODO: remove for disuse
         gVoxelElementSize.x = gVoxelElementSizeX;
         gVoxelElementSize.y = gVoxelElementSizeY;
-        gVoxelElementSize.z = gVoxelElementSizeZ;
+        gVoxelElementSize.z = gVoxelElementSizeZ; */
 
         if (0 == thread_id) {
             printf("volume_shape: {%d, %d, %d}\n", volume_shape.x, volume_shape.y, volume_shape.z);
@@ -116,7 +116,7 @@ extern "C" {
                 printf("RAYLEIGH DATA #%d: n_gridpts=%d. memloc: %llu\n", i, rayleigh_arr[i].n_gridpts, &rayleigh_arr[i]);
                 printf("&rayleigh_arr[i].x[0]: %llu, &(...).y[0]: %llu\n", &rayleigh_arr[i].x[0], &rayleigh_arr[i].y[0]);
                 printf("&rayleigh_arr[i].a[0]: %llu, &(...).b[0]: %llu\n", &rayleigh_arr[i].a[0], &rayleigh_arr[i].b[0]);
-                printf("&rayleigh_arr[i].pmax[0]: %llu, &(...).pmax[MAX_NSHELLS-1]: %llu\n", &rayleigh_arr[i].pmax[0], &rayleigh_arr[i].pmax[MAX_NSHELLS - 1]);
+                printf("&rayleigh_arr[i].pmax[0]: %llu, &(...).pmax[MAX_MFP_BINS-1]: %llu\n", &rayleigh_arr[i].pmax[0], &rayleigh_arr[i].pmax[MAX_MFP_BINS - 1]);
             }
 
             /*for (int i = 0; i < NUM_MATERIALS; i++) {
@@ -126,6 +126,7 @@ extern "C" {
                 }
             }*/
         }
+	return; // TODO: remove this when done with reading kernel structure data
 
         int histories_printing = 0; // TODO: this is ugly
 
@@ -144,7 +145,6 @@ extern "C" {
             int is_hit;
             move_photon_to_volume(&pos, &dir, &is_hit, &gVolumeEdgeMinPoint, &gVolumeEdgeMaxPoint);
             if (is_hit) {
-                normalize_dir_to_world(&dir, &gVoxelElementSize);
                 //printf("hit volume\n"); // many of these get printed out
                 float energy = 1000.f * sample_initial_energy(n_bins, spectrum_energies, spectrum_cdf, &seed); // [eV]
                 // is_hit gets repurposed since we don't need it anymore for 'did the photon hit the volume'
@@ -155,7 +155,8 @@ extern "C" {
                     mfp_data_arr, woodcock_mfp, compton_arr, rayleigh_arr,
                     &volume_shape, 
                     &gVolumeEdgeMinPoint, &gVolumeEdgeMaxPoint,
-                    detector_plane, &seed
+                    detector_plane, world_from_ijk, ijk_from_world,
+		    &seed
                 );
 
                 if (is_hit) {
@@ -251,11 +252,11 @@ extern "C" {
         int3_t *volume_shape, // number of voxels in each direction IJK
         float3_t *gVolumeEdgeMinPoint, // IJK coordinate of minimum bounds of volume
         float3_t *gVolumeEdgeMaxPoint, // IJK coordinate of maximum bounds of volume
-        float3_t *gVoxelElementSize, // world coordinate lengths of each dimension of a voxel
         plane_surface_t *detector_plane, 
+	float *world_from_ijk, // 3x4 transform
+	float *ijk_from_world, // 3x4 transform
         rng_seed_t *seed
     ) {
-        // TODO TODO TODO: incorporate e_index
         // NOTE on e_index: it indicates the index of the lower bound of the energy interval the photon is in.
         int e_index; // Update e_index whenever energy is updated
         int vox; // IJK voxel coord.s of photon, flattened for 1-D array labeled_segmentation
@@ -263,7 +264,7 @@ extern "C" {
         char curr_mat_id, old_mat_id = -1;
 
         // Determine initial value of e_index
-        e_index = find_energy_index(*energy, mfp_data_arr[0].energies, 0, MAX_MFP_BINS); 
+        e_index = find_energy_index(*energy, mfp_data_arr[0].energy, 0, MAX_MFP_BINS); 
 
         //printf("dir on entry: {%f, %f, %f}\n", dir->x, dir->y, dir->z);
         while (1) {
@@ -342,9 +343,9 @@ extern "C" {
             float prob_Co = mfp_Tot / mfp_Co;
             if (rnd < prob_Co) {
                 cos_theta = sample_Compton(energy, &compton_arr[curr_mat_id], seed);
-                e_index = find_energy_index(*energy, &mfp_data_arr[0].energies, 0, e_index + 1);
+                e_index = find_energy_index(*energy, mfp_data_arr[0].energy, 0, e_index + 1);
             } else if (rnd < (prob_Co + (mfp_Tot / mfp_Ra))) {
-                cos_theta = sample_Rayleigh(*energy, e_index, &rita_arr[curr_mat_id], seed);
+                cos_theta = sample_Rayleigh(*energy, e_index, &rayleigh_arr[curr_mat_id], seed);
             } else {
                 *hits_detector = 0;
                 return;
@@ -768,17 +769,18 @@ extern "C" {
             i = (lo_idx + hi_idx) / 2;
 
             // Check if 'i' is the lower bound of the correct interval
-            if (nrg < data->energy[i]) {
+            if (nrg < energy_arr[i]) {
                 // Need to check lower intervals
                 hi_idx = i;
-            } else if (nrg < data->energy[i+1]) {
+            } else if (nrg < energy_arr[i+1]) {
                 // Found the correct interval
-                return lo_idx;
+                break;
             } else {
                 // Need to check higher intervals
                 lo_idx = i + 1;
             }
-        } 
+        }
+	return i;
     }
 
     __device__ void get_mat_mfp_data(
@@ -902,7 +904,7 @@ extern "C" {
         //double kappa = ((double)energy) * (double)INV_ELECTRON_REST_ENERGY;
         //x_max2 = 424.66493476 * 4.0 * kappa * kappa;
         x_max2 = (energy * energy) * 6.50528656295084103e-9; // the constant is (2.0 * 20.6074 / 510998.918) ^ 2
-        x_max2 = MIN(x_max2, (double)rayleigh_data->x[rayleigh_data->n_gridpts - 1]);
+        x_max2 = MIN_VAL(x_max2, (double)rayleigh_data->x[rayleigh_data->n_gridpts - 1]);
 
         double cos_theta;
         if (x_max2 < 0.0001) {
@@ -916,7 +918,7 @@ extern "C" {
         while (1) { // Loop will iterate every time the sampled value is rejected or above maximum
             x2 = sample_rita(rayleigh_data, pmax_current, seed);
 
-            if (x2 < x_max2)
+            if (x2 < x_max2) {
                 // Set cos_theta
                 cos_theta = 1.0 - (2.0 * x2 / x_max2);
 

@@ -10,43 +10,43 @@ typedef int3 int3_t;
 typedef float2 float2_t;
 typedef float3 float3_t;
 
+/*** DEFINES ***/
+#define ELECTRON_REST_ENERGY 510998.918f // [eV]
+#define INV_ELECTRON_REST_ENERGY 1.956951306108245e-6f // [eV]^{-1}
+
+/* Material IDs for the nominal segmentation */
+#define NOM_SEG_AIR_ID ((char) 0)
+#define NOM_SEG_SOFT_ID ((char) 1)
+#define NOM_SEG_BONE_ID ((char) 2)
+
+/* Nominal density values, [g/cm^3] */
+#define NOM_DENSITY_AIR 0.0f
+#define NOM_DENSITY_SOFT 1.0f
+#define NOM_DENSITY_BONE 1.92f
+
+/* Data meta-constants */
+#define MAX_NSHELLS 30
+#define MAX_MFP_BINS 25005
+#define MAX_RITA_N_PTS 128
+
+/* Numerically necessary evils */
+#define VOXEL_EPS      0.000015f // epsilon (small distance) that we use to ensure that 
+#define NEG_VOXEL_EPS -0.000015f // the particle fully inside a voxel. Value from MC-GPU
+
+/* Mathematical constants -- credit to Wolfram Alpha */
+#define PI_FLOAT  3.14159265358979323846f
+#define PI_DOUBLE 3.14159265358979323846
+#define TWO_PI_FLOAT  6.28318530717958647693f
+#define TWO_PI_DOUBLE 6.28318530717958647693
+
+#define INFTY 500000.0f // inspired by MC-GPU :)
+#define NEG_INFTY -500000.0f
+
+/* Useful macros */
+#define MAX_VAL(a, b) (((a) > (b)) ? (a) : (b))
+#define MIN_VAL(a, b) (((a) < (b)) ? (a) : (b))
+
 extern "C" {
-    /*** DEFINES ***/
-    #define ELECTRON_REST_ENERGY 510998.918f // [eV]
-    #define INV_ELECTRON_REST_ENERGY 1.956951306108245e-6f // [eV]^{-1}
-
-    /* Material IDs for the nominal segmentation */
-    #define NOM_SEG_AIR_ID ((char) 0)
-    #define NOM_SEG_SOFT_ID ((char) 1)
-    #define NOM_SEG_BONE_ID ((char) 2)
-
-    /* Nominal density values, [g/cm^3] */
-    #define NOM_DENSITY_AIR 0.0f
-    #define NOM_DENSITY_SOFT 1.0f
-    #define NOM_DENSITY_BONE 1.92f
-
-    /* Data meta-constants */
-    #define MAX_NSHELLS 30
-    #define MAX_MFP_BINS 25005
-    #define MAX_RITA_N_PTS 128
-
-    /* Numerically necessary evils */
-    #define VOXEL_EPS      0.000015f // epsilon (small distance) that we use to ensure that 
-    #define NEG_VOXEL_EPS -0.000015f // the particle fully inside a voxel. Value from MC-GPU
-
-    /* Mathematical constants -- credit to Wolfram Alpha */
-    #define PI_FLOAT  3.14159265358979323846f
-    #define PI_DOUBLE 3.14159265358979323846
-    #define TWO_PI_FLOAT  6.28318530717958647693f
-    #define TWO_PI_DOUBLE 6.28318530717958647693
-
-    #define INFTY 500000.0f // inspired by MC-GPU :)
-    #define NEG_INFTY -500000.0f
-
-    /* Useful macros */
-    #define MAX_VAL(a, b) (((a) > (b)) ? (a) : (b))
-    #define MIN_VAL(a, b) (((a) < (b)) ? (a) : (b))
-
     /*** STRUCT DEFINITIONS ***/
     typedef struct plane_surface {
         // plane vector (nx, ny, nz, d), where \vec{n} is the normal vector and d is the distance to the origin
@@ -74,7 +74,7 @@ extern "C" {
         double b[MAX_RITA_N_PTS];
         int n_gridpts;
         // Form factor data 
-        float pmax[MAX_NSHELLS];
+        float pmax[MAX_MFP_BINS];
     } rayleigh_data_t;
     
     typedef struct compton_data {
@@ -118,15 +118,17 @@ extern "C" {
         float gVolumeEdgeMaxPointX,
         float gVolumeEdgeMaxPointY,
         float gVolumeEdgeMaxPointZ,
-        float gVoxelElementSizeX, // voxel size in IJK
+        float gVoxelElementSizeX, // voxel size in world
         float gVoxelElementSizeY,
         float gVoxelElementSizeZ,
         float *index_from_ijk, // (2, 3) array giving the IJK-homogeneous-coord.s-to-pixel-coord.s transformation
         mat_mfp_data_t *mfp_data_arr,
         wc_mfp_data_t *woodcock_mfp,
         compton_data_t *compton_arr,
-        rayleigh_t *rayleigh_arr,
+        rayleigh_data_t *rayleigh_arr,
         plane_surface_t *detector_plane,
+	float *world_from_ijk, // 3x4 transform
+	float *ijk_from_world, // 3x4 transform
         int n_bins, // the number of spectral bins
         float *spectrum_energies, // 1-D array -- size is the n_bins. Units: [keV]
         float *spectrum_cdf, // 1-D array -- cumulative density function over the energies
@@ -144,16 +146,17 @@ extern "C" {
         int *hits_detector, // Boolean output.  Does the photon actually reach the detector plane?
         int *num_scatter_events, // should be passed a pointer to an int initialized to zero.  Returns the number of scatter events experienced by the photon
         float E_abs, // the energy level below which the photon is assumed to be absorbed. Units: [eV]
-        char *labeled_segmentation, // [0..2]-labeled segmentation obtained by thresholding: [-infty, -500, 300, infty]
-        mat_mfp_data_t *mfp_data_arr, // 3-element array of pointers to mat_mfp_data_t structs. Idx NOM_SEG_AIR_ID associated with air, etc
+        char *labeled_segmentation, // [0..NUM_MATERIALS-1]-labeled segmentation
+        mat_mfp_data_t *mfp_data_arr, // NUM_MATERIALS-element array of pointers to mat_mfp_data_t structs. Material associations based on labeled_segmentation
         wc_mfp_data_t *wc_data,
         compton_data_t *compton_arr, // NUM_MATERIALS-element array of pointers to compton_data_t.  Material associations as with mfp_data_arr
         rayleigh_data_t *rayleigh_arr, // NUM_MATERIALS-element array of pointers to rayleigh_t.  Material associations as with mfp_data_arr
         int3_t *volume_shape, // number of voxels in each direction IJK
         float3_t *gVolumeEdgeMinPoint, // IJK coordinate of minimum bounds of volume
         float3_t *gVolumeEdgeMaxPoint, // IJK coordinate of maximum bounds of volume
-        float3_t *gVoxelElementSize, // world coordinate lengths of each dimension of a voxel
         plane_surface_t *detector_plane, 
+	float *world_from_ijk, // 3x4 transform
+	float *ijk_from_world, // 3x4 transform
         rng_seed_t *seed
     );
 
