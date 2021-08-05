@@ -26,7 +26,7 @@ extern "C" {
         float gVoxelElementSizeX, // voxel size in world coordinates
         float gVoxelElementSizeY,
         float gVoxelElementSizeZ,
-        float *index_from_ijk, // (2, 3) array giving the inverse of the ray transform
+        float *index_from_ijk, // (2, 4) array giving the inverse of the ray transform
         mat_mfp_data_t *mfp_data_arr,
         wc_mfp_data_t *woodcock_mfp,
         compton_data_t *compton_arr,
@@ -68,15 +68,15 @@ extern "C" {
         gVoxelElementSize.z = gVoxelElementSizeZ; */
 
         if (0 == thread_id) {
-            printf("volume_shape: {%d, %d, %d}\n", volume_shape.x, volume_shape.y, volume_shape.z);
+            /*printf("volume_shape: {%d, %d, %d}\n", volume_shape.x, volume_shape.y, volume_shape.z);
             printf("gVolumeEdgeMinPoint: {%f, %f, %f}\n", gVolumeEdgeMinPoint.x, gVolumeEdgeMinPoint.y, gVolumeEdgeMinPoint.z);
             printf("gVolumeEdgeMaxPoint: {%f, %f, %f}\n", gVolumeEdgeMaxPoint.x, gVolumeEdgeMaxPoint.y, gVolumeEdgeMaxPoint.z);
             printf("source: {%f, %f, %f}\n", sx, sy, sz);
             printf(
-                "index_from_ijk:\n\t[%f, %f, %f]\n\t[%f, %f, %f]\n", 
-                index_from_ijk[0], index_from_ijk[1], index_from_ijk[2], 
-                index_from_ijk[3], index_from_ijk[4], index_from_ijk[5]
-            );
+                "index_from_ijk:\n\t[%f, %f, %f, %f]\n\t[%f, %f, %f, %f]\n", 
+                index_from_ijk[0], index_from_ijk[1], index_from_ijk[2], index_from_ijk[3],
+                index_from_ijk[4], index_from_ijk[5], index_from_ijk[6], index_from_ijk[7]
+            );*/
             /*printf(
                 "detector_plane:\n"
                 "\t.n={%f, %f, %f}, .d=%f\n"
@@ -104,20 +104,20 @@ extern "C" {
                 );
             }*/
 
-            printf("STRUCTURE SIZES:\n");
+            /*printf("STRUCTURE SIZES:\n");
             printf("\tplane_surface_t: %llu\n", sizeof(plane_surface_t));
             printf("\trng_seed_t: %llu\n", sizeof(rng_seed_t));
             printf("\trayleigh_data_t: %llu\n", sizeof(rayleigh_data_t));
             printf("\tmat_mfp_data_t: %llu\n", sizeof(mat_mfp_data_t));
             printf("\twc_mfp_data_t: %llu\n", sizeof(wc_mfp_data_t));
-            printf("\tcompton_data_t: %llu\n", sizeof(compton_data_t));
+            printf("\tcompton_data_t: %llu\n", sizeof(compton_data_t));*/
 
-            for (int i = 0; i < NUM_MATERIALS; i++) {
+            /*for (int i = 0; i < NUM_MATERIALS; i++) {
                 printf("RAYLEIGH DATA #%d: n_gridpts=%d. memloc: %llu\n", i, rayleigh_arr[i].n_gridpts, &rayleigh_arr[i]);
                 printf("&rayleigh_arr[i].x[0]: %llu, &(...).y[0]: %llu\n", &rayleigh_arr[i].x[0], &rayleigh_arr[i].y[0]);
                 printf("&rayleigh_arr[i].a[0]: %llu, &(...).b[0]: %llu\n", &rayleigh_arr[i].a[0], &rayleigh_arr[i].b[0]);
                 printf("&rayleigh_arr[i].pmax[0]: %llu, &(...).pmax[MAX_MFP_BINS-1]: %llu\n", &rayleigh_arr[i].pmax[0], &rayleigh_arr[i].pmax[MAX_MFP_BINS - 1]);
-            }
+            }*/
 
             /*for (int i = 0; i < NUM_MATERIALS; i++) {
                 printf("MATERIAL MFP #%d: n_bins=%d\n", i, mfp_data_arr[i].n_bins);
@@ -126,7 +126,7 @@ extern "C" {
                 }
             }*/
         }
-	return; // TODO: remove this when done with reading kernel structure data
+	//return; // TODO: remove this when done with reading kernel structure data
 
         int histories_printing = 0; // TODO: this is ugly
 
@@ -196,9 +196,9 @@ extern "C" {
                     }
                     /**/
 
-                    // Use the inverse ray transform.
-                    int pixel_x = (int)((index_from_ijk[0] * pos.x) + (index_from_ijk[1] * pos.y) + (index_from_ijk[2] * pos.z));
-                    int pixel_y = (int)((index_from_ijk[4] * pos.x) + (index_from_ijk[5] * pos.y) + (index_from_ijk[6] * pos.z));
+                    // Use the inverse ray transform. Note that 'pos' is explicitly a homogeneous vector
+                    int pixel_x = (int)((index_from_ijk[0] * pos.x) + (index_from_ijk[1] * pos.y) + (index_from_ijk[2] * pos.z) + (index_from_ijk[3] * 0.0f));
+                    int pixel_y = (int)((index_from_ijk[4] * pos.x) + (index_from_ijk[5] * pos.y) + (index_from_ijk[6] * pos.z) + (index_from_ijk[7] * 0.0f));
                     //////////printf("pixel: [%d,%d]. num_scatter_events: %d\n", pixel_x, pixel_y, num_scatter_events);
                     if ((pixel_x >= 0) && (pixel_x < detector_width) && (pixel_y >= 0) && (pixel_y < detector_height)) {
                         int pixel_index = (pixel_y * detector_width) + pixel_x;
@@ -223,8 +223,9 @@ extern "C" {
                     pos.y += dist_to_detector * dir.y;
                     pos.z += dist_to_detector * dir.z;
 
-                    int pixel_x = (int)((index_from_ijk[0] * pos.x) + (index_from_ijk[1] * pos.y) + (index_from_ijk[2] * pos.z));
-                    int pixel_y = (int)((index_from_ijk[4] * pos.x) + (index_from_ijk[5] * pos.y) + (index_from_ijk[6] * pos.z));
+                    // Use the inverse ray transform. Note that 'pos' is explicitly a homogeneous vector
+                    int pixel_x = (int)((index_from_ijk[0] * pos.x) + (index_from_ijk[1] * pos.y) + (index_from_ijk[2] * pos.z) + (index_from_ijk[3] * 0.0f));
+                    int pixel_y = (int)((index_from_ijk[4] * pos.x) + (index_from_ijk[5] * pos.y) + (index_from_ijk[6] * pos.z) + (index_from_ijk[7] * 0.0f));
                     //printf("didn't hit volume, but hit detector. pixel: [%d, %d]\n", pixel_x, pixel_y);
                     if ((pixel_x >= 0) && (pixel_x < detector_width) && (pixel_y >= 0) && (pixel_y < detector_height)) {
                         atomicAdd(&num_unscattered_hits[(pixel_y * detector_width) + pixel_x], 1);
@@ -412,8 +413,8 @@ extern "C" {
         float3_t *dir, // direction: both input and output. IJK space
         double cos_theta, // polar scattering angle
         double phi, // azimuthal scattering angle
-        float *world_from_ijk, // 3x4 transformation matrix TODO: reduce to 3x3
-        float *ijk_from_world // 3x4 transformation matrix TODO: reduce to 3x3
+        float *world_from_ijk, // 3x4 transformation matrix 
+        float *ijk_from_world // 3x4 transformation matrix
     ) {
         // TODO: once scatter is working, this can be sped up by keeping track of both "dir_world" and "dir_ijk" 
         //  in the main track_photon(...) loop, which would eliminate about of the mat mult frame conversion
@@ -591,37 +592,6 @@ extern "C" {
         vec->x = (transform[0] * x) + (transform[1] * y) + (transform[2] * z) + (transform[3] * 0.0f);
         vec->y = (transform[4] * x) + (transform[5] * y) + (transform[6] * z) + (transform[7] * 0.0f);
         vec->z = (transform[8] * x) + (transform[9] * y) + (transform[10] * z) + (transform[11] * 0.0f);
-    }
-
-    __device__ void normalize_dir_to_world( // TODO: this is likely an unnecessary function
-        float3_t *dir, // input and output
-        float3_t *gVoxelElementSize
-    ) {
-        /**
-         * We desire that the dir vector, which exists in IJK space, not necessarily be a unit vector
-         * in IJK space. What we actually desire is that the world-space vector corresponding to dir
-         * has length 1 [mm]  //// TODO: centimeters instead?
-         *
-         * EXPLANATION OF THE MATH
-         *  The input vector dir is \vec{d} = (x, y, z), with magnitude D = x*x + y*y + z*z
-         *  Voxel size is (p, q, r).
-         *  We desire dir = (i, j, k) = s(x, y ,z), with 's' a scalar, such that
-         *      magnitude{(i * p, j * q, k * r)} = 1 [mm]
-         *
-         *      magnitude{s (x * p, y * q, z * r)} = 1 [mm]
-         *
-         *      s = 1 [mm] / magnitude{(x * p, y * q, z * r)}
-         */
-        float mag2 = 0.0f;
-        mag2 += (dir->x * dir->x) * (gVoxelElementSize->x * gVoxelElementSize->x);
-        mag2 += (dir->y * dir->y) * (gVoxelElementSize->y * gVoxelElementSize->y);
-        mag2 += (dir->z * dir->z) * (gVoxelElementSize->z * gVoxelElementSize->z);
-
-        float s = 1.0f / sqrtf(mag2);
-        
-        dir->x *= s;
-        dir->y *= s;
-        dir->z *= s;
     }
 
     __device__ float sample_initial_energy(
@@ -1158,7 +1128,7 @@ extern "C" {
     }
 
     /* Maximum number of random values sampled per photon */
-    #define LEAP_DISTANCE 512
+    #define LEAP_DISTANCE 256
     /* RANECU values */
     #define  a1_RANECU       40014
     #define  m1_RANECU  2147483563

@@ -1,8 +1,10 @@
-import deepdrr
-from deepdrr import geo
-from deepdrr.utils import test_utils
-import numpy as np
 import logging
+import deepdrr
+import numpy as np
+from deepdrr import geo, vis
+from deepdrr.utils import image_utils, test_utils
+from PIL import Image
+
 
 log = logging.getLogger(__name__)
 
@@ -17,17 +19,17 @@ def test_scatter_single_volume_aligned():
         carm=carm,
         step=0.1,
         mode="linear",
-        max_block_index=200,
+        max_block_index=1024,
         spectrum="90KV_AL40",
         photon_count=100000,
-        scatter_num=10e8,
+        scatter_num=10e7,
         threads=8,
         neglog=True,
     ) as projector:
         image = projector.project()
 
     image = (image * 255).astype(np.uint8)
-    Image.fromarray(image).save("output/test_multivolume.png")
+    Image.fromarray(image).save("output/test_scatter.png")
     
     output_dir = test_utils.get_output_dir()
 

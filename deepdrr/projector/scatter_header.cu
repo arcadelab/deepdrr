@@ -171,8 +171,8 @@ extern "C" {
         float3_t *dir, // direction: both input and output
         double cos_theta, // polar scattering angle
         double phi, // azimuthal scattering angle
-        float *world_from_ijk, // 3x4 transformation matrix TODO: reduce to 3x3
-        float *ijk_from_world // 3x4 transformation matrix TODO: reduce to 3x3
+        float *world_from_ijk, // 3x4 transformation matrix
+        float *ijk_from_world // 3x4 transformation matrix
     );
 
     __device__ void move_photon_to_volume(
@@ -192,13 +192,6 @@ extern "C" {
         float3_t *vec, // [in/out]: the vector to be transformed
         float *transform
     );
-
-    /*
-    __device__ void normalize_dir_to_world(
-        float3_t *dir, // input and output
-        float3_t *gVoxelElementSize
-    );
-    */
 
     __device__ float sample_initial_energy(
         const int n_bins,

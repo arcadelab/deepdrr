@@ -40,6 +40,9 @@ NUMBYTES_INT32 = 4
 NUMBYTES_FLOAT32 = 4
 
 
+log.setLevel(logging.INFO)
+logging.basicConfig(level=logging.INFO)
+
 def _get_spectrum(spectrum: Union[np.ndarray, str]):
     """Get the data corresponding to the given spectrum name.
 
@@ -213,7 +216,7 @@ class Projector(object):
             log.warning("add_scatter is deprecated. Set scatter_num instead.")
             if scatter_num != 0:
                 raise ValueError("Only set scatter_num.")
-            self.scatter_num = 1e6 if add_scatter else 0
+            self.scatter_num = 1e7 if add_scatter else 0
         elif scatter_num < 0:
             raise ValueError(f"scatter_num must be non-negative.")
         else:
@@ -226,7 +229,8 @@ class Projector(object):
         self.collected_energy = collected_energy
         self.neglog = neglog
         self.intensity_upper_bound = intensity_upper_bound
-        # TODO (mjudish): handle intensity_upper_bound when [collected_energy is True] -- I think this should be handled in the SingleProjector.project(...) method right after the solid-angle calculation?
+        # TODO (mjudish): handle intensity_upper_bound when [collected_energy is True]
+        # Might want to disallow using intensity_upper_bound, due to nonsensicalness
 
         assert len(self.volumes) > 0
 
@@ -247,6 +251,20 @@ class Projector(object):
         if self.scatter_num > 0:
             self.scatter_mod = _get_kernel_scatter_module(len(self.all_materials))
             self.simulate_scatter = self.scatter_mod.get_function("simulate_scatter")
+
+            # Calculate CUDA block parameters. Number of blocks is constant, each with
+            # (self.threads * self.threads) threads, so that each block has same number
+            # of threads as the projection kernel.
+            self.num_scatter_blocks = min(32768, self.max_block_index)
+            # TODO (mjudish): discuss with killeen max_block_index and what makes sense
+            # for the scatter block structure
+            
+            total_threads = self.num_scatter_blocks * self.threads * self.threads
+            log.info(f"total threads: {total_threads}")
+            self.histories_per_thread = int(np.ceil(self.scatter_num / total_threads))
+
+            self.scatter_num = self.histories_per_thread * total_threads
+            log.info(f"input scatter_num: {scatter_num}, rounded up to {self.scatter_num}\nhistories per thread: {self.histories_per_thread}")
 
             if len(self.volumes) > 1:
                 self.resample_megavolume = self.mod.get_function("resample_megavolume")
@@ -426,9 +444,6 @@ class Projector(object):
             photon_prob = np.swapaxes(photon_prob, 0, 1).copy()
             log.debug("swapped photon_prob")
 
-            intensities.append(intensity)
-            photon_probs.append(photon_prob)
-
             project_tock = time.perf_counter()
             log.debug(
                 f"projection #{i}: time elpased after copy from kernel: {project_tock - project_tick}"
@@ -440,18 +455,12 @@ class Projector(object):
                     f"Starting scatter simulation, scatter_num={self.scatter_num}. Time: {time.asctime()}"
                 )
 
-                # TODO: add in the last column and just acknowledge in the kernel that I'm multiplying a vector
                 index_from_ijk = (
                     self.megavol_ijk_from_world @ proj.world_from_index
                 ).inv
-                index_from_ijk = np.ascontiguousarray(
-                    np.array(index_from_ijk)[0:2, 0:3]
-                ).astype(np.float32)
+                index_from_ijk = np.array(index_from_ijk).astype(np.float32) # 2x4 matrix
                 cuda.memcpy_htod(self.index_from_ijk_gpu, index_from_ijk)
 
-                # scatter_source_ijk = np.array(
-                #    proj.get_center_in_volume(self.megavolume)
-                # ).astype(np.float32)
                 scatter_source_ijk = np.array(
                     self.megavol_ijk_from_world @ proj.center_in_world
                 ).astype(np.float32)
@@ -485,18 +494,12 @@ class Projector(object):
                 cuda.memcpy_htod(self.ijk_from_world_gpu, ijk_from_world_arr)
                 print(f"ijk_from_world_arr:\n{ijk_from_world_arr}")
 
-                # TODO (mjudish): re-vamp the block and grid structure of the scatter call
-
                 E_abs_keV = 5  # E_abs == 5000 eV
-                histories_per_thread = int(
-                    np.ceil(self.scatter_num / (self.threads * self.threads))
-                )
-                log.debug(f"histories_per_thread: {histories_per_thread}")
 
                 scatter_args = [
                     np.int32(proj.sensor_width),  # detector_width
                     np.int32(proj.sensor_height),  # detector_height
-                    np.int32(histories_per_thread),  # histories_for_thread
+                    np.int32(self.histories_per_thread),  # histories_for_thread
                     self.megavol_labeled_seg_gpu,  # labeled_segmentation
                     scatter_source_ijk[0],  # sx
                     scatter_source_ijk[1],  # sy
@@ -526,34 +529,24 @@ class Projector(object):
                     self.energies_gpu,  # spectrum_energies
                     self.cdf_gpu,  # spectrum_cdf
                     np.float32(E_abs_keV),  # E_abs
-                    np.int32(12345),  # seed_input TODO
+                    np.int32(12345),  # seed_input
                     self.scatter_deposits_gpu,  # deposited_energy
                     self.num_scattered_hits_gpu,  # num_scattered_hits
                     self.num_unscattered_hits_gpu,  # num_unscattered_hits
                 ]
 
-                seed_input_index = 32  # so we can change the seed_input for each simulation block--TODO
-                assert 12345 == scatter_args[seed_input_index]
-
-                # Calculate required blocks
-                histories_per_block = (
-                    self.threads * self.threads
-                ) * histories_per_thread
-                blocks_n = np.int(np.ceil(self.scatter_num / histories_per_block))
                 # same number of threads per block as the ray-casting
                 block = (self.threads * self.threads, 1, 1)
-                log.debug(
-                    f"scatter_num: {self.scatter_num}. histories_per_block: {histories_per_block}. blocks_n: {blocks_n}"
-                )
 
+                log.info("Starting scatter simulation")
                 # Call the kernel
-                if blocks_n <= self.max_block_index:
+                if self.num_scatter_blocks <= self.max_block_index:
                     self.simulate_scatter(
-                        *scatter_args, block=block, grid=(blocks_n, 1)
+                        *scatter_args, block=block, grid=(self.num_scatter_blocks, 1)
                     )
                 else:
-                    for i in range(int(np.ceil(blocks_n / self.max_block_index))):
-                        blocks_left_to_run = blocks_n - (i * self.max_block_index)
+                    for i in range(int(np.ceil(self.num_scatter_blocks / self.max_block_index))):
+                        blocks_left_to_run = self.num_scatter_blocks - (i * self.max_block_index)
                         blocks_for_grid = min(blocks_left_to_run, self.max_block_index)
                         self.simulate_scatter(
                             *scatter_args, block=block, grid=(blocks_for_grid, 1)
@@ -573,6 +566,12 @@ class Projector(object):
                 n_pri = np.empty(self.output_shape, dtype=np.int32)
                 cuda.memcpy_dtoh(n_pri, self.num_unscattered_hits_gpu)
                 n_pri = np.swapaxes(n_pri, 0, 1).copy()
+
+                # TODO TEMP -- save the scatter outputs to .npy files
+                np.save("scatter_intensity", scatter_intensity)
+                np.save("hits_scatter", n_sc)
+                np.save("hits_primary", n_pri)
+                #
 
                 # Adjust scatter_img to reflect the "intensity per photon". We need to account for the
                 # fact that the pixels are not uniform in term of solid angle.
@@ -598,6 +597,7 @@ class Projector(object):
                 hits_pri = np.sum(n_pri)
 
                 log.debug(f"hits_sc: {hits_sc}, hits_pri: {hits_pri}")
+                print(f"hits_sc: {hits_sc}, hits_pri: {hits_pri}")
 
                 f_sc = hits_sc / (hits_pri + hits_sc)
                 f_pri = hits_pri / (hits_pri + hits_sc)
@@ -608,35 +608,41 @@ class Projector(object):
 
                 # total intensity = (f_pri * intensity_pri) * (f_sc * intensity_sc)
                 intensity = (f_pri * intensity) + (f_sc * scatter_intensity)  # / f_pri
+            # end scatter calculation
+
+            # transform to collected energy in keV per cm^2 (or keV per mm^2)
+            if self.collected_energy:
+                assert np.int32(0) != self.solid_angle_gpu
+                solid_angle = np.empty(self.output_shape, dtype=np.float32)
+                cuda.memcpy_dtoh(solid_angle, self.solid_angle_gpu)
+                solid_angle = np.swapaxes(solid_angle, 0, 1).copy()
+
+                # TODO (mjudish): is this calculation valid? SDD is in [mm], what does f{x,y} measure?
+                pixel_size_x = (
+                    self.source_to_detector_distance / proj.index_from_camera2d.fx
+                )
+                pixel_size_y = (
+                    self.source_to_detector_distance / proj.index_from_camera2d.fy
+                )
+
+                # get energy deposited by multiplying [intensity] with [number of photons to hit each pixel]
+                deposited_energy = (
+                    np.multiply(intensity, solid_angle)
+                    * self.photon_count
+                    / np.average(solid_angle)
+                )
+                # convert to keV / mm^2
+                deposited_energy /= pixel_size_x * pixel_size_y
+                intensities.append(deposited_energy)
+            else:
+                intensities.append(intensity)
+            
+            photon_probs.append(photon_prob)
+        # end for-loop over the projections
 
         images = np.stack(intensities)
         photon_prob = np.stack(photon_probs)
         log.info("Completed projection and attenuation")
-
-        # transform to collected energy in keV per cm^2 (or keV per mm^2)
-        if self.collected_energy:
-            # TODO (mjudish): ensure that everything here makes sense, e.g. the variables referenced exist
-            assert np.int32(0) != self.solid_angle_gpu
-            solid_angle = np.empty(self.output_shape, dtype=np.float32)
-            cuda.memcpy_dtoh(solid_angle, self.solid_angle_gpu)
-            solid_angle = np.swapaxes(solid_angle, 0, 1).copy()
-
-            pixel_size_x = (
-                self.source_to_detector_distance / proj.index_from_camera2d.fx
-            )
-            pixel_size_y = (
-                self.source_to_detector_distance / proj.index_from_camera2d.fy
-            )
-
-            # get energy deposited by multiplying [intensity] with [number of photons to hit each pixel]
-            deposited_energy = (
-                np.multiply(intensity, solid_angle)
-                * self.photon_count
-                / np.average(solid_angle)
-            )
-            # convert to keV / mm^2
-            deposited_energy /= pixel_size_x * pixel_size_y
-            return deposited_energy, photon_prob
 
         if self.add_noise:
             log.info("adding Poisson noise")
@@ -691,6 +697,9 @@ class Projector(object):
         if self.initialized:
             raise RuntimeError("Close projector before initializing again.")
 
+        # TODO: in this function, there are several instances of axis swaps. 
+        # We may want to investigate if the axis swaps are necessary.
+
         log.debug(f"beginning call to Projector.initialize")
         init_tick = time.perf_counter()
 
@@ -698,9 +707,7 @@ class Projector(object):
         self.volumes_gpu = []
         self.volumes_texref = []
         for vol_id, volume in enumerate(self.volumes):
-            # TODO: this axis-swap is messy and actually may be messing things up. Maybe use a FrameTransform in the Volume class instead?
             volume = np.array(volume)
-            # TODO: is this axis swap necessary?
             volume = np.moveaxis(volume, [0, 1, 2], [2, 1, 0]).copy()
             vol_gpu = cuda.np_to_array(volume, order="C")
             vol_texref = self.mod.get_texref(f"volume_{vol_id}")
@@ -731,7 +738,6 @@ class Projector(object):
                     seg = _vol.materials[mat]
                 else:
                     seg = np.zeros(_vol.shape).astype(np.float32)
-                # TODO: remove axis swap?
                 seg_for_vol.append(
                     cuda.np_to_array(
                         np.moveaxis(seg, [0, 1, 2], [2, 1, 0]).copy(), order="C"
@@ -1148,28 +1154,32 @@ class Projector(object):
                 )
 
                 # copy over from self.volumes[0] to the gpu
-                labeled_seg = np.zeros(self.volume.shape).astype(np.int8)
+                labeled_seg = np.zeros(self.volumes[0].shape).astype(np.int8)
+                null_seg = np.ones(self.volumes[0].shape).astype(np.int8)
                 for i, mat in enumerate(self.all_materials):
                     labeled_seg = np.add(
                         labeled_seg, i * self.volumes[0].materials[mat]
                     ).astype(np.int8)
+                    null_seg = np.logical_and(
+                        null_seg, 
+                        np.logical_not(self.volumes[0].materials[mat])
+                    ).astype(np.int8)
                 # a labeled_seg value of NUM_MATERIALS indicates a null segmentation
-                # labeled_seg = np.add( TODO: finish this step--may require a restructuring of the labeled_seg calculation
-                #    labeled_seg,
-                #    k
-                # )
-                labeled_seg = np.moveaxis(
-                    labeled_seg, [0, 1, 2], [2, 1, 0]
-                ).copy()  # TODO: is this axis swap necessary?
+                labeled_seg = np.add(
+                    labeled_seg,
+                    len(self.all_materials) * null_seg
+                ).astype(np.int8)
+                # NOTE: axis swap not necessary because using raw array, not texture
                 cuda.memcpy_htod(self.megavol_labeled_seg_gpu, labeled_seg)
 
+                # Copy volume density info to self.megavol_density_gpu
+                # NOTE: axis swap not necessary because using raw array, not texture
+                cuda.memcpy_htod(self.megavol_density_gpu, self.volumes[0].data)
+                
                 init_tock = time.perf_counter()
                 log.debug(
                     f"time elapsed after copying megavolume to GPU: {init_tock - init_tick}"
                 )
-
-                # TODO (mjudish): copy volume density info to self.megavol_density_gpu.
-                # How to deal with axis swaps?
             # end initialization of megavolume
 
             # Material MFP structs
@@ -1245,10 +1255,10 @@ class Projector(object):
             self.world_from_ijk_gpu = cuda.mem_alloc(3 * 4 * NUMBYTES_FLOAT32)
 
             # index_from_ijk
-            # TODO: get the factor of "2 x 3" from a more abstract source
+            # TODO: get the factor of "2 x 4" from a more abstract source
             self.index_from_ijk_gpu = cuda.mem_alloc(
-                2 * 3 * NUMBYTES_FLOAT32
-            )  # (2, 3) array of floats
+                2 * 4 * NUMBYTES_FLOAT32
+            )  # (2, 4) array of floats
 
             # spectrum cdf
             n_bins = self.spectrum.shape[0]
