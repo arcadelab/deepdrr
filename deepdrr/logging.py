@@ -1,7 +1,8 @@
 import logging
 from rich.logging import RichHandler
 
-log = logging.getLogger(__name__)
-ch = RichHandler(level=logging.WARNING)
-log.addHandler(ch)
+def setup_log():
+    log = logging.getLogger(__name__)
+    ch = RichHandler(level=logging.NOTSET)
+    log.addHandler(ch)
 

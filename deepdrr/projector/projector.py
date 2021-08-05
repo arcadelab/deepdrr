@@ -200,7 +200,9 @@ class Projector(object):
         if carm is not None:
             self.source_to_detector_distance = carm.source_to_detector_distance
         else:
-            log.warning("No way to specify source-to-detector distance without a MobileCArm parameter")
+            log.warning(
+                "No way to specify source-to-detector distance without a MobileCArm parameter"
+            )
             raise ValueError("No source_to_detector_distance")
         self.carm = carm
         self.step = step
@@ -378,8 +380,8 @@ class Projector(object):
             ]
 
             # Calculate required blocks
-            blocks_w = np.int(np.ceil(self.output_shape[0] / self.threads))
-            blocks_h = np.int(np.ceil(self.output_shape[1] / self.threads))
+            blocks_w = int(np.ceil(self.output_shape[0] / self.threads))
+            blocks_h = int(np.ceil(self.output_shape[1] / self.threads))
             block = (self.threads, self.threads, 1)
             log.debug(
                 f"Running: {blocks_w}x{blocks_h} blocks with {self.threads}x{self.threads} threads each"
@@ -454,9 +456,15 @@ class Projector(object):
                     self.megavol_ijk_from_world @ proj.center_in_world
                 ).astype(np.float32)
 
-                print(f"np.array(self.megavol_ijk_from_world) dims:{np.array(self.megavol_ijk_from_world).shape}\n{np.array(self.megavol_ijk_from_world)}")
-                print(f"world_from_index dims: {world_from_index.shape}\n{world_from_index}")
-                print(f"ray transform:\n{np.array(self.megavol_ijk_from_world @ proj.world_from_index)}")
+                print(
+                    f"np.array(self.megavol_ijk_from_world) dims:{np.array(self.megavol_ijk_from_world).shape}\n{np.array(self.megavol_ijk_from_world)}"
+                )
+                print(
+                    f"world_from_index dims: {world_from_index.shape}\n{world_from_index}"
+                )
+                print(
+                    f"ray transform:\n{np.array(self.megavol_ijk_from_world @ proj.world_from_index)}"
+                )
 
                 detector_plane = scatter.get_detector_plane(
                     np.array(self.megavol_ijk_from_world @ proj.world_from_index),
@@ -512,8 +520,8 @@ class Projector(object):
                     self.compton_structs_gpu,  # compton_arr
                     self.rayleigh_structs_gpu,  # rayleigh_arr
                     self.detector_plane_gpu,  # detector_plane
-                    self.world_from_ijk_gpu, # world_from_ijk
-                    self.ijk_from_world_gpu, # ijk_from_world
+                    self.world_from_ijk_gpu,  # world_from_ijk
+                    self.ijk_from_world_gpu,  # ijk_from_world
                     np.int32(self.spectrum.shape[0]),  # n_bins
                     self.energies_gpu,  # spectrum_energies
                     self.cdf_gpu,  # spectrum_cdf
@@ -1122,7 +1130,9 @@ class Projector(object):
 
             else:
                 self.megavol_ijk_from_world = self.volumes[0].ijk_from_world
-                print(f"self.volumes[0].ijk_from_world dim:{self.volumes[0].ijk_from_world.dim}\n{self.volumes[0].ijk_from_world}")
+                print(
+                    f"self.volumes[0].ijk_from_world dim:{self.volumes[0].ijk_from_world.dim}\n{self.volumes[0].ijk_from_world}"
+                )
                 self.megavol_spacing = self.volumes[0].spacing
 
                 mega_x_len = self.volumes[0].shape[0]
