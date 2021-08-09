@@ -168,10 +168,10 @@ extern "C" {
 
                     // Calculate the pixel indices for the detector image
 
-                    // Convert the hit-location to a vector along the ray from the source to the hit-location
-                    // such that the vector has unit displacement along the source-to-detector-center line (the
-                    // vector is not necessarily a unit vector).  Vectors of this sort work with the inverse ray 
-                    // transform.
+                    // Convert the hit-location to a vector along the ray from the source 
+		    // to the hit-location such that the vector has unit displacement along 
+		    // the source-to-detector-center line (the vector is not necessarily a 
+		    // unit vector).  Vectors of this sort work with the inverse ray transform.
                     pos.x = (pos.x - sx) / sdd;
                     pos.y = (pos.y - sy) / sdd;
                     pos.z = (pos.z - sz) / sdd;
@@ -222,6 +222,11 @@ extern "C" {
                     pos.x += dist_to_detector * dir.x;
                     pos.y += dist_to_detector * dir.y;
                     pos.z += dist_to_detector * dir.z;
+                    
+		    // Convert to ray
+		    pos.x = (pos.x - sx) / sdd;
+                    pos.y = (pos.y - sy) / sdd;
+                    pos.z = (pos.z - sz) / sdd;
 
                     // Use the inverse ray transform. Note that 'pos' is explicitly a homogeneous vector
                     int pixel_x = (int)((index_from_ijk[0] * pos.x) + (index_from_ijk[1] * pos.y) + (index_from_ijk[2] * pos.z) + (index_from_ijk[3] * 0.0f));

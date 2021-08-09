@@ -450,6 +450,7 @@ class Projector(object):
             )
 
             if self.scatter_num > 0:
+                print("starting scatter")
                 # TODO (mjudish): the resampled density never gets used in the scatter kernel
                 log.info(
                     f"Starting scatter simulation, scatter_num={self.scatter_num}. Time: {time.asctime()}"
@@ -459,6 +460,7 @@ class Projector(object):
                     self.megavol_ijk_from_world @ proj.world_from_index
                 ).inv
                 index_from_ijk = np.array(index_from_ijk).astype(np.float32) # 2x4 matrix
+                print(f"index_from_ijk on GPU:\n{index_from_ijk}")
                 cuda.memcpy_htod(self.index_from_ijk_gpu, index_from_ijk)
 
                 scatter_source_ijk = np.array(
@@ -485,6 +487,21 @@ class Projector(object):
                 detector_plane_struct = CudaPlaneSurfaceStruct(
                     detector_plane, int(self.detector_plane_gpu)
                 )
+
+                # print the detector's corners in IJK
+                _tmp_corners_idx = [
+                    np.array([0, 0, 1]),
+                    np.array([self.output_shape[0], 0, 1]),
+                    np.array([self.output_shape[0], self.output_shape[1], 1]),
+                    np.array([0, self.output_shape[1], 1])
+                ]
+                _tmp_ijk_from_index = np.array(self.megavol_ijk_from_world @ proj.world_from_index)
+                _tmp_corners_ijk = [_tmp_ijk_from_index @ corner for corner in _tmp_corners_idx]
+
+                print(f"Detector corners: (0,0), (W,0), (W,H), (0, H):")
+                for _corner_ijk in _tmp_corners_ijk:
+                    print(f"{_corner_ijk}")
+                # end print corners
 
                 world_from_ijk_arr = np.array(self.megavol_ijk_from_world.inv)
                 cuda.memcpy_htod(self.world_from_ijk_gpu, world_from_ijk_arr)
