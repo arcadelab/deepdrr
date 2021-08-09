@@ -26,7 +26,7 @@ extern "C" {
         float gVoxelElementSizeX, // voxel size in world coordinates
         float gVoxelElementSizeY,
         float gVoxelElementSizeZ,
-        float *index_from_ijk, // (2, 4) array giving the inverse of the ray transform
+        float *index_from_world, // (2, 4) array giving the inverse of the ray transform
         mat_mfp_data_t *mfp_data_arr,
         wc_mfp_data_t *woodcock_mfp,
         compton_data_t *compton_arr,
@@ -73,9 +73,9 @@ extern "C" {
             printf("gVolumeEdgeMaxPoint: {%f, %f, %f}\n", gVolumeEdgeMaxPoint.x, gVolumeEdgeMaxPoint.y, gVolumeEdgeMaxPoint.z);
             printf("source: {%f, %f, %f}\n", sx, sy, sz);
             printf(
-                "index_from_ijk:\n\t[%f, %f, %f, %f]\n\t[%f, %f, %f, %f]\n", 
-                index_from_ijk[0], index_from_ijk[1], index_from_ijk[2], index_from_ijk[3],
-                index_from_ijk[4], index_from_ijk[5], index_from_ijk[6], index_from_ijk[7]
+                "index_from_world:\n\t[%f, %f, %f, %f]\n\t[%f, %f, %f, %f]\n", 
+                index_from_world[0], index_from_world[1], index_from_world[2], index_from_world[3],
+                index_from_world[4], index_from_world[5], index_from_world[6], index_from_world[7]
             );*/
             /*printf(
                 "detector_plane:\n"
@@ -166,6 +166,10 @@ extern "C" {
                     ///////////////printf("hit detector\n");
                     // 'pos' contains the IJK coord.s of collision with the detector.
 
+		    shift_point_frame_3x4_transform(&pos, world_from_ijk);
+		    printf("hit detector plane at world coord.s: (%f, %f, %f)\n", pos.x, pos.y, pos.z);
+		    shift_point_frame_3x4_transform(&pos, ijk_from_world);
+
                     // Calculate the pixel indices for the detector image
 
                     // Convert the hit-location to a vector along the ray from the source 
@@ -175,6 +179,8 @@ extern "C" {
                     pos.x = (pos.x - sx) / sdd;
                     pos.y = (pos.y - sy) / sdd;
                     pos.z = (pos.z - sz) / sdd;
+		    
+		    shift_vector_frame_3x4_transform(&pos, world_from_ijk);
 
                     /* DEBUG STATEMENT *
                     float mag2 = (pos.x * pos.x) + (pos.y * pos.y) + (pos.z * pos.z);
@@ -197,8 +203,8 @@ extern "C" {
                     /**/
 
                     // Use the inverse ray transform. Note that 'pos' is explicitly a homogeneous vector
-                    int pixel_x = (int)((index_from_ijk[0] * pos.x) + (index_from_ijk[1] * pos.y) + (index_from_ijk[2] * pos.z) + (index_from_ijk[3] * 0.0f));
-                    int pixel_y = (int)((index_from_ijk[4] * pos.x) + (index_from_ijk[5] * pos.y) + (index_from_ijk[6] * pos.z) + (index_from_ijk[7] * 0.0f));
+                    int pixel_x = (int)((index_from_world[0] * pos.x) + (index_from_world[1] * pos.y) + (index_from_world[2] * pos.z) + (index_from_world[3] * 0.0f));
+                    int pixel_y = (int)((index_from_world[4] * pos.x) + (index_from_world[5] * pos.y) + (index_from_world[6] * pos.z) + (index_from_world[7] * 0.0f));
                     //////////printf("pixel: [%d,%d]. num_scatter_events: %d\n", pixel_x, pixel_y, num_scatter_events);
                     if ((pixel_x >= 0) && (pixel_x < detector_width) && (pixel_y >= 0) && (pixel_y < detector_height)) {
                         int pixel_index = (pixel_y * detector_width) + pixel_x;
@@ -217,7 +223,14 @@ extern "C" {
             } else {
                 // Check if the photon would travel from the source to hit the detector. 
                 // Then, if it does, add to num_unscattered_hits since it's part of the X-ray primary
+
+		// frame shifts because detector plane is defined in world coord.s
+		shift_point_frame_3x4_transform(&pos, world_from_ijk);
+		shift_vector_frame_3x4_transform(&dir, world_from_ijk);
                 float dist_to_detector = psurface_check_ray_intersection(&pos, &dir, detector_plane);
+		shift_point_frame_3x4_transform(&pos, ijk_from_world);
+		shift_vector_frame_3x4_transform(&dir, ijk_from_world);
+
                 if (dist_to_detector >= 0.0f) {
                     pos.x += dist_to_detector * dir.x;
                     pos.y += dist_to_detector * dir.y;
@@ -227,10 +240,12 @@ extern "C" {
 		    pos.x = (pos.x - sx) / sdd;
                     pos.y = (pos.y - sy) / sdd;
                     pos.z = (pos.z - sz) / sdd;
+		    
+		    shift_vector_frame_3x4_transform(&pos, world_from_ijk);
 
                     // Use the inverse ray transform. Note that 'pos' is explicitly a homogeneous vector
-                    int pixel_x = (int)((index_from_ijk[0] * pos.x) + (index_from_ijk[1] * pos.y) + (index_from_ijk[2] * pos.z) + (index_from_ijk[3] * 0.0f));
-                    int pixel_y = (int)((index_from_ijk[4] * pos.x) + (index_from_ijk[5] * pos.y) + (index_from_ijk[6] * pos.z) + (index_from_ijk[7] * 0.0f));
+                    int pixel_x = (int)((index_from_world[0] * pos.x) + (index_from_world[1] * pos.y) + (index_from_world[2] * pos.z) + (index_from_world[3] * 0.0f));
+                    int pixel_y = (int)((index_from_world[4] * pos.x) + (index_from_world[5] * pos.y) + (index_from_world[6] * pos.z) + (index_from_world[7] * 0.0f));
                     //printf("didn't hit volume, but hit detector. pixel: [%d, %d]\n", pixel_x, pixel_y);
                     if ((pixel_x >= 0) && (pixel_x < detector_width) && (pixel_y >= 0) && (pixel_y < detector_height)) {
                         atomicAdd(&num_unscattered_hits[(pixel_y * detector_width) + pixel_x], 1);
@@ -372,7 +387,12 @@ extern "C" {
         /* Final processing once the photon has left the volume */
 
         // Transport the photon to the detector plane
+	// frame shifts because detector plane is defined in world coord.s
+	shift_point_frame_3x4_transform(pos, world_from_ijk);
+	shift_vector_frame_3x4_transform(dir, world_from_ijk);
         float dist_to_detector = psurface_check_ray_intersection(pos, dir, detector_plane);
+	shift_point_frame_3x4_transform(pos, ijk_from_world);
+	shift_vector_frame_3x4_transform(dir, ijk_from_world);
         if (dist_to_detector < 0.0f) {
             *hits_detector = 0;
         } else {
@@ -586,6 +606,19 @@ extern "C" {
         dir->z = (float)(cos(theta));
     }
 
+    __device__ void shift_point_frame_3x4_transform(
+        float3_t *pt, // [in/out]: the point to be transformed
+        float *transform
+    ) {
+        float x = pt->x;
+        float y = pt->y;
+        float z = pt->z;
+
+        pt->x = (transform[0] * x) + (transform[1] * y) + (transform[2] * z) + (transform[3] * 1.0f);
+        pt->y = (transform[4] * x) + (transform[5] * y) + (transform[6] * z) + (transform[7] * 1.f);
+        pt->z = (transform[8] * x) + (transform[9] * y) + (transform[10] * z) + (transform[11] * 1.0f);
+    }
+
     __device__ void shift_vector_frame_3x4_transform(
         float3_t *vec, // [in/out]: the vector to be transformed
         float *transform
@@ -700,9 +733,9 @@ extern "C" {
     }
 
     __device__ float psurface_check_ray_intersection(
-        float3_t *pos, // input: current position of the photon
-        float3_t *dir, // input: direction of photon travel
-        const plane_surface_t *psur
+        float3_t *pos, // input: current position of the photon in IJK
+        float3_t *dir, // input: direction of photon travel in IJK
+        const plane_surface_t *psur // detector plane struct, in world coord.s
     ) {
         /*
          * If there will be an intersection, returns the distance to the intersection.
@@ -713,7 +746,7 @@ extern "C" {
          * (\vec{pos} + \alpha * \vec{dir}) \cdot \vec{m} = 0, 
          * then (\vec{pos} + \alpha * \vec{dir}) is the point of intersection.
          */
-        float r_dot_m = (pos->x * psur->n.x) + (pos->y * psur->n.y) + (pos->z * psur->n.z) + psur->d;
+	float r_dot_m = (pos->x * psur->n.x) + (pos->y * psur->n.y) + (pos->z * psur->n.z) + psur->d;
         if (0.0f == r_dot_m) {
             // Photon is already on the plane
             return 0.0f;

@@ -24,7 +24,7 @@ def test_scatter_geometry():
         max_block_index=200,
         spectrum="90KV_AL40",
         photon_count=100000,
-        scatter_num=10e3,
+        scatter_num=10e7,
         threads=8,
         neglog=True,
     ) as projector:

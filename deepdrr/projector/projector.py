@@ -456,12 +456,14 @@ class Projector(object):
                     f"Starting scatter simulation, scatter_num={self.scatter_num}. Time: {time.asctime()}"
                 )
 
-                index_from_ijk = (
-                    self.megavol_ijk_from_world @ proj.world_from_index
-                ).inv
-                index_from_ijk = np.array(index_from_ijk).astype(np.float32) # 2x4 matrix
-                print(f"index_from_ijk on GPU:\n{index_from_ijk}")
-                cuda.memcpy_htod(self.index_from_ijk_gpu, index_from_ijk)
+                #index_from_ijk = (
+                #    self.megavol_ijk_from_world @ proj.world_from_index
+                #).inv
+                #index_from_ijk = np.array(index_from_ijk).astype(np.float32) # 2x4 matrix
+                #print(f"index_from_ijk on GPU:\n{index_from_ijk}")
+                #cuda.memcpy_htod(self.index_from_ijk_gpu, index_from_ijk)
+                print(f"index_from_world on GPU:\n{np.array(proj.index_from_world)}")
+                cuda.memcpy_htod(self.index_from_world_gpu, np.array(proj.index_from_world))
 
                 scatter_source_ijk = np.array(
                     self.megavol_ijk_from_world @ proj.center_in_world
@@ -471,17 +473,17 @@ class Projector(object):
                     f"np.array(self.megavol_ijk_from_world) dims:{np.array(self.megavol_ijk_from_world).shape}\n{np.array(self.megavol_ijk_from_world)}"
                 )
                 print(
-                    f"world_from_index dims: {world_from_index.shape}\n{world_from_index}"
-                )
-                print(
-                    f"ray transform:\n{np.array(self.megavol_ijk_from_world @ proj.world_from_index)}"
+                    f"world_from_index:\n{world_from_index}"
                 )
 
+                scatter_source_world = np.array(proj.center_in_world).astype(np.float32)
+
                 detector_plane = scatter.get_detector_plane(
-                    np.array(self.megavol_ijk_from_world @ proj.world_from_index),
+                    #np.array(self.megavol_ijk_from_world @ proj.world_from_index),
+                    np.array(proj.world_from_index),
                     proj.index_from_camera2d,
                     self.source_to_detector_distance,
-                    geo.Point3D.from_any(scatter_source_ijk),
+                    geo.Point3D.from_any(scatter_source_world),
                     self.output_shape,
                 )
                 detector_plane_struct = CudaPlaneSurfaceStruct(
@@ -495,21 +497,31 @@ class Projector(object):
                     np.array([self.output_shape[0], self.output_shape[1], 1]),
                     np.array([0, self.output_shape[1], 1])
                 ]
-                _tmp_ijk_from_index = np.array(self.megavol_ijk_from_world @ proj.world_from_index)
-                _tmp_corners_ijk = [_tmp_ijk_from_index @ corner for corner in _tmp_corners_idx]
+                _tmp_corner_rays_world = [proj.world_from_index @ corner for corner in _tmp_corners_idx]
 
-                print(f"Detector corners: (0,0), (W,0), (W,H), (0, H):")
-                for _corner_ijk in _tmp_corners_ijk:
-                    print(f"{_corner_ijk}")
+                print(f"Detector corner rays in world: (0,0), (W,0), (W,H), (0, H):")
+                for _corner_ray in _tmp_corner_rays_world:
+                    print(f"\t{_corner_ray}")
                 # end print corners
+
+                print(f"source in world:\n\t{proj.center_in_world}")
+                detector_ctr_in_world = detector_plane.surface_origin + (detector_plane.basis_1 * self.output_shape[0] * 0.5) + (detector_plane.basis_2 * self.output_shape[1] * 0.5)
+                print(f"detector center in world:\n\t{detector_ctr_in_world}")
+                print(f"Detector corners in world, FROM RAYS:")
+                for _corner_ray in _tmp_corner_rays_world:
+                    print(f"\t{proj.center_in_world + self.source_to_detector_distance * _corner_ray}")
+                print(f"Detector corners in world, FROM PLANE_SURFACE:")
+                for indices in _tmp_corners_idx:
+                    corner = detector_plane.surface_origin + (detector_plane.basis_1 * indices[0]) + (detector_plane.basis_2 * indices[1])
+                    print(f"\t{corner}")
 
                 world_from_ijk_arr = np.array(self.megavol_ijk_from_world.inv)
                 cuda.memcpy_htod(self.world_from_ijk_gpu, world_from_ijk_arr)
-                print(f"world_from_ijk_arr:\n{world_from_ijk_arr}")
+                #print(f"world_from_ijk_arr:\n{world_from_ijk_arr}")
 
                 ijk_from_world_arr = np.array(self.megavol_ijk_from_world)
                 cuda.memcpy_htod(self.ijk_from_world_gpu, ijk_from_world_arr)
-                print(f"ijk_from_world_arr:\n{ijk_from_world_arr}")
+                #print(f"ijk_from_world_arr:\n{ijk_from_world_arr}")
 
                 E_abs_keV = 5  # E_abs == 5000 eV
 
@@ -534,7 +546,7 @@ class Projector(object):
                     np.float32(self.megavol_spacing[0]),  # gVoxelElementSizeX
                     np.float32(self.megavol_spacing[1]),  # gVoxelElementSizeY
                     np.float32(self.megavol_spacing[2]),  # gVoxelElementSizeZ
-                    self.index_from_ijk_gpu,  # index_from_ijk
+                    self.index_from_world_gpu,  # index_from_world
                     self.mat_mfp_structs_gpu,  # mat_mfp_arr
                     self.woodcock_struct_gpu,  # woodcock_mfp
                     self.compton_structs_gpu,  # compton_arr
@@ -558,10 +570,12 @@ class Projector(object):
                 log.info("Starting scatter simulation")
                 # Call the kernel
                 if self.num_scatter_blocks <= self.max_block_index:
+                    print("running single call to scatter kernel")
                     self.simulate_scatter(
                         *scatter_args, block=block, grid=(self.num_scatter_blocks, 1)
                     )
                 else:
+                    print("running scatter kernel patchwise")
                     for i in range(int(np.ceil(self.num_scatter_blocks / self.max_block_index))):
                         blocks_left_to_run = self.num_scatter_blocks - (i * self.max_block_index)
                         blocks_for_grid = min(blocks_left_to_run, self.max_block_index)
@@ -1271,9 +1285,9 @@ class Projector(object):
             # world_from_ijk
             self.world_from_ijk_gpu = cuda.mem_alloc(3 * 4 * NUMBYTES_FLOAT32)
 
-            # index_from_ijk
+            # index_from_world
             # TODO: get the factor of "2 x 4" from a more abstract source
-            self.index_from_ijk_gpu = cuda.mem_alloc(
+            self.index_from_world_gpu = cuda.mem_alloc(
                 2 * 4 * NUMBYTES_FLOAT32
             )  # (2, 4) array of floats
 
@@ -1353,7 +1367,7 @@ class Projector(object):
                 self.compton_structs_gpu.free()
                 self.rayleigh_structs_gpu.free()
                 self.detector_plane_gpu.free()
-                self.index_from_ijk_gpu.free()
+                self.index_from_world_gpu.free()
                 self.cdf_gpu.free()
                 self.scatter_deposits_gpu.free()
                 self.num_scattered_hits_gpu.free()

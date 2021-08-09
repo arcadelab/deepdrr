@@ -188,6 +188,11 @@ extern "C" {
         rng_seed_t *seed
     );
 
+    __device__ void shift_point_frame_3x4_transform(
+        float3_t *pt, // [in/out]: the point to be transformed
+        float *transform
+    );
+
     __device__ void shift_vector_frame_3x4_transform(
         float3_t *vec, // [in/out]: the vector to be transformed
         float *transform
