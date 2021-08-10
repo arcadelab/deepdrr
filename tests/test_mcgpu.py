@@ -91,7 +91,7 @@ def test_mcgpu():
         photon_count=100000,
         scatter_num=10e7,
         threads=8,
-        neglog=True,
+        neglog=False,
     )
 
     # 3. Convert to MCGPU format and write out to file in proper location
@@ -138,8 +138,9 @@ def test_mcgpu():
     # 4. Run DeepDRR
     projector.initialize()
     deepdrr_image = projector.project()
-    deepdrr_image = (deepdrr_image * 255).astype(np.uint8)
+    #deepdrr_image = (deepdrr_image * 255).astype(np.uint8) # only if using neglog
     Image.fromarray(deepdrr_image).save("output/test_mcgpu_deepdrr.png")
+    projector.free()
     
     output_dir = test_utils.get_output_dir()
     
@@ -166,6 +167,85 @@ def test_mcgpu():
     print(f"TEMP: current working directory after call: {os.getcwd()}")
 
     # 6. Compare in intelligent ways
+    dat_file_path = mcgpu_test_dir / f"mcgpu_image_{FILENAME}.dat"
+    mcgpu_results_raw = mcgpu_raw_to_ndarray_helper(
+            dat_file_path.as_posix(),
+            carm.sensor_width,
+            carm.sensor_height
+        )
+    # Convert from [eV/cm^2 per history] to [eV] on each pixel
+    pixel_area_cm = (carm.pixel_size * 0.1) * (carm.pixel_size * 0.1)
+    mcgpu_results_eV = mcgpu_results_raw * pixel_area * projector.scatter_num
+
+    # TODO continue with comparisons
+
+
+def mcgpu_raw_to_ndarray_helper(
+    absolute_path: str,
+    detector_width: int, # MCGPU 'X' direction
+    detector_height: int # MCGPU 'Z' direction
+) -> np.ndarray:
+    """Compile the selected columns from the MCGPU output .dat file into an ndarray with
+    dimensions (H, W, 4).
+
+    The returned ndarray is arranged as follows:
+
+                'X' dir -->
+       'Z'  [[ _, _, _, ..., _ ], 
+             [ _, _, _, ..., _ ],
+        |    ... ...        ...
+        v    ...    ...     ...
+             ...        ... ...
+             [ _, _, _, ..., _ ]]
+    
+    where each 'pixel' contains the array:
+
+        [ UNSCATTERED, COMPTON, RAYLEIGH, MULTI-SCATTERED ]
+    
+    Args:
+        absolute_path (str): the absolute path of the .dat file to read from
+        detector_width (int): the number of pixels in the width of the detector (MCGPU 'X' direction)
+        detector_height (int): the number of pixels in the height of the detector (MCGPU 'Z' direction)
+    """
+    ret = np.zeros((detector_height, detector_width)).astype(np.float32)
+    
+    if not (select_unscattered or select_compton or select_rayleigh or select_multi):
+        return ret
+
+    dat_file = Path(absolute_path)
+    if not dat_file.is_file():
+        log.exception(f"MCGPU .dat file \"{absolute_path}\" does not exist")
+        return ret
+
+    dat_file = open(absolute_path, "r")
+
+    UNSCATTERED_COL = 0
+    COMPTON_COL = 1
+    RAYLEIGH_COL = 2
+    MULTI_COL = 3
+
+    row_idx = 0
+    col_idx = 0
+    line_idx = 0
+    
+    for line in dat_file:
+        line_idx += 1
+        if (line[0] is '#') or (line[0] is '\n'):
+            continue
+        line = line.strip()
+        columns = line.split()
+        if len(columns) is not 4:
+            log.exception(f"line #{line_idx} in MCGPU .dat file \"{absolute_path}\" does not have 4 columns")
+            return ret
+        for entry in range(4):
+            ret[row_idx, col_idx, entry] += float(columns[entry])
+
+        col_idx += 1
+        if col_idx > detector_width:
+            col_idx = 0
+            row_idx += 1
+    # end for-loop over lines        
+    
 
 if __name__ == "__main__":
     logging.getLogger("deepdrr").setLevel(logging.DEBUG)
