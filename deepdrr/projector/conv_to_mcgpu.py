@@ -1,12 +1,13 @@
 #
 # Helper file to generate MCGPU inputs from a DeepDRR volume
 #
-import typing
+from typing import Tuple
 import logging
 import numpy as np
 
 from .. import vol
-from .. import geo
+
+from pathlib import Path
 
 log = logging.getLogger(__name__)
 
@@ -37,15 +38,16 @@ def get_mat_filename(deepDRR_mat_name: str) -> str:
 def make_mcgpu_inputs(
     geom: vol.Volume,
     filename: str,
+    target_dir: Path, # is a subdirectory in the MCGPU directory
     histories: int,
     seed: int,
     threads_per_block: int,
     histories_per_thread: int,
     spectrum: str,
-    source_xyz_cm: geo.Vector3D,
-    source_direction: geo.Vector3D,
-    detector_pixels: np.array,
-    detector_size_cm: np.array,
+    source_xyz_cm: np.ndarray,
+    source_direction: np.ndarray,
+    detector_pixels: Tuple[int, int],
+    detector_size_cm: Tuple[float, float],
     source_to_detector_distance_cm: float,
     source_to_isocenter_distance_cm: float,
 ) -> None:
@@ -74,7 +76,7 @@ def make_mcgpu_inputs(
     for mat_id in range(1, idx):
         assert mat_mapping[id_mapping[mat_id]] == mat_id
 
-    voxel_file = open(f"examples/mcgpu/{filename}.vox", "w")
+    voxel_file = open(f"{target_dir.as_posix()}/{filename}.vox", "w")
 
     voxel_file.write(f"[SECTION VOXELS HEADER v.2008-04-13]\n")
     voxel_file.write(
@@ -98,6 +100,15 @@ def make_mcgpu_inputs(
                     if geom.materials[mat_name][x, y, z]:
                         mat_id = mat_mapping[mat_name]
                         density = geom.data[x, y, z]
+                        if density < 0:
+                            log.exception(
+                                f"density in volume voxel ({x}, {y}, {z}) is negative: {density}"
+                            )
+                            voxel_file.close()
+                            return
+                        elif density == 0:
+                            # MCGPU does not allow for zero density
+                            density = 10e-6
                         voxel_file.write(f"{mat_id} {density}\n")
                         break
                 # end loop through materials
@@ -106,7 +117,7 @@ def make_mcgpu_inputs(
 
     voxel_file.close()
 
-    mcgpu_infile = open(f"examples/mcgpu/{filename}.in", "w")
+    mcgpu_infile = open(f"{target_dir.as_posix()}/{filename}.in", "w")
 
     mcgpu_infile.write(f"#[SECTION SIMULATION CONFIG v.2009-05-12]\n")
 
@@ -137,7 +148,7 @@ def make_mcgpu_inputs(
         log.exception("INVALID SPECTRUM NAME")
         return
 
-    mcgpu_infile.write(f"{spctrm_mcgpu} # X-RAY ENERGY SPECTRUM FILE\n")
+    mcgpu_infile.write(f"../{spctrm_mcgpu} # X-RAY ENERGY SPECTRUM FILE\n")
     mcgpu_infile.write(
         f"{source_xyz_cm[0]} {source_xyz_cm[1]} {source_xyz_cm[2]} # SOURCE POSITION: X Y Z [cm]\n"
     )
@@ -152,7 +163,7 @@ def make_mcgpu_inputs(
     mcgpu_infile.write(f"#[SECTION IMAGE DETECTOR v.2009-12-02]\n")
     mcgpu_infile.write(f"mcgpu_image_{filename}.dat # OUTPUT IMAGE FILE NAME\n")
     mcgpu_infile.write(
-        f"{detector_pixels[0]} {detector_pixels[0]} # NUMBER OF PIXELS IN THE IMAGE: Nx Nz\n"
+        f"{detector_pixels[0]} {detector_pixels[1]} # NUMBER OF PIXELS IN THE IMAGE: Nx Nz\n"
     )
     mcgpu_infile.write(
         f"{detector_size_cm[0]} {detector_size_cm[1]} # IMAGE SIZE (width, height): Dx Dz [cm]\n"
@@ -180,6 +191,7 @@ def make_mcgpu_inputs(
     )
 
     mcgpu_infile.write(f"\n")
+    mcgpu_infile.write(f"#[SECTION DOSE DEPOSITION v.2012-12-12]\n")
     mcgpu_infile.write(
         f"NO # TALLY MATERIAL DOSE? [YES/NO] (electrons not transported, x-ray energy locally deposited at interaction)\n"
     )
@@ -188,15 +200,15 @@ def make_mcgpu_inputs(
     )
     mcgpu_infile.write(f"mc-gpu_dose.dat # OUTPUT VOXEL DOSE FILE NAME\n")
     mcgpu_infile.write(
-        f"1 122 # VOXEL DOSE ROI: X-index min max (first voxel has index 1)\n"
+        f"1 {geom.shape[0]} # VOXEL DOSE ROI: X-index min max (first voxel has index 1)\n"
     )
-    mcgpu_infile.write(f"1  62 # VOXEL DOSE ROI: Y-index min max\n")
-    mcgpu_infile.write(f"1 372 # VOXEL DOSE ROI: Z-index min max\n")
+    mcgpu_infile.write(f"1 {geom.shape[1]} # VOXEL DOSE ROI: Y-index min max\n")
+    mcgpu_infile.write(f"1 {geom.shape[2]} # VOXEL DOSE ROI: Z-index min max\n")
 
     mcgpu_infile.write(f"\n")
     mcgpu_infile.write(f"#[SECTION VOXELIZED GEOMETRY FILE v.2009-11-30]\n")
     mcgpu_infile.write(
-        f"examples/mcgpu/{filename}.vox # VOXEL GEOMETRY FILE (penEasy 2008 format; .gz accepted)\n"
+        f"{target_dir.as_posix()}/{filename}.vox # VOXEL GEOMETRY FILE (penEasy 2008 format; .gz accepted)\n"
     )
 
     mcgpu_infile.write(f"\n")
@@ -209,3 +221,4 @@ def make_mcgpu_inputs(
 
     mcgpu_infile.write("\n")
     mcgpu_infile.close()
+

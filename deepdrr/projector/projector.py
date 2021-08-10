@@ -1046,7 +1046,9 @@ class Projector(object):
                     )
 
                 # call the resampling kernel
-                # TODO: handle axis swapping (???)
+                # TODO: null segmentation should be assigned AIR material
+                # will need to figure out how to handle the case when AIR
+                # is not in self.all_materials
                 resampling_args = [
                     inp_priority_gpu,
                     inp_voxelBoundX_gpu,
@@ -1152,6 +1154,10 @@ class Projector(object):
                 self.megavol_labeled_seg_gpu = cuda.mem_alloc(
                     NUMBYTES_INT8 * num_voxels
                 )
+
+                # TODO: null_seg should be assigned to AIR material.
+                # will need to figure out how to handle the case where
+                # AIR material was not originally in self.all_materials
 
                 # copy over from self.volumes[0] to the gpu
                 labeled_seg = np.zeros(self.volumes[0].shape).astype(np.int8)
