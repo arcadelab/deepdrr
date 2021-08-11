@@ -693,6 +693,8 @@ class Volume(object):
             self._interpolator = RegularGridInterpolator(
                 (range(self.shape[0]), range(self.shape[1]), range(self.shape[2])),
                 self.data,
+                bounds_error=False,
+                fill_value=0,
             )
 
         ps = np.array([self.ijk_from_world @ geo.point(p) for p in x])
