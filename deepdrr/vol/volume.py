@@ -32,6 +32,9 @@ class Volume(object):
     world_from_anatomical: geo.FrameTransform
     anatomical_coordinate_system: Optional[str]
 
+    # TODO: The current Volume class is really a scanned volume. We should have a BaseVolume or
+    # GenericVolume, which might be subclassed by tools or other types of volumes not constructed
+    # from array data, e.g. for which materials is perfectly known.
     def __init__(
         self,
         data: np.ndarray,
@@ -853,6 +856,7 @@ class Volume(object):
             material_mesh = self.get_surface(
                 material=self._mesh_material, cache_dir=cache_dir, use_cached=use_cached
             )
+
             material_mesh.transform(geo.get_data(self.world_from_anatomical))
             mesh += material_mesh
 
