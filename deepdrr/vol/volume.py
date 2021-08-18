@@ -386,6 +386,7 @@ class Volume(object):
             materials_path = cache_dir / f"{stem}_materials_thresholding.npz"
             if use_cached and materials_path.exists():
                 logger.info(f"found materials segmentation at {materials_path}.")
+                # TODO: recover from EOFError
                 materials = dict(np.load(materials_path))
             else:
                 logger.info(f"segmenting materials in volume")
