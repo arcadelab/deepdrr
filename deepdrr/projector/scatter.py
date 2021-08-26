@@ -602,7 +602,7 @@ def get_detector_plane(
     rt_kinv: np.ndarray,
     camera_intrinsics: geo.CameraIntrinsicTransform,
     sdd: float,
-    source_ijk: geo.Point3D,
+    source_world: geo.Point3D,
     sensor_size: Tuple[int, int],
 ) -> PlaneSurface:
     """Calculates the PlaneSurface object of the detector plane in IJK coordinates.
@@ -612,12 +612,12 @@ def get_detector_plane(
     The second basis vector represents moving one pixel DOWN the image (top to bottom).
 
     Args:
-        rt_kinv (np.ndarray): the 3x3 ray transform for the projection.  Transforms pixel indices (u,v,1) to IJK-space vector along
-                            the ray from the X-Ray source to the pixel [u,v] on the detector, such that the resulting IJK-space vector
+        rt_kinv (np.ndarray): the 3x3 ray transform for the projection.  Transforms pixel indices (u,v,1) to world-space vector along
+                            the ray from the X-Ray source to the pixel [u,v] on the detector, such that the resulting world-space vector
                             has unit projection along the vector pointing from the source to the center of the detector.
         camera_intrinsics (geo.CameraIntrinsicTransform): the 3x3 matrix that denotes the camera's intrinsics.  Canonically represented by K.
         sdd (float): the distance from the X-Ray source to the detector.
-        source_ijk (geo.Point3D): the IJK coordinates of the X-Ray source, relative to the IJK origin (indices [0,0,0] in the volume)
+        source_world (geo.Point3D): the world coordinates of the X-Ray source
         sensor_size (Tuple[int,int]): the sensor size {width}x{height}, in pixels, of the detector
 
     Returns:
@@ -625,23 +625,23 @@ def get_detector_plane(
     """
     # Based off the project_kernel.cu code:
     #   Let \hat{p} = (u,v,1)^T be the pixel coord.s on the detector plane
-    #   Then, the 3D IJK coord.s of that pixel are related to (R^T K^{-1}) \hat{p} == (rt_kinv) @ \hat{p}
-    #   Specifically, (rt_kinv) @ \hat{p} is an IJK vector along the ray from the X-Ray source to the
+    #   Then, the 3D world coord.s of that pixel are related to (R^T K^{-1}) \hat{p} == (rt_kinv) @ \hat{p}
+    #   Specifically, (rt_kinv) @ \hat{p} is a world vector along the ray from the X-Ray source to the
     #   pixel (u,v) on the detector plane.  Since, after investigation, I found that the vector
     #   [(rt_kinv) @ (W/2,H/2,1)^T] always has magnitude 1.00000, the vector:
     #       SDD * (rt_kinv) @ (u,v,1)^T
     #   points from the X-Ray source to the pixel (u,v) on the detector plane, where SDD is the
     #   source-to-detector distance.
     #
-    # We calculate the normal vector of the detector plane in IJK by using the three-point method:
+    # We calculate the normal vector of the detector plane in world-space by using the three-point method:
     #   1. Let {p1, p2, p3} be three pixel coordinates of the form (u, v, 1)^T
-    #   2. Three coplanar points in IJK coordinates are r1 := SDD * (rt_kinv) @ p1, r2 := SDD * (rt_kinv) @ p2,
+    #   2. Three coplanar points in world coordinates are r1 := SDD * (rt_kinv) @ p1, r2 := SDD * (rt_kinv) @ p2,
     #      r3 := SDD * (rt_kinv) @ p3
     #   3. Compute two vectors that are -in- the plane: v1 := r2 - r1, v2 := r3 - r1
     #   4. The cross product v := v1 x v2 is perpendicular to both v1 and v2.  Thus, v is a normal vector to the plane
     #
     # Note that even though {r1, r2, r3} are technically the vectors points from the X-ray source to the detector plane,
-    # not pointing from the IJK origin to the detector plane, the fact that {v1, v2} are [relative displacement vectors]
+    # not pointing from the world origin to the detector plane, the fact that {v1, v2} are [relative displacement vectors]
     # means that the shift in "origin" for {r1, r2, r3} has no effect on calculating the normal vector for the detector plane.
     #
     # Simplifying the math to reduce the number of arithmetic steps:
@@ -667,7 +667,7 @@ def get_detector_plane(
     #         )^T
     #
     # Once we have the normal vector, we need the minimum distance between the detector plane and
-    # the origin of the IJK coord.s to get the fourth entry in the 'plane vector' (n_x, n_y, n_z, d)
+    # the origin of the world coord.s to get the fourth entry in the 'plane vector' (n_x, n_y, n_z, d)
     #
     sdd_sq = sdd * sdd
 
@@ -684,11 +684,11 @@ def get_detector_plane(
 
     # The 'surface origin' corresponds to the pixel [0,0] on the detector.
     # Vector source_to_surf_ori = SDD * (rt_kinv) @ (0,0,1)^T = SDD * [third column of rt_kinv]
-    surf_ori_x = (sdd * rt_kinv[0, 2]) + source_ijk.data[
+    surf_ori_x = (sdd * rt_kinv[0, 2]) + source_world.data[
         0
     ]  # source_to_surf_ori + origin_to_source == origin_to_surf_ori
-    surf_ori_y = (sdd * rt_kinv[1, 2]) + source_ijk.data[1]
-    surf_ori_z = (sdd * rt_kinv[2, 2]) + source_ijk.data[2]
+    surf_ori_y = (sdd * rt_kinv[1, 2]) + source_world.data[1]
+    surf_ori_z = (sdd * rt_kinv[2, 2]) + source_world.data[2]
     # SANITY CHECK: after using an inverse-of-upper-triangular-matrix formula, we get:
     # kinv[2] == (s c_y - c_x f_y) / (f_x f_y)
     # kinv[5] == c_y / f_y
@@ -697,7 +697,7 @@ def get_detector_plane(
         np.array([surf_ori_x, surf_ori_y, surf_ori_z])
     )
 
-    # Distance from the detector plane to the origin of the IJK coordinates
+    # Distance from the detector plane to the origin
     #
     # Time for a diagram.
     #
@@ -732,8 +732,8 @@ def get_detector_plane(
     #     = magnitude(SC) * (OX \cdot SC) / (magnitude(SC)^2)
     #     = (OX \cdot SC) / magnitude(SC)
     #
-    # Vector SC can be found by finding the IJK coordinates of the detector center (vector OC) and
-    # the IJK coordinates of the X-ray source (vector OS).  SC = OC - OS
+    # Vector SC can be found by finding the world coordinates of the detector center (vector OC) and
+    # the world coordinates of the X-ray source (vector OS).  SC = OC - OS
     #
     # Vector SP = projection of SO onto SC
     #           = SC * (SO \cdot SC) / (magnitude(SC)^2)
@@ -756,18 +756,18 @@ def get_detector_plane(
     cu = sensor_size[0] / 2  # pixel coord.s of the center of the detector
     cv = sensor_size[1] / 2
 
-    # IJK coord.s of the SC, the ray from the X-Ray source S to the center C of the detector
+    # world coord.s of the SC, the ray from the X-Ray source S to the center C of the detector
     sc_x = sdd * (cu * rt_kinv[0, 0] + cv * rt_kinv[0, 1] + rt_kinv[0, 2])
     sc_y = sdd * (cu * rt_kinv[1, 0] + cv * rt_kinv[1, 1] + rt_kinv[1, 2])
     sc_z = sdd * (cu * rt_kinv[2, 0] + cv * rt_kinv[2, 1] + rt_kinv[2, 2])
 
-    # Note that the IJK coord.s of vector OS are contained in source_ijk, which is obtained
+    # Note that the world coord.s of vector OS are contained in source_world, which is obtained
     # by calling the camera_center_in_volume method
     sc_dot_sc = (sc_x * sc_x) + (sc_y * sc_y) + (sc_z * sc_z)
     sc_dot_os = (
-        (sc_x * source_ijk.data[0])
-        + (sc_y * source_ijk.data[1])
-        + (sc_z * source_ijk.data[2])
+        (sc_x * source_world.data[0])
+        + (sc_y * source_world.data[1])
+        + (sc_z * source_world.data[2])
     )
 
     # the distance to the detector from the origin -- the absolute value is important!

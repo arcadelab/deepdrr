@@ -516,9 +516,9 @@ extern "C" {
     __device__ static void calculate_solid_angle(
         float *world_from_index, // (3, 3) array giving the world_from_index ray transform for the camera
         float *solid_angle, // flat array, with shape (out_height, out_width). 
-	int udx, // index into image width
-	int vdx, // index into image height
-	int img_dx // index into solid_angle
+        int udx, // index into image width
+        int vdx, // index into image height
+        int img_dx // index into solid_angle
     )  {
         /**
         * SOLID ANGLE CALCULATION
@@ -1085,7 +1085,7 @@ extern "C" {
         mat_sample[vol_id][12] = cubicTex3D(SEG(vol_id, 12), inp_x, inp_y, inp_z);\
         mat_sample[vol_id][13] = cubicTex3D(SEG(vol_id, 13), inp_x, inp_y, inp_z);\
     } while (0)
-    #else /////////////////
+    #else
     #define RESAMPLE_TEXTURES(vol_id) do {\
         printf("NUM_MATERIALS not in [1, 14]");\
     } while (0)
@@ -1132,8 +1132,6 @@ extern "C" {
         // local storage to store the results of the cubicTex3D calls
         float mat_sample[NUM_VOLUMES][NUM_MATERIALS];
 
-        printf("SCATTER resample\n");
-
         int x_low = threadIdx.x + (blockIdx.x + offsetX) * blockDim.x; // the x-index of the lowest voxel
         int y_low = threadIdx.y + (blockIdx.y + offsetY) * blockDim.y;
         int z_low = threadIdx.z + (blockIdx.z + offsetZ) * blockDim.z;
@@ -1158,14 +1156,14 @@ extern "C" {
                     for (int i = 0; i < NUM_VOLUMES; i++) {
                         density_sample[i] = -1.0f; // "reset" this volume's sample
 
-                        int offset = 3 * 4 * i; // TODO: do the matrix multiplication proper
-                        float inp_x = (inp_ijk_from_world[offset + 0] * x) + (inp_ijk_from_world[offset + 1] * y) + (inp_ijk_from_world[offset + 2] * z);
+                        int offset = 3 * 4 * i; // TODO: check that this matrix multiplication is done properly
+                        float inp_x = (inp_ijk_from_world[offset + 0] * x) + (inp_ijk_from_world[offset + 1] * y) + (inp_ijk_from_world[offset + 2] * z) + inp_ijk_from_world[offset + 3];
                         if ((inp_x < 0.0) || (inp_x >= inp_voxelBoundX[i])) continue; // TODO: make sure this behavior agrees with the behavior of ijk_from_world transforms
 
-                        float inp_y = (inp_ijk_from_world[offset + 3] * x) + (inp_ijk_from_world[offset + 4] * y) + (inp_ijk_from_world[offset + 5] * z);
+                        float inp_y = (inp_ijk_from_world[offset + 4] * x) + (inp_ijk_from_world[offset + 5] * y) + (inp_ijk_from_world[offset + 6] * z) + inp_ijk_from_world[offset + 7];
                         if ((inp_y < 0.0) || (inp_y >= inp_voxelBoundY[i])) continue;
 
-                        float inp_z = (inp_ijk_from_world[offset + 6] * x) + (inp_ijk_from_world[offset + 7] * y) + (inp_ijk_from_world[offset + 8] * z);
+                        float inp_z = (inp_ijk_from_world[offset + 8] * x) + (inp_ijk_from_world[offset + 9] * y) + (inp_ijk_from_world[offset + 10] * z) + inp_ijk_from_world[offset + 11];
                         if ((inp_z < 0.0) || (inp_z >= inp_voxelBoundZ[i])) continue;
 
                         if (inp_priority[i] < curr_priority) curr_priority = inp_priority[i];

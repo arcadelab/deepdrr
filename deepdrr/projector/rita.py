@@ -331,7 +331,7 @@ def _rita_calc_interp_error(
     h = interval / 50
     odd_sum = sum([integrand(x_i + k * h) for k in range(1, 50, 2)]) # 1, 3, ..., 49
     even_sum = sum([integrand(x_i + k * h) for k in range(2, 49, 2)]) # 2, 4, ..., 48
-    # error_term = (h * h * h * h * h) * fourth_derivative(x_star) * 25 / 90 # TODO: figure out how to handle this
+    # error_term = (h * h * h * h * h) * fourth_derivative(x_star) * 25 / 90 # don't actually need to figure out how to handle this
     return (h / 3) * (integrand(x_i) + (4 * odd_sum) + (2 * even_sum) + integrand(x_i + interval)) # - error_term
 
 def _rita_add_gridpoint(

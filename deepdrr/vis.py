@@ -28,6 +28,7 @@ def show(
     *item: Any,
     full: Union[bool, List[bool]] = False,
     colors: List[str] = ["tan", "cyan", "green", "red"],
+    background: str = "#4d94b0",
 ) -> np.ndarray:
     """Show the given items in a pyvista window.
 
@@ -36,7 +37,7 @@ def show(
     """
     plotter = pv.Plotter()
     plotter.show_axes()
-    plotter.set_background("#4d94b0")
+    plotter.set_background(background)
 
     items = item
     fulls = utils.listify(full, len(items))
@@ -45,5 +46,7 @@ def show(
         plotter.add_mesh(item.get_mesh_in_world(full=full), color=color)
 
     plotter.reset_camera()
-    _, image = plotter.show(screenshot=True)
+    plotter.show(auto_close=False)
+    image = plotter.screenshot()
+    plotter.close()
     return image
