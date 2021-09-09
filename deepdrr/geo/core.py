@@ -100,7 +100,7 @@ class HomogeneousObject(ABC):
 
     def __repr__(self):
         s = "  " + str(np.array_str(self.data)).replace("\n", "\n  ")
-        return f"{self.__class__.__name__}(\n{s}\n)"
+        return f"{self.__class__.__name__}({s})"
 
     def __getitem__(self, key):
         return self.data.__getitem__(key)
