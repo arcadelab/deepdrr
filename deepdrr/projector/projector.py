@@ -43,6 +43,7 @@ NUMBYTES_FLOAT32 = 4
 log.setLevel(logging.INFO)
 logging.basicConfig(level=logging.INFO)
 
+
 def _get_spectrum(spectrum: Union[np.ndarray, str]):
     """Get the data corresponding to the given spectrum name.
 
@@ -258,13 +259,15 @@ class Projector(object):
             self.num_scatter_blocks = min(32768, self.max_block_index)
             # TODO (mjudish): discuss with killeen max_block_index and what makes sense
             # for the scatter block structure
-            
+
             total_threads = self.num_scatter_blocks * self.threads * self.threads
             log.info(f"total threads: {total_threads}")
             self.histories_per_thread = int(np.ceil(self.scatter_num / total_threads))
 
             self.scatter_num = self.histories_per_thread * total_threads
-            log.info(f"input scatter_num: {scatter_num}, rounded up to {self.scatter_num}\nhistories per thread: {self.histories_per_thread}")
+            log.info(
+                f"input scatter_num: {scatter_num}, rounded up to {self.scatter_num}\nhistories per thread: {self.histories_per_thread}"
+            )
 
             if len(self.volumes) > 1:
                 self.resample_megavolume = self.mod.get_function("resample_megavolume")
@@ -456,14 +459,16 @@ class Projector(object):
                     f"Starting scatter simulation, scatter_num={self.scatter_num}. Time: {time.asctime()}"
                 )
 
-                #index_from_ijk = (
+                # index_from_ijk = (
                 #    self.megavol_ijk_from_world @ proj.world_from_index
-                #).inv
-                #index_from_ijk = np.array(index_from_ijk).astype(np.float32) # 2x4 matrix
-                #print(f"index_from_ijk on GPU:\n{index_from_ijk}")
-                #cuda.memcpy_htod(self.index_from_ijk_gpu, index_from_ijk)
+                # ).inv
+                # index_from_ijk = np.array(index_from_ijk).astype(np.float32) # 2x4 matrix
+                # print(f"index_from_ijk on GPU:\n{index_from_ijk}")
+                # cuda.memcpy_htod(self.index_from_ijk_gpu, index_from_ijk)
                 print(f"index_from_world on GPU:\n{np.array(proj.index_from_world)}")
-                cuda.memcpy_htod(self.index_from_world_gpu, np.array(proj.index_from_world))
+                cuda.memcpy_htod(
+                    self.index_from_world_gpu, np.array(proj.index_from_world)
+                )
 
                 scatter_source_ijk = np.array(
                     self.megavol_ijk_from_world @ proj.center_in_world
@@ -472,14 +477,12 @@ class Projector(object):
                 print(
                     f"np.array(self.megavol_ijk_from_world) dims:{np.array(self.megavol_ijk_from_world).shape}\n{np.array(self.megavol_ijk_from_world)}"
                 )
-                print(
-                    f"world_from_index:\n{world_from_index}"
-                )
+                print(f"world_from_index:\n{world_from_index}")
 
                 scatter_source_world = np.array(proj.center_in_world).astype(np.float32)
 
                 detector_plane = scatter.get_detector_plane(
-                    #np.array(self.megavol_ijk_from_world @ proj.world_from_index),
+                    # np.array(self.megavol_ijk_from_world @ proj.world_from_index),
                     np.array(proj.world_from_index),
                     proj.index_from_camera2d,
                     self.source_to_detector_distance,
@@ -495,9 +498,11 @@ class Projector(object):
                     np.array([0, 0, 1]),
                     np.array([self.output_shape[0], 0, 1]),
                     np.array([self.output_shape[0], self.output_shape[1], 1]),
-                    np.array([0, self.output_shape[1], 1])
+                    np.array([0, self.output_shape[1], 1]),
                 ]
-                _tmp_corner_rays_world = [proj.world_from_index @ corner for corner in _tmp_corners_idx]
+                _tmp_corner_rays_world = [
+                    proj.world_from_index @ corner for corner in _tmp_corners_idx
+                ]
 
                 print(f"Detector corner rays in world: (0,0), (W,0), (W,H), (0, H):")
                 for _corner_ray in _tmp_corner_rays_world:
@@ -505,23 +510,33 @@ class Projector(object):
                 # end print corners
 
                 print(f"source in world:\n\t{proj.center_in_world}")
-                detector_ctr_in_world = detector_plane.surface_origin + (detector_plane.basis_1 * self.output_shape[0] * 0.5) + (detector_plane.basis_2 * self.output_shape[1] * 0.5)
+                detector_ctr_in_world = (
+                    detector_plane.surface_origin
+                    + (detector_plane.basis_1 * self.output_shape[0] * 0.5)
+                    + (detector_plane.basis_2 * self.output_shape[1] * 0.5)
+                )
                 print(f"detector center in world:\n\t{detector_ctr_in_world}")
                 print(f"Detector corners in world, FROM RAYS:")
                 for _corner_ray in _tmp_corner_rays_world:
-                    print(f"\t{proj.center_in_world + self.source_to_detector_distance * _corner_ray}")
+                    print(
+                        f"\t{proj.center_in_world + self.source_to_detector_distance * _corner_ray}"
+                    )
                 print(f"Detector corners in world, FROM PLANE_SURFACE:")
                 for indices in _tmp_corners_idx:
-                    corner = detector_plane.surface_origin + (detector_plane.basis_1 * indices[0]) + (detector_plane.basis_2 * indices[1])
+                    corner = (
+                        detector_plane.surface_origin
+                        + (detector_plane.basis_1 * indices[0])
+                        + (detector_plane.basis_2 * indices[1])
+                    )
                     print(f"\t{corner}")
 
                 world_from_ijk_arr = np.array(self.megavol_ijk_from_world.inv)
                 cuda.memcpy_htod(self.world_from_ijk_gpu, world_from_ijk_arr)
-                #print(f"world_from_ijk_arr:\n{world_from_ijk_arr}")
+                # print(f"world_from_ijk_arr:\n{world_from_ijk_arr}")
 
                 ijk_from_world_arr = np.array(self.megavol_ijk_from_world)
                 cuda.memcpy_htod(self.ijk_from_world_gpu, ijk_from_world_arr)
-                #print(f"ijk_from_world_arr:\n{ijk_from_world_arr}")
+                # print(f"ijk_from_world_arr:\n{ijk_from_world_arr}")
 
                 E_abs_keV = 5  # E_abs == 5000 eV
 
@@ -576,8 +591,12 @@ class Projector(object):
                     )
                 else:
                     print("running scatter kernel patchwise")
-                    for i in range(int(np.ceil(self.num_scatter_blocks / self.max_block_index))):
-                        blocks_left_to_run = self.num_scatter_blocks - (i * self.max_block_index)
+                    for i in range(
+                        int(np.ceil(self.num_scatter_blocks / self.max_block_index))
+                    ):
+                        blocks_left_to_run = self.num_scatter_blocks - (
+                            i * self.max_block_index
+                        )
                         blocks_for_grid = min(blocks_left_to_run, self.max_block_index)
                         self.simulate_scatter(
                             *scatter_args, block=block, grid=(blocks_for_grid, 1)
@@ -667,7 +686,7 @@ class Projector(object):
                 intensities.append(deposited_energy)
             else:
                 intensities.append(intensity)
-            
+
             photon_probs.append(photon_prob)
         # end for-loop over the projections
 
@@ -728,7 +747,7 @@ class Projector(object):
         if self.initialized:
             raise RuntimeError("Close projector before initializing again.")
 
-        # TODO: in this function, there are several instances of axis swaps. 
+        # TODO: in this function, there are several instances of axis swaps.
         # We may want to investigate if the axis swaps are necessary.
 
         log.debug(f"beginning call to Projector.initialize")
@@ -1109,9 +1128,9 @@ class Projector(object):
 
                 # Calculate block and grid sizes: each block is a 4x4x4 cube of voxels
                 block = (1, 1, 1)
-                blocks_x = np.int(np.ceil(mega_x_len / block[0]))
-                blocks_y = np.int(np.ceil(mega_y_len / block[1]))
-                blocks_z = np.int(np.ceil(mega_z_len / block[2]))
+                blocks_x = np.int32(np.ceil(mega_x_len / block[0]))
+                blocks_y = np.int32(np.ceil(mega_y_len / block[1]))
+                blocks_z = np.int32(np.ceil(mega_z_len / block[2]))
                 log.info(
                     f"Resampling: {blocks_x}x{blocks_y}x{blocks_z} blocks with {block[0]}x{block[1]}x{block[2]} threads each"
                 )
@@ -1198,13 +1217,11 @@ class Projector(object):
                         labeled_seg, i * self.volumes[0].materials[mat]
                     ).astype(np.int8)
                     null_seg = np.logical_and(
-                        null_seg, 
-                        np.logical_not(self.volumes[0].materials[mat])
+                        null_seg, np.logical_not(self.volumes[0].materials[mat])
                     ).astype(np.int8)
                 # a labeled_seg value of NUM_MATERIALS indicates a null segmentation
                 labeled_seg = np.add(
-                    labeled_seg,
-                    len(self.all_materials) * null_seg
+                    labeled_seg, len(self.all_materials) * null_seg
                 ).astype(np.int8)
                 # NOTE: axis swap not necessary because using raw array, not texture
                 cuda.memcpy_htod(self.megavol_labeled_seg_gpu, labeled_seg)
@@ -1212,7 +1229,7 @@ class Projector(object):
                 # Copy volume density info to self.megavol_density_gpu
                 # NOTE: axis swap not necessary because using raw array, not texture
                 cuda.memcpy_htod(self.megavol_density_gpu, self.volumes[0].data)
-                
+
                 init_tock = time.perf_counter()
                 log.debug(
                     f"time elapsed after copying megavolume to GPU: {init_tock - init_tick}"
