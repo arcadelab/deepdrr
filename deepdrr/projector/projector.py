@@ -32,7 +32,7 @@ try:
 except ImportError:
     pycuda_available = False
     SourceModule = Any
-    log.warning("pycuda unavailable")
+    log.error("pycuda was not imported. Check your pycuda installation")
 
 
 NUMBYTES_INT8 = 1
@@ -404,7 +404,7 @@ class Projector(object):
             blocks_w = int(np.ceil(self.output_shape[0] / self.threads))
             blocks_h = int(np.ceil(self.output_shape[1] / self.threads))
             block = (self.threads, self.threads, 1)
-            log.debug(
+            log.info(
                 f"Running: {blocks_w}x{blocks_h} blocks with {self.threads}x{self.threads} threads each"
             )
 
@@ -874,7 +874,6 @@ class Projector(object):
         )
 
         # allocate ijk_from_index matrix array on GPU (3x3 array x 4 bytes per float32)
-        # TODO: represent the factor of "3 x 3" in a more abstracted way
         self.world_from_index_gpu = cuda.mem_alloc(3 * 3 * NUMBYTES_FLOAT32)
 
         # allocate ijk_from_world for each volume.
@@ -1128,9 +1127,9 @@ class Projector(object):
 
                 # Calculate block and grid sizes: each block is a 4x4x4 cube of voxels
                 block = (1, 1, 1)
-                blocks_x = np.int32(np.ceil(mega_x_len / block[0]))
-                blocks_y = np.int32(np.ceil(mega_y_len / block[1]))
-                blocks_z = np.int32(np.ceil(mega_z_len / block[2]))
+                blocks_x = int(np.ceil(mega_x_len / block[0]))
+                blocks_y = int(np.ceil(mega_y_len / block[1]))
+                blocks_z = int(np.ceil(mega_z_len / block[2]))
                 log.info(
                     f"Resampling: {blocks_x}x{blocks_y}x{blocks_z} blocks with {block[0]}x{block[1]}x{block[2]} threads each"
                 )
