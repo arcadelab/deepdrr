@@ -2,7 +2,9 @@ import logging
 import time
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple, Union
+import os
 
+import torch
 import numpy as np
 
 from .. import geo, utils, vol
@@ -20,28 +22,21 @@ from .mcgpu_compton_data import COMPTON_DATA
 from .mcgpu_mfp_data import MFP_DATA
 from .mcgpu_rita_samplers import rita_samplers
 
-log = logging.getLogger(__name__)
+# Initialize torch cuda tensor to ensure torch and cuda both initialized.
+# _dummy_tensor = torch.cuda.FloatTensor(8)
+torch.cuda.init()
 
-try:
-    import pycuda.autoinit
-    import pycuda.driver as cuda
-    from pycuda.autoinit import context
-    from pycuda.compiler import SourceModule
-
-    pycuda_available = True
-except ImportError:
-    pycuda_available = False
-    SourceModule = Any
-    log.error("pycuda was not imported. Check your pycuda installation")
-
+import pycuda.autoinit
+import pycuda.driver as cuda
+from pycuda.autoinit import context
+from pycuda.compiler import SourceModule
 
 NUMBYTES_INT8 = 1
 NUMBYTES_INT32 = 4
 NUMBYTES_FLOAT32 = 4
 
 
-log.setLevel(logging.INFO)
-logging.basicConfig(level=logging.INFO)
+log = logging.getLogger(__name__)
 
 
 def _get_spectrum(spectrum: Union[np.ndarray, str]):
@@ -414,6 +409,7 @@ class Projector(object):
                 self.project_kernel(
                     *args, offset_w, offset_h, block=block, grid=(blocks_w, blocks_h)
                 )
+                context.synchronize()  # TODO: needed?
             else:
                 log.debug("Running kernel patchwise")
                 for w in range((blocks_w - 1) // (self.max_block_index + 1)):
@@ -449,7 +445,7 @@ class Projector(object):
 
             project_tock = time.perf_counter()
             log.debug(
-                f"projection #{i}: time elpased after copy from kernel: {project_tock - project_tick}"
+                f"projection #{i}: time elapased after copy from kernel: {project_tock - project_tick}"
             )
 
             if self.scatter_num > 0:
@@ -706,6 +702,9 @@ class Projector(object):
         if self.neglog:
             log.debug("applying negative log transform")
             images = utils.neglog(images)
+
+        # Don't think this does anything.
+        # torch.cuda.synchronize()
 
         if images.shape[0] == 1:
             return images[0]
