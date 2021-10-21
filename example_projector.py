@@ -12,6 +12,7 @@ from time import time
 import deepdrr
 from deepdrr import geo
 from deepdrr.utils import test_utils, image_utils
+from deepdrr.projector import Projector
 
 # set up fancy logging
 log = logging.getLogger().handlers.clear()
@@ -31,7 +32,7 @@ def main():
     carm = deepdrr.MobileCArm(patient.center_in_world)
 
     # project in the AP view
-    with deepdrr.Projector(patient, carm=carm) as projector:
+    with Projector(patient, carm=carm) as projector:
         carm.move_to(alpha=0, beta=-15)
         image = projector()
 

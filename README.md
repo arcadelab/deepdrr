@@ -82,7 +82,8 @@ in the base directory. Then do `cd docs` and `make html` to build the static sit
 The following minimal example loads a CT volume from a NifTi `.nii.gz` file and simulates an X-ray projection:
 
 ```python
-from deepdrr import geo, Volume, MobileCArm, Projector
+from deepdrr import geo, Volume, MobileCArm
+from deepdrr.projector import Projector # separate import for CUDA init
 import matplotlib.pyplot as plt
 
 volume = Volume.from_nifti('/path/to/ct_image.nii.gz')
