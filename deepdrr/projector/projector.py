@@ -22,21 +22,19 @@ from .mcgpu_compton_data import COMPTON_DATA
 from .mcgpu_mfp_data import MFP_DATA
 from .mcgpu_rita_samplers import rita_samplers
 
-# Initialize torch cuda tensor to ensure torch and cuda both initialized.
-# _dummy_tensor = torch.cuda.FloatTensor(8)
-torch.cuda.init()
 
 import pycuda.autoinit
 import pycuda.driver as cuda
 from pycuda.autoinit import context
 from pycuda.compiler import SourceModule
 
+log = logging.getLogger(__name__)
+
 NUMBYTES_INT8 = 1
 NUMBYTES_INT32 = 4
 NUMBYTES_FLOAT32 = 4
 
 
-log = logging.getLogger(__name__)
 
 
 def _get_spectrum(spectrum: Union[np.ndarray, str]):
@@ -409,7 +407,6 @@ class Projector(object):
                 self.project_kernel(
                     *args, offset_w, offset_h, block=block, grid=(blocks_w, blocks_h)
                 )
-                context.synchronize()  # TODO: needed?
             else:
                 log.debug("Running kernel patchwise")
                 for w in range((blocks_w - 1) // (self.max_block_index + 1)):
