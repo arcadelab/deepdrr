@@ -167,7 +167,7 @@ model.cuda()
 optimizer = optim.SGD(model.parameters(), lr=0.001, momentum=0.9)
 optimizer.zero_grad()
 x = torch.ones((32, 3, 224, 224), dtype=torch.float32).cuda() # Your image size
-y = torch.ones(32, dtype=torch.int64).cuda() $
+y = torch.ones(32, dtype=torch.int64).cuda()
 y_pred = model(x)
 loss = criterion(y_pred, y)
 loss.backward()
