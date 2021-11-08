@@ -180,8 +180,7 @@ class Volume(object):
 
     @staticmethod
     def _segment_materials(
-        hu_values: np.ndarray,
-        use_thresholding: bool = True,
+        hu_values: np.ndarray, use_thresholding: bool = True,
     ) -> Dict[str, np.ndarray]:
         """Segment the materials.
 
@@ -282,7 +281,7 @@ class Volume(object):
             use_thresholding=use_thresholding,
             use_cached=use_cached,
             cache_dir=cache_dir,
-            prefix=path.stem,
+            prefix=path.name.split(".")[0],
         )
 
         return cls(
@@ -469,10 +468,7 @@ class Volume(object):
         path = Path(path)
         hu_values, header = nrrd.read(path)
         ijk_from_anatomical = np.concatenate(
-            [
-                header["space directions"],
-                header["space origin"].reshape(-1, 1),
-            ],
+            [header["space directions"], header["space origin"].reshape(-1, 1),],
             axis=1,
         )
         anatomical_from_ijk = np.concatenate(
@@ -565,10 +561,7 @@ class Volume(object):
         """The spacing of the voxels."""
         return geo.vector(np.abs(np.array(self.anatomical_from_ijk.R)).max(axis=0))
 
-    def _format_materials(
-        self,
-        materials: Dict[str, np.ndarray],
-    ) -> np.ndarray:
+    def _format_materials(self, materials: Dict[str, np.ndarray],) -> np.ndarray:
         """Standardize the input material segmentation."""
         for mat in materials:
             materials[mat] = np.array(materials[mat]).astype(np.float32)
@@ -735,14 +728,10 @@ class Volume(object):
             segmentation.shape[0], segmentation.shape[1], segmentation.shape[2]
         )
         vol.SetOrigin(
-            -np.sign(R[0, 0]) * t[0],
-            -np.sign(R[1, 1]) * t[1],
-            np.sign(R[2, 2]) * t[2],
+            -np.sign(R[0, 0]) * t[0], -np.sign(R[1, 1]) * t[1], np.sign(R[2, 2]) * t[2],
         )
         vol.SetSpacing(
-            -abs(R[0, 0]),
-            -abs(R[1, 1]),
-            abs(R[2, 2]),
+            -abs(R[0, 0]), -abs(R[1, 1]), abs(R[2, 2]),
         )
 
         segmentation = segmentation.astype(np.uint8)
@@ -880,7 +869,5 @@ class MetalVolume(Volume):
             raise NotImplementedError
 
         return dict(
-            air=(hu_values == 0),
-            bone=(hu_values > 0),
-            titanium=(hu_values > 0),
+            air=(hu_values == 0), bone=(hu_values > 0), titanium=(hu_values > 0),
         )
