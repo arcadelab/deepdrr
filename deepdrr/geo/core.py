@@ -92,6 +92,10 @@ class HomogeneousObject(ABC):
         """
         pass
 
+    def tolist(self) -> List:
+        """Get a json-save list with the data in this object."""
+        return self.data.tolist()
+
     def __array__(self, dtype=None):
         return self.to_array()
 
