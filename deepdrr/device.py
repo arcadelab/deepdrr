@@ -285,10 +285,10 @@ class MobileCArm(object):
     @property
     def camera3d_from_world(self) -> geo.FrameTransform:
         """Rigid transformation of the C-arm camera pose."""
-        return self.camera3d_from_device @ self.device_from_world
+        return self.get_camera3d_from_world()
 
     def get_camera3d_from_world(self) -> geo.FrameTransform:
-        return self.camera3d_from_world
+        return self.camera3d_from_device @ self.device_from_world
 
     def get_camera_projection(self) -> geo.CameraProjection:
         return geo.CameraProjection(
