@@ -65,6 +65,110 @@ class LineAnnotation(object):
 
         return cls(*points, volume)
 
+    def save(self, path: str):
+        # todo(sean): save markups with color options based on the following template
+        # markup = {
+        #     "@schema": "https://raw.githubusercontent.com/slicer/slicer/master/Modules/Loadable/Markups/Resources/Schema/markups-schema-v1.0.0.json#",
+        #     "markups": [
+        #         {
+        #             "type": "Line",
+        #             "coordinateSystem": "LPS",
+        #             "locked": false,
+        #             "labelFormat": "%N-%d",
+        #             "controlPoints": [
+        #                 {
+        #                     "id": "1",
+        #                     "label": "entry",
+        #                     "description": "",
+        #                     "associatedNodeID": "",
+        #                     "position": [
+        #                         3.980233907699585,
+        #                         -40.96451187133789,
+        #                         -1392.0523681640626,
+        #                     ],
+        #                     "orientation": [
+        #                         -1.0,
+        #                         -0.0,
+        #                         -0.0,
+        #                         -0.0,
+        #                         -1.0,
+        #                         -0.0,
+        #                         0.0,
+        #                         0.0,
+        #                         1.0,
+        #                     ],
+        #                     "selected": true,
+        #                     "locked": false,
+        #                     "visibility": true,
+        #                     "positionStatus": "defined",
+        #                 },
+        #                 {
+        #                     "id": "2",
+        #                     "label": "exit",
+        #                     "description": "",
+        #                     "associatedNodeID": "",
+        #                     "position": [
+        #                         100.19214630126953,
+        #                         -2.4773364067077638,
+        #                         -1322.3232421875,
+        #                     ],
+        #                     "orientation": [
+        #                         -1.0,
+        #                         -0.0,
+        #                         -0.0,
+        #                         -0.0,
+        #                         -1.0,
+        #                         -0.0,
+        #                         0.0,
+        #                         0.0,
+        #                         1.0,
+        #                     ],
+        #                     "selected": true,
+        #                     "locked": false,
+        #                     "visibility": true,
+        #                     "positionStatus": "defined",
+        #                 },
+        #             ],
+        #             "measurements": [
+        #                 {
+        #                     "name": "length",
+        #                     "enabled": true,
+        #                     "value": 124.90054351814699,
+        #                     "printFormat": "%-#4.4gmm",
+        #                 }
+        #             ],
+        #             "display": {
+        #                 "visibility": true,
+        #                 "opacity": 1.0,
+        #                 "color": [0.5, 0.5, 0.5],
+        #                 "selectedColor": [1.0, 0.5000076295109484, 0.5000076295109484],
+        #                 "activeColor": [0.4, 1.0, 0.0],
+        #                 "propertiesLabelVisibility": true,
+        #                 "pointLabelsVisibility": true,
+        #                 "textScale": 3.0,
+        #                 "glyphType": "Sphere3D",
+        #                 "glyphScale": 5.800000000000001,
+        #                 "glyphSize": 5.0,
+        #                 "useGlyphScale": true,
+        #                 "sliceProjection": false,
+        #                 "sliceProjectionUseFiducialColor": true,
+        #                 "sliceProjectionOutlinedBehindSlicePlane": false,
+        #                 "sliceProjectionColor": [1.0, 1.0, 1.0],
+        #                 "sliceProjectionOpacity": 0.6,
+        #                 "lineThickness": 0.2,
+        #                 "lineColorFadingStart": 1.0,
+        #                 "lineColorFadingEnd": 10.0,
+        #                 "lineColorFadingSaturation": 1.0,
+        #                 "lineColorFadingHueOffset": 0.0,
+        #                 "handlesInteractive": false,
+        #                 "snapMode": "toVisibleSurface",
+        #             },
+        #         }
+        #     ],
+        # }
+
+        raise NotImplementedError
+
     @property
     def startpoint_in_world(self) -> geo.Point:
         return self.volume.world_from_anatomical @ self.startpoint
