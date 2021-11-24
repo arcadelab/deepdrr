@@ -65,7 +65,12 @@ class LineAnnotation(object):
 
         return cls(*points, volume)
 
-    def save(self, path: str):
+    #sean 11/23/21
+    def save(self, path: str, fileName: str):
+        savePath = path + '/' + fileName + '.json'
+        with open(savePath, 'w') as outfile:
+            json.dump(self, outfile)
+
         # todo(sean): save markups with color options based on the following template
         # markup = {
         #     "@schema": "https://raw.githubusercontent.com/slicer/slicer/master/Modules/Loadable/Markups/Resources/Schema/markups-schema-v1.0.0.json#",
