@@ -66,17 +66,19 @@ class LineAnnotation(object):
         return cls(*points, volume)
 
     #sean 11/23/21
-    def save(self, path: str, fileName: str, breachDetected: bool):
+    def save(self, fileName: str, breachDetected: bool):
         startPoint = self.startpoint
         endPoint = self.endpoint
 
-        #determine line color based on cortical breach detected
+        #determine line color and path based on cortical breach detected
         if breachDetected :
             #RGB red if breach
             lineColor = [1.0, 0.0, 0.0]
+            path = './savedLineAnnotations/breachDetected'
         else :
             #RGB green if no breach
             lineColor = [0.0, 1.0, 0.0]
+            path = './savedLineAnnotations/noBreachDetected'
         
         # todo(sean): save markups with color options based on the following template
         markup = {
