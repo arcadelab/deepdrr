@@ -66,112 +66,116 @@ class LineAnnotation(object):
         return cls(*points, volume)
 
     #sean 11/23/21
-    def save(self, path: str, fileName: str):
+    def save(self, path: str, fileName: str, breachDetected: bool):
+        startPoint = self.startpoint
+        endPoint = self.endpoint
+
+        #determine line color based on cortical breach detected
+        if breachDetected :
+            #RGB red if breach
+            lineColor = [1.0, 0.0, 0.0]
+        else :
+            #RGB green if no breach
+            lineColor = [0.0, 1.0, 0.0]
+        
+        # todo(sean): save markups with color options based on the following template
+        markup = {
+             "@schema": "https://raw.githubusercontent.com/slicer/slicer/master/Modules/Loadable/Markups/Resources/Schema/markups-schema-v1.0.0.json#",
+             "markups": [
+                 {
+                     "type": "Line",
+                     "coordinateSystem": "LPS",
+                     "locked": false,
+                     "labelFormat": "%N-%d",
+                     "controlPoints": [
+                         {
+                             "id": "1",
+                             "label": "entry",
+                             "description": "",
+                             "associatedNodeID": "",
+                             "position": startPoint,
+                             "orientation": [
+                                 -1.0,
+                                 -0.0,
+                                 -0.0,
+                                 -0.0,
+                                 -1.0,
+                                 -0.0,
+                                 0.0,
+                                 0.0,
+                                 1.0,
+                             ],
+                             "selected": true,
+                             "locked": false,
+                             "visibility": true,
+                             "positionStatus": "defined",
+                         },
+                         {
+                             "id": "2",
+                             "label": "exit",
+                             "description": "",
+                             "associatedNodeID": "",
+                             "position": endPoint,
+                             "orientation": [
+                                 -1.0,
+                                 -0.0,
+                                 -0.0,
+                                 -0.0,
+                                 -1.0,
+                                 -0.0,
+                                 0.0,
+                                 0.0,
+                                 1.0,
+                             ],
+                             "selected": true,
+                             "locked": false,
+                             "visibility": true,
+                             "positionStatus": "defined",
+                         },
+                     ],
+                     "measurements": [
+                         {
+                             "name": "length",
+                             "enabled": true,
+                             "value": 124.90054351814699,
+                             "printFormat": "%-#4.4gmm",
+                         }
+                     ],
+                     "display": {
+                         "visibility": true,
+                         "opacity": 1.0,
+                         "color": lineColor,
+                         "selectedColor": lineColor,
+                         "activeColor": lineColor,
+                         "propertiesLabelVisibility": true,
+                         "pointLabelsVisibility": true,
+                         "textScale": 3.0,
+                         "glyphType": "Sphere3D",
+                         "glyphScale": 5.800000000000001,
+                         "glyphSize": 5.0,
+                         "useGlyphScale": true,
+                         "sliceProjection": false,
+                         "sliceProjectionUseFiducialColor": true,
+                         "sliceProjectionOutlinedBehindSlicePlane": false,
+                         "sliceProjectionColor": [1.0, 1.0, 1.0],
+                         "sliceProjectionOpacity": 0.6,
+                         "lineThickness": 0.2,
+                         "lineColorFadingStart": 1.0,
+                         "lineColorFadingEnd": 10.0,
+                         "lineColorFadingSaturation": 1.0,
+                         "lineColorFadingHueOffset": 0.0,
+                         "handlesInteractive": false,
+                         "snapMode": "toVisibleSurface",
+                     },
+                 }
+             ],
+         }
+
+        #the actual saving
         savePath = path + '/' + fileName + '.json'
         with open(savePath, 'w') as outfile:
-            json.dump(self, outfile)
-
-        # todo(sean): save markups with color options based on the following template
-        # markup = {
-        #     "@schema": "https://raw.githubusercontent.com/slicer/slicer/master/Modules/Loadable/Markups/Resources/Schema/markups-schema-v1.0.0.json#",
-        #     "markups": [
-        #         {
-        #             "type": "Line",
-        #             "coordinateSystem": "LPS",
-        #             "locked": false,
-        #             "labelFormat": "%N-%d",
-        #             "controlPoints": [
-        #                 {
-        #                     "id": "1",
-        #                     "label": "entry",
-        #                     "description": "",
-        #                     "associatedNodeID": "",
-        #                     "position": [
-        #                         3.980233907699585,
-        #                         -40.96451187133789,
-        #                         -1392.0523681640626,
-        #                     ],
-        #                     "orientation": [
-        #                         -1.0,
-        #                         -0.0,
-        #                         -0.0,
-        #                         -0.0,
-        #                         -1.0,
-        #                         -0.0,
-        #                         0.0,
-        #                         0.0,
-        #                         1.0,
-        #                     ],
-        #                     "selected": true,
-        #                     "locked": false,
-        #                     "visibility": true,
-        #                     "positionStatus": "defined",
-        #                 },
-        #                 {
-        #                     "id": "2",
-        #                     "label": "exit",
-        #                     "description": "",
-        #                     "associatedNodeID": "",
-        #                     "position": [
-        #                         100.19214630126953,
-        #                         -2.4773364067077638,
-        #                         -1322.3232421875,
-        #                     ],
-        #                     "orientation": [
-        #                         -1.0,
-        #                         -0.0,
-        #                         -0.0,
-        #                         -0.0,
-        #                         -1.0,
-        #                         -0.0,
-        #                         0.0,
-        #                         0.0,
-        #                         1.0,
-        #                     ],
-        #                     "selected": true,
-        #                     "locked": false,
-        #                     "visibility": true,
-        #                     "positionStatus": "defined",
-        #                 },
-        #             ],
-        #             "measurements": [
-        #                 {
-        #                     "name": "length",
-        #                     "enabled": true,
-        #                     "value": 124.90054351814699,
-        #                     "printFormat": "%-#4.4gmm",
-        #                 }
-        #             ],
-        #             "display": {
-        #                 "visibility": true,
-        #                 "opacity": 1.0,
-        #                 "color": [0.5, 0.5, 0.5],
-        #                 "selectedColor": [1.0, 0.5000076295109484, 0.5000076295109484],
-        #                 "activeColor": [0.4, 1.0, 0.0],
-        #                 "propertiesLabelVisibility": true,
-        #                 "pointLabelsVisibility": true,
-        #                 "textScale": 3.0,
-        #                 "glyphType": "Sphere3D",
-        #                 "glyphScale": 5.800000000000001,
-        #                 "glyphSize": 5.0,
-        #                 "useGlyphScale": true,
-        #                 "sliceProjection": false,
-        #                 "sliceProjectionUseFiducialColor": true,
-        #                 "sliceProjectionOutlinedBehindSlicePlane": false,
-        #                 "sliceProjectionColor": [1.0, 1.0, 1.0],
-        #                 "sliceProjectionOpacity": 0.6,
-        #                 "lineThickness": 0.2,
-        #                 "lineColorFadingStart": 1.0,
-        #                 "lineColorFadingEnd": 10.0,
-        #                 "lineColorFadingSaturation": 1.0,
-        #                 "lineColorFadingHueOffset": 0.0,
-        #                 "handlesInteractive": false,
-        #                 "snapMode": "toVisibleSurface",
-        #             },
-        #         }
-        #     ],
-        # }
-
+            json.dump(markup, outfile)
+        
         raise NotImplementedError
 
     @property
