@@ -66,9 +66,9 @@ class LineAnnotation(object):
         return cls(*points, volume)
 
     #sean 11/23/21
-    def save(self, fileName: str, breachDetected: bool):
-        startPoint = self.startpoint
-        endPoint = self.endpoint
+    def save(self, fileName: str, breachDetected: bool, startPt: geo, endPt: geo):
+        start = startPt
+        end = endPt
 
         #determine line color and path based on cortical breach detected
         if breachDetected :
@@ -95,7 +95,7 @@ class LineAnnotation(object):
                              "label": "entry",
                              "description": "",
                              "associatedNodeID": "",
-                             "position": startPoint,
+                             "position": start,
                              "orientation": [
                                  -1.0,
                                  -0.0,
@@ -117,7 +117,7 @@ class LineAnnotation(object):
                              "label": "exit",
                              "description": "",
                              "associatedNodeID": "",
-                             "position": endPoint,
+                             "position": end,
                              "orientation": [
                                  -1.0,
                                  -0.0,
