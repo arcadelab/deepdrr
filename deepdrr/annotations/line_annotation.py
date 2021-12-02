@@ -88,7 +88,7 @@ class LineAnnotation(object):
                             "label": "entry",
                             "description": "",
                             "associatedNodeID": "",
-                            "position": utils.jsonable(self.startpoint),
+                            "position": self.startpoint,
                             "orientation": [
                                 -1.0,
                                 -0.0,
@@ -110,7 +110,7 @@ class LineAnnotation(object):
                             "label": "exit",
                             "description": "",
                             "associatedNodeID": "",
-                            "position": utils.jsonable(self.endpoint),
+                            "position": self.endpoint,
                             "orientation": [
                                 -1.0,
                                 -0.0,
@@ -165,6 +165,8 @@ class LineAnnotation(object):
                 }
             ],
         }
+
+        markup = utils.jsonable(markup)
 
         with open(path, "w") as file:
             json.dump(markup, file)
