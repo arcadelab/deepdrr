@@ -1,4 +1,4 @@
-from typing import Optional, Tuple, Union, List
+from typing import Any, Dict, Optional, Tuple, Union, List
 
 import logging
 import numpy as np
@@ -96,6 +96,7 @@ class MobileCArm(object):
         isocenter: geo.Point3D = [0, 0, 0],
         alpha: float = 0,
         beta: float = 0,
+        degrees: bool = True,
         horizontal_movement: float = 200,  # width of window in X and Y planes.
         vertical_travel: float = 430,  # width of window in Z plane.
         min_alpha: float = -40,
@@ -103,7 +104,6 @@ class MobileCArm(object):
         # note that this would collide with the patient. Suggested to limit to +/- 45
         min_beta: float = -225,
         max_beta: float = 225,
-        degrees: bool = True,
         source_to_detector_distance: float = 1020,
         # vertical component of the source point offset from the isocenter of rotation, in -Z. Previously called `isocenter_distance`
         source_to_isocenter_vertical_distance: float = 530,
@@ -117,7 +117,7 @@ class MobileCArm(object):
         sensor_width: int = 1536,
         pixel_size: float = 0.194,
         rotate_camera_left: bool = True,  # make it so that down in the image corresponds to -x, so that patient images appear as expected.
-        enforce_isocenter_bounds: bool = True,
+        enforce_isocenter_bounds: bool = False,  # Allow the isocenter to travel arbitrarily far from the device origin
     ) -> None:
         """A simulated C-arm imaging device with orbital movement (alpha), angulation (beta) and 3D translation.
 
@@ -201,6 +201,34 @@ class MobileCArm(object):
             f"alpha={np.degrees(self.alpha)}, beta={np.degrees(self.beta)}, degrees=True)"
         )
 
+    def to_config(self) -> Dict[str, Any]:
+        """Get a json-safe dictionary that can be used to initialize the C-arm in its current pose."""
+        return utils.jsonable(
+            dict(
+                world_from_device=self.world_from_device,
+                isocenter=self.isocenter,
+                alpha=self.alpha,
+                beta=self.beta,
+                degrees=False,
+                horizontal_movement=self.horizontal_movement,
+                vertical_travel=self.vertical_travel,
+                min_alpha=self.min_alpha,
+                max_alpha=self.max_alpha,
+                min_beta=self.min_beta,
+                max_beta=self.max_beta,
+                source_to_detector_distance=self.source_to_detector_distance,
+                source_to_isocenter_vertical_distance=self.source_to_isocenter_vertical_distance,
+                source_to_isocenter_horizontal_offset=self.source_to_isocenter_horizontal_offset,
+                immersion_depth=self.immersion_depth,
+                free_space=self.free_space,
+                sensor_height=self.sensor_height,
+                sensor_width=self.sensor_width,
+                pixel_size=self.pixel_size,
+                rotate_camera_left=self.rotate_camera_left,
+                enforce_isocenter_bounds=self.enforce_isocenter_bounds,
+            )
+        )
+
     @property
     def max_isocenter(self) -> np.ndarray:
         return (
@@ -257,10 +285,10 @@ class MobileCArm(object):
     @property
     def camera3d_from_world(self) -> geo.FrameTransform:
         """Rigid transformation of the C-arm camera pose."""
-        return self.camera3d_from_device @ self.device_from_world
+        return self.get_camera3d_from_world()
 
     def get_camera3d_from_world(self) -> geo.FrameTransform:
-        return self.camera3d_from_world
+        return self.camera3d_from_device @ self.device_from_world
 
     def get_camera_projection(self) -> geo.CameraProjection:
         return geo.CameraProjection(

@@ -9,9 +9,18 @@ from typing import Optional, TypeVar, Any, Tuple, Union, List
 
 from . import data_utils, image_utils, test_utils
 
-__all__ = ["param_saver", "one_hot", "tuplify", "listify",
-           "radians", "generate_uniform_angles", "neglog",
-           "try_import_pyvista", "try_import_vtk"]
+__all__ = [
+    "param_saver",
+    "one_hot",
+    "tuplify",
+    "listify",
+    "radians",
+    "generate_uniform_angles",
+    "neglog",
+    "try_import_pyvista",
+    "try_import_vtk",
+    "jsonable",
+]
 
 
 logger = logging.getLogger(__name__)
@@ -38,8 +47,7 @@ def param_saver(
     Returns:
         [type]: [description]
     """
-    i0 = np.sum(spectrum[:, 0] * (spectrum[:, 1] /
-                np.sum(spectrum[:, 1]))) / 1000
+    i0 = np.sum(spectrum[:, 0] * (spectrum[:, 1] / np.sum(spectrum[:, 1]))) / 1000
     data = {
         "date": datetime.now(),
         "thetas": thetas,
@@ -58,7 +66,9 @@ def param_saver(
 
 
 def one_hot(
-    x: np.ndarray, num_classes: Optional[int] = None, axis: int = -1,
+    x: np.ndarray,
+    num_classes: Optional[int] = None,
+    axis: int = -1,
 ) -> np.ndarray:
     """One-hot encode the vector x along the axis.
 
@@ -85,7 +95,7 @@ T = TypeVar("T")
 
 
 def tuplify(t: Union[Tuple[T, ...], T], n: int = 1) -> Tuple[T, ...]:
-    """ Create a tuple with `n` copies of `t`,  if `t` is not already a tuple of length `n`."""
+    """Create a tuple with `n` copies of `t`,  if `t` is not already a tuple of length `n`."""
     if isinstance(t, (tuple, list)):
         assert len(t) == n
         return tuple(t)
@@ -118,7 +128,8 @@ def radians(
 
 
 def generate_uniform_angles(
-    phi_range: Tuple[float, float, float], theta_range: Tuple[float, float, float],
+    phi_range: Tuple[float, float, float],
+    theta_range: Tuple[float, float, float],
 ) -> Tuple[np.ndarray, np.ndarray]:
     """Generate a uniform sampling of angles over the given ranges.
 
@@ -175,8 +186,7 @@ def neglog(image: np.ndarray, epsilon: float = 0.01) -> np.ndarray:
         # TODO(killeen): for multiple images, only fill the bad ones
         image[:] = 0
         if image.shape[0] > 1:
-            logger.error(
-                "TODO: zeroed all images, even though only one might be bad.")
+            logger.error("TODO: zeroed all images, even though only one might be bad.")
     else:
         image = (image - image_min) / (image_max - image_min)
 
@@ -213,3 +223,26 @@ def try_import_vtk():
         vtk_available = False
 
     return vtk, nps, vtk_available
+
+
+def jsonable(obj: Any):
+    """Convert obj to a JSON-ready container or object.
+    Args:
+        obj ([type]):
+    """
+    if isinstance(obj, (str, float, int, complex)):
+        return obj
+    elif isinstance(obj, Path):
+        return str(obj.resolve())
+    elif isinstance(obj, (list, tuple)):
+        return type(obj)(map(jsonable, obj))
+    elif isinstance(obj, dict):
+        return dict(jsonable(list(obj.items())))
+    elif isinstance(obj, np.ndarray):
+        return obj.tolist()
+    elif hasattr(obj, "tolist"):
+        return obj.tolist()
+    elif hasattr(obj, "__array__"):
+        return np.array(obj).tolist()
+    else:
+        raise ValueError(f"Unknown type for JSON: {type(obj)}")

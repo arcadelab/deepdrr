@@ -1,13 +1,13 @@
 from __future__ import annotations
 
 import logging
-from typing import Optional
+from typing import List, Optional
 from pathlib import Path
 import numpy as np
 import json
 import pyvista as pv
 
-from .. import geo
+from .. import geo, utils
 from ..vol import Volume, AnyVolume
 
 logger = logging.getLogger(__name__)
@@ -64,6 +64,110 @@ class LineAnnotation(object):
             )
 
         return cls(*points, volume)
+
+    def save(self, path: str, color: List[float] = [0.5, 0.5, 0.5]):
+        """Save the Line annotation to a mrk.json file, which can be opened by 3D Slicer.
+
+        Args:
+            path (str): Output path to the file.
+            color (List[int], optional): The color of the saved annotation.
+        """
+        path = Path(path).expanduser()
+
+        markup = {
+            "@schema": "https://raw.githubusercontent.com/slicer/slicer/master/Modules/Loadable/Markups/Resources/Schema/markups-schema-v1.0.0.json#",
+            "markups": [
+                {
+                    "type": "Line",
+                    "coordinateSystem": self.volume.anatomical_coordinate_system,
+                    "locked": True,
+                    "labelFormat": "%N-%d",
+                    "controlPoints": [
+                        {
+                            "id": "1",
+                            "label": "entry",
+                            "description": "",
+                            "associatedNodeID": "",
+                            "position": utils.jsonable(self.startpoint),
+                            "orientation": [
+                                -1.0,
+                                -0.0,
+                                -0.0,
+                                -0.0,
+                                -1.0,
+                                -0.0,
+                                0.0,
+                                0.0,
+                                1.0,
+                            ],
+                            "selected": True,
+                            "locked": False,
+                            "visibility": True,
+                            "positionStatus": "defined",
+                        },
+                        {
+                            "id": "2",
+                            "label": "exit",
+                            "description": "",
+                            "associatedNodeID": "",
+                            "position": utils.jsonable(self.endpoint),
+                            "orientation": [
+                                -1.0,
+                                -0.0,
+                                -0.0,
+                                -0.0,
+                                -1.0,
+                                -0.0,
+                                0.0,
+                                0.0,
+                                1.0,
+                            ],
+                            "selected": True,
+                            "locked": False,
+                            "visibility": True,
+                            "positionStatus": "defined",
+                        },
+                    ],
+                    "measurements": [
+                        {
+                            "name": "length",
+                            "enabled": True,
+                            "value": 124.90054351814699,
+                            "printFormat": "%-#4.4gmm",
+                        }
+                    ],
+                    "display": {
+                        "visibility": True,
+                        "opacity": 1.0,
+                        "color": color,
+                        "selectedColor": [1.0, 0.5000076295109484, 0.5000076295109484],
+                        "activeColor": [0.4, 1.0, 0.0],
+                        "propertiesLabelVisibility": True,
+                        "pointLabelsVisibility": True,
+                        "textScale": 3.0,
+                        "glyphType": "Sphere3D",
+                        "glyphScale": 5.800000000000001,
+                        "glyphSize": 5.0,
+                        "useGlyphScale": True,
+                        "sliceProjection": False,
+                        "sliceProjectionUseFiducialColor": True,
+                        "sliceProjectionOutlinedBehindSlicePlane": False,
+                        "sliceProjectionColor": [1.0, 1.0, 1.0],
+                        "sliceProjectionOpacity": 0.6,
+                        "lineThickness": 0.2,
+                        "lineColorFadingStart": 1.0,
+                        "lineColorFadingEnd": 10.0,
+                        "lineColorFadingSaturation": 1.0,
+                        "lineColorFadingHueOffset": 0.0,
+                        "handlesInteractive": False,
+                        "snapMode": "toVisibleSurface",
+                    },
+                }
+            ],
+        }
+
+        with open(path, "w") as file:
+            json.dump(markup, file)
 
     @property
     def startpoint_in_world(self) -> geo.Point:

@@ -82,7 +82,8 @@ in the base directory. Then do `cd docs` and `make html` to build the static sit
 The following minimal example loads a CT volume from a NifTi `.nii.gz` file and simulates an X-ray projection:
 
 ```python
-from deepdrr import geo, Volume, MobileCArm, Projector
+from deepdrr import geo, Volume, MobileCArm
+from deepdrr.projector import Projector # separate import for CUDA init
 import matplotlib.pyplot as plt
 
 volume = Volume.from_nifti('/path/to/ct_image.nii.gz')
@@ -146,6 +147,41 @@ This capability has not been tested in version 1.0. For tool insertion, we recom
 1. Currently, the tool/implant model must be represented as a binary 3D volume, rather than a CAD surface model. However, this 3D volume can be of different resolution than the CT volume; particularly, it can be much higher to preserve fine structures of the tool/implant.
 2. The density of the tool needs to be provided via hard coding in the file 'load_dicom_tool.py' (line 127). The pose of the tool/implant with respect to the CT volume requires manual setup. We provide one example origin setting at line 23-24.
 3. The tool/implant will supersede the anatomy defined by the CT volume intensities. To this end, we sample the CT materials and densities at the location of the tool in the tool volume, and subtract them from the anatomy forward projections in detector domain (to enable different resolutions of CT and tool volume). Further information can be found in the IJCARS article.
+
+### Using DeepDRR Simultaneously with PyTorch
+
+Some issues may arise when using DeepDRR at the same time as PyTorch due to conflicts between pycuda's CUDA initialization and PyTorch CUDA initialization. The best workaround we know of is to first initialize the PyCUDA context (by importing `deepdrr.projector`) and then run your model on a dummy batch before creating a `Projector` object. For mysterious reasons (likely involving overlapping GPU resources and the retrograde of Mercury), this seems to work.
+
+```Python
+import torch
+from torch import nn
+from torchvision import models
+
+import deepdrr
+from deepdrr.projector import Projector # initializes PyCUDA
+
+# Before creating a Projector, run backprop to initialize PyTorch
+criterion = nn.CrossEntropyLoss()
+model = models.resnet50() # Your model here
+model.cuda()
+optimizer = optim.SGD(model.parameters(), lr=0.001, momentum=0.9)
+optimizer.zero_grad()
+x = torch.ones((32, 3, 224, 224), dtype=torch.float32).cuda() # Your image size
+y = torch.ones(32, dtype=torch.int64).cuda()
+y_pred = model(x)
+loss = criterion(y_pred, y)
+loss.backward()
+optimizer.step()
+log.info(f"Ran dummy batch to initialize torch.")
+
+volume = ...
+carm = ...
+with Projector(volume, carm=carm):
+  image = projector()
+  image = image.unsqueeze(0) # add batch dim
+  y_pred = model(image)
+  ...
+```
 
 ## Reference
 
