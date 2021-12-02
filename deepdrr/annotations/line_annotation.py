@@ -177,8 +177,6 @@ class LineAnnotation(object):
         savePath = path + '/' + fileName + '.json'
         with open(savePath, 'w') as outfile:
             json.dump(markup, outfile)
-        
-        raise NotImplementedError
 
     @property
     def startpoint_in_world(self) -> geo.Point:
