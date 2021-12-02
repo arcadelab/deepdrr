@@ -5,7 +5,7 @@ with open("README.md", "r") as fh:
 
 setuptools.setup(
     name="deepdrr",
-    version="1.1.0a3",
+    version="1.1.0a4",
     author="Benjamin D. Killeen",
     author_email="killeen@jhu.edu",
     description="A Catalyst for Machine Learning in Fluoroscopy-guided Procedures.",
