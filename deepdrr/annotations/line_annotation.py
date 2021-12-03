@@ -10,7 +10,7 @@ import pyvista as pv
 from .. import geo, utils
 from ..vol import Volume, AnyVolume
 
-logger = logging.getLogger(__name__)
+log = logging.getLogger(__name__)
 
 
 class LineAnnotation(object):
@@ -38,26 +38,26 @@ class LineAnnotation(object):
         points = [geo.point(cp["position"]) for cp in control_points]
 
         coordinate_system = ann["markups"][0]["coordinateSystem"]
-        logger.debug(f"coordinate system: {coordinate_system}")
+        log.debug(f"loading markup with coordinate system: {coordinate_system}")
 
         if volume.anatomical_coordinate_system == "LPS":
             if coordinate_system == "LPS":
                 pass
             elif coordinate_system == "RAS":
-                logger.debug("converting to LPS")
+                log.debug("converting to LPS")
                 points = [geo.LPS_from_RAS @ p for p in points]
             else:
                 raise ValueError
         elif volume.anatomical_coordinate_system == "RAS":
             if coordinate_system == "LPS":
-                logger.debug("converting to RAS")
+                log.debug("converting to RAS")
                 points = [geo.RAS_from_LPS @ p for p in points]
             elif coordinate_system == "RAS":
                 pass
             else:
                 raise ValueError
         else:
-            logger.warning(
+            log.warning(
                 "annotation may not be in correct coordinate system. "
                 "Unable to check against provided volume, probably "
                 "because volume was created manually. Proceed with caution."
@@ -65,7 +65,11 @@ class LineAnnotation(object):
 
         return cls(*points, volume)
 
-    def save(self, path: str, color: List[float] = [0.5, 0.5, 0.5]):
+    def save(
+        self,
+        path: str,
+        color: List[float] = [1.0, 0.5000076295109484, 0.5000076295109484],
+    ):
         """Save the Line annotation to a mrk.json file, which can be opened by 3D Slicer.
 
         Args:
@@ -74,21 +78,34 @@ class LineAnnotation(object):
         """
         path = Path(path).expanduser()
 
+        def to_lps(x):
+            if self.volume.anatomical_coordinate_system == "LPS":
+                return list(x)
+            elif self.volume.anatomical_coordinate_system == "RAS":
+                return list(geo.LPS_from_RAS @ x)
+            else:
+                raise ValueError
+
+        # log.info(f"start, end: {self.startpoint, self.endpoint}")
+        # log.info(
+        #     f"start, end in world: {self.startpoint_in_world, self.endpoint_in_world}"
+        # )
+
         markup = {
             "@schema": "https://raw.githubusercontent.com/slicer/slicer/master/Modules/Loadable/Markups/Resources/Schema/markups-schema-v1.0.0.json#",
             "markups": [
                 {
                     "type": "Line",
                     "coordinateSystem": self.volume.anatomical_coordinate_system,
-                    "locked": True,
-                    "labelFormat": "%N-%d",
+                    "locked": False,
+                    "labelFormat": r"%N-%d",
                     "controlPoints": [
                         {
                             "id": "1",
-                            "label": "entry",
+                            "label": "startpoint",
                             "description": "",
                             "associatedNodeID": "",
-                            "position": self.startpoint,
+                            "position": list(self.startpoint),
                             "orientation": [
                                 -1.0,
                                 -0.0,
@@ -107,10 +124,10 @@ class LineAnnotation(object):
                         },
                         {
                             "id": "2",
-                            "label": "exit",
+                            "label": "endpoint",
                             "description": "",
                             "associatedNodeID": "",
-                            "position": self.endpoint,
+                            "position": list(self.endpoint),
                             "orientation": [
                                 -1.0,
                                 -0.0,
@@ -133,17 +150,17 @@ class LineAnnotation(object):
                             "name": "length",
                             "enabled": True,
                             "value": 124.90054351814699,
-                            "printFormat": "%-#4.4gmm",
+                            "printFormat": r"%-#4.4gmm",
                         }
                     ],
                     "display": {
                         "visibility": True,
                         "opacity": 1.0,
-                        "color": color,
-                        "selectedColor": [1.0, 0.5000076295109484, 0.5000076295109484],
+                        "color": [0.5, 0.5, 0.5],
+                        "selectedColor": color,
                         "activeColor": [0.4, 1.0, 0.0],
-                        "propertiesLabelVisibility": True,
-                        "pointLabelsVisibility": True,
+                        "propertiesLabelVisibility": False,
+                        "pointLabelsVisibility": False,
                         "textScale": 3.0,
                         "glyphType": "Sphere3D",
                         "glyphScale": 5.800000000000001,
