@@ -11,7 +11,7 @@ def save(path: str, image: np.ndarray) -> None:
         image (np.ndarray): the image. If in float32, assumed to be a float image. Converted to uint8 before saving.
     """
 
-    if image.dtype == np.float32:
+    if image.dtype in [np.float32, np.float64]:
         image = (image * 255).astype(np.uint8)
     Image.fromarray(image).save(path)
 

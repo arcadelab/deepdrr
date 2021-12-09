@@ -3,6 +3,7 @@
 """
 
 from __future__ import annotations
+from functools import cache
 from typing import Union, Tuple, List, Optional, Dict
 
 import logging
@@ -17,6 +18,7 @@ from scipy.interpolate import RegularGridInterpolator
 from .. import load_dicom
 from .. import geo
 from .. import utils
+from ..utils import mesh_utils
 
 pv, pv_available = utils.try_import_pyvista()
 vtk, nps, vtk_available = utils.try_import_vtk()
@@ -32,6 +34,7 @@ class Volume(object):
     world_from_anatomical: geo.FrameTransform
     anatomical_coordinate_system: Optional[str]
 
+    cache_dir = None
     # TODO: The current Volume class is really a scanned volume. We should have a BaseVolume or
     # GenericVolume, which might be subclassed by tools or other types of volumes not constructed
     # from array data, e.g. for which materials is perfectly known.
@@ -42,6 +45,7 @@ class Volume(object):
         anatomical_from_ijk: geo.FrameTransform,
         world_from_anatomical: Optional[geo.FrameTransform] = None,
         anatomical_coordinate_system: Optional[str] = None,
+        cache_dir: Optional[str] = None,
     ) -> None:
         """A deepdrr Volume object with materials segmentation and orientation in world-space.
 
@@ -55,6 +59,7 @@ class Volume(object):
             world_from_anatomical (Optional[geo.FrameTransform], optional): transformation from the anatomical space to world coordinates. If None, assumes identity. Defaults to None.
             anatomical_coordinate_system (str, optional): String denoting the coordinate system. Either "LPS", "RAS", or None.
                 This may be useful for ensuring compatibility with other data, but it is not checked or used internally (yet). Defaults to None.
+            cache_dir ()
         """
         self.data = np.array(data).astype(np.float32)
         self.materials = self._format_materials(materials)
@@ -66,6 +71,7 @@ class Volume(object):
         )
         self.anatomical_coordinate_system = anatomical_coordinate_system
         assert self.anatomical_coordinate_system in ["LPS", "RAS", None]
+        self.cache_dir = None if cache_dir is None else Path(cache_dir).expanduser()
 
     @classmethod
     def from_parameters(
@@ -157,22 +163,46 @@ class Volume(object):
             **kwargs,
         )
 
-    @staticmethod
+    @classmethod
+    def _get_cache_dir(cls, cache_dir: Optional[Path] = None) -> Optional[Path]:
+        """Get the cache dir used for surfaces or other things.
+
+        Args:
+            cache_dir (Optional[Path], optional): If provided separately by the user. Saved if current cache_dir is None. Defaults to None.
+
+        Returns:
+            Optional[Path]: The cache_dir, if it can be found. Created.
+        """
+        if cache_dir is None:
+            return None
+
+        cache_dir = Path(cache_dir).expanduser()
+        if not cache_dir.exists():
+            cache_dir.mkdir(parents=True)
+        return cache_dir
+
+    @classmethod
     def _get_cache_path(
+        cls,
         use_thresholding: bool = True,
         cache_dir: Optional[Path] = None,
         prefix: str = "",
     ) -> Optional[Path]:
-        return (
-            None
-            if cache_dir is None
-            else Path(cache_dir)
-            / "cached_{}{}materials{}.npz".format(
-                prefix,
-                "_" if prefix else "",
-                "_with_thresholding" if use_thresholding else "",
-            )
+        """Get the cache path."""
+        if (cache_dir := cls._get_cache_dir(cache_dir)) is None:
+            return None
+
+        name = "cached_{}{}materials{}.npz".format(
+            prefix,
+            "_" if prefix else "",
+            "_with_thresholding" if use_thresholding else "",
         )
+
+        # If the file exists in the parent directory of cache dir, as was previously standard for `from_nifti`, then move it to the new cache path.
+        if (p := cache_dir.parent / name).exists():
+            p.rename(cache_dir / name)
+
+        return cache_dir / name
 
     @staticmethod
     def _convert_hounsfield_to_density(hu_values: np.ndarray):
@@ -180,7 +210,8 @@ class Volume(object):
 
     @staticmethod
     def _segment_materials(
-        hu_values: np.ndarray, use_thresholding: bool = True,
+        hu_values: np.ndarray,
+        use_thresholding: bool = True,
     ) -> Dict[str, np.ndarray]:
         """Segment the materials.
 
@@ -246,6 +277,8 @@ class Volume(object):
         use_thresholding: bool = True,
         use_cached: bool = True,
         cache_dir: Optional[Path] = None,
+        materials: Optional[Dict[str, np.ndarray]] = None,
+        segmentation: bool = False,
         **kwargs,
     ):
         """Load a volume from NiFti file.
@@ -255,7 +288,12 @@ class Volume(object):
             use_thresholding (bool, optional): segment the materials using thresholding (faster but less accurate). Defaults to True.
             world_from_anatomical (Optional[geo.FrameTransform], optional): position the volume in world space. If None, uses identity. Defaults to None.
             use_cached (bool, optional): Use a cached segmentation if available. Defaults to True.
-            cache_dir (Optional[Path], optional): Where to load/save the cached segmentation. If None, use the parent dir of `path`. Defaults to None.
+            cache_dir (Optional[Path], optional): Where to load/save the cached segmentation. If None, use a "cache" directory
+                in the same location as the nifti file. Defaults to None.
+            materials: Optional material segmentation, as a dictionary mapping material name to binary segmentation.
+                If not provided, materials are segmented from the CT. Defaults to None.
+            segmentation (bool, optional) If the file is a segmentation file, then its "materials" correspond to a high density material (bone),
+                where the values are >0. Defaults to false. Overrides provided materials.
 
         Returns:
             Volume: A new volume object.
@@ -263,7 +301,10 @@ class Volume(object):
         path = Path(path)
 
         if cache_dir is None:
-            cache_dir = path.parent
+            cache_dir = path.parent / "cache"
+
+        if not cache_dir.exists():
+            cache_dir.mkdir()
 
         logger.info(f"loading NiFti volume from {path}")
         img = nib.load(path)
@@ -276,13 +317,16 @@ class Volume(object):
         hu_values = img.get_fdata()
 
         data = cls._convert_hounsfield_to_density(hu_values)
-        materials = cls.segment_materials(
-            hu_values,
-            use_thresholding=use_thresholding,
-            use_cached=use_cached,
-            cache_dir=cache_dir,
-            prefix=path.name.split(".")[0],
-        )
+        if segmentation:
+            materials = dict(bone=hu_values > 0)
+        elif materials is None:
+            materials = cls.segment_materials(
+                hu_values,
+                use_thresholding=use_thresholding,
+                use_cached=use_cached,
+                cache_dir=cache_dir,
+                prefix=path.name.split(".")[0],
+            )
 
         return cls(
             data,
@@ -320,7 +364,7 @@ class Volume(object):
         stem = path.name.split(".")[0]
 
         if cache_dir is None:
-            cache_dir = path.parent
+            cache_dir = path.parent // "cache"
 
         # Multi-frame dicoms store all slices of a volume in one file.
         # they must specify the necessary dicom tags under
@@ -468,7 +512,10 @@ class Volume(object):
         path = Path(path)
         hu_values, header = nrrd.read(path)
         ijk_from_anatomical = np.concatenate(
-            [header["space directions"], header["space origin"].reshape(-1, 1),],
+            [
+                header["space directions"],
+                header["space origin"].reshape(-1, 1),
+            ],
             axis=1,
         )
         anatomical_from_ijk = np.concatenate(
@@ -561,7 +608,10 @@ class Volume(object):
         """The spacing of the voxels."""
         return geo.vector(np.abs(np.array(self.anatomical_from_ijk.R)).max(axis=0))
 
-    def _format_materials(self, materials: Dict[str, np.ndarray],) -> np.ndarray:
+    def _format_materials(
+        self,
+        materials: Dict[str, np.ndarray],
+    ) -> np.ndarray:
         """Standardize the input material segmentation."""
         for mat in materials:
             materials[mat] = np.array(materials[mat]).astype(np.float32)
@@ -712,6 +762,18 @@ class Volume(object):
         x_ijk = self.ijk_from_world @ geo.point(x)
         return np.all(0 <= np.array(x_ijk) <= np.array(self.shape) - 1)
 
+    def isosurface(self, **kwargs) -> pv.PolyData:
+        """Make an isosurface from the volume's data, transforming to anatomical_coordinates.
+
+        Accepts arguments passed to :func:`deepdrr.utils.mesh_utils.isosurface`.
+
+        Returns:
+            pv.PolyData: The surface mesh in anatomical coordinates.
+        """
+        surface = mesh_utils.isosurface(self.data, **kwargs)
+        surface.transform(geo.get_data(self.anatomical_from_ijk), inplace=True)
+        return surface
+
     def _make_surface(self, material: str = "bone"):
         """Make a surface for the boolean segmentation"""
         assert vtk_available and pv_available
@@ -728,10 +790,14 @@ class Volume(object):
             segmentation.shape[0], segmentation.shape[1], segmentation.shape[2]
         )
         vol.SetOrigin(
-            -np.sign(R[0, 0]) * t[0], -np.sign(R[1, 1]) * t[1], np.sign(R[2, 2]) * t[2],
+            -np.sign(R[0, 0]) * t[0],
+            -np.sign(R[1, 1]) * t[1],
+            np.sign(R[2, 2]) * t[2],
         )
         vol.SetSpacing(
-            -abs(R[0, 0]), -abs(R[1, 1]), abs(R[2, 2]),
+            -abs(R[0, 0]),
+            -abs(R[1, 1]),
+            abs(R[2, 2]),
         )
 
         segmentation = segmentation.astype(np.uint8)
@@ -869,5 +935,7 @@ class MetalVolume(Volume):
             raise NotImplementedError
 
         return dict(
-            air=(hu_values == 0), bone=(hu_values > 0), titanium=(hu_values > 0),
+            air=(hu_values == 0),
+            bone=(hu_values > 0),
+            titanium=(hu_values > 0),
         )
