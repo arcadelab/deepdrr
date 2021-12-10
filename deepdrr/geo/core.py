@@ -199,13 +199,13 @@ class Point(HomogeneousPointOrVector):
 
     def __add__(self, other: Vector) -> Point:
         """Can add a vector to a point, but cannot add two points. TODO: cannot add points together?"""
-        if issubclass(type(other), Vector):
+        if isinstance(other, Vector):
             return type(self)(self.data + other.data)
-        elif issubclass(type(other), Point):
+        elif isinstance(other, Point):
             # TODO: should points be allowed to be added together?
             return point(np.array(self) + np.array(other))
         else:
-            return NotImplemented
+            return self + vector(other)
 
     def __radd__(self, other):
         return self + other
