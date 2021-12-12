@@ -3,7 +3,6 @@
 """
 
 from __future__ import annotations
-from functools import cache
 from typing import Union, Tuple, List, Optional, Dict
 
 import logging
@@ -314,19 +313,21 @@ class Volume(object):
             )
 
         anatomical_from_ijk = geo.FrameTransform(img.affine)
-        hu_values = img.get_fdata()
 
-        data = cls._convert_hounsfield_to_density(hu_values)
         if segmentation:
-            materials = dict(bone=hu_values > 0)
-        elif materials is None:
-            materials = cls.segment_materials(
-                hu_values,
-                use_thresholding=use_thresholding,
-                use_cached=use_cached,
-                cache_dir=cache_dir,
-                prefix=path.name.split(".")[0],
-            )
+            data = img.get_fdata()
+            materials = dict(bone=data > 0)
+        else:
+            hu_values = img.get_fdata()
+            data = cls._convert_hounsfield_to_density(hu_values)
+            if materials is None:
+                materials = cls.segment_materials(
+                    hu_values,
+                    use_thresholding=use_thresholding,
+                    use_cached=use_cached,
+                    cache_dir=cache_dir,
+                    prefix=path.name.split(".")[0],
+                )
 
         return cls(
             data,
@@ -762,7 +763,15 @@ class Volume(object):
         x_ijk = self.ijk_from_world @ geo.point(x)
         return np.all(0 <= np.array(x_ijk) <= np.array(self.shape) - 1)
 
-    def isosurface(self, **kwargs) -> pv.PolyData:
+    def isosurface(
+        self,
+        value: float = 0.5,
+        label: Optional[int] = None,
+        node_centered: bool = True,
+        smooth: bool = True,
+        smooth_iter: int = 30,
+        relaxation_factor: float = 0.25,
+    ) -> pv.PolyData:
         """Make an isosurface from the volume's data, transforming to anatomical_coordinates.
 
         Accepts arguments passed to :func:`deepdrr.utils.mesh_utils.isosurface`.
@@ -770,7 +779,15 @@ class Volume(object):
         Returns:
             pv.PolyData: The surface mesh in anatomical coordinates.
         """
-        surface = mesh_utils.isosurface(self.data, **kwargs)
+        surface = mesh_utils.isosurface(
+            self.data,
+            value=value,
+            label=label,
+            node_centered=node_centered,
+            smooth=smooth,
+            smooth_iter=smooth_iter,
+            relaxation_factor=relaxation_factor,
+        )
         surface.transform(geo.get_data(self.anatomical_from_ijk), inplace=True)
         return surface
 

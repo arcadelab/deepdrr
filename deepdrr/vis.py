@@ -43,7 +43,11 @@ def show(
     fulls = utils.listify(full, len(items))
     for i, (item, full) in enumerate(zip(items, fulls)):
         color = colors[i % len(colors)]
-        plotter.add_mesh(item.get_mesh_in_world(full=full), color=color)
+        if hasattr(item, "get_mesh_in_world"):
+            mesh = item.get_mesh_in_world(full=full)
+        else:
+            mesh = item
+        plotter.add_mesh(mesh, color=color)
 
     plotter.reset_camera()
     plotter.show(auto_close=False)
