@@ -16,6 +16,8 @@ class KWire(Volume):
 
     _mesh_material = "titanium"
 
+    diameter = 2.0  # mm
+
     def __init__(
         self,
         *args,
@@ -126,3 +128,7 @@ class KWire(Volume):
             self.tip_in_anatomical,
             self.base_in_anatomical,
         )
+
+    @property
+    def radius(self) -> float:
+        return self.diameter / 2
