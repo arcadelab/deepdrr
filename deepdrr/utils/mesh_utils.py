@@ -15,6 +15,7 @@ def isosurface(
     label: Optional[int] = None,
     node_centered: bool = True,
     smooth: bool = True,
+    decimation: float = 0.01,
     smooth_iter: int = 30,
     relaxation_factor: float = 0.25,
 ) -> pv.PolyData:
@@ -26,6 +27,7 @@ def isosurface(
         label (Optional[int], optional): Get the isosurface of the `data == label` segmentation. Defaults to None.
         node_centered (bool, optional): Whether the values in the data are sampled in the node-centered style. Defaults to true.
         smooth (bool, optional): whether to apply smoothing. Defaults to True.
+        decimation (float, optional): How much to decimate the surface. Defaults to 0.01.
         smooth_iter (int, optional): number of smoothing iterations to run.
         relaxation_factor (float): passed to surface.smooth.
 
@@ -56,13 +58,13 @@ def isosurface(
     dmc.ComputeNormalsOff()
     dmc.Update()
 
-    surface = pv.wrap(dmc.GetOutput())
+    surface: pv.PolyData = pv.wrap(dmc.GetOutput())
     if not surface.is_all_triangles():
         surface.triangulate(inplace=True)
 
     log.debug("postprocess...")
     surface.decimate_pro(
-        0.01,
+        decimation,
         feature_angle=60,
         splitting=False,
         preserve_topology=True,
@@ -79,5 +81,7 @@ def isosurface(
         )
 
     surface.compute_normals(inplace=True)
+    if surface.n_open_edges > 0:
+        log.warning(f"surface is not closed, with {surface.n_open_edges} open edges")
 
     return surface
