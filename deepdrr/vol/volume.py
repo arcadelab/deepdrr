@@ -769,12 +769,16 @@ class Volume(object):
         label: Optional[int] = None,
         node_centered: bool = True,
         smooth: bool = True,
+        decimation: float = 0.01,
         smooth_iter: int = 30,
         relaxation_factor: float = 0.25,
     ) -> pv.PolyData:
         """Make an isosurface from the volume's data, transforming to anatomical_coordinates.
 
         Accepts arguments passed to :func:`deepdrr.utils.mesh_utils.isosurface`.
+
+        Args:
+            todo
 
         Returns:
             pv.PolyData: The surface mesh in anatomical coordinates.
@@ -785,6 +789,7 @@ class Volume(object):
             label=label,
             node_centered=node_centered,
             smooth=smooth,
+            decimation=decimation,
             smooth_iter=smooth_iter,
             relaxation_factor=relaxation_factor,
         )
