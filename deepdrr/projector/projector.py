@@ -35,8 +35,6 @@ NUMBYTES_INT32 = 4
 NUMBYTES_FLOAT32 = 4
 
 
-
-
 def _get_spectrum(spectrum: Union[np.ndarray, str]):
     """Get the data corresponding to the given spectrum name.
 
@@ -254,7 +252,7 @@ class Projector(object):
             # for the scatter block structure
 
             total_threads = self.num_scatter_blocks * self.threads * self.threads
-            log.info(f"total threads: {total_threads}")
+            log.debug(f"total threads: {total_threads}")
             self.histories_per_thread = int(np.ceil(self.scatter_num / total_threads))
 
             self.scatter_num = self.histories_per_thread * total_threads
@@ -321,7 +319,7 @@ class Projector(object):
 
         assert isinstance(self.spectrum, np.ndarray)
 
-        log.info("Initiating projection and attenuation...")
+        log.debug("Initiating projection and attenuation...")
 
         project_tick = time.perf_counter()
 
@@ -397,7 +395,7 @@ class Projector(object):
             blocks_w = int(np.ceil(self.output_shape[0] / self.threads))
             blocks_h = int(np.ceil(self.output_shape[1] / self.threads))
             block = (self.threads, self.threads, 1)
-            log.info(
+            log.debug(
                 f"Running: {blocks_w}x{blocks_h} blocks with {self.threads}x{self.threads} threads each"
             )
 
@@ -448,7 +446,7 @@ class Projector(object):
             if self.scatter_num > 0:
                 print("starting scatter")
                 # TODO (mjudish): the resampled density never gets used in the scatter kernel
-                log.info(
+                log.debug(
                     f"Starting scatter simulation, scatter_num={self.scatter_num}. Time: {time.asctime()}"
                 )
 
@@ -685,7 +683,7 @@ class Projector(object):
 
         images = np.stack(intensities)
         photon_prob = np.stack(photon_probs)
-        log.info("Completed projection and attenuation")
+        log.debug("Completed projection and attenuation")
 
         if self.add_noise:
             log.info("adding Poisson noise")
