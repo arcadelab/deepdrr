@@ -34,12 +34,17 @@ def isosurface(
     Returns:
         pv.PolyData: a Pyvista mesh.
     """
+    log.debug("making isosurface")
     vol = vtk.vtkStructuredPoints()
+    log.debug("set dimensions")
     vol.SetDimensions(*data.shape[:3])
     if node_centered:
+        log.debug("node centered origin")
         vol.SetOrigin(0, 0, 0)
     else:
+        log.debug("cell-centered origin")
         vol.SetOrigin(0.5, 0.5, 0.5)
+    log.debug("spacing")
     vol.SetSpacing(1, 1, 1)
 
     if label is not None:
@@ -47,9 +52,10 @@ def isosurface(
     else:
         data = (data > value).astype(np.uint8)
 
+    log.debug("transfer scalars")
     scalars = nps.numpy_to_vtk(data.ravel(order="F"), deep=True)
     vol.GetPointData().SetScalars(scalars)
-
+    
     log.debug("marching cubes...")
     dmc = vtk.vtkDiscreteMarchingCubes()
     dmc.SetInputData(vol)
@@ -62,7 +68,7 @@ def isosurface(
     if not surface.is_all_triangles():
         surface.triangulate(inplace=True)
 
-    log.debug("postprocess...")
+    log.debug("decimate")
     surface.decimate_pro(
         decimation,
         feature_angle=60,
@@ -72,6 +78,7 @@ def isosurface(
     )
 
     if smooth:
+        log.debug("smooth")
         surface.smooth(
             n_iter=smooth_iter,
             relaxation_factor=relaxation_factor,
@@ -80,6 +87,7 @@ def isosurface(
             inplace=True,
         )
 
+    log.debug("normals")
     surface.compute_normals(inplace=True)
     if surface.n_open_edges > 0:
         log.warning(f"surface is not closed, with {surface.n_open_edges} open edges")
