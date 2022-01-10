@@ -23,11 +23,9 @@ from .mcgpu_mfp_data import MFP_DATA
 from .mcgpu_rita_samplers import rita_samplers
 
 
-# import pycuda.autoinit
+import pycuda.autoinit
 import pycuda.driver as cuda
-cuda.init()
-context = cuda.Device(0).retain_primary_context()
-# from pycuda.autoinit import context
+from pycuda.autoinit import context
 from pycuda.compiler import SourceModule
 
 log = logging.getLogger(__name__)
@@ -59,7 +57,7 @@ def _get_spectrum(spectrum: Union[np.ndarray, str]):
         raise TypeError(f"unrecognized spectrum type: {type(spectrum)}")
 
 
-def _get_kernel_projector_module(num_volumes: int, num_materials: int) -> SourceModule:
+def _get_kernel_projector_module(num_volumes: int, num_materials: int, air_index: int, attenuate_outside_volume: bool = False) -> SourceModule:
     """Compile the cuda code for the kernel projector.
 
     Assumes `project_kernel.cu`, `kernel_vol_seg_data.cu`, and `cubic` interpolation library is in the same directory as THIS
@@ -84,10 +82,7 @@ def _get_kernel_projector_module(num_volumes: int, num_materials: int) -> Source
     log.debug(
         f"compiling {source_path} with NUM_VOLUMES={num_volumes}, NUM_MATERIALS={num_materials}"
     )
-    push = context.get_current() is None
-    if push:
-        context.push()
-    sm = SourceModule(
+    return SourceModule(
         source,
         include_dirs=[bicubic_path, str(d)],
         no_extern_c=True,
@@ -96,10 +91,12 @@ def _get_kernel_projector_module(num_volumes: int, num_materials: int) -> Source
             f"NUM_VOLUMES={num_volumes}",
             "-D",
             f"NUM_MATERIALS={num_materials}",
+            "-D",
+            f"ATTENUATE_OUTSIDE_VOLUME={int(attenuate_outside_volume)}",
+            "-D",
+            f"AIR_INDEX={air_index}",
         ],
     )
-    if push: context.pop()
-    return sm
 
 
 def _get_kernel_scatter_module(num_materials) -> SourceModule:
@@ -144,7 +141,7 @@ class Projector(object):
         collected_energy: bool = False,
         neglog: bool = True,
         intensity_upper_bound: Optional[float] = None,
-        source_to_detector_distance: Optional[float] = None
+        attenuate_outside_volume: bool = False,
     ) -> None:
         """Create the projector, which has info for simulating the DRR.
 
@@ -200,11 +197,12 @@ class Projector(object):
         assert len(self.volumes) == len(self.priorities)
 
         self.camera_intrinsics = camera_intrinsics
-        self.source_to_detector_distance = source_to_detector_distance
         if carm is not None:
             self.source_to_detector_distance = carm.source_to_detector_distance
-
-        if (scatter_num !=0 or collected_energy) and self.source_to_detector_distance is None:
+        else:
+            log.warning(
+                "No way to specify source-to-detector distance without a MobileCArm parameter"
+            )
             raise ValueError("No source_to_detector_distance")
         self.carm = carm
         self.step = step
@@ -241,9 +239,18 @@ class Projector(object):
         self.all_materials.sort()
         log.debug(f"MATERIALS: {self.all_materials}")
 
+        if attenuate_outside_volume:
+            assert 'air' in self.all_materials
+            air_index = self.all_materials.index("air")
+        else:
+            air_index = 0
+
         # compile the module
         self.mod = _get_kernel_projector_module(
-            len(self.volumes), len(self.all_materials)
+            len(self.volumes),
+            len(self.all_materials),
+            air_index=air_index,
+            attenuate_outside_volume=attenuate_outside_volume,
         )
         self.project_kernel = self.mod.get_function("projectKernel")
 
@@ -340,7 +347,6 @@ class Projector(object):
             # Get the volume min/max points in world coordinates.
             sx, sy, sz = proj.get_center_in_world()
             world_from_index = np.array(proj.world_from_index).astype(np.float32)
-            context.push()
             cuda.memcpy_htod(self.world_from_index_gpu, world_from_index)
 
             for vol_id, _vol in enumerate(self.volumes):
@@ -748,9 +754,7 @@ class Projector(object):
         """Allocate GPU memory and transfer the volume, segmentations to GPU."""
         if self.initialized:
             raise RuntimeError("Close projector before initializing again.")
-        push = context.get_current() is None
-        if push:
-            context.push()
+
         # TODO: in this function, there are several instances of axis swaps.
         # We may want to investigate if the axis swaps are necessary.
 
@@ -1346,7 +1350,6 @@ class Projector(object):
 
         # Mark self as initialized.
         self.initialized = True
-        if push: context.pop()
 
     def free(self):
         """Free the allocated GPU memory."""
