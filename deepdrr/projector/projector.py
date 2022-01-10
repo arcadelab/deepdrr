@@ -57,7 +57,7 @@ def _get_spectrum(spectrum: Union[np.ndarray, str]):
         raise TypeError(f"unrecognized spectrum type: {type(spectrum)}")
 
 
-def _get_kernel_projector_module(num_volumes: int, num_materials: int) -> SourceModule:
+def _get_kernel_projector_module(num_volumes: int, num_materials: int, air_index: int, attenuate_outside_volume: bool = False) -> SourceModule:
     """Compile the cuda code for the kernel projector.
 
     Assumes `project_kernel.cu`, `kernel_vol_seg_data.cu`, and `cubic` interpolation library is in the same directory as THIS
@@ -91,6 +91,10 @@ def _get_kernel_projector_module(num_volumes: int, num_materials: int) -> Source
             f"NUM_VOLUMES={num_volumes}",
             "-D",
             f"NUM_MATERIALS={num_materials}",
+            "-D",
+            f"ATTENUATE_OUTSIDE_VOLUME={int(attenuate_outside_volume)}",
+            "-D",
+            f"AIR_INDEX={air_index}",
         ],
     )
 
@@ -137,6 +141,7 @@ class Projector(object):
         collected_energy: bool = False,
         neglog: bool = True,
         intensity_upper_bound: Optional[float] = None,
+        attenuate_outside_volume: bool = False,
     ) -> None:
         """Create the projector, which has info for simulating the DRR.
 
@@ -234,9 +239,18 @@ class Projector(object):
         self.all_materials.sort()
         log.debug(f"MATERIALS: {self.all_materials}")
 
+        if attenuate_outside_volume:
+            assert 'air' in self.all_materials
+            air_index = self.all_materials.index("air")
+        else:
+            air_index = 0
+
         # compile the module
         self.mod = _get_kernel_projector_module(
-            len(self.volumes), len(self.all_materials)
+            len(self.volumes),
+            len(self.all_materials),
+            air_index=air_index,
+            attenuate_outside_volume=attenuate_outside_volume,
         )
         self.project_kernel = self.mod.get_function("projectKernel")
 
