@@ -8,19 +8,44 @@ import json
 import pyvista as pv
 
 from .. import geo, utils
-from ..vol import Volume, AnyVolume
+from ..vol import Volume
 
 log = logging.getLogger(__name__)
 
 
 class LineAnnotation(object):
     def __init__(
-        self, startpoint: geo.Point, endpoint: geo.Point, volume: AnyVolume
+        self,
+        startpoint: geo.Point,
+        endpoint: geo.Point,
+        volume: Optional[Volume] = None,
+        anatomical_from_world: Optional[geo.FrameTransform] = None,
+        anatomical_coordinate_system: Optional[str] = None,
     ) -> None:
+        """Create a Line Annotation.
+
+        Must provide either the volume this relies on, or the minimal attributes (pose of volume in world and coordinate system).
+
+        Args:
+            startpoint (geo.Point): The startpoint in anatomical coordinates.
+            endpoint (geo.Point): The endpoint in anatomical coordinates.
+            volume (Optional[Volume], optional): The volume, with a given pose. If not provided, must provide `anatomical_from_world` and `anatomical_coordinate_system`. Defaults to None.
+            anatomical_from_world (Optional[geo.FrameTransform], optional): [description]. Defaults to None.
+            anatomical_coordinate_system (Optional[str], optional): [description]. Defaults to None.
+        """
         # all points in anatomical coordinates, matching the provided volume.
         self.startpoint = geo.point(startpoint)
         self.endpoint = geo.point(endpoint)
-        self.volume = volume
+        if volume is None:
+            assert (
+                anatomical_from_world is not None
+                and self.anatomical_coordinate_system.upper() in ["RAS", "LPS"]
+            )
+            self.anatomical_coordinate_system = anatomical_coordinate_system.upper()
+            self.anatomical_from_world = geo.frame_transform(anatomical_from_world)
+        else:
+            self.anatomical_from_world = volume.anatomical_from_world
+            self.anatomical_coordinate_system = volume.anatomical_coordinate_system
 
         assert (
             self.startpoint.dim == self.endpoint.dim
@@ -30,9 +55,24 @@ class LineAnnotation(object):
         return f"LineAnnotation({self.startpoint}, {self.endpoint})"
 
     @classmethod
-    def from_markup(cls, path: str, volume: AnyVolume) -> LineAnnotation:
+    def from_markup(
+        cls,
+        path: str,
+        volume: Optional[Volume] = None,
+        anatomical_from_world: Optional[geo.FrameTransform] = None,
+        anatomical_coordinate_system: Optional[str] = None,
+    ) -> LineAnnotation:
         with open(path, "r") as file:
             ann = json.load(file)
+
+        if volume is None:
+            assert (
+                anatomical_from_world is not None
+                and anatomical_coordinate_system is not None
+            )
+        else:
+            anatomical_coordinate_system = volume.anatomical_coordinate_system
+            anatomical_from_world = volume.anatomical_from_world
 
         control_points = ann["markups"][0]["controlPoints"]
         points = [geo.point(cp["position"]) for cp in control_points]
@@ -40,7 +80,7 @@ class LineAnnotation(object):
         coordinate_system = ann["markups"][0]["coordinateSystem"]
         log.debug(f"loading markup with coordinate system: {coordinate_system}")
 
-        if volume.anatomical_coordinate_system == "LPS":
+        if anatomical_coordinate_system == "LPS":
             if coordinate_system == "LPS":
                 pass
             elif coordinate_system == "RAS":
@@ -48,7 +88,7 @@ class LineAnnotation(object):
                 points = [geo.LPS_from_RAS @ p for p in points]
             else:
                 raise ValueError
-        elif volume.anatomical_coordinate_system == "RAS":
+        elif anatomical_coordinate_system == "RAS":
             if coordinate_system == "LPS":
                 log.debug("converting to RAS")
                 points = [geo.RAS_from_LPS @ p for p in points]
@@ -63,7 +103,12 @@ class LineAnnotation(object):
                 "because volume was created manually. Proceed with caution."
             )
 
-        return cls(*points, volume)
+        return cls(
+            *points,
+            volume=volume,
+            anatomical_from_world=anatomical_from_world,
+            anatomical_coordinate_system=anatomical_coordinate_system,
+        )
 
     def save(
         self,
@@ -79,9 +124,9 @@ class LineAnnotation(object):
         path = Path(path).expanduser()
 
         def to_lps(x):
-            if self.volume.anatomical_coordinate_system == "LPS":
+            if self.anatomical_coordinate_system == "LPS":
                 return list(x)
-            elif self.volume.anatomical_coordinate_system == "RAS":
+            elif self.anatomical_coordinate_system == "RAS":
                 return list(geo.LPS_from_RAS @ x)
             else:
                 raise ValueError
@@ -189,18 +234,20 @@ class LineAnnotation(object):
             json.dump(markup, file)
 
     @property
+    def world_from_anatomical(self) -> geo.FrameTransform:
+        return self.anatomical_from_world.inv
+
+    @property
     def startpoint_in_world(self) -> geo.Point:
-        return self.volume.world_from_anatomical @ self.startpoint
+        return self.world_from_anatomical @ self.startpoint
 
     @property
     def endpoint_in_world(self) -> geo.Point:
-        return self.volume.world_from_anatomical @ self.endpoint
+        return self.world_from_anatomical @ self.endpoint
 
     @property
     def midpoint_in_world(self) -> geo.Point:
-        return self.volume.world_from_anatomical @ self.startpoint.lerp(
-            self.endpoint, 0.5
-        )
+        return self.world_from_anatomical @ self.startpoint.lerp(self.endpoint, 0.5)
 
     def get_mesh_in_world(self, full: bool = True):
         u = self.startpoint_in_world
