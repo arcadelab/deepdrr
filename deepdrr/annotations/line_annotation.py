@@ -39,7 +39,7 @@ class LineAnnotation(object):
         if volume is None:
             assert (
                 anatomical_from_world is not None
-                and self.anatomical_coordinate_system.upper() in ["RAS", "LPS"]
+                and anatomical_coordinate_system.upper() in ["RAS", "LPS"]
             )
             self.anatomical_coordinate_system = anatomical_coordinate_system.upper()
             self.anatomical_from_world = geo.frame_transform(anatomical_from_world)
@@ -141,7 +141,7 @@ class LineAnnotation(object):
             "markups": [
                 {
                     "type": "Line",
-                    "coordinateSystem": self.volume.anatomical_coordinate_system,
+                    "coordinateSystem": self.anatomical_coordinate_system,
                     "locked": False,
                     "labelFormat": r"%N-%d",
                     "controlPoints": [
