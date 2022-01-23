@@ -22,7 +22,7 @@
 #endif
 
 #ifndef AIR_DENSITY
-#define AIR_DENSITY 0.01129
+#define AIR_DENSITY 0.1129 
 #endif
 
 #ifndef AIR_INDEX

@@ -802,7 +802,7 @@ extern "C" {
         float seg_at_alpha[NUM_VOLUMES][NUM_MATERIALS];
         // if (debug) printf("start trace\n");
 
-        // Attenuate up to minAlpha, assuming it is filled with air. By default, AIR_DENSITY is 0.
+        // Attenuate up to minAlpha, assuming it is filled with air.
         if (ATTENUATE_OUTSIDE_VOLUME) {
             area_density[AIR_INDEX] += (minAlpha / step) * AIR_DENSITY;
         }
