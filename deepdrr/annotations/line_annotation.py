@@ -69,7 +69,7 @@ class LineAnnotation(object):
             assert (
                 anatomical_from_world is not None
                 and anatomical_coordinate_system is not None
-            )
+            ), "must supply the anatomical transform"
         else:
             anatomical_coordinate_system = volume.anatomical_coordinate_system
             anatomical_from_world = volume.anatomical_from_world
