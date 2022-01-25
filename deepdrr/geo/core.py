@@ -191,11 +191,16 @@ class Point(HomogeneousPointOrVector):
 
     def __sub__(
         self: Point,
-        other: Point,
-    ) -> Vector:
+        other: HomogeneousPointOrVector,
+    ) -> Union[Point, Vector]:
         """Subtract two points, obtaining a vector."""
-        other = self.from_any(other)
-        return _point_or_vector(self.data - other.data)
+        if isinstance(other, Point):
+            other = self.from_any(other)
+            return _point_or_vector(self.data - other.data)
+        elif isinstance(other, Vector):
+            return self + (-other)
+        else:
+            return NotImplemented
 
     def __add__(self, other: Vector) -> Point:
         """Can add a vector to a point, but cannot add two points. TODO: cannot add points together?"""
@@ -303,10 +308,10 @@ class Vector(HomogeneousPointOrVector):
             return NotImplemented
 
     def cross(self, other) -> Vector:
-        if issubclass(type(other), Vector) and self.dim == other.dim:
+        if isinstance(other, Vector) and self.dim == other.dim:
             return vector(np.cross(self, other))
         else:
-            return NotImplemented
+            raise TypeError(f"unrecognized type for cross product: {type(other)}")
 
     def perpendicular(self, random: bool = False) -> Vector3D:
         """Find an arbitrary perpendicular vector to self.
@@ -803,7 +808,12 @@ class FrameTransform(Transform):
             FrameTransform: A `B_from_A` transform that aligns the points.
                 Note that this is not unique, due to rotation about the axis between the points.
         """
-        # First, get the vectors pointing from x to y in each frame.
+        x_B = point(x_B)
+        y_B = point(y_B)
+        x_A = point(x_A)
+        y_A = point(y_A)
+
+        # First, get the vectors pointing from x to y in each frames.
         x2y_A = y_A - x_A
         x2y_B = y_B - x_B
 
