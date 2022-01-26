@@ -231,7 +231,7 @@ class LineAnnotation(object):
         markup = utils.jsonable(markup)
 
         with open(path, "w") as file:
-            json.dump(markup, file)
+            json.dump(markup, file, indent=4)
 
     @property
     def world_from_anatomical(self) -> geo.FrameTransform:
