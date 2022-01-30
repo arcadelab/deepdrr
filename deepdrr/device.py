@@ -267,6 +267,9 @@ class MobileCArm(object):
 
     @property
     def camera3d_from_device(self) -> geo.FrameTransform:
+        """Get the camera3d frame from device coordinates
+        
+        The Z axis points from the source to the detector."""
         camera3d_from_arm = geo.FrameTransform.from_rt(
             translation=geo.point(
                 0,
