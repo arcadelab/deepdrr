@@ -76,6 +76,7 @@ class CameraProjection(Transform):
 
     @property
     def world_from_index(self) -> Transform:
+        """Gets the vector between the source in world and the given point in index space."""
         return self.index_from_world.inv
 
     @property
