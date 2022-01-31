@@ -12,7 +12,7 @@ def save(path: str, image: np.ndarray) -> None:
     """
 
     if image.dtype in [np.float32, np.float64]:
-        image = (image * 255).astype(np.uint8)
+        image = np.clip(image * 255, 0, 255).astype(np.uint8)
     Image.fromarray(image).save(path)
 
 
