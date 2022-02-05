@@ -354,7 +354,13 @@ class Vector(HomogeneousPointOrVector):
 
     def angle(self, other: Vector) -> float:
         """Get the angle between self and other in radians."""
-        return np.arccos(self.dot(other) / (self.norm() * other.norm()))
+        num = self.dot(other)
+        den = self.norm() * other.norm()
+        cos_theta = num / den
+        if np.isclose(cos_theta, 1):
+            return 0
+        else:
+            return np.arccos(cos_theta)
 
     def cosine_distance(self, other: Vector) -> float:
         """Get the cosine distance between the angles.
