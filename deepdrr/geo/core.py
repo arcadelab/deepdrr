@@ -744,10 +744,10 @@ class FrameTransform(Transform):
     @classmethod
     def from_point_correspondence(
         cls,
-        points_B: Union[List[Point3D], np.ndarray],
-        points_A: Union[List[Point3D], np.ndarray],
+        points_B: Union[List[Point], np.ndarray],
+        points_A: Union[List[Point], np.ndarray],
     ):
-        """Create a frame transform from a known point correspondence.
+        """Create a (rigid) frame transform from a known point correspondence.
 
         Args:
             points_B: a list of N corresponding points in the B frame.
