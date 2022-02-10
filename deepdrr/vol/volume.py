@@ -299,11 +299,11 @@ class Volume(object):
         """
         path = Path(path)
 
-        if cache_dir is None:
+        if use_cached and cache_dir is None:
             cache_dir = path.parent / "cache"
 
-        if not cache_dir.exists():
-            cache_dir.mkdir()
+            if not cache_dir.exists():
+                cache_dir.mkdir()
 
         logger.info(f"loading NiFti volume from {path}")
         img = nib.load(path)
