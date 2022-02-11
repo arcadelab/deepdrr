@@ -76,12 +76,16 @@ class CameraProjection(Transform):
 
     @property
     def world_from_index(self) -> Transform:
-        """Gets the vector between the source in world and the given point in index space."""
+        """Gets the world-space vector between the source in world and the given point in index space."""
         return self.index_from_world.inv
 
     @property
     def world_from_index_on_image_plane(self) -> FrameTransform:
-        """Get the transform to points in world on the image (detector) plane from image indices."""
+        """Get the transform to points in world on the image (detector) plane from image indices.
+
+        The point input point should still be 3D, with a 0 in the z coordinate.
+        
+        """
         proj = np.array([[1, 0, 0], [0, 1, 0], [0, 0, 0], [0, 0, 1]])
         proj = Transform(proj, _inv=proj.T)
         index_from_world_3d = proj @ self.index_from_world
