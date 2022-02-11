@@ -216,7 +216,7 @@ class Point(HomogeneousPointOrVector):
         return self + other
 
     def __mul__(self, other: Union[int, float]) -> Vector:
-        if isinstance(other, (int, float)):
+        if isinstance(other, (int, float)) or np.isscalar(other):
             return point(other * np.array(self))
         else:
             return NotImplemented
@@ -268,8 +268,8 @@ class Vector(HomogeneousPointOrVector):
 
     def __mul__(self, other: Union[int, float]):
         """Vectors can be multiplied by scalars."""
-        if isinstance(other, (int, float)):
-            return type(self)(other * self.data)
+        if isinstance(other, (int, float)) or np.isscalar(other):
+            return vector(other * np.array(self))
         else:
             return NotImplemented
 
@@ -354,6 +354,7 @@ class Vector(HomogeneousPointOrVector):
 
     def angle(self, other: Vector) -> float:
         """Get the angle between self and other in radians."""
+        other = vector(other)
         num = self.dot(other)
         den = self.norm() * other.norm()
         cos_theta = num / den
