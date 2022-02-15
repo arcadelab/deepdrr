@@ -192,7 +192,7 @@ class Point(HomogeneousPointOrVector):
     def __sub__(
         self: Point,
         other: HomogeneousPointOrVector,
-    ) -> Union[Point, Vector]:
+    ) -> HomogeneousPointOrVector:
         """Subtract two points, obtaining a vector."""
         if isinstance(other, Point):
             other = self.from_any(other)
@@ -212,7 +212,7 @@ class Point(HomogeneousPointOrVector):
         else:
             return self + vector(other)
 
-    def __radd__(self, other):
+    def __radd__(self, other: Vector) -> Point:
         return self + other
 
     def __mul__(self, other: Union[int, float]) -> Vector:
@@ -266,14 +266,14 @@ class Vector(HomogeneousPointOrVector):
         """If other is not a Vector, make it one."""
         return other if issubclass(type(other), Vector) else cls.from_array(other)
 
-    def __mul__(self, other: Union[int, float]):
+    def __mul__(self, other: Union[int, float]) -> Vector:
         """Vectors can be multiplied by scalars."""
         if isinstance(other, (int, float)) or np.isscalar(other):
             return vector(other * np.array(self))
         else:
             return NotImplemented
 
-    def __matmul__(self, other: Vector):
+    def __matmul__(self, other: Vector) -> float:
         """Inner product between two Vectors."""
         other = self.from_any(other)
         return type(self)(self.data @ other.data)
@@ -283,10 +283,10 @@ class Vector(HomogeneousPointOrVector):
         other = self.from_any(other)
         return type(self)(self.data + other.data)
 
-    def __neg__(self):
+    def __neg__(self) -> Vector:
         return (-1) * self
 
-    def __sub__(self, other: Vector):
+    def __sub__(self, other: Vector) -> Vector:
         return self + (-other)
 
     def __rmul__(self, other: Union[int, float]):
@@ -418,7 +418,7 @@ def _array(x: Union[List[np.ndarray], List[float]]) -> np.ndarray:
         raise ValueError(f"could not parse point or vector arguments: {x}")
 
 
-def point(*x: Union[np.ndarray, float, Point2D, Point3D]) -> Union[Point2D, Point3D]:
+def point(*x: Union[np.ndarray, float, Point]) -> Point:
     """The preferred method for creating a point.
 
     There are three ways to create a point using `point()`.
@@ -434,7 +434,7 @@ def point(*x: Union[np.ndarray, float, Point2D, Point3D]) -> Union[Point2D, Poin
     Returns:
         Union[Point2D, Point3D]: Point2D or Point3D.
     """
-    if len(x) == 1 and isinstance(x[0], (Point2D, Point3D)):
+    if len(x) == 1 and isinstance(x[0], Point):
         return x[0]
 
     x = _array(x)
@@ -447,8 +447,8 @@ def point(*x: Union[np.ndarray, float, Point2D, Point3D]) -> Union[Point2D, Poin
 
 
 def vector(
-    *v: Union[np.ndarray, float, Vector2D, Vector3D]
-) -> Union[Vector2D, Vector3D]:
+    *v: Union[np.ndarray, float, Vector]
+) -> Vector:
     """The preferred method for creating a vector.
 
     There are three ways to create a point using `vector()`.
@@ -466,7 +466,7 @@ def vector(
     Returns:
         Union[Point2D, Point3D]: Point2D or Point3D.
     """
-    if len(v) == 1 and isinstance(v[0], (Vector2D, Vector3D)):
+    if len(v) == 1 and isinstance(v[0], Vector):
         return v[0]
 
     v = _array(v)
