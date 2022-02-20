@@ -11,8 +11,6 @@ logger = logging.getLogger(__name__)
 
 
 class KWire(Volume):
-    tip_in_ijk: geo.Point3D
-    base_in_ijk: geo.Point3D
 
     _mesh_material = "titanium"
 
@@ -21,8 +19,8 @@ class KWire(Volume):
     def __init__(
         self,
         *args,
-        tip_in_ijk: Optional[geo.Point3D] = None,
-        base_in_ijk: Optional[geo.Point3D] = None,
+        tip: Optional[geo.Point3D] = None,
+        base: Optional[geo.Point3D] = None,
         **kwargs,
     ) -> None:
         """A special volume which can be positioned using the tip and base points.
@@ -30,16 +28,14 @@ class KWire(Volume):
         Use the `from_example()` class method to create a KWire from the example volume (which will be downloaded).
 
         Args:
-            tip_in_ijk (geo.Point3D): The location of the tool tip in IJK.
-            base_in_ijk (geo.Point3D): The location of the tool base in IJK.
+            tip (geo.Point3D): The location of the tool tip in RAS.
+            base (geo.Point3D): The location of the tool base in RAS.
         """
 
         super(KWire, self).__init__(*args, **kwargs)
-        assert (
-            tip_in_ijk is not None and base_in_ijk is not None
-        ), "must provide points for the base and tip of the kwire"
-        self.tip_in_ijk = geo.point(tip_in_ijk)
-        self.base_in_ijk = geo.point(base_in_ijk)
+        assert tip is not None and base is not None
+        self.tip = geo.point(tip)
+        self.base = geo.point(base)
 
     @classmethod
     def from_example(cls, **kwargs):
@@ -53,10 +49,10 @@ class KWire(Volume):
         filename = "Kwire2.nii.gz"
         path = data_utils.download(url, filename, md5=md5)
         shape = (100, 100, 2000)
-        tip_in_ijk = geo.point(shape[0] / 2, shape[1] / 2, 0)
-        base_in_ijk = geo.point(shape[0] / 2, shape[1] / 2, shape[2] - 1)
+        tip = geo.point(-1, -1, 0)
+        base = geo.point(-1, -1, 200)
         tool = cls.from_nifti(
-            path, tip_in_ijk=tip_in_ijk, base_in_ijk=base_in_ijk, **kwargs
+            path, tip=tip, base=base, **kwargs
         )
         return tool
 
@@ -75,9 +71,17 @@ class KWire(Volume):
         return dict(titanium=(hu_values > 0))
 
     @property
+    def tip_in_ijk(self) -> geo.Point3D:
+        return self.ijk_from_anatomical @ self.tip
+
+    @property
+    def base_in_ijk(self) -> geo.Point3D:
+        return self.ijk_from_anatomical @ self.base
+
+    @property
     def tip_in_anatomical(self) -> geo.Point3D:
         """Get the location of the tool tip (the pointy end) in anatomical coordinates."""
-        return self.anatomical_from_ijk @ self.tip_in_ijk
+        return self.tip
 
     @property
     def base_in_anatomical(self) -> geo.Point3D:
