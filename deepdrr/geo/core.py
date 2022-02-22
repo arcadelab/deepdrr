@@ -217,7 +217,7 @@ class Point(HomogeneousPointOrVector):
 
     def __mul__(self, other: Union[int, float]) -> Vector:
         if isinstance(other, (int, float)) or np.isscalar(other):
-            return point(other * np.array(self))
+            return point(float(other) * np.array(self))
         else:
             return NotImplemented
 
@@ -237,6 +237,7 @@ class Point(HomogeneousPointOrVector):
         Returns:
             Point: the point that is `alpha` of the way between self and other.
         """
+        alpha = float(alpha)
         return (1 - alpha) * self + alpha * other
 
     def as_vector(self) -> Vector:
