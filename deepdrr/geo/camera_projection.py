@@ -59,6 +59,18 @@ class CameraProjection(Transform):
         return cls(intrinsic=K, extrinsic=FrameTransform.from_rt(R, t))
 
     @property
+    def K(self):
+        return self.index_from_camera2d
+
+    @property
+    def R(self):
+        return self.camera3d_from_world.R
+
+    @property
+    def t(self):
+        return self.camera3d_from_world.t
+
+    @property
     def intrinsic(self) -> CameraIntrinsicTransform:
         return self.index_from_camera2d
 
@@ -67,12 +79,18 @@ class CameraProjection(Transform):
         return self.camera3d_from_world
 
     @property
-    def index_from_world(self) -> Transform:
+    def index_from_camera3d(self) -> Transform:
         proj = np.concatenate([np.eye(3), np.zeros((3, 1))], axis=1)
         camera2d_from_camera3d = Transform(proj, _inv=proj.T)
-        return (
-            self.index_from_camera2d @ camera2d_from_camera3d @ self.camera3d_from_world
-        )
+        return self.index_from_camera2d @ camera2d_from_camera3d
+
+    @property
+    def camera3d_from_index(self) -> Transform:
+        return self.index_from_camera3d.inv
+
+    @property
+    def index_from_world(self) -> Transform:
+        return self.index_from_camera3d @ self.camera3d_from_world
 
     @property
     def world_from_index(self) -> Transform:
@@ -84,7 +102,7 @@ class CameraProjection(Transform):
         """Get the transform to points in world on the image (detector) plane from image indices.
 
         The point input point should still be 3D, with a 0 in the z coordinate.
-        
+
         """
         proj = np.array([[1, 0, 0], [0, 1, 0], [0, 0, 0], [0, 0, 1]])
         proj = Transform(proj, _inv=proj.T)

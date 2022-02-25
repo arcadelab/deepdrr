@@ -119,9 +119,13 @@ class HomogeneousObject(ABC):
         return self.data
 
 
-def get_data(x: HomogeneousObject) -> np.ndarray:
-    assert issubclass(type(x), HomogeneousObject)
-    return x.get_data()
+def get_data(x: Union[HomogeneousObject, List[HomogeneousObject]]) -> np.ndarray:
+    if isinstance(x, HomogeneousObject):
+        return x.get_data()
+    elif isinstance(x, list):
+        return np.array([get_data(x_) for x_ in x])
+    else:
+        raise TypeError
 
 
 class HomogeneousPointOrVector(HomogeneousObject):
@@ -169,7 +173,10 @@ class HomogeneousPointOrVector(HomogeneousObject):
 
 class Point(HomogeneousPointOrVector):
     def __init__(self, data: np.ndarray) -> None:
-        assert data[-1] == 1
+        assert data[-1] != 0, "cannot create a point with 0 for w"
+        if data[-1] != 1:
+            data /= data[-1]
+
         super().__init__(data)
 
     @classmethod
@@ -447,9 +454,7 @@ def point(*x: Union[np.ndarray, float, Point]) -> Point:
         raise ValueError(f"invalid data for point: {x}")
 
 
-def vector(
-    *v: Union[np.ndarray, float, Vector]
-) -> Vector:
+def vector(*v: Union[np.ndarray, float, Vector]) -> Vector:
     """The preferred method for creating a vector.
 
     There are three ways to create a point using `vector()`.
