@@ -22,11 +22,13 @@ from .mcgpu_compton_data import COMPTON_DATA
 from .mcgpu_mfp_data import MFP_DATA
 from .mcgpu_rita_samplers import rita_samplers
 
-
-import pycuda.autoinit
-import pycuda.driver as cuda
-from pycuda.autoinit import context
-from pycuda.compiler import SourceModule
+try:
+    import pycuda.autoinit
+    import pycuda.driver as cuda
+    from pycuda.autoinit import context
+    from pycuda.compiler import SourceModule
+except ImportError:
+    log.warning(f"Running without pycuda: projector operations will fail.")
 
 log = logging.getLogger(__name__)
 
