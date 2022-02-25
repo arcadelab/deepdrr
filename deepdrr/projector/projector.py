@@ -22,6 +22,8 @@ from .mcgpu_compton_data import COMPTON_DATA
 from .mcgpu_mfp_data import MFP_DATA
 from .mcgpu_rita_samplers import rita_samplers
 
+log = logging.getLogger(__name__)
+
 try:
     import pycuda.autoinit
     import pycuda.driver as cuda
@@ -30,7 +32,6 @@ try:
 except ImportError:
     log.warning(f"Running without pycuda: projector operations will fail.")
 
-log = logging.getLogger(__name__)
 
 NUMBYTES_INT8 = 1
 NUMBYTES_INT32 = 4
