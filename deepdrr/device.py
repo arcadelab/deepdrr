@@ -96,6 +96,7 @@ class MobileCArm(object):
         isocenter: geo.Point3D = [0, 0, 0],
         alpha: float = 0,
         beta: float = 0,
+        gamma: float = 0,  # rotation of detector about principle ray
         degrees: bool = True,
         horizontal_movement: float = 200,  # width of window in X and Y planes.
         vertical_travel: float = 430,  # width of window in Z plane.
@@ -116,7 +117,7 @@ class MobileCArm(object):
         sensor_height: int = 1536,
         sensor_width: int = 1536,
         pixel_size: float = 0.194,
-        rotate_camera_left: bool = True,  # make it so that down in the image corresponds to -x, so that patient images appear as expected.
+        rotate_camera_left: bool = True,  # make it so that down in the image corresponds to -x, so that patient images appear as expected (when gamma=0).
         enforce_isocenter_bounds: bool = False,  # Allow the isocenter to travel arbitrarily far from the device origin
     ) -> None:
         """A simulated C-arm imaging device with orbital movement (alpha), angulation (beta) and 3D translation.
@@ -153,6 +154,7 @@ class MobileCArm(object):
         self.isocenter = geo.point(isocenter)
         self.alpha = utils.radians(alpha, degrees=degrees)
         self.beta = utils.radians(beta, degrees=degrees)
+        self.gamma = utils.radians(gamma, degrees=degrees)
         self.horizontal_movement = horizontal_movement
         self.vertical_travel = vertical_travel
         self.min_alpha = utils.radians(min_alpha, degrees=degrees)
@@ -209,6 +211,7 @@ class MobileCArm(object):
                 isocenter=self.isocenter,
                 alpha=self.alpha,
                 beta=self.beta,
+                gamma=self.gamma,
                 degrees=False,
                 horizontal_movement=self.horizontal_movement,
                 vertical_travel=self.vertical_travel,
@@ -268,7 +271,7 @@ class MobileCArm(object):
     @property
     def camera3d_from_device(self) -> geo.FrameTransform:
         """Get the camera3d frame from device coordinates
-        
+
         The Z axis points from the source to the detector."""
         camera3d_from_arm = geo.FrameTransform.from_rt(
             translation=geo.point(
@@ -283,7 +286,14 @@ class MobileCArm(object):
                 @ camera3d_from_arm
             )
 
-        return camera3d_from_arm @ self.arm_from_device
+        # This is a little hacky, since the "device" frame is now kind of wrong, and modeling this
+        # C-arm wouldn't show the rotation about the principle ray, but it will work to rotate the
+        # images produced.
+        gamma_rotation = geo.frame_transform(
+            Rotation.from_euler("z", self.gamma, degrees=False)
+        )
+
+        return gamma_rotation @ camera3d_from_arm @ self.arm_from_device
 
     @property
     def camera3d_from_world(self) -> geo.FrameTransform:
@@ -334,6 +344,7 @@ class MobileCArm(object):
         delta_isocenter: Optional[geo.Vector3D] = None,
         delta_alpha: Optional[float] = None,
         delta_beta: Optional[float] = None,
+        delta_gamma: Optional[float] = None,
         degrees: bool = True,
     ) -> None:
         """Move the C-arm to the specified pose.
@@ -357,6 +368,9 @@ class MobileCArm(object):
         if delta_beta is not None:
             assert np.isscalar(delta_beta)
             self.beta += utils.radians(float(delta_beta), degrees=degrees)
+        if delta_gamma is not None:
+            assert np.isscalar(delta_gamma)
+            self.gamma += utils.radians(float(delta_gamma), degrees=degrees)
 
         self._enforce_bounds()
 
@@ -366,6 +380,7 @@ class MobileCArm(object):
         isocenter_in_world: Optional[geo.Point3D] = None,
         alpha: float = None,
         beta: float = None,
+        gamma: float = None,
         degrees: bool = True,
     ) -> None:
         """Move to the specified point.
@@ -387,6 +402,8 @@ class MobileCArm(object):
             self.alpha = utils.radians(float(alpha), degrees=degrees)
         if beta is not None:
             self.beta = utils.radians(float(beta), degrees=degrees)
+        if gamma is not None:
+            self.gamma = utils.radians(float(gamma), degrees=degrees)
 
         self._enforce_bounds()
 
@@ -414,7 +431,7 @@ class MobileCArm(object):
 
     # shape parameters
     source_height = 200
-    source_radius = 200
+    source_radius = 100
     detector_height = 100
     arm_width = 100
 

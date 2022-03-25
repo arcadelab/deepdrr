@@ -38,8 +38,11 @@ class KWire(Volume):
         self.base = geo.point(base)
 
     @classmethod
-    def from_example(cls, **kwargs):
+    def from_example(cls, density: float = 7.5, **kwargs):
         """Creates a KWire from the provided download link.
+
+        Args:
+            density (float, optional): Density of the K-wire metal.
 
         Returns:
             KWire: The example KWire built into DeepDRR.
@@ -52,14 +55,15 @@ class KWire(Volume):
         tip = geo.point(-1, -1, 0)
         base = geo.point(-1, -1, 200)
         tool = cls.from_nifti(
-            path, tip=tip, base=base, **kwargs
+            path, density_kwargs=dict(density=density), tip=tip, base=base, **kwargs
         )
         return tool
 
     @staticmethod
-    def _convert_hounsfield_to_density(hu_values: np.ndarray):
+    def _convert_hounsfield_to_density(hu_values: np.ndarray, density: float = 7.5):
         # TODO: coefficient should be 2?
-        return 2 * hu_values
+        # Should be density of steel.
+        return density * hu_values
 
     @staticmethod
     def _segment_materials(
