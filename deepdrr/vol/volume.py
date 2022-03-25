@@ -204,8 +204,19 @@ class Volume(object):
         return cache_dir / name
 
     @staticmethod
-    def _convert_hounsfield_to_density(hu_values: np.ndarray):
-        return load_dicom.conv_hu_to_density(hu_values)
+    def _convert_hounsfield_to_density(hu_values: np.ndarray, smooth_air: bool = False):
+        # Use two linear interpolations from data: (HU,g/cm^3)
+        # use for lower HU: density = 0.001029*HU + 1.03
+        # use for upper HU: density = 0.0005886*HU + 1.03
+
+        # set air densities
+        if smooth_air:
+            hu_values[hu_values <= -900] = -1000
+        # hu_values[hu_values > 600] = 5000;
+        densities = np.maximum(
+            np.minimum(0.001029 * hu_values + 1.030, 0.0005886 * hu_values + 1.03), 0
+        )
+        return densities
 
     @staticmethod
     def _segment_materials(
@@ -238,6 +249,8 @@ class Volume(object):
         prefix: str = "",
     ) -> Dict[str, np.ndarray]:
         """Segment the materials in a volume, potentially caching.
+
+        If cache_dir is None, then 
 
         Args:
             hu_values (np.ndarray): volume data in Hounsfield Units.
@@ -278,6 +291,7 @@ class Volume(object):
         cache_dir: Optional[Path] = None,
         materials: Optional[Dict[str, np.ndarray]] = None,
         segmentation: bool = False,
+        density_kwargs: dict = {},
         **kwargs,
     ):
         """Load a volume from NiFti file.
@@ -293,6 +307,7 @@ class Volume(object):
                 If not provided, materials are segmented from the CT. Defaults to None.
             segmentation (bool, optional) If the file is a segmentation file, then its "materials" correspond to a high density material (bone),
                 where the values are >0. Defaults to false. Overrides provided materials.
+            density_kwargs: Additional kwargs passed to convert_hounsfield_to_density.
 
         Returns:
             Volume: A new volume object.
@@ -319,7 +334,7 @@ class Volume(object):
             materials = dict(bone=data > 0)
         else:
             hu_values = img.get_fdata()
-            data = cls._convert_hounsfield_to_density(hu_values)
+            data = cls._convert_hounsfield_to_density(hu_values, **density_kwargs)
             if materials is None:
                 materials = cls.segment_materials(
                     hu_values,
