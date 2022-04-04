@@ -3,7 +3,7 @@
 """
 
 from __future__ import annotations
-from typing import Union, Tuple, List, Optional, Dict
+from typing import Literal, Union, Tuple, List, Optional, Dict
 
 import logging
 import numpy as np
@@ -18,12 +18,13 @@ from .. import load_dicom
 from .. import geo
 from .. import utils
 from ..utils import mesh_utils
+from ..projector.material_coefficients import material_coefficients
 
 pv, pv_available = utils.try_import_pyvista()
 vtk, nps, vtk_available = utils.try_import_vtk()
 
 
-logger = logging.getLogger(__name__)
+log = logging.getLogger(__name__)
 
 
 class Volume(object):
@@ -268,10 +269,10 @@ class Volume(object):
         )
 
         if materials_path is not None and materials_path.exists() and use_cached:
-            logger.info(f"using cached materials segmentation at {materials_path}")
+            log.info(f"using cached materials segmentation at {materials_path}")
             materials = dict(np.load(materials_path))
         else:
-            logger.info(f"segmenting materials in volume")
+            log.info(f"segmenting materials in volume")
             materials = cls._segment_materials(
                 hu_values, use_thresholding=use_thresholding
             )
@@ -286,32 +287,40 @@ class Volume(object):
         cls,
         path: Path,
         world_from_anatomical: Optional[geo.FrameTransform] = None,
-        use_thresholding: bool = True,
+        segmentation_method: Literal["thresholding", "vnet", "nnunet"] = "thresholding",
         use_cached: bool = True,
         cache_dir: Optional[Path] = None,
-        materials: Optional[Dict[str, np.ndarray]] = None,
+        materials: Union[Dict[str, np.ndarray], List[str]] = ["air", "bone", "soft tissue"],
         segmentation: bool = False,
         density_kwargs: dict = {},
+        use_thresholding: Optional[bool] = None,
         **kwargs,
     ):
         """Load a volume from NiFti file.
 
         Args:
             path (Path): path to the .nii.gz file.
-            use_thresholding (bool, optional): segment the materials using thresholding (faster but less accurate). Defaults to True.
             world_from_anatomical (Optional[geo.FrameTransform], optional): position the volume in world space. If None, uses identity. Defaults to None.
+            segmentation_method (Literal['thresholding', 'vnet', 'nnunet'], optional): method to use for segmentation. Defaults to 'thresholding'.
             use_cached (bool, optional): Use a cached segmentation if available. Defaults to True.
             cache_dir (Optional[Path], optional): Where to load/save the cached segmentation. If None, use a "cache" directory
                 in the same location as the nifti file. Defaults to None.
-            materials: Optional material segmentation, as a dictionary mapping material name to binary segmentation.
-                If not provided, materials are segmented from the CT. Defaults to None.
+            materials (Union[Dict[str, np.ndarray], List[str]], optional): Either a list of material
+                names to use when running multi-organ segmentation or an existing segmentation of the
+                materials in the object. Ignored if `segmentation_method == "thresholding"`. Defaults to
+                ["air", "bone", "soft tissue"].
             segmentation (bool, optional) If the file is a segmentation file, then its "materials" correspond to a high density material (bone),
                 where the values are >0. Defaults to false. Overrides provided materials.
             density_kwargs: Additional kwargs passed to convert_hounsfield_to_density.
+            use_thresholding (bool, optional): Deprecated. Segment the materials using thresholding (faster but less accurate). Defaults to True.
 
         Returns:
             Volume: A new volume object.
         """
+        if use_thresholding is not None:
+            segmentation_method = "thresholding" if use_thresholding else "nnunet"
+            log.warning()
+
         path = Path(path)
 
         if use_cached and cache_dir is None:
@@ -320,10 +329,10 @@ class Volume(object):
             if not cache_dir.exists():
                 cache_dir.mkdir()
 
-        logger.info(f"loading NiFti volume from {path}")
+        log.info(f"loading NiFti volume from {path}")
         img = nib.load(path)
         if img.header.get_xyzt_units()[0] != "mm":
-            logger.warning(
+            log.warning(
                 f'got NifTi xyz units: {img.header.get_xyzt_units()[0]}. (Expected "mm").'
             )
 
@@ -335,13 +344,68 @@ class Volume(object):
         else:
             hu_values = img.get_fdata()
             data = cls._convert_hounsfield_to_density(hu_values, **density_kwargs)
-            if materials is None:
+
+            if isinstance(materials, dict):
+                assert all([k in material_coefficients for k in materials.keys()]), f"bad material names: {materials.keys()}"
+            elif segmentation_method == "thresholding":
                 materials = cls.segment_materials(
                     hu_values,
-                    use_thresholding=use_thresholding,
+                    use_thresholding=True,
                     use_cached=use_cached,
                     cache_dir=cache_dir,
                     prefix=path.name.split(".")[0],
+                )
+            elif segmentation_method == "vnet":
+                materials = cls.segment_materials(
+                    hu_values,
+                    use_thresholding=False,
+                    use_cached=use_cached,
+                    cache_dir=cache_dir,
+                    prefix=path.name.split(".")[0],
+                )
+            elif segmentation_method == "nnunet":
+                # TODO(multi-organ project): run your segmentation with NN U-Net, if you need any
+                # directories, create them in the same directory as the path that was passed in, or
+                # in "cache_dir" if provided. Then, only take the materials that are the listed
+                # materials (will be a list of material names), and return the segmentations. If any
+                # caching needs to be done, then do it. (But segment_materials does this, so you can
+                # probably just ignore it, or move this logic to that function.) NOTE: use
+                # subprocess.call to run outside code. You will need to ensure the model weights are
+                # downloaded on the fly, somehow (see data_utils.download()), as well as the code
+                # that actually runs the pre-trained model. (You can download the code and models to
+                # a folder in ~/datasets/DeepDRR_Data or the user-specified "root" directory.)You
+                # can download the code and models to a folder in ~/datasets/DeepDRR_Data or the
+                # user-specified "root" dir                # that actually runs the pre-trained
+                # model. (You can download the code and models to a folder in
+                # ~/datasets/DeepDRR_Data or the user-specified "root" directory.)You can download
+                # the code and models to a folder in ~/datasets/DeepDRR_Data or the user-specified
+                # "root" dir                # that actually runs the pre-trained model. (You can
+                # download the code and models to a folder in ~/datasets/DeepDRR_Data or the
+                # user-specified "root" directory.)You can download the code and models to a folder
+                # in ~/datasets/DeepDRR_Data or the user-specified "root" dir                # that
+                # actually runs the pre-trained model. (You can download the code and models to a
+                # folder in ~/datasets/DeepDRR_Data or the user-specified "root" directory.)You can
+                # download the code and models to a folder in ~/datasets/DeepDRR_Data or the
+                # user-specified "root" dir                # that actually runs the pre-trained
+                # model. (You can download the code and models to a folder in
+                # ~/datasets/DeepDRR_Data or the user-specified "root" directory.)You can download
+                # the code and models to a folder in ~/datasets/DeepDRR_Data or the user-specified
+                # "root" dir                # that actually runs the pre-trained model. (You can
+                # download the code and models to a folder in ~/datasets/DeepDRR_Data or the
+                # user-specified "root" directory.)You can download the code and models to a folder
+                # in ~/datasets/DeepDRR_Data or the user-specified "root" dir                # that
+                # actually runs the pre-trained model. (You can download the code and models to a
+                # folder in ~/datasets/DeepDRR_Data or the user-specified "root" directory.)You can
+                # download the code and models to a folder in ~/datasets/DeepDRR_Data or the
+                # user-specified "root" dir                # that actually runs the pre-trained
+                # model. (You can download the code and models to a folder in
+                # ~/datasets/DeepDRR_Data or the user-specified "root" directory. See
+                # data_utils.download())
+                raise NotImplementedError("TODO")
+            else:
+                raise ValueError(
+                    f"Unknown segmentation method: {segmentation_method}. "
+                    "Must be one of 'thresholding', 'vnet', or 'nnunet'."
                 )
 
         return cls(
@@ -388,7 +452,7 @@ class Volume(object):
         assert (
             path.is_file()
         ), "Currently only multi-frame dicoms are supported. Path must refer to a file."
-        logger.info(f"loading Dicom volume from {path}")
+        log.info(f"loading Dicom volume from {path}")
 
         # reading the dicom dataset object
         ds = dcmread(path)
@@ -417,7 +481,7 @@ class Volume(object):
 
         # make user aware that this is only tested on windows
         if ds.Manufacturer != "SIEMENS":
-            logger.warning(
+            log.warning(
                 "Multi-frame loading has only been tested on Siemens Enhanced CT DICOMs."
                 "Please verify everything works as expected."
             )
@@ -444,20 +508,20 @@ class Volume(object):
         if use_thresholding:
             materials_path = cache_dir / f"{stem}_materials_thresholding.npz"
             if use_cached and materials_path.exists():
-                logger.info(f"found materials segmentation at {materials_path}.")
+                log.info(f"found materials segmentation at {materials_path}.")
                 # TODO: recover from EOFError
                 materials = dict(np.load(materials_path))
             else:
-                logger.info(f"segmenting materials in volume")
+                log.info(f"segmenting materials in volume")
                 materials = load_dicom.conv_hu_to_materials_thresholding(hu_values)
                 np.savez(materials_path, **materials)
         else:
             materials_path = cache_dir / f"{stem}_materials.npz"
             if use_cached and materials_path.exists():
-                logger.info(f"found materials segmentation at {materials_path}.")
+                log.info(f"found materials segmentation at {materials_path}.")
                 materials = dict(np.load(materials_path))
             else:
-                logger.info(f"segmenting materials in volume")
+                log.info(f"segmenting materials in volume")
                 materials = load_dicom.conv_hu_to_materials(hu_values)
                 np.savez(materials_path, **materials)
 
@@ -492,8 +556,8 @@ class Volume(object):
         affine[3, 3] = 1  # homogenous component
 
         # log affine matrix in debug mode
-        logger.debug(f"manually constructed affine matrix: \n{affine}")
-        logger.debug(
+        log.debug(f"manually constructed affine matrix: \n{affine}")
+        log.debug(
             f"volume_center_xyz : {np.mean([affine @ np.array([*data.shape, 1]), affine @ [0, 0, 0, 1]], axis=0)}"
         )
 
@@ -841,7 +905,7 @@ class Volume(object):
         scalars = nps.numpy_to_vtk(segmentation.ravel(order="F"), deep=True)
         vol.GetPointData().SetScalars(scalars)
 
-        logger.debug("isolating bone surface for visualization...")
+        log.debug("isolating bone surface for visualization...")
         dmc = vtk.vtkDiscreteMarchingCubes()
         dmc.SetInputData(vol)
         dmc.GenerateValues(1, 1, 1)
@@ -883,15 +947,15 @@ class Volume(object):
             else Path(cache_dir) / f"cached_{material}_mesh.vtp"
         )
         if use_cached and cache_path is not None and cache_path.exists():
-            logger.info(f"reading cached {material} mesh from {cache_path}")
+            log.info(f"reading cached {material} mesh from {cache_path}")
             surface = pv.read(cache_path)
         else:
-            logger.info(f"meshing {material} segmentation...")
+            log.info(f"meshing {material} segmentation...")
             surface = self._make_surface(material)
             if cache_path is not None:
                 if not cache_dir.exists():
                     cache_dir.mkdir()
-                logger.info(f"caching {material} surface to {cache_path}.")
+                log.info(f"caching {material} surface to {cache_path}.")
                 surface.save(cache_path)
         return surface
 
@@ -945,7 +1009,7 @@ class Volume(object):
         mesh += pv.Line(points[3], points[7])
 
         if full:
-            logger.debug(f"getting full surface mesh for volume")
+            log.debug(f"getting full surface mesh for volume")
             material_mesh = self.get_surface(
                 material=self._mesh_material, cache_dir=cache_dir, use_cached=use_cached
             )
