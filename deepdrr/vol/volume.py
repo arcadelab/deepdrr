@@ -549,7 +549,7 @@ class Volume(object):
         anatomical_coordinate_system = {
             "right-anterior-superior": "RAS",
             "left-posterior-superior": "LPS",
-        }.get(header.get("space"))
+        }.get(header.get("space", "right-anterior-superior"))
 
         return cls(
             data,
