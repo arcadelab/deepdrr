@@ -401,6 +401,8 @@ class Volume(object):
                 # model. (You can download the code and models to a folder in
                 # ~/datasets/DeepDRR_Data or the user-specified "root" directory. See
                 # data_utils.download())
+                segmentation_network = use_nnunet.Segmentation()
+                materials = segmentation_network.segment(hu_values)
                 raise NotImplementedError("TODO")
             else:
                 raise ValueError(
