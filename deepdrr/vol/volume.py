@@ -18,7 +18,6 @@ from .. import load_dicom
 from .. import geo
 from .. import utils
 from ..utils import mesh_utils
-from ..projector.material_coefficients import material_coefficients
 
 pv, pv_available = utils.try_import_pyvista()
 vtk, nps, vtk_available = utils.try_import_vtk()
@@ -287,40 +286,32 @@ class Volume(object):
         cls,
         path: Path,
         world_from_anatomical: Optional[geo.FrameTransform] = None,
-        segmentation_method: Literal["thresholding", "vnet", "nnunet"] = "thresholding",
+        use_thresholding: bool = True,
         use_cached: bool = True,
         cache_dir: Optional[Path] = None,
-        materials: Union[Dict[str, np.ndarray], List[str]] = ["air", "bone", "soft tissue"],
+        materials: Optional[Dict[str, np.ndarray]] = None,
         segmentation: bool = False,
         density_kwargs: dict = {},
-        use_thresholding: Optional[bool] = None,
         **kwargs,
     ):
         """Load a volume from NiFti file.
 
         Args:
             path (Path): path to the .nii.gz file.
+            use_thresholding (bool, optional): segment the materials using thresholding (faster but less accurate). Defaults to True.
             world_from_anatomical (Optional[geo.FrameTransform], optional): position the volume in world space. If None, uses identity. Defaults to None.
-            segmentation_method (Literal['thresholding', 'vnet', 'nnunet'], optional): method to use for segmentation. Defaults to 'thresholding'.
             use_cached (bool, optional): Use a cached segmentation if available. Defaults to True.
             cache_dir (Optional[Path], optional): Where to load/save the cached segmentation. If None, use a "cache" directory
                 in the same location as the nifti file. Defaults to None.
-            materials (Union[Dict[str, np.ndarray], List[str]], optional): Either a list of material
-                names to use when running multi-organ segmentation or an existing segmentation of the
-                materials in the object. Ignored if `segmentation_method == "thresholding"`. Defaults to
-                ["air", "bone", "soft tissue"].
+            materials: Optional material segmentation, as a dictionary mapping material name to binary segmentation.
+                If not provided, materials are segmented from the CT. Defaults to None.
             segmentation (bool, optional) If the file is a segmentation file, then its "materials" correspond to a high density material (bone),
                 where the values are >0. Defaults to false. Overrides provided materials.
             density_kwargs: Additional kwargs passed to convert_hounsfield_to_density.
-            use_thresholding (bool, optional): Deprecated. Segment the materials using thresholding (faster but less accurate). Defaults to True.
 
         Returns:
             Volume: A new volume object.
         """
-        if use_thresholding is not None:
-            segmentation_method = "thresholding" if use_thresholding else "nnunet"
-            log.warning()
-
         path = Path(path)
 
         if use_cached and cache_dir is None:
@@ -344,68 +335,13 @@ class Volume(object):
         else:
             hu_values = img.get_fdata()
             data = cls._convert_hounsfield_to_density(hu_values, **density_kwargs)
-
-            if isinstance(materials, dict):
-                assert all([k in material_coefficients for k in materials.keys()]), f"bad material names: {materials.keys()}"
-            elif segmentation_method == "thresholding":
+            if materials is None:
                 materials = cls.segment_materials(
                     hu_values,
-                    use_thresholding=True,
+                    use_thresholding=use_thresholding,
                     use_cached=use_cached,
                     cache_dir=cache_dir,
                     prefix=path.name.split(".")[0],
-                )
-            elif segmentation_method == "vnet":
-                materials = cls.segment_materials(
-                    hu_values,
-                    use_thresholding=False,
-                    use_cached=use_cached,
-                    cache_dir=cache_dir,
-                    prefix=path.name.split(".")[0],
-                )
-            elif segmentation_method == "nnunet":
-                # TODO(multi-organ project): run your segmentation with NN U-Net, if you need any
-                # directories, create them in the same directory as the path that was passed in, or
-                # in "cache_dir" if provided. Then, only take the materials that are the listed
-                # materials (will be a list of material names), and return the segmentations. If any
-                # caching needs to be done, then do it. (But segment_materials does this, so you can
-                # probably just ignore it, or move this logic to that function.) NOTE: use
-                # subprocess.call to run outside code. You will need to ensure the model weights are
-                # downloaded on the fly, somehow (see data_utils.download()), as well as the code
-                # that actually runs the pre-trained model. (You can download the code and models to
-                # a folder in ~/datasets/DeepDRR_Data or the user-specified "root" directory.)You
-                # can download the code and models to a folder in ~/datasets/DeepDRR_Data or the
-                # user-specified "root" dir                # that actually runs the pre-trained
-                # model. (You can download the code and models to a folder in
-                # ~/datasets/DeepDRR_Data or the user-specified "root" directory.)You can download
-                # the code and models to a folder in ~/datasets/DeepDRR_Data or the user-specified
-                # "root" dir                # that actually runs the pre-trained model. (You can
-                # download the code and models to a folder in ~/datasets/DeepDRR_Data or the
-                # user-specified "root" directory.)You can download the code and models to a folder
-                # in ~/datasets/DeepDRR_Data or the user-specified "root" dir                # that
-                # actually runs the pre-trained model. (You can download the code and models to a
-                # folder in ~/datasets/DeepDRR_Data or the user-specified "root" directory.)You can
-                # download the code and models to a folder in ~/datasets/DeepDRR_Data or the
-                # user-specified "root" dir                # that actually runs the pre-trained
-                # model. (You can download the code and models to a folder in
-                # ~/datasets/DeepDRR_Data or the user-specified "root" directory.)You can download
-                # the code and models to a folder in ~/datasets/DeepDRR_Data or the user-specified
-                # "root" dir                # that actually runs the pre-trained model. (You can
-                # download the code and models to a folder in ~/datasets/DeepDRR_Data or the
-                # user-specified "root" directory.)You can download the code and models to a folder
-                # in ~/datasets/DeepDRR_Data or the user-specified "root" dir                # that
-                # actually runs the pre-trained model. (You can download the code and models to a
-                # folder in ~/datasets/DeepDRR_Data or the user-specified "root" directory.)You can
-                # download the code and models to a folder in ~/datasets/DeepDRR_Data or the
-                # user-specified "root" dir                # that actually runs the pre-trained
-                # model. (You can download the code and models to a folder in
-                # ~/datasets/DeepDRR_Data or the user-specified "root" directory. See
-                # data_utils.download())
-                raise NotImplementedError("TODO")
-            else:
-                raise ValueError(
-                    f"Unknown segmentation method: {segmentation_method}. "
-                    "Must be one of 'thresholding', 'vnet', or 'nnunet'."
                 )
 
         return cls(
