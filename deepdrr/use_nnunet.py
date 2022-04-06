@@ -74,6 +74,7 @@ class Segmentation():
     def infer(self, TaskType=17):
         task_name = {
         17: "Task017_AbdominalOrganSegmentation", 
+        6: "Task006_Lung"
         }
 
         os.system('nnUNet_download_pretrained_model ' + task_name[TaskType])
@@ -84,16 +85,23 @@ class Segmentation():
         
         segmented_volume = nib.load(self.temp_dir + 'Task_' + str(TaskType))
         
+        if TaskType==6:
+            # Soft Tissue
+            segmentation["soft tissue"] = segmented_volume == 0
+            
+            # Lung
+            segmentation["Spleen"] = segmented_volume > 0
+        
         if TaskType==17:
             segmentation = {}
 
             # Soft Tissue
-            segmentation["soft tissue"] = segmented_volume == 0
+            segmentation["soft tissue"] = segmented_volume < 14
             
             # Spleen
             segmentation["Spleen"] = segmented_volume == 1
 
-            # Bone
+            # Liver
             segmentation["Liver"] = segmented_volume == 6
 
         return segmentation
