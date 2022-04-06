@@ -16,10 +16,13 @@ from collections import OrderedDict
 from batchgenerators.utilities.file_and_folder_operations import *
 
 class Segmentation():
+    
+    temp_dir = ""
+        
     def __init__(self):
         temp_dir = '/nnUNet_raw_data/temp/'  #os.environ.get('nnUNet_raw_data_base') + 
         
-    def dataprep(self,idir,type):
+    def dataprep(self,idir,type='nii'):
         # assign directory
     #     out_directory = os.environ.get('nnUNet_raw_data_base') + '/nnUNet_raw_data/temp/'
         out_directory = self.temp_dir
@@ -97,6 +100,13 @@ class Segmentation():
     
     def clear_temp(self):
         os.rmdir(self.temp_dir)
+        
+    def segmentation(self, input, TaskType=17):
+        self.dataprep(input)
+        self.infer(TaskType)
+        segmentation = self.segment(TaskType)
+        self.clear_temp()
+        return segmentation
     
 # 1. setup nnunet paths (input / output) (*system path)
 # 2. check corresponding pretrained model and download if not exist
