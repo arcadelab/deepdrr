@@ -3,7 +3,7 @@
 """
 
 from __future__ import annotations
-from typing import Literal, Union, Tuple, List, Optional, Dict
+from typing import Union, Tuple, List, Optional, Dict
 
 import logging
 import numpy as np
@@ -289,7 +289,7 @@ class Volume(object):
         cls,
         path: Path,
         world_from_anatomical: Optional[geo.FrameTransform] = None,
-        segmentation_method: Literal["thresholding", "vnet", "nnunet"] = "thresholding",
+        segmentation_method: str = "thresholding",
         use_cached: bool = True,
         cache_dir: Optional[Path] = None,
         materials: Union[Dict[str, np.ndarray], List[str]] = ["air", "bone", "soft tissue"],
