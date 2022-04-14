@@ -188,7 +188,8 @@ class Volume(object):
         prefix: str = "",
     ) -> Optional[Path]:
         """Get the cache path."""
-        if (cache_dir := cls._get_cache_dir(cache_dir)) is None:
+        cache_dir = cls._get_cache_dir(cache_dir)
+        if cache_dir is None:
             return None
 
         name = "cached_{}{}materials{}.npz".format(
@@ -198,7 +199,8 @@ class Volume(object):
         )
 
         # If the file exists in the parent directory of cache dir, as was previously standard for `from_nifti`, then move it to the new cache path.
-        if (p := cache_dir.parent / name).exists():
+        p = cache_dir.parent / name
+        if p.exists():
             p.rename(cache_dir / name)
 
         return cache_dir / name
