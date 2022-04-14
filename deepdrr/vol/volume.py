@@ -3,7 +3,7 @@
 """
 
 from __future__ import annotations
-from typing import Literal, Union, Tuple, List, Optional, Dict
+from typing import Union, Tuple, List, Optional, Dict
 
 import logging
 import numpy as np
