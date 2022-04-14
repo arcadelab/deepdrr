@@ -651,7 +651,6 @@ class Volume(object):
 
         """
 
-        # TODO(killeen): fix this. It doesn't use x.
         x = geo.point(x)
         center_anatomical = self.anatomical_from_ijk @ geo.point(
             np.array(self.shape) / 2
