@@ -288,7 +288,7 @@ class Volume(object):
         cls,
         path: Path,
         world_from_anatomical: Optional[geo.FrameTransform] = None,
-        use_thresholding: bool = True,
+        segmentation_method: str = "thresholding",
         use_cached: bool = True,
         cache_dir: Optional[Path] = None,
         materials: Optional[Dict[str, np.ndarray]] = None,
@@ -344,6 +344,61 @@ class Volume(object):
                     use_cached=use_cached,
                     cache_dir=cache_dir,
                     prefix=path.name.split(".")[0],
+                )
+
+            elif segmentation_method == "vnet":
+                materials = cls.segment_materials(
+                    hu_values,
+                    use_thresholding=False,
+                    use_cached=use_cached,
+                    cache_dir=cache_dir,
+                    prefix=path.name.split(".")[0],
+                )
+            elif segmentation_method == "nnunet":
+                # TODO(multi-organ project): run your segmentation with NN U-Net, if you need any
+                # directories, create them in the same directory as the path that was passed in, or
+                # in "cache_dir" if provided. Then, only take the materials that are the listed
+                # materials (will be a list of material names), and return the segmentations. If any
+                # caching needs to be done, then do it. (But segment_materials does this, so you can
+                # probably just ignore it, or move this logic to that function.) NOTE: use
+                # subprocess.call to run outside code. You will need to ensure the model weights are
+                # downloaded on the fly, somehow (see data_utils.download()), as well as the code
+                # that actually runs the pre-trained model. (You can download the code and models to
+                # a folder in ~/datasets/DeepDRR_Data or the user-specified "root" directory.)You
+                # can download the code and models to a folder in ~/datasets/DeepDRR_Data or the
+                # user-specified "root" dir                # that actually runs the pre-trained
+                # model. (You can download the code and models to a folder in
+                # ~/datasets/DeepDRR_Data or the user-specified "root" directory.)You can download
+                # the code and models to a folder in ~/datasets/DeepDRR_Data or the user-specified
+                # "root" dir                # that actually runs the pre-trained model. (You can
+                # download the code and models to a folder in ~/datasets/DeepDRR_Data or the
+                # user-specified "root" directory.)You can download the code and models to a folder
+                # in ~/datasets/DeepDRR_Data or the user-specified "root" dir                # that
+                # actually runs the pre-trained model. (You can download the code and models to a
+                # folder in ~/datasets/DeepDRR_Data or the user-specified "root" directory.)You can
+                # download the code and models to a folder in ~/datasets/DeepDRR_Data or the
+                # user-specified "root" dir                # that actually runs the pre-trained
+                # model. (You can download the code and models to a folder in
+                # ~/datasets/DeepDRR_Data or the user-specified "root" directory.)You can download
+                # the code and models to a folder in ~/datasets/DeepDRR_Data or the user-specified
+                # "root" dir                # that actually runs the pre-trained model. (You can
+                # download the code and models to a folder in ~/datasets/DeepDRR_Data or the
+                # user-specified "root" directory.)You can download the code and models to a folder
+                # in ~/datasets/DeepDRR_Data or the user-specified "root" dir                # that
+                # actually runs the pre-trained model. (You can download the code and models to a
+                # folder in ~/datasets/DeepDRR_Data or the user-specified "root" directory.)You can
+                # download the code and models to a folder in ~/datasets/DeepDRR_Data or the
+                # user-specified "root" dir                # that actually runs the pre-trained
+                # model. (You can download the code and models to a folder in
+                # ~/datasets/DeepDRR_Data or the user-specified "root" directory. See
+                # data_utils.download())
+                segmentation_nnunet = use_nnunet.Segmentation()
+                materials = segmentation_nnunet.segmentation(path,6)  #6:Lung, 17:multi-organ
+#                 raise NotImplementedError("TODO")
+            else:
+                raise ValueError(
+                    f"Unknown segmentation method: {segmentation_method}. "
+                    "Must be one of 'thresholding', 'vnet', or 'nnunet'."
                 )
 
         return cls(
