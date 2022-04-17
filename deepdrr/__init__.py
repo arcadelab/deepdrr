@@ -1,4 +1,4 @@
-from . import vis, geo, projector, device, annotations, utils
+from . import vis, geo, projector, device, annotations, utils, use_nnunet
 from .projector import Projector
 from .vol import Volume
 from .device import CArm, MobileCArm
@@ -18,4 +18,5 @@ __all__ = [
     "annotations",
     "utils",
     "setup_log",
+    "use_nnunet"
 ]
