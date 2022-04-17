@@ -13,6 +13,7 @@ logger = logging.getLogger(__name__)
 import glob
 import os
 from collections import OrderedDict
+import shutil
 # from batchgenerators.utilities.file_and_folder_operations import *
 
 class Segmentation():
@@ -38,7 +39,7 @@ class Segmentation():
             print("Directory ", out_directory, " Already Exists ")
     
         if type == 'nii':
-            copyfile(idir, join(out_directory + 'imagesTs/', 'temp_0000.nii.gz'))
+            shutil.copyfile(idir, join(out_directory + 'imagesTs/', 'temp_0000.nii.gz'))
         else:
             raise NotImplementedError("TODO")
     
