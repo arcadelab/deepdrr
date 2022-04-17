@@ -340,7 +340,7 @@ class Volume(object):
             if materials is None:
                 materials = cls.segment_materials(
                     hu_values,
-                    use_thresholding=use_thresholding,
+                    use_thresholding,
                     use_cached=use_cached,
                     cache_dir=cache_dir,
                     prefix=path.name.split(".")[0],
