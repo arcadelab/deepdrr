@@ -6,7 +6,7 @@ from torch.autograd import Variable
 
 # import nnunet
 # from .network_segmentation import VNet
-from .utils import data_utils
+# from .utils import data_utils
 
 logger = logging.getLogger(__name__)
 # import required module
@@ -26,6 +26,7 @@ class Segmentation():
         # assign directory
     #     out_directory = os.environ.get('nnUNet_raw_data_base') + '/nnUNet_raw_data/temp/'
         out_directory = self.temp_dir
+        print(out_directory)
         # Create target Directory if don't exist
         if not os.path.exists(out_directory):
             os.makedirs(out_directory)
@@ -79,11 +80,12 @@ class Segmentation():
 
         os.system('nnUNet_download_pretrained_model ' + task_name[TaskType])
         os.system('nnUNet_predict -i ' + self.temp_dir + 'imagesTs/ -o ' + self.temp_dir +
-              'Task_' + str(TaskType) ' -t ' + str(TaskType) + ' -m 3d_fullres')
+              'Task_' + str(TaskType) + ' -t ' + str(TaskType) + ' -m 3d_fullres')
     
     def segment(self, TaskType=17):
         
         segmented_volume = nib.load(self.temp_dir + 'Task_' + str(TaskType))
+        segmentation = {}
         
         if TaskType==6:
             # Soft Tissue
