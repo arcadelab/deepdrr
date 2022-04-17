@@ -15,6 +15,7 @@ import os
 from collections import OrderedDict
 import shutil
 from batchgenerators.utilities.file_and_folder_operations import *
+import nibabel as nib
 
 class Segmentation():
     
