@@ -86,7 +86,7 @@ class Segmentation():
 #               'Task_' + str(TaskType) + ' -t ' + str(TaskType) + ' -m 3d_fullres', shell = True)
         subprocess.call(['nnUNet_download_pretrained_model', task_name[TaskType]])
         subprocess.call(['nnUNet_predict', '-i', self.temp_dir + 'imagesTs/', '-o', self.temp_dir +
-              'Task_' + str(TaskType), '-t', str(TaskType), '-m', '3d_fullres')
+              'Task_' + str(TaskType), '-t', str(TaskType), '-m', '3d_fullres'])
     
     def segment(self, TaskType=17):
         
