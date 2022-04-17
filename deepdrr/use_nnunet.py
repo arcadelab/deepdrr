@@ -14,7 +14,7 @@ import glob
 import os
 from collections import OrderedDict
 import shutil
-# from batchgenerators.utilities.file_and_folder_operations import *
+from batchgenerators.utilities.file_and_folder_operations import *
 
 class Segmentation():
     
