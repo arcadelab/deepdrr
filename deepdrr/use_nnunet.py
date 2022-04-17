@@ -29,8 +29,8 @@ class Segmentation():
         print(out_directory)
         # Create target Directory if don't exist
         if not os.path.exists(out_directory):
-            os.makedirs(out_directory)
-            os.makedirs(out_directory + 'imagesTs/')
+            os.mkdir(out_directory)
+            os.mkdir(out_directory + 'imagesTs/')
             os.makedirs(out_directory + 'imagesTr/')
             os.makedirs(out_directory + 'labelsTr/')
             print("Directory ", out_directory, " Created ")
