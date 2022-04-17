@@ -340,7 +340,7 @@ class Volume(object):
             if materials is not None:
                 raise NotImplementedError("TODO")
                 
-            elif segmentation_method == "use_thresholding":
+            elif segmentation_method == "thresholding":
                 materials = cls.segment_materials(
                     hu_values,
                     use_thresholding=True,
