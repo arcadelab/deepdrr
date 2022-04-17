@@ -39,15 +39,15 @@ class Segmentation():
             print("Directory ", out_directory, " Already Exists ")
     
         if type == 'nii':
-            shutil.copyfile(idir, join(out_directory + 'imagesTs/', 'temp_0000.nii.gz'))
+            shutil.copyfile(idir, os.path.join(out_directory + 'imagesTs/', 'temp_0000.nii.gz'))
         else:
             raise NotImplementedError("TODO")
     
         # Write into dataset.json
         base = out_directory
-        train_folder = join(base, "imagesTr/")
-        label_folder = join(base, "labelsTr/")
-        test_folder = join(base, "imagesTs/")
+        train_folder = os.path.join(base, "imagesTr/")
+        label_folder = os.path.join(base, "labelsTr/")
+        test_folder = os.path.join(base, "imagesTs/")
         train_patient_names = []
         test_patient_names = []
         train_patients = subfiles(train_folder, join=False, suffix='nii.gz')
