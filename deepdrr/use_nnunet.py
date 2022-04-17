@@ -17,7 +17,7 @@ from collections import OrderedDict
 
 class Segmentation():
     
-    temp_dir = ""
+    temp_dir = 'temp/'
         
     def __init__(self):
         temp_dir = 'temp/'  #os.environ.get('nnUNet_raw_data_base') + 
