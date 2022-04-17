@@ -337,10 +337,13 @@ class Volume(object):
         else:
             hu_values = img.get_fdata()
             data = cls._convert_hounsfield_to_density(hu_values, **density_kwargs)
-            if materials is None:
+            if materials is not None:
+                raise NotImplementedError("TODO")
+                
+            elif segmentation_method == "use_thresholding":
                 materials = cls.segment_materials(
                     hu_values,
-                    use_thresholding,
+                    use_thresholding=True,
                     use_cached=use_cached,
                     cache_dir=cache_dir,
                     prefix=path.name.split(".")[0],
