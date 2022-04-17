@@ -88,10 +88,19 @@ class Segmentation():
         subprocess.call(['nnUNet_predict', '-i', self.temp_dir + 'imagesTs/', '-o', self.temp_dir +
               'Task_' + str(TaskType), '-t', str(TaskType), '-m', '3d_fullres'])
     
-    def segment(self, TaskType=17):
+    def segment(self, segmented_volume, TaskType=17):
         
-        segmented_volume = nib.load(self.temp_dir + 'Task_' + str(TaskType))
         segmentation = {}
+        
+        if TaskType==0:
+            # Air
+            segmentation["air"] = segmented_volume == 1
+            
+            # Bone
+            segmentation["bone"] = segmented_volume == 2
+            
+            #Soft Tissue
+            segmentation["soft tissue"] = segmented_volume > 2
         
         if TaskType==6:
             # Soft Tissue
@@ -117,11 +126,17 @@ class Segmentation():
     def clear_temp(self):
         os.rmdir(self.temp_dir)
         
-    def segmentation(self, input, TaskType=17):
+    def nnu_segmentation(self, input, TaskType=17):
         self.dataprep(input)
         self.infer(TaskType)
-        segmentation = self.segment(TaskType)
+        seg_volume = nib.load(self.temp_dir + 'Task_' + str(TaskType))
+        segmentation = self.segment(seg_volume, TaskType)
         self.clear_temp()
+        return segmentation
+    
+    def read_mask(dir, LabelType=0):
+        seg_volume = nib.load(dir)
+        segmentation = self.segment(seg_volume, LabelType)
         return segmentation
     
 # 1. setup nnunet paths (input / output) (*system path)
