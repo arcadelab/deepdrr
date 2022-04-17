@@ -13,7 +13,7 @@ logger = logging.getLogger(__name__)
 import glob
 import os
 from collections import OrderedDict
-from batchgenerators.utilities.file_and_folder_operations import *
+# from batchgenerators.utilities.file_and_folder_operations import *
 
 class Segmentation():
     
