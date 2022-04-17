@@ -12,6 +12,7 @@ logger = logging.getLogger(__name__)
 # import required module
 import glob
 import os
+import subprocess
 from collections import OrderedDict
 import shutil
 from batchgenerators.utilities.file_and_folder_operations import *
@@ -80,9 +81,12 @@ class Segmentation():
         6: "Task006_Lung"
         }
 
-        os.system('nnUNet_download_pretrained_model ' + task_name[TaskType])
-        os.system('nnUNet_predict -i ' + self.temp_dir + 'imagesTs/ -o ' + self.temp_dir +
-              'Task_' + str(TaskType) + ' -t ' + str(TaskType) + ' -m 3d_fullres')
+#         subprocess.call('nnUNet_download_pretrained_model ' + task_name[TaskType], shell = True)
+#         subprocess.call('nnUNet_predict -i ' + self.temp_dir + 'imagesTs/ -o ' + self.temp_dir +
+#               'Task_' + str(TaskType) + ' -t ' + str(TaskType) + ' -m 3d_fullres', shell = True)
+        subprocess.call(['nnUNet_download_pretrained_model', task_name[TaskType]])
+        subprocess.call(['nnUNet_predict', '-i', self.temp_dir + 'imagesTs/', '-o', self.temp_dir +
+              'Task_' + str(TaskType), '-t', str(TaskType), '-m', '3d_fullres')
     
     def segment(self, TaskType=17):
         
