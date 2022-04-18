@@ -130,13 +130,15 @@ class Segmentation():
         self.dataprep(input)
         self.infer(TaskType)
         seg_volume = nib.load(self.temp_dir + 'Task_' + str(TaskType))
-        segmentation = self.segment(seg_volume, TaskType)
+        seg_volume_arr=seg_volume.get_fdata()
+        segmentation = self.segment(seg_volume_arr, TaskType)
         self.clear_temp()
         return segmentation
     
     def read_mask(self, dir, LabelType=0):
         seg_volume = nib.load(dir)
-        segmentation = self.segment(seg_volume, LabelType)
+        seg_volume_arr=seg_volume.get_fdata()
+        segmentation = self.segment(seg_volume_arr, LabelType)
         return segmentation
     
 # 1. setup nnunet paths (input / output) (*system path)
