@@ -18,6 +18,7 @@ from .. import load_dicom
 from .. import geo
 from .. import utils
 from ..utils import mesh_utils
+from .. import use_nnunet
 
 pv, pv_available = utils.try_import_pyvista()
 vtk, nps, vtk_available = utils.try_import_vtk()
@@ -396,12 +397,12 @@ class Volume(object):
                 # ~/datasets/DeepDRR_Data or the user-specified "root" directory. See
                 # data_utils.download())
                 if use_cached:
-                    segmentation_nnunet = deepdrr.use_nnunet.Segmentation()
+                    segmentation_nnunet = use_nnunet.Segmentation()
                     if cache_dir is None:
                         raise NotImplementedError("TODO")
                     materials = segmentation_nnunet.read_mask(cache_dir,0)  #6:Lung, 17:multi-organ, 0:default
                 else:
-                    segmentation_nnunet = deepdrr.use_nnunet.Segmentation()
+                    segmentation_nnunet = use_nnunet.Segmentation()
                     materials = segmentation_nnunet.nnu_segmentation(path,6)  #6:Lung, 17:multi-organ
                 
 #                 raise NotImplementedError("TODO")
