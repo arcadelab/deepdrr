@@ -134,7 +134,7 @@ class Segmentation():
         self.clear_temp()
         return segmentation
     
-    def read_mask(dir, LabelType=0):
+    def read_mask(self, dir, LabelType=0):
         seg_volume = nib.load(dir)
         segmentation = self.segment(seg_volume, LabelType)
         return segmentation
