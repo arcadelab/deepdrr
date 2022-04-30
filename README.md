@@ -28,6 +28,11 @@
 
 DeepDRR provides state-of-the-art tools to generate realistic radiographs and fluoroscopy from 3D CTs on a training set scale.
 
+## Latest Development of CISII Project
+
+New Features: 1. Segmentation pipeline using nnU-Net and CT-ORG; 2. New utility named 'use_nnunet' for assigning materials; 3. Codes for downstream nodule insertion and detection task.
+
+
 ## Installation
 
 DeepDRR requires an NVIDIA GPU, preferably with >11 GB of memory.
