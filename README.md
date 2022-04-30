@@ -30,7 +30,7 @@ DeepDRR provides state-of-the-art tools to generate realistic radiographs and fl
 
 ## Latest Development of CISII Project
 
-New Features: 1. Segmentation pipeline using nnU-Net and CT-ORG; 2. New utility named 'use_nnunet' for assigning materials; 3. Codes for downstream nodule insertion and detection task.
+New Features: 1. Segmentation pipeline using nnU-Net and CT-ORG; 2. New utility named `use_nnunet` for assigning materials; 3. Codes for downstream nodule insertion and detection task.
 
 ### Segmentation pipeline using nnU-Net
 
@@ -39,9 +39,9 @@ To infer by nnU-Net pretrained models on NMDID dataset, these two utilities can 
 nnunet/dataprep.py
 nnunet/infer_nnUNet.py
 ```
-The first one prepares CT images into the format suitable for nnU-Net. ```bash 'type' ``` can be adjusted for different type of input image (NIFTI, DICOM, single or batch).
+The first one prepares CT images into the format suitable for nnU-Net. `type` can be adjusted for different type of input image (NIFTI, DICOM, single or batch).
 
-The second one performs inference using pretrained models of nnU-Net. User can use 'TaskType' to choose the paticular pretrained model.
+The second one performs inference using pretrained models of nnU-Net. User can use `TaskType` to choose the paticular pretrained model.
 
 
 ## Installation
