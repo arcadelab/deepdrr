@@ -46,6 +46,7 @@ class Volume(object):
         world_from_anatomical: Optional[geo.FrameTransform] = None,
         anatomical_coordinate_system: Optional[str] = None,
         cache_dir: Optional[str] = None,
+        mask_type: Optional[int] = 0
     ) -> None:
         """A deepdrr Volume object with materials segmentation and orientation in world-space.
 
@@ -400,7 +401,7 @@ class Volume(object):
                     segmentation_nnunet = use_nnunet.Segmentation()
                     if cache_dir is None:
                         raise NotImplementedError("TODO")
-                    materials = segmentation_nnunet.read_mask(cache_dir,0)  #6:Lung, 17:multi-organ, 0:default
+                    materials = segmentation_nnunet.read_mask(cache_dir,mask_type)  #6:Lung, 17:multi-organ, 0:default
                 else:
                     segmentation_nnunet = use_nnunet.Segmentation()
                     materials = segmentation_nnunet.nnu_segmentation(path,6)  #6:Lung, 17:multi-organ
