@@ -92,24 +92,27 @@ class Segmentation():
         
         segmentation = {}
         
-        if TaskType==0:
+        if TaskType==0:  # for fused label
             # Air
             segmentation["air"] = segmented_volume == 1
             
             # Bone
             segmentation["bone"] = segmented_volume == 2
             
+            # Lung
+            segmentation["lung"] = segmented_volume == 6
+            
             #Soft Tissue
-            segmentation["soft tissue"] = segmented_volume > 2
+            segmentation["soft tissue"] = (segmented_volume > 2 and segmented_volume != 6)
         
-        if TaskType==6:
+        if TaskType==6: # nnunet task 6
             # Soft Tissue
             segmentation["soft tissue"] = segmented_volume == 0
             
             # Lung
             segmentation["Spleen"] = segmented_volume > 0
         
-        if TaskType==17:
+        if TaskType==17: # nnunet task 17
             segmentation = {}
 
             # Soft Tissue
