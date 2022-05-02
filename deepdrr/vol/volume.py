@@ -34,7 +34,6 @@ class Volume(object):
     world_from_anatomical: geo.FrameTransform
     anatomical_coordinate_system: Optional[str]
 
-    mask_type: Optional[int]
     cache_dir = None
     # TODO: The current Volume class is really a scanned volume. We should have a BaseVolume or
     # GenericVolume, which might be subclassed by tools or other types of volumes not constructed
@@ -47,7 +46,6 @@ class Volume(object):
         world_from_anatomical: Optional[geo.FrameTransform] = None,
         anatomical_coordinate_system: Optional[str] = None,
         cache_dir: Optional[str] = None,
-        mask_type: Optional[int] = 0
     ) -> None:
         """A deepdrr Volume object with materials segmentation and orientation in world-space.
 
@@ -74,7 +72,6 @@ class Volume(object):
         self.anatomical_coordinate_system = anatomical_coordinate_system
         assert self.anatomical_coordinate_system in ["LPS", "RAS", None]
         self.cache_dir = None if cache_dir is None else Path(cache_dir).expanduser()
-        self.mask_type = mask_type
 
     @classmethod
     def from_parameters(
@@ -298,6 +295,7 @@ class Volume(object):
         materials: Optional[Dict[str, np.ndarray]] = None,
         segmentation: bool = False,
         density_kwargs: dict = {},
+        mask_type: Optional[int] = 0,
         **kwargs,
     ):
         """Load a volume from NiFti file.
