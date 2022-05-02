@@ -103,7 +103,7 @@ class Segmentation():
             segmentation["lung"] = segmented_volume == 6
             
             #Soft Tissue
-            segmentation["soft tissue"] = (segmented_volume > 2 and segmented_volume != 6)
+            segmentation["soft tissue"] = np.logical_and(segmented_volume > 2, segmented_volume != 6)
         
         if TaskType==6: # nnunet task 6
             # Soft Tissue
