@@ -147,7 +147,11 @@ class HomogeneousPointOrVector(HomogeneousObject):
         """Return non-homogeneous numpy representation of object."""
         return _from_homogeneous(self.data, is_point=bool(self.data[-1]))
 
-    def norm(self, *args, **kwargs):
+    def normsqr(self, order: int = 2) -> float:
+        """Get the squared L-order norm of the vector."""
+        return np.power(self.data, order).sum()
+
+    def norm(self, *args, **kwargs) -> float:
         """Get the norm of the vector. Pass any arguments to `np.linalg.norm`."""
         return np.linalg.norm(self, *args, **kwargs)
 
