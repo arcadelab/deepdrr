@@ -253,7 +253,7 @@ class Volume(object):
     ) -> Dict[str, np.ndarray]:
         """Segment the materials in a volume, potentially caching.
 
-        If cache_dir is None, then 
+        If cache_dir is None, then
 
         Args:
             hu_values (np.ndarray): volume data in Hounsfield Units.
@@ -296,13 +296,13 @@ class Volume(object):
         segmentation: bool = False,
         density_kwargs: dict = {},
         mask_type: Optional[int] = 0,
+        use_thresholding: bool = False,
         **kwargs,
     ):
         """Load a volume from NiFti file.
 
         Args:
             path (Path): path to the .nii.gz file.
-            use_thresholding (bool, optional): segment the materials using thresholding (faster but less accurate). Defaults to True.
             world_from_anatomical (Optional[geo.FrameTransform], optional): position the volume in world space. If None, uses identity. Defaults to None.
             use_cached (bool, optional): Use a cached segmentation if available. Defaults to True.
             cache_dir (Optional[Path], optional): Where to load/save the cached segmentation. If None, use a "cache" directory
@@ -312,6 +312,7 @@ class Volume(object):
             segmentation (bool, optional) If the file is a segmentation file, then its "materials" correspond to a high density material (bone),
                 where the values are >0. Defaults to false. Overrides provided materials.
             density_kwargs: Additional kwargs passed to convert_hounsfield_to_density.
+            use_thresholding (bool, optional): segment the materials using thresholding (faster but less accurate). Defaults to True. DEPRECATED.
 
         Returns:
             Volume: A new volume object.
@@ -333,15 +334,21 @@ class Volume(object):
 
         anatomical_from_ijk = geo.FrameTransform(img.affine)
 
+        if use_thresholding:
+            log.warning(
+                f"use_thresholding is deprecated. Use segmentation_method='thresholding' instead."
+            )
+            segmentation_method = "thresholding"
+
         if segmentation:
             data = img.get_fdata()
             materials = dict(bone=data > 0)
         else:
             hu_values = img.get_fdata()
             data = cls._convert_hounsfield_to_density(hu_values, **density_kwargs)
+
             if materials is not None:
                 raise NotImplementedError("TODO")
-                
             elif segmentation_method == "thresholding":
                 materials = cls.segment_materials(
                     hu_values,
@@ -400,18 +407,21 @@ class Volume(object):
 
                 raise NotImplementedError("TODO")
                 segmentation_nnunet = use_nnunet.Segmentation()
-                materials = segmentation_nnunet.nnu_segmentation(path,6)  #6:Lung, 17:multi-organ
-                
-#                 raise NotImplementedError("TODO")
+                materials = segmentation_nnunet.nnu_segmentation(
+                    path, 6
+                )  # 6:Lung, 17:multi-organ
+
+            #                 raise NotImplementedError("TODO")
             elif segmentation_method == "read_mask":
                 segmentation_nnunet = use_nnunet.Segmentation()
                 if cache_dir is None:
                     raise ValueError("cache_dir not given when trying to read mask.")
-                materials = segmentation_nnunet.read_mask(cache_dir,mask_type)  #6:Lung, 17:multi-organ, 0:default
+                materials = segmentation_nnunet.read_mask(
+                    cache_dir, mask_type
+                )  # 6:Lung, 17:multi-organ, 0:default
             else:
                 raise ValueError(
-                    f"Unknown segmentation method: {segmentation_method}. "
-                    "Must be one of 'thresholding', 'vnet', or 'nnunet'."
+                    f"Unknown segmentation_method: {segmentation_method}. Must be one of 'thresholding', 'vnet', 'nnunet', or 'read_mask'."
                 )
 
         return cls(

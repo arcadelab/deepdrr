@@ -25,6 +25,7 @@ setuptools.setup(
         "pyvista",
         "pycuda",
         "rich",
+        "batchgenerators",
     ],
     include_package_data=True,
     python_requires=">=3.7",
