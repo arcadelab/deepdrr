@@ -3,7 +3,7 @@
 """
 
 from __future__ import annotations
-from typing import Literal, Union, Tuple, List, Optional, Dict
+from typing import Union, Tuple, List, Optional, Dict
 
 import logging
 import numpy as np
@@ -18,7 +18,7 @@ from .. import load_dicom
 from .. import geo
 from .. import utils
 from ..utils import mesh_utils
-from ..projector.material_coefficients import material_coefficients
+from .. import use_nnunet
 
 pv, pv_available = utils.try_import_pyvista()
 vtk, nps, vtk_available = utils.try_import_vtk()
@@ -189,7 +189,8 @@ class Volume(object):
         prefix: str = "",
     ) -> Optional[Path]:
         """Get the cache path."""
-        if (cache_dir := cls._get_cache_dir(cache_dir)) is None:
+        cache_dir = cls._get_cache_dir(cache_dir)
+        if cache_dir is None:
             return None
 
         name = "cached_{}{}materials{}.npz".format(
@@ -199,7 +200,8 @@ class Volume(object):
         )
 
         # If the file exists in the parent directory of cache dir, as was previously standard for `from_nifti`, then move it to the new cache path.
-        if (p := cache_dir.parent / name).exists():
+        p = cache_dir.parent / name
+        if p.exists():
             p.rename(cache_dir / name)
 
         return cache_dir / name
@@ -287,40 +289,33 @@ class Volume(object):
         cls,
         path: Path,
         world_from_anatomical: Optional[geo.FrameTransform] = None,
-        segmentation_method: Literal["thresholding", "vnet", "nnunet"] = "thresholding",
+        segmentation_method: str = "thresholding",
         use_cached: bool = True,
         cache_dir: Optional[Path] = None,
-        materials: Union[Dict[str, np.ndarray], List[str]] = ["air", "bone", "soft tissue"],
+        materials: Optional[Dict[str, np.ndarray]] = None,
         segmentation: bool = False,
         density_kwargs: dict = {},
-        use_thresholding: Optional[bool] = None,
+        mask_type: Optional[int] = 0,
         **kwargs,
     ):
         """Load a volume from NiFti file.
 
         Args:
             path (Path): path to the .nii.gz file.
+            use_thresholding (bool, optional): segment the materials using thresholding (faster but less accurate). Defaults to True.
             world_from_anatomical (Optional[geo.FrameTransform], optional): position the volume in world space. If None, uses identity. Defaults to None.
-            segmentation_method (Literal['thresholding', 'vnet', 'nnunet'], optional): method to use for segmentation. Defaults to 'thresholding'.
             use_cached (bool, optional): Use a cached segmentation if available. Defaults to True.
             cache_dir (Optional[Path], optional): Where to load/save the cached segmentation. If None, use a "cache" directory
                 in the same location as the nifti file. Defaults to None.
-            materials (Union[Dict[str, np.ndarray], List[str]], optional): Either a list of material
-                names to use when running multi-organ segmentation or an existing segmentation of the
-                materials in the object. Ignored if `segmentation_method == "thresholding"`. Defaults to
-                ["air", "bone", "soft tissue"].
+            materials: Optional material segmentation, as a dictionary mapping material name to binary segmentation.
+                If not provided, materials are segmented from the CT. Defaults to None.
             segmentation (bool, optional) If the file is a segmentation file, then its "materials" correspond to a high density material (bone),
                 where the values are >0. Defaults to false. Overrides provided materials.
             density_kwargs: Additional kwargs passed to convert_hounsfield_to_density.
-            use_thresholding (bool, optional): Deprecated. Segment the materials using thresholding (faster but less accurate). Defaults to True.
 
         Returns:
             Volume: A new volume object.
         """
-        if use_thresholding is not None:
-            segmentation_method = "thresholding" if use_thresholding else "nnunet"
-            log.warning()
-
         path = Path(path)
 
         if use_cached and cache_dir is None:
@@ -344,9 +339,9 @@ class Volume(object):
         else:
             hu_values = img.get_fdata()
             data = cls._convert_hounsfield_to_density(hu_values, **density_kwargs)
-
-            if isinstance(materials, dict):
-                assert all([k in material_coefficients for k in materials.keys()]), f"bad material names: {materials.keys()}"
+            if materials is not None:
+                raise NotImplementedError("TODO")
+                
             elif segmentation_method == "thresholding":
                 materials = cls.segment_materials(
                     hu_values,
@@ -355,6 +350,7 @@ class Volume(object):
                     cache_dir=cache_dir,
                     prefix=path.name.split(".")[0],
                 )
+
             elif segmentation_method == "vnet":
                 materials = cls.segment_materials(
                     hu_values,
@@ -401,7 +397,17 @@ class Volume(object):
                 # model. (You can download the code and models to a folder in
                 # ~/datasets/DeepDRR_Data or the user-specified "root" directory. See
                 # data_utils.download())
+
                 raise NotImplementedError("TODO")
+                segmentation_nnunet = use_nnunet.Segmentation()
+                materials = segmentation_nnunet.nnu_segmentation(path,6)  #6:Lung, 17:multi-organ
+                
+#                 raise NotImplementedError("TODO")
+            elif segmentation_method == "read_mask":
+                segmentation_nnunet = use_nnunet.Segmentation()
+                if cache_dir is None:
+                    raise ValueError("cache_dir not given when trying to read mask.")
+                materials = segmentation_nnunet.read_mask(cache_dir,mask_type)  #6:Lung, 17:multi-organ, 0:default
             else:
                 raise ValueError(
                     f"Unknown segmentation method: {segmentation_method}. "
@@ -715,14 +721,12 @@ class Volume(object):
 
         """
 
-        # TODO(killeen): fix this. It doesn't use x.
         x = geo.point(x)
         center_anatomical = self.anatomical_from_ijk @ geo.point(
             np.array(self.shape) / 2
         )
-        self.world_from_anatomical = geo.FrameTransform.from_rt(
-            self.world_from_anatomical.R
-        ) @ geo.FrameTransform.from_origin(center_anatomical)
+        center_world = self.world_from_anatomical @ center_anatomical
+        self.translate(x - center_world)
 
     def translate(self, t: geo.Vector3D) -> Volume:
         """Translate the volume by `t`.
