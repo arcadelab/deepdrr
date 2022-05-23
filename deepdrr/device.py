@@ -436,6 +436,18 @@ class MobileCArm(object):
     detector_height = 100
     arm_width = 100
 
+    @property
+    def source_in_arm(self) -> geo.Point3D:
+        return geo.point(
+            0,
+            self.source_to_isocenter_horizontal_offset,
+            -self.source_to_isocenter_vertical_distance,
+        )
+
+    @property
+    def source_in_device(self) -> geo.Point3D:
+        return self.device_from_arm @ self.source_in_arm
+
     def _make_mesh(self, full=True, include_labels: bool = False):
         """Make the mesh of the C-arm, centered and upright.
 
