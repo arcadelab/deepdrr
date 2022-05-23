@@ -1,3 +1,4 @@
+import math
 from typing import Any, Dict, Optional, Tuple, Union, List
 
 import logging
@@ -77,8 +78,8 @@ def pose_vector_angles(pose: geo.Vector3D) -> Tuple[float, float]:
         Tuple[float, float]: carm angulation (alpha, beta) in radians.
     """
     x, y, z = pose
-    alpha = -np.arctan2(y, np.sqrt(x * x + z * z))
-    beta = np.arctan2(x, z)
+    alpha = -math.atan2(y, np.sqrt(x * x + z * z))
+    beta = math.atan2(x, z)
     return alpha, beta
 
 

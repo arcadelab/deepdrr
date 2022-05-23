@@ -121,6 +121,8 @@ class KWire(Volume):
                 on a scale from 0 to 1. 0 corresponds to the tip placed at the start point, 1 at the end point. Defaults to 1.0.
         """
         # useful: https://math.stackexchange.com/questions/180418/calculate-rotation-matrix-to-align-vector-a-to-vector-b-in-3d
+        start_point_in_world = geo.point(start_point_in_world)
+        end_point_in_world = geo.point(end_point_in_world)
 
         # interpolate along the direction of the tool to get the desired points in world.
         trajectory_vector = end_point_in_world - start_point_in_world

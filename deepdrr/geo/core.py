@@ -514,7 +514,7 @@ class Transform(HomogeneousObject):
                 This is only necessary when `_inv` is not overriden by subclasses. Defaults to None.
         """
         super().__init__(data)
-        self._inv = _inv
+        self._inv = _inv if _inv is not None else np.linalg.pinv(data)
 
     def to_array(self) -> np.ndarray:
         """Output the transform as a non-homogeneous matrix.
