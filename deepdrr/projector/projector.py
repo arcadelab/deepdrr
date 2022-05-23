@@ -63,7 +63,12 @@ def _get_spectrum(spectrum: Union[np.ndarray, str]):
         raise TypeError(f"unrecognized spectrum type: {type(spectrum)}")
 
 
-def _get_kernel_projector_module(num_volumes: int, num_materials: int, air_index: int, attenuate_outside_volume: bool = False) -> SourceModule:
+def _get_kernel_projector_module(
+    num_volumes: int,
+    num_materials: int,
+    air_index: int,
+    attenuate_outside_volume: bool = False,
+) -> SourceModule:
     """Compile the cuda code for the kernel projector.
 
     Assumes `project_kernel.cu`, `kernel_vol_seg_data.cu`, and `cubic` interpolation library is in the same directory as THIS
@@ -246,7 +251,7 @@ class Projector(object):
         log.debug(f"MATERIALS: {self.all_materials}")
 
         if attenuate_outside_volume:
-            assert 'air' in self.all_materials
+            assert "air" in self.all_materials
             air_index = self.all_materials.index("air")
         else:
             air_index = 0
