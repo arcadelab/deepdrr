@@ -28,7 +28,7 @@ def show(
     *item: Any,
     full: Union[bool, List[bool]] = False,
     colors: List[str] = ["tan", "cyan", "green", "red"],
-    background: str = "#4d94b0",
+    background: str = "white",
 ) -> np.ndarray:
     """Show the given items in a pyvista window.
 

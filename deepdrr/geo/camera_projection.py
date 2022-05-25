@@ -24,7 +24,9 @@ class CameraProjection(Transform):
         intrinsic: Union[CameraIntrinsicTransform, np.ndarray],
         extrinsic: Union[FrameTransform, np.ndarray],
     ) -> None:
-        """A generic camera projection.
+        """A class for instantiating camera projections.
+
+        The object itself contains the "index_from_world" transform, or P = K[R|t].
 
         A helpful resource for this is:
         - http://wwwmayr.in.tum.de/konferenzen/MB-Jass2006/courses/1/slides/h-1-5.pdf
@@ -47,7 +49,7 @@ class CameraProjection(Transform):
             if isinstance(extrinsic, FrameTransform)
             else FrameTransform(extrinsic)
         )
-        super().__init__(self.index_from_world.data)
+        super().__init__(get_data(self.index_from_world))
 
     @classmethod
     def from_rtk(
