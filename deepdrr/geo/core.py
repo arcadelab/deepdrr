@@ -4,6 +4,7 @@ from typing import Union, Tuple, Optional, Type, List, TypeVar, TYPE_CHECKING
 import logging
 from abc import ABC, abstractmethod
 import numpy as np
+from regex import P
 import scipy.spatial.distance
 from scipy.spatial.transform import Rotation
 
@@ -128,7 +129,53 @@ def get_data(x: Union[HomogeneousObject, List[HomogeneousObject]]) -> np.ndarray
         raise TypeError
 
 
-class HomogeneousPointOrVector(HomogeneousObject):
+class Primitive(HomogeneousObject):
+    """Abstract class for geometric primitives.
+
+    Primitives are the objects contained in a homogeneous frame, like points, vectors, lines, shapes, etc.
+
+    """
+
+    pass
+
+
+class Join(ABC):
+    """Abstract class for objects that can be joined together."""
+
+    @abstractmethod
+    def join(self, other: Join) -> Primitive:
+        """Join two objects.
+
+        For example, given two points, get the line that connects them.
+
+        Args:
+            other (Primitive): the other primitive.
+
+        Returns:
+            Primitive: the joined primitive.
+        """
+        pass
+
+
+class Meet(ABC):
+    """Abstract class for objects that can be intersected."""
+
+    @abstractmethod
+    def meet(self, other: Primitive) -> Primitive:
+        """Get the intersection of two objects.
+
+        For example, given two lines, get the line that is the intersection of them.
+
+        Args:
+            other (Primitive): the other primitive.
+
+        Returns:
+            Primitive: the intersection of `self` and `other`.
+        """
+        pass
+
+
+class PointOrVector(Primitive):
     """A Homogeneous point or vector in any dimension."""
 
     def __init__(
@@ -168,17 +215,24 @@ class HomogeneousPointOrVector(HomogeneousObject):
 
     @property
     def y(self):
+        assert self.dim >= 2
         return self.data[1]
 
     @property
     def z(self):
+        assert self.dim >= 3
         return self.data[2]
 
+    @property
+    def w(self):
+        return self.data[-1]
 
-class Point(HomogeneousPointOrVector):
+
+class Point(PointOrVector, Join):
     def __init__(self, data: np.ndarray) -> None:
-        assert data[-1] != 0, "cannot create a point with 0 for w"
+        assert not np.isclose(data[-1], 0), "cannot create a point with 0 for w"
         if data[-1] != 1:
+            # TODO: relax this constraint internally, and just divide by w when needed
             data /= data[-1]
 
         super().__init__(data)
@@ -202,8 +256,8 @@ class Point(HomogeneousPointOrVector):
 
     def __sub__(
         self: Point,
-        other: HomogeneousPointOrVector,
-    ) -> HomogeneousPointOrVector:
+        other: PointOrVector,
+    ) -> PointOrVector:
         """Subtract two points, obtaining a vector."""
         if isinstance(other, Point):
             other = self.from_any(other)
@@ -256,7 +310,7 @@ class Point(HomogeneousPointOrVector):
         return vector(np.array(self))
 
 
-class Vector(HomogeneousPointOrVector):
+class Vector(PointOrVector):
     def __init__(self, data: np.ndarray) -> None:
         assert data[-1] == 0
         super().__init__(data)
@@ -396,6 +450,14 @@ class Point2D(Point):
 
     dim = 2
 
+    def join(self, other: Primitive) -> Primitive:
+        if isinstance(other, Point2D):
+            return Line2D(np.cross(self.data, other.data))
+        elif isinstance(other, Line2D):
+            raise NotImplementedError("TODO: get vector from point to line")
+        else:
+            raise TypeError(f"unrecognized type for join: {type(other)}")
+
 
 class Vector2D(Vector):
     """Homogeneous vector in 2D, represented as an array with [x, y, 0]"""
@@ -408,6 +470,29 @@ class Point3D(Point):
 
     dim = 3
 
+    def join(self, other: Primitive) -> Primitive:
+        if isinstance(other, Point3D):
+            # Line joining two points in P^3.
+            ax, ay, az, aw = self
+            bx, by, bz, bw = other
+            l = np.array(
+                [
+                    az * bw - aw * bz,  # p
+                    ay * bw - aw * by,  # q
+                    ay * bz - az * by,  # r
+                    ax * bw - aw * bx,  # s
+                    ax * bz - az * bx,  # t
+                    ax * by - ay * bx,  # u
+                ]
+            )
+            return Line3D(l)
+        elif isinstance(other, Line3D):
+            return self.data.T @ other.K
+        elif isinstance(other, Plane):
+            raise NotImplementedError("TODO: get vector from point to plane")
+        else:
+            raise TypeError(f"unrecognized type for join: {type(other)}")
+
 
 class Vector3D(Vector):
     """Homogeneous vector in 3D, represented as an array with [x, y, z, 0]"""
@@ -415,19 +500,129 @@ class Vector3D(Vector):
     dim = 3
 
 
-PointOrVector = TypeVar("PointOrVector", Point2D, Point3D, Vector2D, Vector3D)
-PointOrVector2D = TypeVar("PointOrVector2D", Point2D, Vector2D)
-PointOrVector3D = TypeVar("PointOrVector3D", Point3D, Vector3D)
+class HyperPlane(Primitive):
+    """Represents a hyperplane in 2D (a line) or 3D (a plane)"""
+
+    def __init__(self, data: np.ndarray) -> None:
+        assert data.shape == (self.dim,)
+        super().__init__(data)
+
+
+class Line2D(HyperPlane):
+    """Represents a line in 2D"""
+
+    dim = 2
+
+    def backproject(self, P: Transform) -> Plane:
+        """Get the plane containing all the points that `P` projects onto this line.
+
+        Args:
+            P (Transform): A so-called `index_from_world` projection transform.
+
+        Returns:
+            Plane:
+        """
+        assert P.shape == (3, 4), "P is not a projective transformation"
+        return Plane(P.data.T @ self.data)
+
+
+class JoinError(Exception):
+    pass
+
+
+class Plane(HyperPlane, Join, Meet):
+    """Represents a plane in 3D"""
+
+    dim = 3
+
+    @property
+    def normal(self) -> Vector3D:
+        return vector(self.data[:3])
+
+    def join(self, other: Primitive) -> Primitive:
+        if isinstance(other, Plane):
+            return Line3D(np.cross(self.data, other.data))
+        elif isinstance(other, Line3D):
+            out = self.data.T @ other.K
+            if np.isclose(out, 0).all():
+                raise JoinError("No intersection.")
+            return Point3D(out)
+        else:
+            raise TypeError(f"unrecognized type for join: {type(other)}")
+
+
+class Line3D(Primitive):
+    """Represents a line in 3D as a 6-vector (p,q,r,s,t,u).
+
+    Based on https://dl.acm.org/doi/pdf/10.1145/965141.563900.
+
+    """
+
+    dim = 3
+
+    def __init__(self, data: np.ndarray) -> None:
+        assert data.shape == (6,)
+        # TODO: assert the necessary line conditions
+        super().__init__(data)
+
+    @classmethod
+    def from_primal(cls, lp: np.ndarray) -> Line3D:
+        assert lp.shape == (4, 4)
+        data = np.array([lp[0, 1], -lp[0, 2], lp[0, 3], lp[1, 2], -lp[1, 3], lp[2, 3]])
+        return cls(data)
+
+    @classmethod
+    def from_dual(cls, lk: np.ndarray) -> Line3D:
+        assert lk.shape == (4, 4)
+        data = np.array([lk[3, 2], lk[3, 1], lk[2, 1], lk[3, 0], lk[2, 0], lk[1, 0]])
+        return cls(data)
+
+    def primal(self) -> np.ndarray:
+        """Get the primal matrix of the line."""
+        p, q, r, s, t, u = self.data
+
+        return np.array(
+            [
+                [0, p, -q, r],
+                [-p, 0, s, -t],
+                [q, -s, 0, u],
+                [-r, t, -u, 0],
+            ]
+        )
+
+    @property
+    def P(self) -> np.ndarray:
+        """Get the primal matrix of the line."""
+        return self.primal()
+
+    def dual(self) -> np.ndarray:
+        """Get the dual form of the line."""
+        p, q, r, s, t, u = L
+
+        return np.array(
+            [
+                [0, -u, -t, -s],
+                [u, 0, -r, -q],
+                [t, r, 0, -p],
+                [s, q, p, 0],
+            ]
+        )
+
+    @property
+    def K(self) -> np.ndarray:
+        """Get the doal form of the line."""
+        return self.dual()
+
+
+### convenience functions for instantiating primitive objects ###
 
 
 def _array(x: Union[List[np.ndarray], List[float]]) -> np.ndarray:
-    """Parse args into a numpy array."""
+    """Parse ."""
     if len(x) == 1:
         return np.array(x[0])
-    elif len(x) == 2 or len(x) == 3:
-        return np.array(x)
     else:
-        raise ValueError(f"could not parse point or vector arguments: {x}")
+        return np.array(x)
 
 
 def point(*x: Union[np.ndarray, float, Point]) -> Point:
@@ -488,6 +683,14 @@ def vector(*v: Union[np.ndarray, float, Vector]) -> Vector:
         raise ValueError(f"invalid data for vector: {v}")
 
 
+def line(*l: Union[np.ndarray, float, Line]) -> Line:
+    pass
+
+
+def plane(*pl: Union[np.ndarray, float, Plane]) -> Plane:
+    pass
+
+
 def _point_or_vector(data: np.ndarray):
     """Convert a point where the "homogeneous" element may not be 1."""
 
@@ -495,6 +698,13 @@ def _point_or_vector(data: np.ndarray):
         return point(data[:-1] / data[-1])
     else:
         return vector(data[:-1])
+
+
+### aliases ###
+p = point
+v = vector
+l = line
+pl = plane
 
 
 """
@@ -551,12 +761,12 @@ class Transform(HomogeneousObject):
         self,
         other: Union[Transform, PointOrVector],
     ) -> Union[Transform, PointOrVector]:
-        if issubclass(type(other), HomogeneousPointOrVector):
+        if isinstance(other, PointOrVector):
             assert (
                 self.input_dim == other.dim
             ), f"dimensions must match between other ({other.dim}) and self ({self.input_dim})"
             return _point_or_vector(self.data @ other.data)
-        elif issubclass(type(other), Transform):
+        elif isinstance(other, Transform):
             # if other is a Transform, then compose their inverses as well to store that.
             assert (
                 self.input_dim == other.dim

@@ -18,7 +18,7 @@ along with DeepDRR.  If not, see <https://www.gnu.org/licenses/>.
 
 from .core import (
     HomogeneousObject,
-    HomogeneousPointOrVector,
+    PointOrVector,
     get_data,
     Point,
     Vector,
@@ -40,7 +40,7 @@ from scipy.spatial.transform import Rotation
 
 __all__ = [
     "HomogeneousObject",
-    "HomogeneousPointOrVector",
+    "PointOrVector",
     "get_data",
     "Point",
     "Point2D",
