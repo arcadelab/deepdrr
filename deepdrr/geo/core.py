@@ -1,12 +1,14 @@
 from __future__ import annotations
 
-from typing import Union, Tuple, Optional, Type, List, TypeVar, TYPE_CHECKING
+from typing import Union, Tuple, Optional, Type, List, TypeVar, TYPE_CHECKING, overload
 import logging
 from abc import ABC, abstractmethod
 import numpy as np
 from regex import P
 import scipy.spatial.distance
 from scipy.spatial.transform import Rotation
+
+from .exceptions import *
 
 
 logger = logging.getLogger(__name__)
@@ -51,7 +53,8 @@ T = TypeVar("T")
 class HomogeneousObject(ABC):
     """Any of the objects that rely on homogeneous transforms, all of which wrap a single array called `data`."""
 
-    dtype = np.float32
+    dtype = np.float64
+    data: np.ndarray
 
     def __init__(
         self,
@@ -65,8 +68,9 @@ class HomogeneousObject(ABC):
         Args:
             data (np.ndarray): the numpy array with the data.
         """
-        data = data.data if issubclass(type(data), HomogeneousObject) else data
-        assert isinstance(data, np.ndarray)
+        data = (
+            data.data if issubclass(type(data), HomogeneousObject) else np.array(data)
+        )
         self.data = data.astype(self.dtype)
 
     @classmethod
@@ -85,7 +89,7 @@ class HomogeneousObject(ABC):
         pass
 
     @abstractmethod
-    def to_array(self, is_point):
+    def to_array(self, is_point: bool) -> np.ndarray:
         """Get the non-homogeneous representation of the object.
 
         For points, this removes the is_point indicator at the bottom (added 1 or 0).
@@ -139,11 +143,11 @@ class Primitive(HomogeneousObject):
     pass
 
 
-class Join(ABC):
+class Joinable(ABC):
     """Abstract class for objects that can be joined together."""
 
     @abstractmethod
-    def join(self, other: Join) -> Primitive:
+    def join(self, other: Joinable) -> Primitive:
         """Join two objects.
 
         For example, given two points, get the line that connects them.
@@ -157,7 +161,7 @@ class Join(ABC):
         pass
 
 
-class Meet(ABC):
+class Meetable(ABC):
     """Abstract class for objects that can be intersected."""
 
     @abstractmethod
@@ -228,7 +232,7 @@ class PointOrVector(Primitive):
         return self.data[-1]
 
 
-class Point(PointOrVector, Join):
+class Point(PointOrVector, Joinable):
     def __init__(self, data: np.ndarray) -> None:
         assert not np.isclose(data[-1], 0), "cannot create a point with 0 for w"
         if data[-1] != 1:
@@ -450,7 +454,15 @@ class Point2D(Point):
 
     dim = 2
 
-    def join(self, other: Primitive) -> Primitive:
+    @overload
+    def join(self, other: Point2D) -> Line2D:
+        ...
+
+    @overload
+    def join(self, other: Line2D) -> Vector2D:
+        ...
+
+    def join(self, other):
         if isinstance(other, Point2D):
             return Line2D(np.cross(self.data, other.data))
         elif isinstance(other, Line2D):
@@ -470,7 +482,15 @@ class Point3D(Point):
 
     dim = 3
 
-    def join(self, other: Primitive) -> Primitive:
+    @overload
+    def join(self, other: Point3D) -> Line3D:
+        ...
+
+    @overload
+    def join(self, other: Line3D) -> Plane:
+        ...
+
+    def join(self, other):
         if isinstance(other, Point3D):
             # Line joining two points in P^3.
             ax, ay, az, aw = self
@@ -487,7 +507,7 @@ class Point3D(Point):
             )
             return Line3D(l)
         elif isinstance(other, Line3D):
-            return self.data.T @ other.K
+            return Plane(self.data.T @ other.L)
         elif isinstance(other, Plane):
             raise NotImplementedError("TODO: get vector from point to plane")
         else:
@@ -500,18 +520,45 @@ class Vector3D(Vector):
     dim = 3
 
 
-class HyperPlane(Primitive):
-    """Represents a hyperplane in 2D (a line) or 3D (a plane)"""
+class HyperPlane(Primitive, Meetable):
+    """Represents a hyperplane in 2D (a line) or 3D (a plane).
+
+    Hyperplanes can be intersected with other hyperplanes or lower dimensional objects, but they are
+    not joinable.
+
+    """
 
     def __init__(self, data: np.ndarray) -> None:
         assert data.shape == (self.dim,)
         super().__init__(data)
 
 
-class Line2D(HyperPlane):
-    """Represents a line in 2D"""
+class Line:
+    """Abstract parent class for lines."""
+
+    pass
+
+
+class Line2D(Line, HyperPlane):
+    """Represents a line in 2D.
+
+    Consists of a 3-vector :math:`\mathbf{p} = [a, b, c]` such that the line is all the points (x,y)
+    such that :math:`ax + by + c = 0` or, alternatively, all the homogeneous points
+    :math:`\mathbf{x} = [x,y,w]` such that :math:`p^T x = 0`.
+
+    """
 
     dim = 2
+
+    @overload
+    def meet(self, other: Line2D) -> Point2D:
+        ...
+
+    def meet(self, other):
+        if isinstance(other, Line2D):
+            return Point2D(np.cross(self.data, other.data))
+        else:
+            raise TypeError(f"unrecognized type for meet: {type(other)}")
 
     def backproject(self, P: Transform) -> Plane:
         """Get the plane containing all the points that `P` projects onto this line.
@@ -526,32 +573,74 @@ class Line2D(HyperPlane):
         return Plane(P.data.T @ self.data)
 
 
-class JoinError(Exception):
-    pass
-
-
-class Plane(HyperPlane, Join, Meet):
+class Plane(HyperPlane):
     """Represents a plane in 3D"""
 
     dim = 3
+
+    @classmethod
+    def from_point_normal(r: Point3D, n: Vector3D):
+        r = point(r)
+        n = vector(n)
+        a, b, c = r
+        d = -(a * n.x + b * n.y + c * n.z)
+        return Plane(np.array([a, b, c, d]))
+
+    @classmethod
+    def from_points(cls, a: Point3D, b: Point3D, c: Point3D) -> None:
+        """Initialize the plane containing three points.
+
+        Args:
+            a (Point3D): a point on the plane.
+            b (Point3D): a point on the plane.
+            c (Point3D): a point on the plane.
+        """
+        a = point(a)
+        b = point(b)
+        c = point(c)
+
+        assert a.dim == 3 and b.dim == 3 and c.dim == 3, "points must be 3D"
+
+        return a.join(b).join(c)
 
     @property
     def normal(self) -> Vector3D:
         return vector(self.data[:3])
 
-    def join(self, other: Primitive) -> Primitive:
+    @overload
+    def meet(self, other: Plane) -> Line3D:
+        ...
+
+    @overload
+    def meet(self, other: Line3D) -> Point3D:
+        ...
+
+    def meet(self, other):
         if isinstance(other, Plane):
-            return Line3D(np.cross(self.data, other.data))
+            # Intersection of two planes in P^3.
+            a1, b1, c1, d1 = self
+            a2, b2, c2, d2 = other
+            l = np.array(
+                [
+                    -(a1 * b2 - a2 * b1),  # p
+                    a1 * c2 - a2 * c1,  # q
+                    -(a1 * d2 - a2 * d1),  # r
+                    -(b1 * c2 - b2 * c1),  # s
+                    b1 * d2 - b2 * d1,  # t
+                    -(c1 * d2 - c2 * d1),  # u
+                ]
+            )
+            return Line3D(l)
         elif isinstance(other, Line3D):
-            out = self.data.T @ other.K
-            if np.isclose(out, 0).all():
-                raise JoinError("No intersection.")
-            return Point3D(out)
+            p = other.K @ self
+            if np.all(np.isclose(p, 0)):
+                raise MeetError("Plane and line are parallel")
+            return Point3D(p)
         else:
-            raise TypeError(f"unrecognized type for join: {type(other)}")
+            raise TypeError(f"unrecognized type for meet: {type(other)}")
 
 
-class Line3D(Primitive):
+class Line3D(Line, Primitive, Joinable, Meetable):
     """Represents a line in 3D as a 6-vector (p,q,r,s,t,u).
 
     Based on https://dl.acm.org/doi/pdf/10.1145/965141.563900.
@@ -591,13 +680,13 @@ class Line3D(Primitive):
         )
 
     @property
-    def P(self) -> np.ndarray:
+    def L(self) -> np.ndarray:
         """Get the primal matrix of the line."""
         return self.primal()
 
     def dual(self) -> np.ndarray:
         """Get the dual form of the line."""
-        p, q, r, s, t, u = L
+        p, q, r, s, t, u = self
 
         return np.array(
             [
@@ -610,22 +699,52 @@ class Line3D(Primitive):
 
     @property
     def K(self) -> np.ndarray:
-        """Get the doal form of the line."""
+        """Get the dual form of the line."""
         return self.dual()
+
+    def join(self, other):
+        other.join(self)
+
+    def meet(self, other):
+        other.meet(self)
 
 
 ### convenience functions for instantiating primitive objects ###
 
 
+@overload
 def _array(x: Union[List[np.ndarray], List[float]]) -> np.ndarray:
-    """Parse ."""
+    # TODO: this is a little sketchy
     if len(x) == 1:
         return np.array(x[0])
     else:
         return np.array(x)
 
 
-def point(*x: Union[np.ndarray, float, Point]) -> Point:
+P = TypeVar("P", bound="Point")
+
+
+@overload
+def point(p: P) -> P:
+    ...
+
+
+@overload
+def point(x: float, y: float) -> Point2D:
+    ...
+
+
+@overload
+def point(x: float, y: float, z: float) -> Point3D:
+    ...
+
+
+@overload
+def point(x: np.ndarray) -> Point:
+    ...
+
+
+def point(*args):
     """The preferred method for creating a point.
 
     There are three ways to create a point using `point()`.
@@ -641,10 +760,10 @@ def point(*x: Union[np.ndarray, float, Point]) -> Point:
     Returns:
         Union[Point2D, Point3D]: Point2D or Point3D.
     """
-    if len(x) == 1 and isinstance(x[0], Point):
-        return x[0]
+    if len(args) == 1 and isinstance(args[0], Point):
+        return args[0]
 
-    x = _array(x)
+    x = _array(args)
     if x.shape == (2,):
         return Point2D.from_array(x)
     elif x.shape == (3,):
@@ -653,7 +772,30 @@ def point(*x: Union[np.ndarray, float, Point]) -> Point:
         raise ValueError(f"invalid data for point: {x}")
 
 
-def vector(*v: Union[np.ndarray, float, Vector]) -> Vector:
+V = TypeVar("V", bound="Vector")
+
+
+@overload
+def vector(v: V) -> V:
+    ...
+
+
+@overload
+def vector(x: float, y: float) -> Vector2D:
+    ...
+
+
+@overload
+def vector(x: float, y: float, z: float) -> Vector3D:
+    ...
+
+
+@overload
+def vector(x: np.ndarray) -> Vector:
+    ...
+
+
+def vector(*args: Union[np.ndarray, float, Vector]) -> Vector:
     """The preferred method for creating a vector.
 
     There are three ways to create a point using `vector()`.
@@ -671,10 +813,10 @@ def vector(*v: Union[np.ndarray, float, Vector]) -> Vector:
     Returns:
         Union[Point2D, Point3D]: Point2D or Point3D.
     """
-    if len(v) == 1 and isinstance(v[0], Vector):
-        return v[0]
+    if len(args) == 1 and isinstance(args[0], Vector):
+        return args[0]
 
-    v = _array(v)
+    v = _array(args)
     if v.shape == (2,):
         return Vector2D.from_array(v)
     elif v.shape == (3,):
@@ -683,12 +825,122 @@ def vector(*v: Union[np.ndarray, float, Vector]) -> Vector:
         raise ValueError(f"invalid data for vector: {v}")
 
 
-def line(*l: Union[np.ndarray, float, Line]) -> Line:
-    pass
+@overload
+def line(l: Line2D) -> Line2D:
+    ...
 
 
-def plane(*pl: Union[np.ndarray, float, Plane]) -> Plane:
-    pass
+@overload
+def line(l: Line3D) -> Line3D:
+    ...
+
+
+@overload
+def line(a: float, b: float, c: float) -> Line2D:
+    ...
+
+
+@overload
+def line(l: np.ndarray) -> Line:
+    ...
+
+
+@overload
+def line(p: float, q: float, r: float, s: float, t: float, u: float) -> Line3D:
+    ...
+
+
+@overload
+def line(x: Point2D, y: Point2D) -> Line2D:
+    ...
+
+
+@overload
+def line(x: Point3D, y: Point3D) -> Line3D:
+    ...
+
+
+def line(a: Plane, b: Plane) -> Line3D:
+    ...
+
+
+def line(*args):
+    """The preferred method for creating a line.
+
+    Can create a line using one of the following methods:
+    - Pass the coordinates as separate arguments. For instance, `line(1, 2, 3)` returns the 2D homogeneous line `1x + 2y + 3 = 0`.
+    - Pass a numpy array with the homogeneous coordinates (NOTE THE DIFFERENCE WITH `point` and `vector`).
+    - Pass a Line2D or Line3D instance, in which case `line()` is a no-op.
+    - Pass two points of the same dimension, in which case `line()` returns the line through the points.
+    - Pass two planes, in which case `line()` returns the line of intersection of the planes.
+
+    """
+
+    if len(args) == 1 and isinstance(args[0], Line):
+        return args[0]
+    elif len(args) == 2 and isinstance(args[0], Point) and isinstance(args[1], Point):
+        return args[0].join(args[1])
+    elif len(args) == 2 and isinstance(args[0], Plane) and isinstance(args[1], Plane):
+        return args[0].meet(args[1])
+
+    l = _array(args)
+    if l.shape == (3,):
+        return Line2D(l)
+    elif l.shape == (6,):
+        return Line3D(l)
+    elif l.shape == (4, 4):
+        raise ValueError(
+            f"cannot create line from matrix form. Use Line3D.from_dual() or Line3D.from_primal() instead."
+        )
+    else:
+        raise ValueError(f"invalid data for line: {l}")
+
+
+@overload
+def plane(p: Plane) -> Plane:
+    ...
+
+
+@overload
+def plane(a: float, b: float, c: float, d: float) -> Plane:
+    ...
+
+
+@overload
+def plane(x: np.ndarray) -> Plane:
+    ...
+
+
+@overload
+def plane(r: Point3D, n: Vector3D) -> Plane:
+    ...
+
+
+def plane(*args):
+    """The preferred method for creating a plane.
+
+    Can create a plane using one of the following methods:
+    - Pass the coordinates as separate arguments. For instance, `plane(1, 2, 3, 4)` returns the 2D homogeneous plane `1x + 2y + 3z + 4 = 0`.
+    - Pass a numpy array with the homogeneous coordinates.
+    - Pass a Plane instance, in which case `plane()` is a no-op.
+    - Pass a Point3D and Vector3D instance, in which case `plane(r, n)` returns the plane corresponding to
+    """
+    if len(args) == 1 and isinstance(args[0], Plane):
+        return args[0]
+    elif (
+        len(args) == 2
+        and isinstance(args[0], Point3D)
+        and isinstance(args[1], Vector3D)
+    ):
+        r: Point3D = args[0]
+        n: Vector3D = args[1]
+        return Plane.from_point_normal(r, n)
+
+    p = _array(args)
+    if p.shape == (4,):
+        return Plane(p)
+    else:
+        raise ValueError(f"invalid data for plane: {p}")
 
 
 def _point_or_vector(data: np.ndarray):

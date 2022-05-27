@@ -26,6 +26,10 @@ from .core import (
     Point3D,
     Vector2D,
     Vector3D,
+    HyperPlane,
+    Line2D,
+    Plane,
+    Line3D,
     point,
     vector,
     Transform,
@@ -34,6 +38,7 @@ from .core import (
     RAS_from_LPS,
     LPS_from_RAS,
 )
+from .exceptions import JoinError, MeetError
 from .camera_intrinsic_transform import CameraIntrinsicTransform
 from .camera_projection import CameraProjection
 from scipy.spatial.transform import Rotation
@@ -48,6 +53,10 @@ __all__ = [
     "Vector",
     "Vector2D",
     "Vector3D",
+    "HyperPlane",
+    "Line2D",
+    "Plane",
+    "Line3D",
     "point",
     "vector",
     "Transform",
@@ -55,6 +64,8 @@ __all__ = [
     "frame_transform",
     "RAS_from_LPS",
     "LPS_from_RAS",
+    "JoinError",
+    "MeetError",
     "CameraIntrinsicTransform",
     "CameraProjection",
     "Rotation",

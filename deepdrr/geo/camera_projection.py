@@ -1,7 +1,7 @@
 from typing import Union, Optional, Any, TYPE_CHECKING
 import numpy as np
 
-from .core import Transform, FrameTransform, point, Point3D, get_data
+from .core import Transform, FrameTransform, point, Point3D, get_data, Plane
 from .camera_intrinsic_transform import CameraIntrinsicTransform
 from ..vol import AnyVolume
 
@@ -50,6 +50,22 @@ class CameraProjection(Transform):
             else FrameTransform(extrinsic)
         )
         super().__init__(get_data(self.index_from_world))
+
+    @classmethod
+    def from_krt(
+        cls, K: np.ndarray, R: np.ndarray, t: np.ndarray
+    ) -> "CameraProjection":
+        """Create a CameraProjection from a camera intrinsic matrix and extrinsic matrix.
+
+        Args:
+            K (np.ndarray): the camera intrinsic matrix.
+            R (np.ndarray): the camera extrinsic matrix.
+            t (np.ndarray): the camera extrinsic translation vector.
+
+        Returns:
+            CameraProjection: the camera projection.
+        """
+        return cls(intrinsic=K, extrinsic=FrameTransform.from_rt(K, R, t))
 
     @classmethod
     def from_rtk(
@@ -129,6 +145,9 @@ class CameraProjection(Transform):
         Returns:
             Point3D: the center of the camera in center.
         """
+
+        # TODO: can also get the center from the intersection of three planes formed
+        # by self.data.
 
         world_from_camera3d = self.camera3d_from_world.inv
         return world_from_camera3d(point(0, 0, 0))
