@@ -11,7 +11,7 @@ from scipy.spatial.transform import Rotation
 from .exceptions import *
 
 
-logger = logging.getLogger(__name__)
+log = logging.getLogger(__name__)
 
 
 def _to_homogeneous(x: np.ndarray, is_point: bool = True) -> np.ndarray:
@@ -53,7 +53,7 @@ T = TypeVar("T")
 class HomogeneousObject(ABC):
     """Any of the objects that rely on homogeneous transforms, all of which wrap a single array called `data`."""
 
-    dtype = np.float64
+    dtype = np.float32
     data: np.ndarray
 
     def __init__(
@@ -69,18 +69,17 @@ class HomogeneousObject(ABC):
             data (np.ndarray): the numpy array with the data.
         """
         data = (
-            data.data if issubclass(type(data), HomogeneousObject) else np.array(data)
+            data.data if isinstance(data, HomogeneousObject) else np.array(data)
         )
         self.data = data.astype(self.dtype)
 
     @classmethod
-    @abstractmethod
     def from_array(
         cls: Type[T],
         x: np.ndarray,
     ) -> T:
         """Create a homogeneous object from its non-homogeous representation as an array."""
-        pass
+        return cls(x)
 
     @property
     @abstractmethod
@@ -88,21 +87,17 @@ class HomogeneousObject(ABC):
         """Get the dimension of the space the object lives in. For transforms, this is the OUTPUT dim."""
         pass
 
-    @abstractmethod
-    def to_array(self, is_point: bool) -> np.ndarray:
-        """Get the non-homogeneous representation of the object.
-
-        For points, this removes the is_point indicator at the bottom (added 1 or 0).
-        For transforms, this simply returns the data without modifying it.
-        """
-        pass
-
     def tolist(self) -> List:
         """Get a json-save list with the data in this object."""
         return self.data.tolist()
 
     def __array__(self, dtype=None):
-        return self.to_array()
+        """Get the non-homogeneous representation of the object.
+
+        For points, this removes the is_point indicator at the bottom (added 1 or 0).
+        For transforms and other primitives, this simply returns the data without modifying it.
+        """
+        return np.copy(self.data)
 
     def __str__(self):
         return np.array_str(self.data, suppress_small=True)
@@ -194,7 +189,7 @@ class PointOrVector(Primitive):
                 f"invalid shape for {self.dim}D object in homogeneous coordinates: {self.data.shape}"
             )
 
-    def to_array(self) -> np.ndarray:
+    def __array__(self) -> np.ndarray:
         """Return non-homogeneous numpy representation of object."""
         return _from_homogeneous(self.data, is_point=bool(self.data[-1]))
 
@@ -372,8 +367,8 @@ class Vector(PointOrVector):
         return self * (1 / self.norm())
 
     def dot(self, other) -> float:
-        if issubclass(type(other), Vector) and self.dim == other.dim:
-            return np.dot(self, other)
+        if isinstance(other, Vector) and self.dim == other.dim:
+            return np.dot(self.data, other.data)
         else:
             return NotImplemented
 
@@ -529,14 +524,47 @@ class HyperPlane(Primitive, Meetable):
     """
 
     def __init__(self, data: np.ndarray) -> None:
-        assert data.shape == (self.dim,)
+        assert len(data) == self.dim + 1, f"data has shape {data.shape}"
         super().__init__(data)
 
 
-class Line:
+class Line(ABC):
     """Abstract parent class for lines."""
 
-    pass
+    @abstractmethod
+    def get_direction(self) -> Vector:
+        """Get the direction of the line.
+
+        Returns:
+            Vector: The unit-length direction of the line.
+
+        """
+        pass
+
+    @abstractmethod
+    def get_point(self) -> Point:
+        """Get an arbitrary point on the line.
+
+        Returns:
+            Point: A point on the line.
+
+        """
+        pass
+
+    def closest_point(self, other: Point) -> Point:
+        """Get the closest point on the line to another point.
+
+        Args:
+            other (Point): The point to which the closest point is sought.
+
+        Returns:
+            Point: The closest point on the line to the other point.
+
+        """
+        p = self.get_point()
+        v = self.get_direction()
+        other = point(other)
+        return p + v.dot(other - p) * v
 
 
 class Line2D(Line, HyperPlane):
@@ -571,6 +599,24 @@ class Line2D(Line, HyperPlane):
         """
         assert P.shape == (3, 4), "P is not a projective transformation"
         return Plane(P.data.T @ self.data)
+
+    def get_direction(self) -> Vector2D:
+        """Get the direction of the line.
+
+        Returns:
+            Vector2D: The unit-length direction of the line.
+
+        """
+        return vector(self.data[0], self.data[1]).hat()
+
+    def get_point(self) -> Point:
+        """Get an arbitrary point on the line.
+
+        Returns:
+            Point: A point on the line.
+
+        """
+        return Line2D([self.data[1], -self.data[0], 0]).meet(self)
 
 
 class Plane(HyperPlane):
@@ -712,7 +758,6 @@ class Line3D(Line, Primitive, Joinable, Meetable):
 ### convenience functions for instantiating primitive objects ###
 
 
-@overload
 def _array(x: Union[List[np.ndarray], List[float]]) -> np.ndarray:
     # TODO: this is a little sketchy
     if len(x) == 1:
@@ -860,9 +905,17 @@ def line(x: Point3D, y: Point3D) -> Line3D:
     ...
 
 
+@overload
 def line(a: Plane, b: Plane) -> Line3D:
     ...
 
+@overload
+def line(x: Point2D, v: Point2D) -> Line2D:
+    ...
+
+@overload
+def line(x: Point3D, v: Point3D) -> Line3D:
+    ...
 
 def line(*args):
     """The preferred method for creating a line.
@@ -882,9 +935,14 @@ def line(*args):
         return args[0].join(args[1])
     elif len(args) == 2 and isinstance(args[0], Plane) and isinstance(args[1], Plane):
         return args[0].meet(args[1])
+    elif len(args) == 2 and isinstance(args[0], Point) and isinstance(args[1], Vector):
+        x: Point2D = args[0]
+        v: Vector2D = args[1]
+        return x.join(x + v)
 
     l = _array(args)
     if l.shape == (3,):
+        log.debug(f"l: {l}")
         return Line2D(l)
     elif l.shape == (6,):
         return Line3D(l)
@@ -978,7 +1036,7 @@ class Transform(HomogeneousObject):
         super().__init__(data)
         self._inv = _inv if _inv is not None else np.linalg.pinv(data)
 
-    def to_array(self) -> np.ndarray:
+    def __array__(self) -> np.ndarray:
         """Output the transform as a non-homogeneous matrix.
 
         The convention here is that "nonhomegenous" transforms would still have the last column,
@@ -1030,6 +1088,8 @@ class Transform(HomogeneousObject):
                 return FrameTransform(self.data @ other.data)
             else:
                 return Transform(self.data @ other.data, _inv=_inv)
+        elif isinstance(other, (Line2D, Line3D, Plane)):
+            raise NotImplementedError()
         else:
             return NotImplemented
 
