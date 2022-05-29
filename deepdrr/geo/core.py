@@ -42,6 +42,7 @@ if TYPE_CHECKING:
 
 from .exceptions import *
 
+PV = TypeVar("PV", bound=PointOrVector)
 P = TypeVar("P", bound="Point")
 V = TypeVar("V", bound="Vector")
 L = TypeVar("L", bound="Line")
@@ -1338,6 +1339,19 @@ class Transform(HomogeneousObject):
             [array, np.array([0 for _ in range(array.shape[1] - 1)] + [1])], axis=0
         )
         return cls(data)
+
+
+    @overload
+    def __matmul__(self: FrameTransform, other: FrameTransform) -> FrameTransform:
+        ...
+
+    @overload
+    def __matmul__(self: FrameTransform, other: PV) -> PV:
+        ...
+
+    @overload
+    def __matmul__(self, other: Primitive) -> Primitive:
+        ...
 
     def __matmul__(
         self,

@@ -14,10 +14,12 @@ log = logging.getLogger(__name__)
 
 
 class LineAnnotation(object):
+    """Really a "segment annotation", but Slicer calls it a line.
+    """
     def __init__(
         self,
-        startpoint: geo.Point,
-        endpoint: geo.Point,
+        startpoint: geo.Point3D,
+        endpoint: geo.Point3D,
         volume: Optional[Volume] = None,
         anatomical_from_world: Optional[geo.FrameTransform] = None,
         anatomical_coordinate_system: Optional[str] = None,
@@ -238,18 +240,18 @@ class LineAnnotation(object):
         return self.anatomical_from_world.inv
 
     @property
-    def startpoint_in_world(self) -> geo.Point:
+    def startpoint_in_world(self) -> geo.Point3D:
         return self.world_from_anatomical @ self.startpoint
 
     @property
-    def endpoint_in_world(self) -> geo.Point:
+    def endpoint_in_world(self) -> geo.Point3D:
         return self.world_from_anatomical @ self.endpoint
 
     @property
-    def midpoint_in_world(self) -> geo.Point:
+    def midpoint_in_world(self) -> geo.Point3D:
         return self.world_from_anatomical @ self.startpoint.lerp(self.endpoint, 0.5)
 
-    def get_mesh_in_world(self, full: bool = True):
+    def get_mesh_in_world(self, full: bool = True) -> pv.PolyData:
         u = self.startpoint_in_world
         v = self.endpoint_in_world
 
