@@ -325,11 +325,11 @@ class MobileCArm(object):
     @property
     def principle_ray(self) -> geo.Vector3D:
         """Unit vector along principle ray."""
-        return self.device_from_arm @ geo.vector(0, 0, 1)
+        return (self.device_from_arm @ geo.vector(0, 0, 1)).hat()
 
     @property
     def principle_ray_in_world(self) -> geo.Vector3D:
-        return self.world_from_device @ self.principle_ray
+        return (self.world_from_device @ self.principle_ray).hat()
 
     def _enforce_bounds(self):
         """Enforce the CArm movement bounds."""
@@ -383,6 +383,7 @@ class MobileCArm(object):
         beta: float = None,
         gamma: float = None,
         degrees: bool = True,
+        interest_point_in_world: Optional[geo.Point3D] = None,
     ) -> None:
         """Move to the specified point.
 
@@ -393,12 +394,14 @@ class MobileCArm(object):
             alpha (Optional[float], optional): the desired alpha angulation. Defaults to None.
             beta (Optional[float], optional): the desired secondary angulation. Defaults to None.
             degrees (bool, optional): whether angles are in degrees or radians. Defaults to False.
-        """
-        if isocenter_in_world is not None:
-            isocenter = self.device_from_world @ geo.point(isocenter_in_world)
+            interest_point (Point3D, optional): If this world-space point is provided, add a translation such that the rotation 
+                maintains the camera-space position of this point. Overrides `isocenter`. Defaults to None.
 
-        if isocenter is not None:
-            self.isocenter = geo.point(isocenter)
+        """
+
+        
+        old_principle_ray = self.principle_ray
+
         if alpha is not None:
             self.alpha = utils.radians(float(alpha), degrees=degrees)
         if beta is not None:
@@ -406,6 +409,21 @@ class MobileCArm(object):
         if gamma is not None:
             self.gamma = utils.radians(float(gamma), degrees=degrees)
 
+        # Get the isocenter from convenience arguments, if supplied.
+        if interest_point_in_world is not None:
+            principle_ray = self.principle_ray
+            interest_point = self.device_from_world @ interest_point_in_world
+
+            # Get the length along the old ray to reach the interest point, then subtract along the new priniple ray
+            # to move the isocenter to a comparable point.
+            # NOTE: this is a reasonable approximation, but it's not perfect.
+            isocenter = interest_point - (interest_point - self.isocenter).dot(old_principle_ray) * principle_ray
+        elif isocenter_in_world is not None:
+            isocenter = self.device_from_world @ geo.point(isocenter_in_world)
+
+        if isocenter is not None:
+            self.isocenter = geo.point(isocenter)
+ 
         self._enforce_bounds()
 
     def reposition(
@@ -585,7 +603,7 @@ class CArm(object):
         """Move the C-arm to the specified pose.
 
         Args:
-            isocenter (Point3D): isocenter of the C-arm in world-space. This is the center about which rotations are performed.
+            isocenter (Point3D): New isocenter of the C-arm in device space. This is the center about which rotations are performed.
             phi (float): CRAN/CAUD angle of the C-Arm (along the actual arc of the arm)
             theta (float): Lect/Right angulation of C-arm (rotation at the base)
             rho (float, optional): rotation about principle axis, after main rotation. Defaults to 0.
