@@ -45,6 +45,7 @@ from .exceptions import JoinError, MeetError
 from .camera_intrinsic_transform import CameraIntrinsicTransform
 from .camera_projection import CameraProjection
 from scipy.spatial.transform import Rotation
+from .random import spherical_uniform
 
 __all__ = [
     "HomogeneousObject",
@@ -75,4 +76,5 @@ __all__ = [
     "CameraIntrinsicTransform",
     "CameraProjection",
     "Rotation",
+    "spherical_uniform",
 ]
