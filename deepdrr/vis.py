@@ -11,6 +11,19 @@ They may not function properly in Jupyter notebooks.
 
 Any object with the `get_mesh_in_world()` method can be visualized.
 
+NOTE: often, PyVista will not render in an ssh window. To fix this, try some of the following:
+```bash
+#!/bin/bash
+sudo apt-get install xvfb
+export DISPLAY=:99.0
+export PYVISTA_OFF_SCREEN=true
+export PYVISTA_USE_IPYVTK=true
+export MESA_GL_VERSION_OVERRIDE=3.2
+export MESA_GLSL_VERSION_OVERRIDE=150
+Xvfb :99 -screen 0 1024x768x24 > /dev/null 2>&1 &
+sleep 3
+```
+
 """
 
 import logging
