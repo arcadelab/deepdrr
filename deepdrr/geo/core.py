@@ -17,7 +17,6 @@ KNOWN ISSUES:
 """
 
 from __future__ import annotations
-from inspect import trace
 import traceback
 
 from typing import (
@@ -35,7 +34,6 @@ import logging
 from abc import ABC, abstractmethod
 from typing_extensions import Self
 import numpy as np
-from regex import P
 import scipy.spatial.distance
 from scipy.spatial.transform import Rotation
 
