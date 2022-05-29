@@ -236,7 +236,9 @@ class PointOrVector(Primitive):
 
     def __array__(self, *args, **kwargs) -> np.ndarray:
         """Return non-homogeneous numpy representation of object."""
-        return np.array(_from_homogeneous(self.data, is_point=bool(self.data[-1])), *args, **kwargs)
+        return np.array(
+            _from_homogeneous(self.data, is_point=bool(self.data[-1])), *args, **kwargs
+        )
 
     def normsqr(self, order: int = 2) -> float:
         """Get the squared L-order norm of the vector."""
@@ -332,7 +334,9 @@ class Point(PointOrVector, Joinable):
         elif isinstance(other, Vector):
             return type(self)(self.data - other.data)
         elif isinstance(other, np.ndarray):
-            raise TypeError(f"ambiguous subtraction of {self} and {other}. Can't determine if point or vector.")
+            raise TypeError(
+                f"ambiguous subtraction of {self} and {other}. Can't determine if point or vector."
+            )
         else:
             raise TypeError(f"cannot subtract {type(other)} {other} from a point")
 
@@ -344,9 +348,7 @@ class Point(PointOrVector, Joinable):
         """Can add a vector to a point, but cannot add two points."""
         if isinstance(other, Vector):
             if self.dim != other.dim:
-                raise ValueError(
-                    f"cannot add {self.dim}D point to {other.dim}D vector"
-                )
+                raise ValueError(f"cannot add {self.dim}D point to {other.dim}D vector")
             return type(self)(self.data + other.data)
         elif isinstance(other, Point):
             # TODO: should points be allowed to be added together?
@@ -537,7 +539,10 @@ class Vector(PointOrVector):
         Returns:
             FrameTransform: the rotation that rotates other to self.
         """
-        v = self.cross(other).hat()
+        v = self.cross(other)
+        if np.isclose(v.norm(), 0):
+            return FrameTransform.identity(self.dim)
+        v = v.hat()
         theta = self.angle(other)
         rot = Rotation.from_rotvec(v * theta)
         return FrameTransform.from_rotation(rot)
@@ -641,7 +646,6 @@ class Vector3D(Vector):
     """Homogeneous vector in 3D, represented as an array with [x, y, z, 0]"""
 
     dim = 3
-
 
     def as_plane(self) -> Plane:
         """Get the plane through the origin with this vector as its normal."""
@@ -777,9 +781,8 @@ class Line(Primitive, Meetable):
             TypeError
 
         if d1.dot(d2) < 0:
-            d2 = - d2
+            d2 = -d2
         return d1.angle(d2)
-
 
 
 class Line2D(Line, HyperPlane):
@@ -1008,6 +1011,7 @@ class Line3D(Line, Primitive, Joinable, Meetable):
         """Get a point on the line."""
         d = self.get_direction()
         return d.as_plane().meet(self)
+
 
 ### convenience functions for instantiating primitive objects ###
 
