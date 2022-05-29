@@ -526,6 +526,22 @@ class Vector(PointOrVector):
         else:
             return np.arccos(cos_theta)
 
+    def rotation(self, other: Vector) -> FrameTransform:
+        """Get the rotation F such that `self || F @ other`.
+
+        NOTE: not tested with 2D vectors.
+
+        Args:
+            other (Vector): the vector to rotate to.
+
+        Returns:
+            FrameTransform: the rotation that rotates other to self.
+        """
+        v = self.cross(other).hat()
+        theta = self.angle(other)
+        rot = Rotation.from_rotvec(v * theta)
+        return FrameTransform.from_rotation(rot)
+
     def cosine_distance(self, other: Vector) -> float:
         """Get the cosine distance between the angles.
 
@@ -535,7 +551,7 @@ class Vector(PointOrVector):
         Returns:
             float: `1 - cos(angle)`, where `angle` is between self and other.
         """
-        return scipy.spatial.distance.cosine(np.array(self), np.array(other))
+        return float(scipy.spatial.distance.cosine(np.array(self), np.array(other)))
 
     def as_point(self) -> Point:
         """Gets the point with the same numerical representation as this vector."""
