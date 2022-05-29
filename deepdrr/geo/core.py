@@ -42,7 +42,7 @@ if TYPE_CHECKING:
 
 from .exceptions import *
 
-PV = TypeVar("PV", bound=PointOrVector)
+PV = TypeVar("PV", bound="PointOrVector")
 P = TypeVar("P", bound="Point")
 V = TypeVar("V", bound="Vector")
 L = TypeVar("L", bound="Line")

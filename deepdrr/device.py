@@ -72,7 +72,7 @@ def pose_vector_angles(pose: geo.Vector3D) -> Tuple[float, float]:
     TODO(killeen): make a part of the MobileCArm object, to convert from a world-space vector.
 
     Args:
-        pose (geo.Vector3D): the vector pointing from the isocenter (or camera) to the detector.
+        pose (geo.Vector3D): the vector pointing from the isocenter (or camera) to the detector. (Along the principle ray.)
 
     Returns:
         Tuple[float, float]: carm angulation (alpha, beta) in radians.
@@ -324,11 +324,14 @@ class MobileCArm(object):
 
     @property
     def principle_ray(self) -> geo.Vector3D:
-        """Unit vector along principle ray."""
+        """Unit vector along principle ray.
+        """
         return (self.device_from_arm @ geo.vector(0, 0, 1)).hat()
 
     @property
     def principle_ray_in_world(self) -> geo.Vector3D:
+        """Unit vector along principle ray in world coordinates.
+        """
         return (self.world_from_device @ self.principle_ray).hat()
 
     def _enforce_bounds(self):
@@ -417,7 +420,7 @@ class MobileCArm(object):
             # Get the length along the old ray to reach the interest point, then subtract along the new priniple ray
             # to move the isocenter to a comparable point.
             # NOTE: this is a reasonable approximation, but it's not perfect.
-            isocenter = interest_point - (interest_point - self.isocenter).dot(old_principle_ray) * principle_ray
+            isocenter = interest_point - (interest_point - self.isocenter).dot(old_principle_ray.hat()) * principle_ray.hat()
         elif isocenter_in_world is not None:
             isocenter = self.device_from_world @ geo.point(isocenter_in_world)
 
