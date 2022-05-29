@@ -43,7 +43,6 @@ def show(
     colors: List[str] = ["tan", "cyan", "green", "red"],
     background: str = "white",
     use_cached: Union[bool, List[bool]] = True,
-    show: bool = False,
 ) -> np.ndarray:
     """Show the given items in a pyvista window.
 
