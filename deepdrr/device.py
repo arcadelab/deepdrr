@@ -525,7 +525,7 @@ class MobileCArm(object):
 
         return mesh
 
-    def get_mesh_in_world(self, full=False):
+    def get_mesh_in_world(self, full=False, use_cached=True):
         """Get the pyvista mesh for the C-arm, in its world-space orientation.
 
         Raises:

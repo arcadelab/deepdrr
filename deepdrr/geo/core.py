@@ -1,14 +1,53 @@
-from __future__ import annotations
+#!/usr/bin/env python
+# -*- coding: utf-8 -*-
 
-from typing import Union, Tuple, Optional, Type, List, TypeVar, TYPE_CHECKING, overload
+"""Homogeneous geometry library. 
+
+Copyright (c) 2021, Benjamin D. Killeen. MIT License.
+
+KNOWN ISSUES: 
+
+- When multiplying vectors by scalars it is safer to put the vector on the left. This is because
+  your float or int may actually by a numpy scalar, in which case numpy will greedily convert the
+  vector (which has an __array__ methodz) to a numpy array, so the multiplication will return an
+  np.ndarray and not a geo.Vector. It will still be the *correct* result, just the wrong type (and
+  no longer homogeneous).
+
+
+"""
+
+from __future__ import annotations
+from inspect import trace
+import traceback
+
+from typing import (
+    Any,
+    Union,
+    Tuple,
+    Optional,
+    Type,
+    List,
+    TypeVar,
+    TYPE_CHECKING,
+    overload,
+)
 import logging
 from abc import ABC, abstractmethod
+from typing_extensions import Self
 import numpy as np
 from regex import P
 import scipy.spatial.distance
 from scipy.spatial.transform import Rotation
 
+if TYPE_CHECKING:
+    from .camera_projection import CameraProjection
+
 from .exceptions import *
+
+P = TypeVar("P", bound="Point")
+V = TypeVar("V", bound="Vector")
+L = TypeVar("L", bound="Line")
+PL = TypeVar("PL", bound="Plane")
 
 
 log = logging.getLogger(__name__)
@@ -68,9 +107,7 @@ class HomogeneousObject(ABC):
         Args:
             data (np.ndarray): the numpy array with the data.
         """
-        data = (
-            data.data if isinstance(data, HomogeneousObject) else np.array(data)
-        )
+        data = data.data if isinstance(data, HomogeneousObject) else np.array(data)
         self.data = data.astype(self.dtype)
 
     @classmethod
@@ -91,20 +128,26 @@ class HomogeneousObject(ABC):
         """Get a json-save list with the data in this object."""
         return self.data.tolist()
 
-    def __array__(self, dtype=None):
+    def __array__(self, *args, **kwargs):
         """Get the non-homogeneous representation of the object.
 
         For points, this removes the is_point indicator at the bottom (added 1 or 0).
         For transforms and other primitives, this simply returns the data without modifying it.
         """
-        return np.copy(self.data)
+        return np.array(self.data, *args, **kwargs)
 
     def __str__(self):
-        return np.array_str(self.data, suppress_small=True)
+        return f"{self.__class__.__name__[0]}{np.array_str(self.data, suppress_small=True)}"
 
     def __repr__(self):
-        s = "  " + str(np.array_str(self.data)).replace("\n", "\n  ")
-        return f"{self.__class__.__name__}({s})"
+        if self.data.ndim == 1:
+            s = np.array_str(self.data, suppress_small=True)
+            return f"{self.__class__.__name__}({s})"
+        else:
+            s = "  " + str(np.array_str(self.data, suppress_small=True)).replace(
+                "\n", "\n  "
+            )
+            return f"{self.__class__.__name__}({s})"
 
     def __getitem__(self, key):
         return self.data.__getitem__(key)
@@ -117,6 +160,10 @@ class HomogeneousObject(ABC):
 
     def get_data(self) -> np.ndarray:
         return self.data
+
+    @property
+    def shape(self) -> Tuple[int, ...]:
+        return self.data.shape
 
 
 def get_data(x: Union[HomogeneousObject, List[HomogeneousObject]]) -> np.ndarray:
@@ -160,7 +207,7 @@ class Meetable(ABC):
     """Abstract class for objects that can be intersected."""
 
     @abstractmethod
-    def meet(self, other: Primitive) -> Primitive:
+    def meet(self, other: Meetable) -> Primitive:
         """Get the intersection of two objects.
 
         For example, given two lines, get the line that is the intersection of them.
@@ -189,23 +236,19 @@ class PointOrVector(Primitive):
                 f"invalid shape for {self.dim}D object in homogeneous coordinates: {self.data.shape}"
             )
 
-    def __array__(self) -> np.ndarray:
+    def __array__(self, *args, **kwargs) -> np.ndarray:
         """Return non-homogeneous numpy representation of object."""
-        return _from_homogeneous(self.data, is_point=bool(self.data[-1]))
+        return np.array(_from_homogeneous(self.data, is_point=bool(self.data[-1])), *args, **kwargs)
 
     def normsqr(self, order: int = 2) -> float:
         """Get the squared L-order norm of the vector."""
-        return np.power(self.data, order).sum()
+        return float(np.power(self.data, order).sum())
 
     def norm(self, *args, **kwargs) -> float:
         """Get the norm of the vector. Pass any arguments to `np.linalg.norm`."""
-        return np.linalg.norm(self, *args, **kwargs)
+        return float(np.linalg.norm(self, *args, **kwargs))
 
-    def __len__(self) -> float:
-        """Return the L2 norm of the point or vector."""
-        return self.norm()
-
-    def __div__(self, other):
+    def __div__(self, other: float) -> Self:
         return self * (1 / other)
 
     @property
@@ -232,6 +275,8 @@ class Point(PointOrVector, Joinable):
         assert not np.isclose(data[-1], 0), "cannot create a point with 0 for w"
         if data[-1] != 1:
             # TODO: relax this constraint internally, and just divide by w when needed
+            # NOTE: if we do that, adding/subtracting points with points or vectors should
+            # be done with the same w
             data /= data[-1]
 
         super().__init__(data)
@@ -253,34 +298,79 @@ class Point(PointOrVector, Joinable):
         """If other is not a point, make it one."""
         return other if issubclass(type(other), Point) else cls.from_array(other)
 
-    def __sub__(
-        self: Point,
-        other: PointOrVector,
-    ) -> PointOrVector:
-        """Subtract two points, obtaining a vector."""
-        if isinstance(other, Point):
-            other = self.from_any(other)
-            return _point_or_vector(self.data - other.data)
-        elif isinstance(other, Vector):
-            return self + (-other)
-        else:
-            return NotImplemented
+    @overload
+    def __sub__(self, other: Point2D) -> Vector2D:
+        ...
 
-    def __add__(self, other: Vector) -> Point:
-        """Can add a vector to a point, but cannot add two points. TODO: cannot add points together?"""
+    @overload
+    def __sub__(self, other: Point3D) -> Vector3D:
+        ...
+
+    @overload
+    def __sub__(self, other: Vector2D) -> Point2D:
+        ...
+
+    @overload
+    def __sub__(self, other: Vector3D) -> Point3D:
+        ...
+
+    def __sub__(self, other):
+        """Subtract from a point.
+
+        Note that arrays are not allowed.
+        """
+        if isinstance(other, Point) and self.dim == other.dim:
+            assert np.isclose(
+                self.w, other.w
+            ), "cannot subtract points with different w"
+            if self.dim == 2:
+                return Vector2D(self.data - other.data)
+            elif self.dim == 3:
+                return Vector3D(self.data - other.data)
+            else:
+                raise NotImplementedError(
+                    f"subtraction of points of dimension {self.dim}"
+                )
+        elif isinstance(other, Vector):
+            return type(self)(self.data - other.data)
+        elif isinstance(other, np.ndarray):
+            raise TypeError(f"ambiguous subtraction of {self} and {other}. Can't determine if point or vector.")
+        else:
+            raise TypeError(f"cannot subtract {type(other)} {other} from a point")
+
+    def __rsub__(self, other):
+        """Means other - self was called."""
+        return -self + other
+
+    def __add__(self, other: Union[Vector, np.ndarray]) -> Self:
+        """Can add a vector to a point, but cannot add two points."""
         if isinstance(other, Vector):
+            if self.dim != other.dim:
+                raise ValueError(
+                    f"cannot add {self.dim}D point to {other.dim}D vector"
+                )
             return type(self)(self.data + other.data)
         elif isinstance(other, Point):
             # TODO: should points be allowed to be added together?
+            log.warning(
+                f"cannot add two points together: {self} + {other}. This will raise an error in the future."
+            )
+            traceback.print_stack()
             return point(np.array(self) + np.array(other))
-        else:
+        elif isinstance(other, np.ndarray):
             return self + vector(other)
+        else:
+            raise TypeError(f"cannot add {type(other)} to a point")
 
     def __radd__(self, other: Vector) -> Point:
         return self + other
 
     def __mul__(self, other: Union[int, float]) -> Vector:
-        if isinstance(other, (int, float)) or np.isscalar(other):
+        log.warning(
+            f"cannot multiply a point by a scalar: {self} * {other}. This will raise an error in the future."
+        )
+        traceback.print_stack()
+        if isinstance(other, (int, float, np.number)) or np.isscalar(other):
             return point(float(other) * np.array(self))
         else:
             return NotImplemented
@@ -289,9 +379,10 @@ class Point(PointOrVector, Joinable):
         return self * other
 
     def __neg__(self):
+        # TODO: this shouldn't be allowed.
         return self * (-1)
 
-    def lerp(self, other: Point, alpha: float = 0.5) -> Point:
+    def lerp(self, other: Point, alpha: float = 0.5) -> Self:
         """Linearly interpolate between one point and another.
 
         Args:
@@ -302,7 +393,8 @@ class Point(PointOrVector, Joinable):
             Point: the point that is `alpha` of the way between self and other.
         """
         alpha = float(alpha)
-        return (1 - alpha) * self + alpha * other
+        diff = other - self
+        return self + diff * alpha
 
     def as_vector(self) -> Vector:
         """Get the vector with the same numerical representation as this point."""
@@ -331,48 +423,56 @@ class Vector(PointOrVector):
         """If other is not a Vector, make it one."""
         return other if issubclass(type(other), Vector) else cls.from_array(other)
 
-    def __mul__(self, other: Union[int, float]) -> Vector:
+    def __mul__(self, other: Union[int, float]) -> Self:
         """Vectors can be multiplied by scalars."""
-        if isinstance(other, (int, float)) or np.isscalar(other):
-            return vector(other * np.array(self))
+        if isinstance(other, (int, float, np.number)) or np.isscalar(other):
+            return type(self)(float(other) * self.data)
         else:
             return NotImplemented
+
+    def __rmul__(self, other: Union[int, float]) -> Self:
+        return self.__mul__(other)
 
     def __matmul__(self, other: Vector) -> float:
         """Inner product between two Vectors."""
         other = self.from_any(other)
-        return type(self)(self.data @ other.data)
+        return float(np.dot(self.data, other.data))
 
-    def __add__(self, other: Vector) -> Vector:
+    def __add__(self, other: Vector) -> Self:
         """Two vectors can be added to make another vector."""
-        other = self.from_any(other)
-        return type(self)(self.data + other.data)
-
-    def __neg__(self) -> Vector:
-        return (-1) * self
-
-    def __sub__(self, other: Vector) -> Vector:
-        return self + (-other)
-
-    def __rmul__(self, other: Union[int, float]):
-        return self * other
-
-    def __rsub__(self, other: Vector):
-        return (-self) + other
+        if isinstance(other, Vector):
+            if self.dim != other.dim:
+                raise ValueError(
+                    f"cannot add {self.dim}D vector to {other.dim}D vector"
+                )
+            return type(self)(self.data + other.data)
+        elif isinstance(other, np.ndarray):
+            return self + vector(other)
+        else:
+            return NotImplemented
 
     def __radd__(self, other: Vector):
         return self + other
 
-    def hat(self) -> Vector:
+    def __neg__(self) -> Vector:
+        return self.__mul__(-1)
+
+    def __sub__(self, other: Self) -> Self:
+        return self + (-other)
+
+    def __rsub__(self, other: Vector):
+        return self.__neg__().__add__(other)
+
+    def hat(self) -> Self:
         return self * (1 / self.norm())
 
     def dot(self, other) -> float:
         if isinstance(other, Vector) and self.dim == other.dim:
-            return np.dot(self.data, other.data)
+            return float(np.dot(self.data, other.data))
         else:
             return NotImplemented
 
-    def cross(self, other) -> Vector:
+    def cross(self, other: Vector) -> Vector3D:
         if isinstance(other, Vector) and self.dim == other.dim:
             return vector(np.cross(self, other))
         else:
@@ -465,6 +565,20 @@ class Point2D(Point):
         else:
             raise TypeError(f"unrecognized type for join: {type(other)}")
 
+    def backproject(self, index_from_world: CameraProjection) -> Line3D:
+        """Backproject this point into a line.
+
+        Args:
+            index_from_world (Transform): The transform from the world to the index.
+
+        Returns:
+            Line3D: The line in 3D space through the source of `index_from_world` and self.
+
+        """
+        s = index_from_world.get_center()
+        v = index_from_world.inv @ self
+        return line(s, v)
+
 
 class Vector2D(Vector):
     """Homogeneous vector in 2D, represented as an array with [x, y, 0]"""
@@ -488,8 +602,8 @@ class Point3D(Point):
     def join(self, other):
         if isinstance(other, Point3D):
             # Line joining two points in P^3.
-            ax, ay, az, aw = self
-            bx, by, bz, bw = other
+            ax, ay, az, aw = self.data
+            bx, by, bz, bw = other.data
             l = np.array(
                 [
                     az * bw - aw * bz,  # p
@@ -515,6 +629,11 @@ class Vector3D(Vector):
     dim = 3
 
 
+    def as_plane(self) -> Plane:
+        """Get the plane through the origin with this vector as its normal."""
+        return Plane(self.data)
+
+
 class HyperPlane(Primitive, Meetable):
     """Represents a hyperplane in 2D (a line) or 3D (a plane).
 
@@ -527,8 +646,50 @@ class HyperPlane(Primitive, Meetable):
         assert len(data) == self.dim + 1, f"data has shape {data.shape}"
         super().__init__(data)
 
+    @property
+    def a(self) -> float:
+        """Get the coefficient of the first variable.
 
-class Line(ABC):
+        Returns:
+            float: The coefficient of the first variable.
+
+        """
+        return self.data[0]
+
+    @property
+    def b(self) -> float:
+        """Get the coefficient of the second variable.
+
+        Returns:
+            float: The coefficient of the second variable.
+
+        """
+        return self.data[1]
+
+    @property
+    def c(self) -> float:
+        """Get the coefficient of the third variable.
+
+        Returns:
+            float: The coefficient of the third variable.
+
+        """
+        return self.data[2]
+
+    @property
+    def d(self) -> float:
+        """Get the constant term.
+
+        Returns:
+            float: The constant term.
+
+        """
+        if self.dim < 3:
+            raise ValueError("2D lines have no constant term")
+        return self.data[3]
+
+
+class Line(Primitive, Meetable):
     """Abstract parent class for lines."""
 
     @abstractmethod
@@ -551,7 +712,15 @@ class Line(ABC):
         """
         pass
 
-    def closest_point(self, other: Point) -> Point:
+    @overload
+    def project(self: Line2D, other: Point2D) -> Point2D:
+        ...
+
+    @overload
+    def project(self: Line3D, other: Point3D) -> Point3D:
+        ...
+
+    def project(self, other):
         """Get the closest point on the line to another point.
 
         Args:
@@ -564,7 +733,39 @@ class Line(ABC):
         p = self.get_point()
         v = self.get_direction()
         other = point(other)
-        return p + v.dot(other - p) * v
+        d = other - p
+        return p + v.dot(d) * v
+
+    def distance(self, other: Point) -> float:
+        """Get the distance from the line to another point.
+
+        Args:
+            other (Point): The point to which the distance is sought.
+
+        Returns:
+            float: The distance from the line to the other point.
+
+        """
+        p = self.get_point()
+        v = self.get_direction()
+        diff = other - p
+        return (diff - v.dot(diff) * v).norm()
+
+    def angle(self, other: Union[Line, Vector]) -> float:
+        """Get the acute angle between the two lines."""
+        assert other.dim == self.dim
+        d1 = self.get_direction()
+        if isinstance(other, Vector):
+            d2 = other
+        elif isinstance(other, Line):
+            d2 = other.get_direction()
+        else:
+            TypeError
+
+        if d1.dot(d2) < 0:
+            d2 = - d2
+        return d1.angle(d2)
+
 
 
 class Line2D(Line, HyperPlane):
@@ -588,7 +789,7 @@ class Line2D(Line, HyperPlane):
         else:
             raise TypeError(f"unrecognized type for meet: {type(other)}")
 
-    def backproject(self, P: Transform) -> Plane:
+    def backproject(self, index_from_world: CameraProjection) -> Plane:
         """Get the plane containing all the points that `P` projects onto this line.
 
         Args:
@@ -597,8 +798,8 @@ class Line2D(Line, HyperPlane):
         Returns:
             Plane:
         """
-        assert P.shape == (3, 4), "P is not a projective transformation"
-        return Plane(P.data.T @ self.data)
+        assert index_from_world.shape == (3, 4), "P is not a projective transformation"
+        return Plane(index_from_world.data.T @ self.data)
 
     def get_direction(self) -> Vector2D:
         """Get the direction of the line.
@@ -607,7 +808,7 @@ class Line2D(Line, HyperPlane):
             Vector2D: The unit-length direction of the line.
 
         """
-        return vector(self.data[0], self.data[1]).hat()
+        return vector(self.b, -self.a).hat()
 
     def get_point(self) -> Point:
         """Get an arbitrary point on the line.
@@ -664,8 +865,8 @@ class Plane(HyperPlane):
     def meet(self, other):
         if isinstance(other, Plane):
             # Intersection of two planes in P^3.
-            a1, b1, c1, d1 = self
-            a2, b2, c2, d2 = other
+            a1, b1, c1, d1 = self.data
+            a2, b2, c2, d2 = other.data
             l = np.array(
                 [
                     -(a1 * b2 - a2 * b1),  # p
@@ -748,12 +949,51 @@ class Line3D(Line, Primitive, Joinable, Meetable):
         """Get the dual form of the line."""
         return self.dual()
 
+    @property
+    def p(self) -> float:
+        """Get the first parameter of the line."""
+        return self.data[0]
+
+    @property
+    def q(self) -> float:
+        """Get the second parameter of the line."""
+        return self.data[1]
+
+    @property
+    def r(self) -> float:
+        """Get the third parameter of the line."""
+        return self.data[2]
+
+    @property
+    def s(self) -> float:
+        """Get the fourth parameter of the line."""
+        return self.data[3]
+
+    @property
+    def t(self) -> float:
+        """Get the fifth parameter of the line."""
+        return self.data[4]
+
+    @property
+    def u(self) -> float:
+        """Get the sixth parameter of the line."""
+        return self.data[5]
+
     def join(self, other):
-        other.join(self)
+        return other.join(self)
 
     def meet(self, other):
-        other.meet(self)
+        return other.meet(self)
 
+    def get_direction(self) -> Vector3D:
+        """Get the direction of the line."""
+        d = vector(self.s, self.q, self.p)
+        return d.hat()
+
+    def get_point(self) -> Point3D:
+        """Get a point on the line."""
+        d = self.get_direction()
+        return d.as_plane().meet(self)
 
 ### convenience functions for instantiating primitive objects ###
 
@@ -763,10 +1003,10 @@ def _array(x: Union[List[np.ndarray], List[float]]) -> np.ndarray:
     if len(x) == 1:
         return np.array(x[0])
     else:
+        if isinstance(x[0], np.ndarray):
+            log.warning(f"got unusual args for array: {x}")
+            traceback.print_stack()
         return np.array(x)
-
-
-P = TypeVar("P", bound="Point")
 
 
 @overload
@@ -786,6 +1026,11 @@ def point(x: float, y: float, z: float) -> Point3D:
 
 @overload
 def point(x: np.ndarray) -> Point:
+    ...
+
+
+@overload
+def point(*args: Any) -> Point:
     ...
 
 
@@ -817,9 +1062,6 @@ def point(*args):
         raise ValueError(f"invalid data for point: {x}")
 
 
-V = TypeVar("V", bound="Vector")
-
-
 @overload
 def vector(v: V) -> V:
     ...
@@ -840,7 +1082,12 @@ def vector(x: np.ndarray) -> Vector:
     ...
 
 
-def vector(*args: Union[np.ndarray, float, Vector]) -> Vector:
+@overload
+def vector(*args: Any) -> Vector:
+    ...
+
+
+def vector(*args):
     """The preferred method for creating a vector.
 
     There are three ways to create a point using `vector()`.
@@ -909,13 +1156,21 @@ def line(x: Point3D, y: Point3D) -> Line3D:
 def line(a: Plane, b: Plane) -> Line3D:
     ...
 
-@overload
-def line(x: Point2D, v: Point2D) -> Line2D:
-    ...
 
 @overload
-def line(x: Point3D, v: Point3D) -> Line3D:
+def line(x: Point2D, v: Vector2D) -> Line2D:
     ...
+
+
+@overload
+def line(x: Point3D, v: Vector3D) -> Line3D:
+    ...
+
+
+@overload
+def line(*args: Any) -> Line:
+    ...
+
 
 def line(*args):
     """The preferred method for creating a line.
@@ -936,13 +1191,12 @@ def line(*args):
     elif len(args) == 2 and isinstance(args[0], Plane) and isinstance(args[1], Plane):
         return args[0].meet(args[1])
     elif len(args) == 2 and isinstance(args[0], Point) and isinstance(args[1], Vector):
-        x: Point2D = args[0]
-        v: Vector2D = args[1]
+        x: Point = args[0]
+        v: Vector = args[1]
         return x.join(x + v)
 
     l = _array(args)
     if l.shape == (3,):
-        log.debug(f"l: {l}")
         return Line2D(l)
     elif l.shape == (6,):
         return Line3D(l)
@@ -1036,7 +1290,7 @@ class Transform(HomogeneousObject):
         super().__init__(data)
         self._inv = _inv if _inv is not None else np.linalg.pinv(data)
 
-    def __array__(self) -> np.ndarray:
+    def __array__(self, *args, **kwargs) -> np.ndarray:
         """Output the transform as a non-homogeneous matrix.
 
         The convention here is that "nonhomegenous" transforms would still have the last column,
@@ -1048,7 +1302,7 @@ class Transform(HomogeneousObject):
             np.ndarray: the non-homogeneous array
         """
 
-        return self.data[:-1, :]
+        return np.array(self.data[:-1, :], *args, **kwargs)
 
     @classmethod
     def from_array(cls, array: np.ndarray) -> Transform:
@@ -1125,6 +1379,24 @@ class Transform(HomogeneousObject):
             )
 
         return Transform(self._inv, _inv=self.data)
+
+    def get_center(self) -> Point3D:
+        """If the transform is a projection, get the center of the projection.
+
+        Returns:
+            (Point3D): the center of the projection.
+
+        Raises:
+            ValueError: if the transform is not a projection.
+
+        """
+        if self.shape != (3, 4):
+            raise ValueError("transform must be a projection")
+
+        p1 = plane(self.data[0, :])
+        p2 = plane(self.data[1, :])
+        p3 = plane(self.data[2, :])
+        return p1.meet(p2).meet(p3)
 
 
 class FrameTransform(Transform):
@@ -1358,14 +1630,14 @@ class FrameTransform(Transform):
 
         # Second, get the rotation between the vectors.
         rotvec = x2y_A.cross(x2y_B).hat()
-        rotvec *= x2y_A.angle(x2y_B)
-        rot = Rotation.from_rotvec(rotvec)
+        rotvec = rotvec * x2y_A.angle(x2y_B)
+        rot = Rotation.from_rotvec(np.array(rotvec))
 
         return (
             cls.from_translation(x_B)
             @ cls.from_scaling(x2y_B.norm() / x2y_A.norm())
             @ cls.from_rotation(rot)
-            @ cls.from_translation(-x_A)
+            @ cls.from_translation(-x_A.as_vector())
         )
 
     @property

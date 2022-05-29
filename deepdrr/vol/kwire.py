@@ -7,7 +7,7 @@ from . import Volume
 from .. import geo
 from ..utils import data_utils
 
-logger = logging.getLogger(__name__)
+log = logging.getLogger(__name__)
 
 
 class KWire(Volume):
@@ -108,8 +108,8 @@ class KWire(Volume):
 
     def align(
         self,
-        start_point_in_world: geo.Point3D,
-        end_point_in_world: geo.Point3D,
+        startpoint_in_world: geo.Point3D,
+        endpoint_in_world: geo.Point3D,
         progress: float = 1.0,
     ) -> None:
         """Align the tool so that it lies between the two points, tip pointing toward the endpoint.
@@ -121,13 +121,14 @@ class KWire(Volume):
                 on a scale from 0 to 1. 0 corresponds to the tip placed at the start point, 1 at the end point. Defaults to 1.0.
         """
         # useful: https://math.stackexchange.com/questions/180418/calculate-rotation-matrix-to-align-vector-a-to-vector-b-in-3d
-        start_point_in_world = geo.point(start_point_in_world)
-        end_point_in_world = geo.point(end_point_in_world)
+        startpoint_in_world = geo.point(startpoint_in_world)
+        endpoint_in_world = geo.point(endpoint_in_world)
+        progress = float(progress)
 
         # interpolate along the direction of the tool to get the desired points in world.
-        trajectory_vector = end_point_in_world - start_point_in_world
+        trajectory_vector = endpoint_in_world - startpoint_in_world
 
-        desired_tip_in_world = end_point_in_world - (1 - progress) * trajectory_vector
+        desired_tip_in_world = endpoint_in_world - (1 - progress) * trajectory_vector
         desired_base_in_world = (
             desired_tip_in_world - trajectory_vector.hat() * self.length_in_world
         )

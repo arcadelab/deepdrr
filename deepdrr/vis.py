@@ -21,7 +21,7 @@ from . import utils
 
 pv, pv_available = utils.try_import_pyvista()
 
-logger = logging.getLogger(__name__)
+log = logging.getLogger(__name__)
 
 
 def show(
@@ -29,6 +29,7 @@ def show(
     full: Union[bool, List[bool]] = False,
     colors: List[str] = ["tan", "cyan", "green", "red"],
     background: str = "white",
+    use_cached: Union[bool, List[bool]] = True,
 ) -> np.ndarray:
     """Show the given items in a pyvista window.
 
@@ -41,10 +42,11 @@ def show(
 
     items = item
     fulls = utils.listify(full, len(items))
-    for i, (item, full) in enumerate(zip(items, fulls)):
+    use_cacheds = utils.listify(use_cached, len(items))
+    for i, item in enumerate(items):
         color = colors[i % len(colors)]
         if hasattr(item, "get_mesh_in_world"):
-            mesh = item.get_mesh_in_world(full=full)
+            mesh = item.get_mesh_in_world(full=fulls[i], use_cached=use_cacheds[i])
         else:
             mesh = item
         plotter.add_mesh(mesh, color=color)
