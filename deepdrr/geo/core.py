@@ -1350,6 +1350,22 @@ class Transform(HomogeneousObject):
         ...
 
     @overload
+    def __matmul__(self: CameraProjection, other: Point3D) -> Point2D:
+        ...
+
+    @overload
+    def __matmul__(self: CameraProjection, other: Vector3D) -> Vector2D:
+        ...
+
+    @overload
+    def __matmul__(self: CameraProjection, other: Line3D) -> Point2D:
+        ...
+
+    @overload
+    def __matmul__(self: CameraProjection, other: Plane) -> Line2D:
+        ...
+
+    @overload
     def __matmul__(self, other: Primitive) -> Primitive:
         ...
 
@@ -1362,6 +1378,10 @@ class Transform(HomogeneousObject):
                 self.input_dim == other.dim
             ), f"dimensions must match between other ({other.dim}) and self ({self.input_dim})"
             return _point_or_vector(self.data @ other.data)
+        elif isinstance(other, Line2D):
+            raise NotImplementedError
+        elif isinstance(other, (Line2D, Line3D, Plane)):
+            raise NotImplementedError()
         elif isinstance(other, Transform):
             # if other is a Transform, then compose their inverses as well to store that.
             assert (
@@ -1374,8 +1394,6 @@ class Transform(HomogeneousObject):
                 return FrameTransform(self.data @ other.data)
             else:
                 return Transform(self.data @ other.data, _inv=_inv)
-        elif isinstance(other, (Line2D, Line3D, Plane)):
-            raise NotImplementedError()
         else:
             return NotImplemented
 

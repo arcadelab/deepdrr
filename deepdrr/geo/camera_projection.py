@@ -5,13 +5,8 @@ from .core import Transform, FrameTransform, point, Point3D, get_data, Plane
 from .camera_intrinsic_transform import CameraIntrinsicTransform
 from ..vol import AnyVolume
 
-# if TYPE_CHECKING:
-#     from ..vol import AnyVolume
-# else:
-#     AnyVolume = Any
 
-
-# TODO(killeen): CameraProjection never calls super().__init__() and thus has no self.data attribute.
+# TODO: reorganize geo so you have primitives.py and transforms.py. Have separate classes for each type of transform?
 
 
 class CameraProjection(Transform):
