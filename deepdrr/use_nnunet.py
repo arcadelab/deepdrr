@@ -91,11 +91,11 @@ class Segmentation():
 #         subprocess.call(['nnUNet_download_pretrained_model', task_name[TaskType]])
 #         subprocess.call(['nnUNet_predict', '-i', self.raw_data_base + 'imagesTs/', '-o', self.results_folder +
 #               'Task_' + str(TaskType), '-t', str(TaskType), '-m', '3d_fullres'])
-        print(['Downloading pretrained model...  ', task_name[TaskType]])
+        print('Downloading pretrained model...  ' + task_name[TaskType])
         var = subprocess.Popen(['nnUNet_download_pretrained_model', task_name[TaskType]], stdout=subprocess.PIPE)
         print(var.communicate()[0])
         print('Done.')
-        print(['Inferring using model...  ', task_name[TaskType]])
+        print('Inferring using model...  ' + task_name[TaskType])
         var = subprocess.Popen(['nnUNet_predict', '-i', self.raw_data_base + 'imagesTs/', '-o', self.results_folder +
               'Task_' + str(TaskType), '-t', str(TaskType), '-m', '3d_fullres'], stdout=subprocess.PIPE)
         print(var.communicate()[0])
