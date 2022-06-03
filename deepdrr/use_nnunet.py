@@ -20,14 +20,14 @@ import nibabel as nib
 
 class Segmentation():
     
-    temp_dir = 'temp/'
+    temp_dir = ''
     raw_data_base = ''
     results_folder = ''
         
     def __init__(self):
-        temp_dir = 'temp/'
-        raw_data_base = os.environ.get('nnUNet_raw_data_base')
-        results_folder = os.environ.get('RESULTS_FOLDER')
+        self.temp_dir = 'temp/'
+        self.raw_data_base = os.environ.get('nnUNet_raw_data_base')
+        self.results_folder = os.environ.get('RESULTS_FOLDER')
         
     def dataprep(self,idir,type='nii'):
         # assign directory
