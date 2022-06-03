@@ -26,8 +26,8 @@ class Segmentation():
         
     def __init__(self):
         self.temp_dir = 'temp/'
-        self.raw_data_base = os.environ.get('nnUNet_raw_data_base')
-        self.results_folder = os.environ.get('RESULTS_FOLDER')
+        self.raw_data_base = os.environ.get('nnUNet_raw_data_base') + '/'
+        self.results_folder = os.environ.get('RESULTS_FOLDER') + '/'
         
     def dataprep(self,idir,type='nii'):
         # assign directory
