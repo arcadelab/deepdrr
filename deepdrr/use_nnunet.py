@@ -21,14 +21,18 @@ import nibabel as nib
 class Segmentation():
     
     temp_dir = 'temp/'
+    raw_data_base = os.environ.get('nnUNet_raw_data_base')
+    results_folder = os.environ.get('RESULTS_FOLDER')
         
     def __init__(self):
         temp_dir = 'temp/'  #os.environ.get('nnUNet_raw_data_base') + 
+        raw_data_base = os.environ.get('nnUNet_raw_data_base')
+        results_folder = os.environ.get('RESULTS_FOLDER')
         
     def dataprep(self,idir,type='nii'):
         # assign directory
-    #     out_directory = os.environ.get('nnUNet_raw_data_base') + '/nnUNet_raw_data/temp/'
-        out_directory = self.temp_dir
+        out_directory = os.environ.get('nnUNet_raw_data_base')
+#         out_directory = self.temp_dir
         print(out_directory)
         # Create target Directory if don't exist
         if not os.path.exists(out_directory):
@@ -82,10 +86,10 @@ class Segmentation():
         }
 
 #         subprocess.call('nnUNet_download_pretrained_model ' + task_name[TaskType], shell = True)
-#         subprocess.call('nnUNet_predict -i ' + self.temp_dir + 'imagesTs/ -o ' + self.temp_dir +
+#         subprocess.call('nnUNet_predict -i ' + self.raw_data_base + 'imagesTs/ -o ' + self.raw_data_base +
 #               'Task_' + str(TaskType) + ' -t ' + str(TaskType) + ' -m 3d_fullres', shell = True)
         subprocess.call(['nnUNet_download_pretrained_model', task_name[TaskType]])
-        subprocess.call(['nnUNet_predict', '-i', self.temp_dir + 'imagesTs/', '-o', self.temp_dir +
+        subprocess.call(['nnUNet_predict', '-i', self.raw_data_base + 'imagesTs/', '-o', self.raw_data_base +
               'Task_' + str(TaskType), '-t', str(TaskType), '-m', '3d_fullres'])
     
     def segment(self, segmented_volume, TaskType=17):
@@ -132,7 +136,7 @@ class Segmentation():
     def nnu_segmentation(self, input, TaskType=17):
         self.dataprep(input)
         self.infer(TaskType)
-        seg_volume = nib.load(self.temp_dir + 'Task_' + str(TaskType))
+        seg_volume = nib.load(self.results_folder + 'Task_' + str(TaskType))
         seg_volume_arr=seg_volume.get_fdata()
         segmentation = self.segment(seg_volume_arr, TaskType)
         self.clear_temp()
