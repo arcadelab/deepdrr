@@ -21,17 +21,17 @@ import nibabel as nib
 class Segmentation():
     
     temp_dir = 'temp/'
-    raw_data_base = os.environ.get('nnUNet_raw_data_base')
-    results_folder = os.environ.get('RESULTS_FOLDER')
+    raw_data_base = ''
+    results_folder = ''
         
     def __init__(self):
-        temp_dir = 'temp/'  #os.environ.get('nnUNet_raw_data_base') + 
+        temp_dir = 'temp/'
         raw_data_base = os.environ.get('nnUNet_raw_data_base')
         results_folder = os.environ.get('RESULTS_FOLDER')
         
     def dataprep(self,idir,type='nii'):
         # assign directory
-        out_directory = os.environ.get('nnUNet_raw_data_base')
+        out_directory = self.raw_data_base
 #         out_directory = self.temp_dir
         print(out_directory)
         # Create target Directory if don't exist
@@ -86,11 +86,20 @@ class Segmentation():
         }
 
 #         subprocess.call('nnUNet_download_pretrained_model ' + task_name[TaskType], shell = True)
-#         subprocess.call('nnUNet_predict -i ' + self.raw_data_base + 'imagesTs/ -o ' + self.raw_data_base +
+#         subprocess.call('nnUNet_predict -i ' + self.raw_data_base + 'imagesTs/ -o ' + self.results_folder +
 #               'Task_' + str(TaskType) + ' -t ' + str(TaskType) + ' -m 3d_fullres', shell = True)
-        subprocess.call(['nnUNet_download_pretrained_model', task_name[TaskType]])
-        subprocess.call(['nnUNet_predict', '-i', self.raw_data_base + 'imagesTs/', '-o', self.raw_data_base +
-              'Task_' + str(TaskType), '-t', str(TaskType), '-m', '3d_fullres'])
+#         subprocess.call(['nnUNet_download_pretrained_model', task_name[TaskType]])
+#         subprocess.call(['nnUNet_predict', '-i', self.raw_data_base + 'imagesTs/', '-o', self.results_folder +
+#               'Task_' + str(TaskType), '-t', str(TaskType), '-m', '3d_fullres'])
+        print(['Downloading pretrained model...  ', task_name[TaskType]])
+        var = subprocess.Popen(['nnUNet_download_pretrained_model', task_name[TaskType]], stdout=subprocess.PIPE)
+        print(var.communicate()[0])
+        print('Done.')
+        print(['Inferring using model...  ', task_name[TaskType]])
+        var = subprocess.Popen(['nnUNet_predict', '-i', self.raw_data_base + 'imagesTs/', '-o', self.results_folder +
+              'Task_' + str(TaskType), '-t', str(TaskType), '-m', '3d_fullres'], stdout=subprocess.PIPE)
+        print(var.communicate()[0])
+        print('Done.')
     
     def segment(self, segmented_volume, TaskType=17):
         
