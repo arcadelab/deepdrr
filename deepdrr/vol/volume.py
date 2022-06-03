@@ -398,6 +398,10 @@ class Volume(object):
                 # ~/datasets/DeepDRR_Data or the user-specified "root" directory. See
                 # data_utils.download())
 
+                import os
+                os.environ["nnUNet_raw_data_base"] = "temp/nnUNet_raw_data_base"
+                os.environ["nnUNet_preprocessed"] = "temp/nnUNet_preprocessed"
+                os.environ["RESULTS_FOLDER"] = "temp/RESULTS_FOLDER"
                 segmentation_nnunet = use_nnunet.Segmentation()
                 materials = segmentation_nnunet.nnu_segmentation(path,6)  #6:Lung, 17:multi-organ
                 
