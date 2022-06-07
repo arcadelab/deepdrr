@@ -28,7 +28,8 @@ from .mcgpu_rita_samplers import rita_samplers
 log = logging.getLogger(__name__)
 
 try:
-    import pycuda.autoinit
+    import pycuda.autoprimaryctx
+    # import pycuda.autoinit # causes problems when running with pytorch concurrently
     import pycuda.driver as cuda
     from pycuda.autoinit import context
     from pycuda.compiler import SourceModule
