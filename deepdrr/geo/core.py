@@ -308,11 +308,19 @@ class Point(PointOrVector, Joinable):
         ...
 
     @overload
+    def __sub__(self, other: Point) -> Vector:
+        ...
+
+    @overload
     def __sub__(self, other: Vector2D) -> Point2D:
         ...
 
     @overload
     def __sub__(self, other: Vector3D) -> Point3D:
+        ...
+
+    @overload
+    def __sub__(self, other: Vector) -> Point:
         ...
 
     def __sub__(self, other):
@@ -1339,7 +1347,6 @@ class Transform(HomogeneousObject):
             [array, np.array([0 for _ in range(array.shape[1] - 1)] + [1])], axis=0
         )
         return cls(data)
-
 
     @overload
     def __matmul__(self: FrameTransform, other: FrameTransform) -> FrameTransform:
