@@ -44,7 +44,14 @@ class CameraProjection(Transform):
             if isinstance(extrinsic, FrameTransform)
             else FrameTransform(extrinsic)
         )
-        super().__init__(get_data(self.index_from_world))
+        index_from_world = self.index_from_camera3d @ self.camera3d_from_world
+        super().__init__(
+            get_data(index_from_world), _inv=get_data(index_from_world.inv)
+        )
+
+    @property
+    def index_from_world(self) -> Transform:
+        return self
 
     @classmethod
     def from_krt(
@@ -100,10 +107,6 @@ class CameraProjection(Transform):
     @property
     def camera3d_from_index(self) -> Transform:
         return self.index_from_camera3d.inv
-
-    @property
-    def index_from_world(self) -> Transform:
-        return self.index_from_camera3d @ self.camera3d_from_world
 
     @property
     def world_from_index(self) -> Transform:
