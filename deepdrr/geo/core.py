@@ -412,7 +412,9 @@ class Point(PointOrVector, Joinable):
 
 class Vector(PointOrVector):
     def __init__(self, data: np.ndarray) -> None:
-        assert data[-1] == 0
+        if np.isclose(data[-1], 0):
+            data[-1] = 0
+        assert data[-1] == 0, f"cannot create a vector with non-zero w: {data[-1]}"
         super().__init__(data)
 
     @classmethod
@@ -843,7 +845,7 @@ class Line2D(Line, HyperPlane):
             Point: A point on the line.
 
         """
-        return Line2D([self.data[1], -self.data[0], 0]).meet(self)
+        return Point2D([0, -self.c / self.b, 1])
 
 
 class Plane(HyperPlane):
@@ -852,12 +854,21 @@ class Plane(HyperPlane):
     dim = 3
 
     @classmethod
-    def from_point_normal(r: Point3D, n: Vector3D):
+    def from_point_normal(cls, r: Point3D, n: Vector3D):
+        """Make a plane from a point and a normal vector.
+
+        Args:
+            r (Point3D): The point on the plane.
+            n (Vector3D): The normal vector of the plane.
+
+        Returns:
+            Plane: The plane.
+        """
         r = point(r)
         n = vector(n)
         a, b, c = r
         d = -(a * n.x + b * n.y + c * n.z)
-        return Plane(np.array([a, b, c, d]))
+        return cls(np.array([a, b, c, d]))
 
     @classmethod
     def from_points(cls, a: Point3D, b: Point3D, c: Point3D) -> None:
@@ -867,6 +878,9 @@ class Plane(HyperPlane):
             a (Point3D): a point on the plane.
             b (Point3D): a point on the plane.
             c (Point3D): a point on the plane.
+
+        Returns:
+            Plane: The plane.
         """
         a = point(a)
         b = point(b)
@@ -1005,10 +1019,10 @@ class Line3D(Line, Primitive, Joinable, Meetable):
         """Get the sixth parameter of the line."""
         return self.data[5]
 
-    def join(self, other):
+    def join(self, other: Point3D) -> Plane:
         return other.join(self)
 
-    def meet(self, other):
+    def meet(self, other: Plane) -> Point3D:
         return other.meet(self)
 
     def get_direction(self) -> Vector3D:
@@ -1038,6 +1052,16 @@ def _array(x: Union[List[np.ndarray], List[float]]) -> np.ndarray:
 
 @overload
 def point(p: P) -> P:
+    ...
+
+
+@overload
+def point(v: Vector2D) -> Point2D:
+    ...
+
+
+@overload
+def point(v: Vector3D) -> Point3D:
     ...
 
 
@@ -1091,6 +1115,16 @@ def point(*args):
 
 @overload
 def vector(v: V) -> V:
+    ...
+
+
+@overload
+def vector(p: Point2D) -> Vector2D:
+    ...
+
+
+@overload
+def vector(p: Point3D) -> Vector3D:
     ...
 
 
@@ -1384,6 +1418,9 @@ class Transform(HomogeneousObject):
             assert (
                 self.input_dim == other.dim
             ), f"dimensions must match between other ({other.dim}) and self ({self.input_dim})"
+            out = self.data @ other.data
+            # log.debug(f"{self.shape} @ {other.shape} = {out.shape}")
+            # log.debug(f"out: {out}")
             return _point_or_vector(self.data @ other.data)
         elif isinstance(other, Line2D):
             raise NotImplementedError
