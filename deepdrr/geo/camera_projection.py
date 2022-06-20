@@ -1,17 +1,12 @@
 from typing import Union, Optional, Any, TYPE_CHECKING
 import numpy as np
 
-from .core import Transform, FrameTransform, point, Point3D, get_data
+from .core import Transform, FrameTransform, point, Point3D, get_data, Plane
 from .camera_intrinsic_transform import CameraIntrinsicTransform
 from ..vol import AnyVolume
 
-# if TYPE_CHECKING:
-#     from ..vol import AnyVolume
-# else:
-#     AnyVolume = Any
 
-
-# TODO(killeen): CameraProjection never calls super().__init__() and thus has no self.data attribute.
+# TODO: reorganize geo so you have primitives.py and transforms.py. Have separate classes for each type of transform?
 
 
 class CameraProjection(Transform):
@@ -24,7 +19,9 @@ class CameraProjection(Transform):
         intrinsic: Union[CameraIntrinsicTransform, np.ndarray],
         extrinsic: Union[FrameTransform, np.ndarray],
     ) -> None:
-        """A generic camera projection.
+        """A class for instantiating camera projections.
+
+        The object itself contains the "index_from_world" transform, or P = K[R|t].
 
         A helpful resource for this is:
         - http://wwwmayr.in.tum.de/konferenzen/MB-Jass2006/courses/1/slides/h-1-5.pdf
@@ -47,6 +44,30 @@ class CameraProjection(Transform):
             if isinstance(extrinsic, FrameTransform)
             else FrameTransform(extrinsic)
         )
+        index_from_world = self.index_from_camera3d @ self.camera3d_from_world
+        super().__init__(
+            get_data(index_from_world), _inv=get_data(index_from_world.inv)
+        )
+
+    @property
+    def index_from_world(self) -> Transform:
+        return self
+
+    @classmethod
+    def from_krt(
+        cls, K: np.ndarray, R: np.ndarray, t: np.ndarray
+    ) -> "CameraProjection":
+        """Create a CameraProjection from a camera intrinsic matrix and extrinsic matrix.
+
+        Args:
+            K (np.ndarray): the camera intrinsic matrix.
+            R (np.ndarray): the camera extrinsic matrix.
+            t (np.ndarray): the camera extrinsic translation vector.
+
+        Returns:
+            CameraProjection: the camera projection.
+        """
+        return cls(intrinsic=K, extrinsic=FrameTransform.from_rt(K, R, t))
 
     @classmethod
     def from_rtk(
@@ -88,10 +109,6 @@ class CameraProjection(Transform):
         return self.index_from_camera3d.inv
 
     @property
-    def index_from_world(self) -> Transform:
-        return self.index_from_camera3d @ self.camera3d_from_world
-
-    @property
     def world_from_index(self) -> Transform:
         """Gets the world-space vector between the source in world and the given point in index space."""
         return self.index_from_world.inv
@@ -126,6 +143,9 @@ class CameraProjection(Transform):
         Returns:
             Point3D: the center of the camera in center.
         """
+
+        # TODO: can also get the center from the intersection of three planes formed
+        # by self.data.
 
         world_from_camera3d = self.camera3d_from_world.inv
         return world_from_camera3d(point(0, 0, 0))
