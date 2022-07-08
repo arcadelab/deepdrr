@@ -10,3 +10,4 @@ docs/build
 **flycheck*.py
 /.DS_Store
 output
+/.idea/
