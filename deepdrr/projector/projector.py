@@ -197,10 +197,11 @@ class Projector(object):
         if carm is not None:
             self.source_to_detector_distance = carm.source_to_detector_distance
         else:
+            self.source_to_detector_distance = None
             log.warning(
                 "No way to specify source-to-detector distance without a MobileCArm parameter"
             )
-            raise ValueError("No source_to_detector_distance")
+            # raise ValueError("No source_to_detector_distance")
         self.carm = carm
         self.step = step
         self.mode = mode
