@@ -23,9 +23,11 @@ from .mcgpu_mfp_data import MFP_DATA
 from .mcgpu_rita_samplers import rita_samplers
 
 
-import pycuda.autoinit
+# import pycuda.autoinit
 import pycuda.driver as cuda
-from pycuda.autoinit import context
+cuda.init()
+context = cuda.Device(0).retain_primary_context()
+# from pycuda.autoinit import context
 from pycuda.compiler import SourceModule
 
 log = logging.getLogger(__name__)
@@ -84,7 +86,10 @@ def _get_kernel_projector_module(num_volumes: int, num_materials: int) -> Source
     log.debug(
         f"compiling {source_path} with NUM_VOLUMES={num_volumes}, NUM_MATERIALS={num_materials}"
     )
-    return SourceModule(
+    push = context.get_current() is None
+    if push:
+        context.push()
+    sm = SourceModule(
         source,
         include_dirs=[bicubic_path, str(d)],
         no_extern_c=True,
@@ -95,6 +100,8 @@ def _get_kernel_projector_module(num_volumes: int, num_materials: int) -> Source
             f"NUM_MATERIALS={num_materials}",
         ],
     )
+    if push: context.pop()
+    return sm
 
 
 def _get_kernel_scatter_module(num_materials) -> SourceModule:
@@ -743,7 +750,9 @@ class Projector(object):
         """Allocate GPU memory and transfer the volume, segmentations to GPU."""
         if self.initialized:
             raise RuntimeError("Close projector before initializing again.")
-
+        push = context.get_current() is None
+        if push:
+            context.push()
         # TODO: in this function, there are several instances of axis swaps.
         # We may want to investigate if the axis swaps are necessary.
 
@@ -1339,6 +1348,7 @@ class Projector(object):
 
         # Mark self as initialized.
         self.initialized = True
+        if push: context.pop()
 
     def free(self):
         """Free the allocated GPU memory."""
