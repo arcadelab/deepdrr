@@ -29,6 +29,7 @@ sleep 3
 import logging
 from typing import Any, Union, List
 import numpy as np
+import os
 
 from . import utils
 
@@ -43,12 +44,25 @@ def show(
     colors: List[str] = ["tan", "cyan", "green", "red"],
     background: str = "white",
     use_cached: Union[bool, List[bool]] = True,
+    offscreen: bool = False,
 ) -> np.ndarray:
     """Show the given items in a pyvista window.
 
     Args:
         full (bool, optional): [description]. Defaults to True.
     """
+    if offscreen:
+        os.environ["PYVISTA_OFF_SCREEN"] = "true"
+    os.environ["PYVISTA_USE_IPYVTK"] = "true"
+    os.environ["MESA_GL_VERSION_OVERRIDE"] = "3.2"
+    os.environ["MESA_GLSL_VERSION_OVERRIDE"] = "150"
+
+    log.debug("display: {}".format(os.environ["DISPLAY"]))
+    if offscreen and os.environ.get("DISPLAY") != ":99":
+        os.environ["DISPLAY"] = ":99"
+        os.system("Xvfb :99 -screen 0 1024x768x24 > /dev/null 2>&1 &")
+        os.system("sleep 3")
+
     plotter = pv.Plotter()
     plotter.show_axes()
     plotter.set_background(background)

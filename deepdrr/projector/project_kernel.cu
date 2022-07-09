@@ -682,6 +682,8 @@ extern "C" {
         // int debug = (udx == 973) && (vdx == 598); // larger image size
         // int debug = (udx == 243) && (vdx == 149); // 4x4 binning
 
+        // if (udx == 40) printf("udx: %d, vdx: %d\n", udx, vdx);
+
         // if the current point is outside the output image, no computation needed
         if (udx >= out_width || vdx >= out_height)
             return;
@@ -781,7 +783,7 @@ extern "C" {
         // Means none of the volumes have do_trace = 1.
         if (do_return) return;
 
-        // if (debug) printf("global min, max alphas: %f, %f\n", minAlpha, maxAlpha);
+        // printf("global min, max alphas: %f, %f\n", minAlpha, maxAlpha);
 
         // Part 2: Cast ray if it intersects any of the volumes
         int num_steps = ceil((maxAlpha - minAlpha) / step);
@@ -840,7 +842,6 @@ extern "C" {
                 }
             } else {
                 float weight = 1.0f / ((float) n_vols_at_curr_priority);
-
 
                 // For the entry boundary, multiply by 0.5. That is, for the initial interpolated value,
                 // only a half step-size is considered in the computation. For the second-to-last interpolation

@@ -560,9 +560,9 @@ class MobileCArm(object):
         mesh.rotate_x(np.degrees(self.alpha))
         mesh.rotate_y(np.degrees(self.beta))
         mesh.translate(self.isocenter)
-        mesh.transform(geo.get_data(self.world_from_device))
+        mesh.transform(geo.get_data(self.world_from_device), inplace=True)
 
-        # TODO: add operating window.
+        # TODO: add cone window.
 
         return mesh
 
