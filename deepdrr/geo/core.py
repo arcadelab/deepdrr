@@ -836,6 +836,8 @@ class Line2D(Line, HyperPlane):
             Vector2D: The unit-length direction of the line.
 
         """
+        # If a x + b y + c = 0, then for all w, 
+        # a (x + wb) + b (y - wa) + c = ax + awb + by - bwa + c = 0
         return vector(self.b, -self.a).hat()
 
     def get_point(self) -> Point:
@@ -866,8 +868,8 @@ class Plane(HyperPlane):
         """
         r = point(r)
         n = vector(n)
-        a, b, c = r
-        d = -(a * n.x + b * n.y + c * n.z)
+        a, b, c = n
+        d = -(a * r.x + b * r.y + c * r.z)
         return cls(np.array([a, b, c, d]))
 
     @classmethod

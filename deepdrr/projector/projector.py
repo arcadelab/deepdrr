@@ -425,6 +425,9 @@ class Projector(object):
                 f"Running: {blocks_w}x{blocks_h} blocks with {self.threads}x{self.threads} threads each"
             )
 
+            # log.info("args: {}".format('\n'.join(map(str, args))))
+            # log.info(f"offset_w: {offset_w}, offset_h: {offset_h}")
+            # log.info(f"block: {block}, grid: {(blocks_w, blocks_h)}")
             if blocks_w <= self.max_block_index and blocks_h <= self.max_block_index:
                 offset_w = np.int32(0)
                 offset_h = np.int32(0)
