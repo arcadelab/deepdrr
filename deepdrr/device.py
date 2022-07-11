@@ -324,14 +324,12 @@ class MobileCArm(object):
 
     @property
     def principle_ray(self) -> geo.Vector3D:
-        """Unit vector along principle ray.
-        """
+        """Unit vector along principle ray."""
         return (self.device_from_arm @ geo.vector(0, 0, 1)).hat()
 
     @property
     def principle_ray_in_world(self) -> geo.Vector3D:
-        """Unit vector along principle ray in world coordinates.
-        """
+        """Unit vector along principle ray in world coordinates."""
         return (self.world_from_device @ self.principle_ray).hat()
 
     def _enforce_bounds(self):
@@ -387,6 +385,7 @@ class MobileCArm(object):
         gamma: float = None,
         degrees: bool = True,
         interest_point_in_world: Optional[geo.Point3D] = None,
+        principle_ray_in_world: Optional[geo.Vector3D] = None,
     ) -> None:
         """Move to the specified point.
 
@@ -397,13 +396,19 @@ class MobileCArm(object):
             alpha (Optional[float], optional): the desired alpha angulation. Defaults to None.
             beta (Optional[float], optional): the desired secondary angulation. Defaults to None.
             degrees (bool, optional): whether angles are in degrees or radians. Defaults to False.
-            interest_point (Point3D, optional): If this world-space point is provided, add a translation such that the rotation 
+            interest_point (Point3D, optional): If this world-space point is provided, add a translation such that the rotation
                 maintains the camera-space position of this point. Overrides `isocenter`. Defaults to None.
+            principle_ray_in_world (Optional[Vector3D], optional): If this world-space vector is provided, override alpha, beta so the C-arm points along this vector.
 
         """
 
-        
         old_principle_ray = self.principle_ray
+
+        if principle_ray_in_world is not None:
+            principle_ray = self.device_from_world = (
+                self.world_from_device @ principle_ray_in_world
+            )
+            alpha, beta = pose_vector_angles(principle_ray)
 
         if alpha is not None:
             self.alpha = utils.radians(float(alpha), degrees=degrees)
@@ -420,13 +425,17 @@ class MobileCArm(object):
             # Get the length along the old ray to reach the interest point, then subtract along the new priniple ray
             # to move the isocenter to a comparable point.
             # NOTE: this is a reasonable approximation, but it's not perfect.
-            isocenter = interest_point - (interest_point - self.isocenter).dot(old_principle_ray.hat()) * principle_ray.hat()
+            isocenter = (
+                interest_point
+                - (interest_point - self.isocenter).dot(old_principle_ray.hat())
+                * principle_ray.hat()
+            )
         elif isocenter_in_world is not None:
             isocenter = self.device_from_world @ geo.point(isocenter_in_world)
 
         if isocenter is not None:
             self.isocenter = geo.point(isocenter)
- 
+
         self._enforce_bounds()
 
     def reposition(
