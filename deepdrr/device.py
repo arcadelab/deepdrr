@@ -405,9 +405,7 @@ class MobileCArm(object):
         old_principle_ray = self.principle_ray
 
         if principle_ray_in_world is not None:
-            principle_ray = self.device_from_world = (
-                self.world_from_device @ principle_ray_in_world
-            )
+            principle_ray = self.device_from_world @ geo.vector(principle_ray_in_world)
             alpha, beta = pose_vector_angles(principle_ray)
 
         if alpha is not None:

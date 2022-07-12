@@ -9,7 +9,13 @@ import subprocess
 logger = logging.getLogger(__name__)
 
 
-def download(url: str, filename: Optional[str] = None, root: Optional[str] = None, md5: Optional[str] = None, extract_name: Optional[str] = None) -> Path:
+def download(
+    url: str,
+    filename: Optional[str] = None,
+    root: Optional[str] = None,
+    md5: Optional[str] = None,
+    extract_name: Optional[str] = None,
+) -> Path:
     """Download a data file and place it in root.
 
     Args:
@@ -39,6 +45,14 @@ def download(url: str, filename: Optional[str] = None, root: Optional[str] = Non
     except urllib.error.HTTPError:
         logger.warning(f"Pretty download failed. Attempting with wget...")
         subprocess.call(["wget", "-O", str(root / filename), url])
+    except FileNotFoundError:
+        logger.warning(
+            f"Download failed. Try installing wget. This is probably because you are on windows."
+        )
+        exit()
+    except Exception as e:
+        logger.error(f"Download failed: {e}")
+        exit()
 
     path = root / filename
     if extract_name is not None:
