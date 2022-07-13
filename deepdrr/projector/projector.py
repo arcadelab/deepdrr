@@ -29,6 +29,7 @@ log = logging.getLogger(__name__)
 
 try:
     import pycuda.autoprimaryctx
+
     # import pycuda.autoinit # causes problems when running with pytorch concurrently
     import pycuda.driver as cuda
     from pycuda.autoinit import context
@@ -91,23 +92,35 @@ def _get_kernel_projector_module(
     with open(source_path, "r") as file:
         source = file.read()
 
+    options = []
+    if os.name == "nt":
+        log.warning("running on windows is not thoroughly tested")
+        #     options.append("--compiler-options")
+        #     options.append('"-D _WIN64"')
+
+        # options.append("-ccbin")
+        # options.append(
+        #     '"C:\\Program Files\\Microsoft Visual Studio\\2022\\Community\\VC\\Tools\\MSVC\\14.32.31326\\bin\\Hostx64\\x64"'
+        # )
+
+    options += [
+        "-D",
+        f"NUM_VOLUMES={num_volumes}",
+        "-D",
+        f"NUM_MATERIALS={num_materials}",
+        "-D",
+        f"ATTENUATE_OUTSIDE_VOLUME={int(attenuate_outside_volume)}",
+        "-D",
+        f"AIR_INDEX={air_index}",
+    ]
     log.debug(
         f"compiling {source_path} with NUM_VOLUMES={num_volumes}, NUM_MATERIALS={num_materials}"
     )
     return SourceModule(
         source,
         include_dirs=[bicubic_path, str(d)],
+        options=options,
         no_extern_c=True,
-        options=[
-            "-D",
-            f"NUM_VOLUMES={num_volumes}",
-            "-D",
-            f"NUM_MATERIALS={num_materials}",
-            "-D",
-            f"ATTENUATE_OUTSIDE_VOLUME={int(attenuate_outside_volume)}",
-            "-D",
-            f"AIR_INDEX={air_index}",
-        ],
     )
 
 
