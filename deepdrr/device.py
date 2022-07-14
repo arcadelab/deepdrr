@@ -407,6 +407,9 @@ class MobileCArm(object):
         if principle_ray_in_world is not None:
             principle_ray = self.device_from_world @ geo.vector(principle_ray_in_world)
             alpha, beta = pose_vector_angles(principle_ray)
+            if gamma is not None:
+                gamma = utils.radians(float(gamma), degrees=degrees)
+            degrees = False
 
         if alpha is not None:
             self.alpha = utils.radians(float(alpha), degrees=degrees)
