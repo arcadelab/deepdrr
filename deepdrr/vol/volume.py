@@ -252,7 +252,7 @@ class Volume(object):
     ) -> Dict[str, np.ndarray]:
         """Segment the materials in a volume, potentially caching.
 
-        If cache_dir is None, then 
+        If cache_dir is None, then
 
         Args:
             hu_values (np.ndarray): volume data in Hounsfield Units.
@@ -333,7 +333,8 @@ class Volume(object):
 
         if segmentation:
             data = img.get_fdata()
-            materials = dict(bone=data > 0)
+            materials = dict(bone=data > 0, air=data == 0)
+            data[data == 0] = 0.001225
         else:
             hu_values = img.get_fdata()
             data = cls._convert_hounsfield_to_density(hu_values, **density_kwargs)
