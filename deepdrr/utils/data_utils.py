@@ -1,10 +1,12 @@
-from typing import Optional
+from typing import Optional, Any
 import os
 import logging
+import numpy as np
 from pathlib import Path
 from torchvision.datasets.utils import download_url, extract_archive
 import urllib
 import subprocess
+import json
 
 logger = logging.getLogger(__name__)
 
@@ -60,3 +62,38 @@ def download(
         path = root / extract_name
 
     return path
+
+
+def jsonable(obj: Any):
+    """Convert obj to a JSON-ready container or object.
+    Args:
+        obj ([type]):
+    """
+    if obj is None:
+        return "null"
+    elif isinstance(obj, (str, float, int, complex)):
+        return obj
+    elif isinstance(obj, Path):
+        return str(obj.resolve())
+    elif isinstance(obj, (list, tuple)):
+        return type(obj)(map(jsonable, obj))
+    elif isinstance(obj, dict):
+        return dict(jsonable(list(obj.items())))
+    elif isinstance(obj, np.ndarray):
+        return obj.tolist()
+    elif hasattr(obj, "__array__"):
+        return np.array(obj).tolist()
+    else:
+        raise ValueError(f"Unknown type for JSON: {type(obj)}")
+
+
+def save_json(path: str, obj: Any):
+    obj = jsonable(obj)
+    with open(path, "w") as file:
+        json.dump(obj, file, indent=4, sort_keys=True)
+
+
+def load_json(path: str):
+    with open(path, "r") as file:
+        out = json.load(file)
+    return out
