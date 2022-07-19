@@ -11,7 +11,7 @@ import torch
 import numpy as np
 
 from .. import geo, utils, vol
-from ..device import MobileCArm
+from ..device import Device, MobileCArm
 from . import analytic_generators, mass_attenuation, scatter, spectral_data
 from .cuda_scatter_structs import (
     CudaComptonStruct,
@@ -153,7 +153,7 @@ class Projector(object):
         volume: Union[vol.Volume, List[vol.Volume]],
         priorities: Optional[List[int]] = None,
         camera_intrinsics: Optional[geo.CameraIntrinsicTransform] = None,
-        carm: Optional[MobileCArm] = None,
+        device: Optional[Device] = None,
         step: float = 0.1,
         mode: str = "linear",
         spectrum: Union[np.ndarray, str] = "90KV_AL40",
@@ -167,6 +167,7 @@ class Projector(object):
         neglog: bool = True,
         intensity_upper_bound: Optional[float] = None,
         attenuate_outside_volume: bool = False,
+        carm: Optional[Device] = None,
     ) -> None:
         """Create the projector, which has info for simulating the DRR.
 
@@ -184,7 +185,7 @@ class Projector(object):
                                 rank. If a list of ranks is provided, the ranks are associated in-order to the provided volumes.  If no list is provided (the default), the volumes are assumed to have distinct ranks, and
                                 each volume has precedence over the preceding volumes. (This behavior is equivalent to passing in the list: [NUM_VOLUMES - 1, ..., 1, 0].)
             camera_intrinsics (CameraIntrinsicTransform): intrinsics of the projector's camera. (used for sensor size). If None, the CArm object must be provided and have a camera_intrinsics attribute. Defaults to None.
-            carm (MobileCArm, optional): Optional C-arm device, for convenience which can be used to get projections from C-Arm pose. If not provided, camera pose must be defined by user. Defaults to None.
+            device (Device, optional): Optional X-ray device object to use, which can provide a mapping from real C-arms to camera poses. If not provided, camera pose must be defined by user. Defaults to None.
             step (float, optional): size of the step along projection ray in voxels. Defaults to 0.1.
             mode (str): Interpolation mode for the kernel. Defaults to "linear".
             spectrum (Union[np.ndarray, str], optional): Spectrum array or name of spectrum to use for projection. Options are `'60KV_AL35'`, `'90KV_AL40'`, and `'120KV_AL43'`. Defaults to '90KV_AL40'.
@@ -197,6 +198,7 @@ class Projector(object):
             collected_energy (bool, optional): Whether to return data of "intensity" (energy deposited per photon, [keV]) or "collected energy" (energy deposited on pixel, [keV / mm^2]). Defaults to False ("intensity").
             neglog (bool, optional): whether to apply negative log transform to intensity images. If True, outputs are in range [0, 1]. Recommended for easy viewing. Defaults to False.
             intensity_upper_bound (float, optional): Maximum intensity, clipped before neglog, after noise and scatter. A good value is 40 keV / photon. Defaults to None.
+            carm (MobileCArm, optional): Deprecated alias for `device`. See `device`.
         """
         # set variables
         volume = utils.listify(volume)
@@ -223,14 +225,14 @@ class Projector(object):
 
         self.camera_intrinsics = camera_intrinsics
         if carm is not None:
-            self.source_to_detector_distance = carm.source_to_detector_distance
-        else:
-            log.warning(
-                "No way to specify source-to-detector distance without a MobileCArm parameter"
+            warnings.warn(
+                "carm is deprecated, use device instead", DeprecationWarning
             )
-            raise ValueError("No source_to_detector_distance")
-        self.carm = carm
-        self.step = step
+            self.device = carm
+        else:
+            self.device = device
+
+        self.step = float(step)
         self.mode = mode
         self.spectrum = _get_spectrum(spectrum)
 
@@ -243,6 +245,9 @@ class Projector(object):
             raise ValueError(f"scatter_num must be non-negative.")
         else:
             self.scatter_num = scatter_num
+
+        if self.scatter_num > 0 and self.device is None:
+            raise ValueError("Must provide device to simulate scatter.")
 
         self.add_noise = add_noise
         self.photon_count = photon_count
@@ -306,11 +311,21 @@ class Projector(object):
         for mat in self.all_materials:
             assert mat in material_coefficients, f"unrecognized material: {mat}"
 
-        if self.camera_intrinsics is None:
-            assert self.carm is not None and hasattr(self.carm, "camera_intrinsics")
-            self.camera_intrinsics = self.carm.camera_intrinsics
-
         self.initialized = False
+
+    @property
+    def source_to_detector_distance(self) -> float:
+        if self.device is not None:
+            return self.device.source_to_detector_distance
+        else:
+            raise RuntimeError("No device provided. Set the device attribute by passing `device=<device>` to the constructor.")
+
+    @property
+    def camera_intrinsics(self) -> geo.CameraIntrinsicTransform:
+        if self.device is not None:
+            return self.device.camera_intrinsics
+        else:
+            raise RuntimeError("No device provided. Set the device attribute by passing `device=<device>` to the constructor.")
 
     @property
     def volume(self):
@@ -338,7 +353,7 @@ class Projector(object):
             camera_projection: any number of camera projections. If none are provided, the Projector uses the CArm device to obtain a camera projection.
 
         Raises:
-            ValueError: if no projections are provided and self.carm is None.
+            ValueError: if no projections are provided and self.device is None.
 
         Returns:
             np.ndarray: array of DRRs, after mass attenuation, etc.
@@ -346,14 +361,14 @@ class Projector(object):
         if not self.initialized:
             raise RuntimeError("Projector has not been initialized.")
 
-        if not camera_projections and self.carm is None:
+        if not camera_projections and self.device is None:
             raise ValueError(
                 "must provide a camera projection object to the projector, unless imaging device (e.g. CArm) is provided"
             )
-        elif not camera_projections and self.carm is not None:
-            camera_projections = [self.carm.get_camera_projection()]
+        elif not camera_projections and self.device is not None:
+            camera_projections = [self.device.get_camera_projection()]
             log.debug(
-                f"projecting with source at {camera_projections[0].center_in_world}, pointing toward isocenter at {self.carm.isocenter}..."
+                f"projecting with source at {camera_projections[0].center_in_world}, pointing toward isocenter at {self.device.isocenter}..."
             )
 
         assert isinstance(self.spectrum, np.ndarray)
@@ -581,7 +596,7 @@ class Projector(object):
                     scatter_source_ijk[0],  # sx
                     scatter_source_ijk[1],  # sy
                     scatter_source_ijk[2],  # sz
-                    np.float32(self.source_to_detector_distance),  # sdd
+                    np.float32(self.source_to_detector_distance),  # sdd # TODO: if carm is not None, get this from the carm. May not work for independent source/detector movement.
                     np.int32(self.megavol_shape[0]),  # volume_shape_x
                     np.int32(self.megavol_shape[1]),  # volume_shape_y
                     np.int32(self.megavol_shape[2]),  # volume_shape_z
@@ -759,14 +774,14 @@ class Projector(object):
         Ignores the CArm's internal pose, except for its isocenter.
 
         """
-        if self.carm is None:
+        if self.device is None:
             raise RuntimeError("must provide carm device to projector")
 
         camera_projections = []
         phis, thetas = utils.generate_uniform_angles(phi_range, theta_range)
         for phi, theta in zip(phis, thetas):
-            extrinsic = self.carm.get_camera3d_from_world(
-                self.carm.isocenter,
+            extrinsic = self.device.get_camera3d_from_world(
+                self.device.isocenter,
                 phi=phi,
                 theta=theta,
                 degrees=degrees,

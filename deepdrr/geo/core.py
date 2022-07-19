@@ -474,8 +474,10 @@ class Vector(PointOrVector):
     def __rsub__(self, other: Vector):
         return self.__neg__().__add__(other)
 
-    def hat(self) -> Self:
+    def normalized(self) -> Self:
         return self * (1 / self.norm())
+
+    hat = normalized
 
     def dot(self, other) -> float:
         if isinstance(other, Vector) and self.dim == other.dim:
@@ -1475,6 +1477,17 @@ class Transform(HomogeneousObject):
             )
 
         return Transform(self._inv, _inv=self.data)
+
+    def inverse():
+        """Get the inverse of the Transform.
+
+        Returns:
+            (Transform): a Transform (or subclass) that is well-defined as the inverse of this transform.
+
+        Raises:
+            NotImplementedError: if _inv is None and method is not overriden.
+        """
+        return self.inv
 
     def get_center(self) -> Point3D:
         """If the transform is a projection, get the center of the projection.
