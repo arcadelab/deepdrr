@@ -44,6 +44,12 @@ from .core import (
     frame_transform,
     RAS_from_LPS,
     LPS_from_RAS,
+    mm_from_m,
+    m_from_mm,
+    cm_from_m,
+    m_from_cm,
+    cm_from_mm,
+    mm_from_cm,
 )
 from .exceptions import JoinError, MeetError
 from .camera_intrinsic_transform import CameraIntrinsicTransform
@@ -79,6 +85,12 @@ __all__ = [
     "frame_transform",
     "RAS_from_LPS",
     "LPS_from_RAS",
+    "mm_from_m",
+    "m_from_mm",
+    "cm_from_m",
+    "m_from_cm",
+    "cm_from_mm",
+    "mm_from_cm",
     "JoinError",
     "MeetError",
     "CameraIntrinsicTransform",
