@@ -838,7 +838,7 @@ class Line2D(Line, HyperPlane):
             Vector2D: The unit-length direction of the line.
 
         """
-        # If a x + b y + c = 0, then for all w, 
+        # If a x + b y + c = 0, then for all w,
         # a (x + wb) + b (y - wa) + c = ax + awb + by - bwa + c = 0
         return vector(self.b, -self.a).hat()
 
@@ -1827,3 +1827,9 @@ RAS_from_LPS = FrameTransform(
 )
 
 LPS_from_RAS = RAS_from_LPS.inv
+mm_from_m = FrameTransform.from_scaling(1e3)
+m_from_mm = mm_from_m.inv
+cm_from_m = FrameTransform.from_scaling(1e2)
+m_from_cm = cm_from_m.inv
+cm_from_mm = FrameTransform.from_scaling(1e-1)
+mm_from_cm = cm_from_mm.inv
