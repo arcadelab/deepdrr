@@ -1478,7 +1478,7 @@ class Transform(HomogeneousObject):
 
         return Transform(self._inv, _inv=self.data)
 
-    def inverse():
+    def inverse(self) -> Transform:
         """Get the inverse of the Transform.
 
         Returns:
