@@ -2,8 +2,10 @@ from abc import ABC, abstractmethod
 
 from .. import geo
 
+
 class Device(ABC):
     """A parent class representing X-ray device interfaces in DeepDRR."""
+
     @property
     @abstractmethod
     def camera_intrinsics(self) -> geo.CameraIntrinsicTransform:
@@ -67,6 +69,15 @@ class Device(ABC):
         """
         return self.camera3d_from_device @ self.device_from_world
 
+    @property
+    def world_from_camera3d(self) -> geo.FrameTransform:
+        """Get the FrameTransform for the device's camera3d_from_world frame (in the current pose).
+
+        Returns:
+            FrameTransform: the "world_from_camera3d" frame transformation for the device.
+        """
+        return self.camera3d_from_world.inverse()
+
     def get_camera_projection(self) -> geo.CameraProjection:
         """Get the camera projection for the device in the current pose.
 
@@ -109,7 +120,6 @@ class Device(ABC):
             Vector3D: the principle ray for the device as a unit vector.
         """
         return (self.world_from_device @ self.principle_ray).normalized()
-
 
     @property
     @abstractmethod
