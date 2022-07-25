@@ -203,7 +203,7 @@ class Projector(object):
         self.camera_intrinsics = camera_intrinsics
         if carm is not None:
             self.source_to_detector_distance = carm.source_to_detector_distance
-        elif self.scatter_num ==0 and not collected_energy: # Don't need source_to_detector_distance in this case
+        elif scatter_num ==0 and not collected_energy: # Don't need source_to_detector_distance in this case
             self.source_to_detector_distance = None
             log.warning(
                 "No way to specify source-to-detector distance without a MobileCArm parameter"
