@@ -1753,9 +1753,17 @@ class FrameTransform(Transform):
     def R(self):
         return self.data[0 : self.dim, 0 : self.dim]
 
+    @R.setter
+    def R(self, R):
+        self.data[0 : self.dim, 0 : self.dim] = R
+
     @property
     def t(self):
         return self.data[0 : self.dim, self.dim]
+
+    @t.setter
+    def t(self, t):
+        self.data[0 : self.dim, self.dim] = t
 
     @property
     def inv(self):

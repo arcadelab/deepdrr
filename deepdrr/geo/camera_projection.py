@@ -1,9 +1,13 @@
+from __future__ import annotations
+
 from typing import Union, Optional, Any, TYPE_CHECKING
 import numpy as np
 
 from .core import Transform, FrameTransform, point, Point3D, get_data, Plane
 from .camera_intrinsic_transform import CameraIntrinsicTransform
-from ..vol import AnyVolume
+
+if TYPE_CHECKING:
+    from ..vol import Volume
 
 
 # TODO: reorganize geo so you have primitives.py and transforms.py. Have separate classes for each type of transform?
@@ -154,7 +158,7 @@ class CameraProjection(Transform):
     def center_in_world(self) -> Point3D:
         return self.get_center_in_world()
 
-    def get_center_in_volume(self, volume: AnyVolume) -> Point3D:
+    def get_center_in_volume(self, volume: Volume) -> Point3D:
         """Get the camera center in IJK-space.
 
         In original deepdrr, this is the `source_point` of `get_canonical_proj_matrix()`
@@ -167,7 +171,7 @@ class CameraProjection(Transform):
         """
         return volume.ijk_from_world @ self.center_in_world
 
-    def get_ray_transform(self, volume: AnyVolume) -> Transform:
+    def get_ray_transform(self, volume: Volume) -> Transform:
         """Get the ray transform for the camera, in IJK-space.
 
         ijk_from_index transformation that goes from Point2D to Vector3D, with the vector in the

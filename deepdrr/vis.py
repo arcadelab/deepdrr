@@ -27,7 +27,7 @@ sleep 3
 """
 
 import logging
-from typing import Any, Union, List
+from typing import Any, Union, List, Optional
 import numpy as np
 import os
 
@@ -45,7 +45,7 @@ def show(
     background: str = "white",
     use_cached: Union[bool, List[bool]] = True,
     offscreen: bool = False,
-) -> np.ndarray:
+) -> Optional[np.ndarray]:
     """Show the given items in a pyvista window.
 
     Args:
@@ -80,6 +80,10 @@ def show(
 
     plotter.reset_camera()
     plotter.show(auto_close=False)
-    image = plotter.screenshot()
+    try:
+        image = plotter.screenshot()
+    except RuntimeError as e:
+        log.warning(f"Failed to take screenshot: {e}")
+        image = None
     plotter.close()
     return image

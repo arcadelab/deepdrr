@@ -6,6 +6,7 @@ import time
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple, Union
 import os
+import warnings
 
 import torch
 import numpy as np
@@ -223,11 +224,8 @@ class Projector(object):
                 self.priorities.append(prio)
         assert len(self.volumes) == len(self.priorities)
 
-        self.camera_intrinsics = camera_intrinsics
         if carm is not None:
-            warnings.warn(
-                "carm is deprecated, use device instead", DeprecationWarning
-            )
+            warnings.warn("carm is deprecated, use device instead", DeprecationWarning)
             self.device = carm
         else:
             self.device = device
@@ -318,14 +316,18 @@ class Projector(object):
         if self.device is not None:
             return self.device.source_to_detector_distance
         else:
-            raise RuntimeError("No device provided. Set the device attribute by passing `device=<device>` to the constructor.")
+            raise RuntimeError(
+                "No device provided. Set the device attribute by passing `device=<device>` to the constructor."
+            )
 
     @property
     def camera_intrinsics(self) -> geo.CameraIntrinsicTransform:
         if self.device is not None:
             return self.device.camera_intrinsics
         else:
-            raise RuntimeError("No device provided. Set the device attribute by passing `device=<device>` to the constructor.")
+            raise RuntimeError(
+                "No device provided. Set the device attribute by passing `device=<device>` to the constructor."
+            )
 
     @property
     def volume(self):
@@ -368,7 +370,7 @@ class Projector(object):
         elif not camera_projections and self.device is not None:
             camera_projections = [self.device.get_camera_projection()]
             log.debug(
-                f"projecting with source at {camera_projections[0].center_in_world}, pointing toward isocenter at {self.device.isocenter}..."
+                f"projecting with source at {camera_projections[0].center_in_world}, pointing in {self.device.principle_ray_in_world}..."
             )
 
         assert isinstance(self.spectrum, np.ndarray)
@@ -596,7 +598,9 @@ class Projector(object):
                     scatter_source_ijk[0],  # sx
                     scatter_source_ijk[1],  # sy
                     scatter_source_ijk[2],  # sz
-                    np.float32(self.source_to_detector_distance),  # sdd # TODO: if carm is not None, get this from the carm. May not work for independent source/detector movement.
+                    np.float32(
+                        self.source_to_detector_distance
+                    ),  # sdd # TODO: if carm is not None, get this from the carm. May not work for independent source/detector movement.
                     np.int32(self.megavol_shape[0]),  # volume_shape_x
                     np.int32(self.megavol_shape[1]),  # volume_shape_y
                     np.int32(self.megavol_shape[2]),  # volume_shape_z
