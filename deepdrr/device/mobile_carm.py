@@ -17,6 +17,7 @@ log = logging.getLogger(__name__)
 
 PI = np.float32(np.pi)
 
+
 def pose_vector_angles(pose: geo.Vector3D) -> Tuple[float, float]:
     """Get the C-arm angles alpha, beta corrsponding the the pose vector.
 
@@ -83,7 +84,7 @@ class MobileCArm(Device):
 
         .. _this: https://www.lomisa.com/app/download/10978681598/ARCO_EN_C_SIEMENS_CIOS_FUSION.pdf?t=1490962065
 
-        Additionall, the orbital movement and angulation are reversed from the convention used in `Kausch
+        Additionally, the orbital movement and angulation are reversed from the convention used in `Kausch
         et al`_, Figure 2.
 
         .. _Kausch et al: https://pubmed.ncbi.nlm.nih.gov/32533315/

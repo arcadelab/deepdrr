@@ -6,6 +6,7 @@ from __future__ import annotations
 from typing import Union, Tuple, List, Optional, Dict
 
 import logging
+from deepdrr.device.device import Device
 import numpy as np
 from pathlib import Path
 import nibabel as nib
@@ -33,7 +34,7 @@ class Volume(object):
     world_from_anatomical: geo.FrameTransform
     anatomical_coordinate_system: Optional[str]
 
-    cache_dir = None
+    cache_dir: Optional[Path] = None
     # TODO: The current Volume class is really a scanned volume. We should have a BaseVolume or
     # GenericVolume, which might be subclassed by tools or other types of volumes not constructed
     # from array data, e.g. for which materials is perfectly known.
@@ -353,6 +354,7 @@ class Volume(object):
             anatomical_from_ijk,
             world_from_anatomical,
             anatomical_coordinate_system="RAS",
+            cache_dir=cache_dir,
             **kwargs,
         )
 
@@ -659,7 +661,17 @@ class Volume(object):
             np.array(self.shape) / 2
         )
         center_world = self.world_from_anatomical @ center_anatomical
-        self.translate(x - center_world)
+        self.place(center_anatomical, x)
+
+    def place(
+        self, point_in_anatomical: geo.Point3D, desired_point_in_world: geo.Point3D
+    ) -> None:
+        """Translate the volume so that x_in_anatomical corresponds to x_in_world."""
+        p_A = np.array(point_in_anatomical)
+        p_W = np.array(desired_point_in_world)
+        r_WA = self.world_from_anatomical.R
+        t_WA = p_W - r_WA @ p_A
+        self.world_from_anatomical.t = t_WA  # fancy setter
 
     def translate(self, t: geo.Vector3D) -> Volume:
         """Translate the volume by `t`.
@@ -717,6 +729,8 @@ class Volume(object):
         else:
             raise NotImplementedError
 
+    supine = faceup
+
     def facedown(self):
         """Turns the volume to be face down.
 
@@ -736,6 +750,48 @@ class Volume(object):
             )
         else:
             raise NotImplementedError
+
+    prone = facedown
+
+    def orient_patient(
+        self,
+        head_first: bool = True,
+        supine: bool = True,
+        world_from_device: Optional[geo.FrameTransform] = None,
+    ) -> None:
+        """Orient the patient with the given orientation, aligning with the Loop-X coordinates.
+
+        Args:
+            head_first: If True, the patient is oriented with head (superior axis) pointing in the -Y direction. Defaults to True.
+            supine: If True, the patient is oriented so that the anterior axis (stomach) points toward +Z. Defaults to True.
+        """
+
+        # R for the RAS_from_world
+        if head_first and supine:
+            # R <- x, A <- z, S <- -y
+            R = np.array([[1, 0, 0], [0, 0, 1], [0, -1, 0]])
+        elif head_first and not supine:
+            # R <- -x, A <- -z, S <- -y
+            R = np.array([[-1, 0, 0], [0, 0, -1], [0, -1, 0]])
+        elif not head_first and supine:
+            # R <- -x, A <- z, S <- y
+            R = np.array([[-1, 0, 0], [0, 0, 1], [0, 1, 0]])
+        elif not head_first and not supine:
+            # R <- x, A <- -z, S <- y
+            R = np.array([[1, 0, 0], [0, 0, -1], [0, 1, 0]])
+        else:
+            raise ValueError("Invalid patient orientation.")
+
+        if world_from_device is None:
+            # Invert the rotation to go from RAS to world, keep the same translation
+            self.world_from_anatomical = geo.FrameTransform.from_rt(
+                R.T, self.world_from_anatomical.t
+            )
+        else:
+            device_from_anatomical = geo.FrameTransform.from_rt(
+                R.T, self.world_from_anatomical.t
+            )
+            self.world_from_anatomical = world_from_device @ device_from_anatomical
 
     def interpolate(self, *x: geo.Point3D, method: str = "linear") -> np.ndarray:
         """Interpolate the value of the volume at the point.
@@ -828,13 +884,13 @@ class Volume(object):
             segmentation.shape[0], segmentation.shape[1], segmentation.shape[2]
         )
         vol.SetOrigin(
-            -np.sign(R[0, 0]) * t[0],
-            -np.sign(R[1, 1]) * t[1],
+            -np.sign(R[0, 0]) * t[0],  # negate?
+            np.sign(R[1, 1]) * t[1],  # negate?
             np.sign(R[2, 2]) * t[2],
         )
         vol.SetSpacing(
             -abs(R[0, 0]),
-            -abs(R[1, 1]),
+            abs(R[1, 1]),  # negate?
             abs(R[2, 2]),
         )
 
@@ -901,7 +957,6 @@ class Volume(object):
     def get_mesh_in_world(
         self,
         full: bool = False,
-        cache_dir: Optional[Path] = None,
         use_cached: bool = True,
     ) -> pv.PolyData:
         """Get a pyvista mesh of the outline in world-space.
@@ -948,7 +1003,9 @@ class Volume(object):
         if full:
             log.debug(f"getting full surface mesh for volume")
             material_mesh = self.get_surface(
-                material=self._mesh_material, cache_dir=cache_dir, use_cached=use_cached
+                material=self._mesh_material,
+                cache_dir=self.cache_dir,
+                use_cached=use_cached,
             )
 
             material_mesh.transform(geo.get_data(self.world_from_anatomical))
