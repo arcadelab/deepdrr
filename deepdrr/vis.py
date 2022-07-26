@@ -45,6 +45,8 @@ def show(
     background: str = "white",
     use_cached: Union[bool, List[bool]] = True,
     offscreen: bool = False,
+    mesh: Optional[pv.PolyData] = None,
+    mesh_color: str = "black",
 ) -> Optional[np.ndarray]:
     """Show the given items in a pyvista window.
 
@@ -66,6 +68,9 @@ def show(
     plotter = pv.Plotter()
     plotter.show_axes()
     plotter.set_background(background)
+
+    if mesh is not None:
+        plotter.add_mesh(mesh, color=mesh_color)
 
     items = item
     fulls = utils.listify(full, len(items))
