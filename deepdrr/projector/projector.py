@@ -344,6 +344,7 @@ class Projector(object):
             # Get the volume min/max points in world coordinates.
             sx, sy, sz = proj.get_center_in_world()
             world_from_index = np.array(proj.world_from_index).astype(np.float32)
+            context.push()
             cuda.memcpy_htod(self.world_from_index_gpu, world_from_index)
 
             for vol_id, _vol in enumerate(self.volumes):
