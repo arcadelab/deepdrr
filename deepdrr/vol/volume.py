@@ -18,6 +18,7 @@ from scipy.interpolate import RegularGridInterpolator
 from .. import load_dicom
 from .. import geo
 from .. import utils
+from ..utils import data_utils
 from ..utils import mesh_utils
 
 pv, pv_available = utils.try_import_pyvista()
@@ -182,7 +183,7 @@ class Volume(object):
         return cache_dir
 
     @classmethod
-    def _get_cache_path(
+    def _get_cache_path_root(
         cls,
         use_thresholding: bool = True,
         cache_dir: Optional[Path] = None,
@@ -193,7 +194,7 @@ class Volume(object):
         if cache_dir is None:
             return None
 
-        name = "cached_{}{}materials{}.npz".format(
+        name = "cached_{}{}materials{}".format(
             prefix,
             "_" if prefix else "",
             "_with_thresholding" if use_thresholding else "",
@@ -246,8 +247,10 @@ class Volume(object):
     def segment_materials(
         cls,
         hu_values: np.ndarray,
+        anatomical_from_ijk: geo.FrameTransform,
         use_thresholding: bool = True,
         use_cached: bool = True,
+        save_cache: bool = False,
         cache_dir: Optional[Path] = None,
         prefix: str = "",
     ) -> Dict[str, np.ndarray]:
@@ -259,28 +262,56 @@ class Volume(object):
             hu_values (np.ndarray): volume data in Hounsfield Units.
             use_thretholding (bool, optional): whether to segment with thresholding (true) or a DNN. Defaults to True.
             use_cached (bool, optional): use the cached segmentation, if it exists. Defaults to True.
+            save_cache (bool, optional): save the segmentation to cache_dir. Defaults to True.
             cache_dir (Optional[Path], optional): where to look for the segmentation cache. If None, no caching performed. Defaults to None.
             prefix (str, optional): Optional prefix to prepend to the cache names. Defaults to ''.
 
         Returns:
             Dict[str, np.ndarray]: materials segmentation.
         """
-
-        materials_path = cls._get_cache_path(
+        path_root = cls._get_cache_path_root(
             use_thresholding=use_thresholding, cache_dir=cache_dir, prefix=prefix
         )
 
-        if materials_path is not None and materials_path.exists() and use_cached:
-            log.info(f"using cached materials segmentation at {materials_path}")
-            materials = dict(np.load(materials_path))
+        if path_root is None:
+            log.info(f"segmenting materials in volume")
+            materials = cls._segment_materials(
+                hu_values, use_thresholding=use_thresholding
+            )
+            return materials
+
+        materials_path_npz = path_root.with_suffix(".npz")
+        materials_record_path = path_root.with_suffix(".json")
+        materials_path_nifti = path_root.with_suffix(".nii.gz")
+        if use_cached and materials_path_npz.exists():
+            log.info(f"using cached materials segmentation at {materials_path_npz}")
+            materials = dict(np.load(materials_path_npz))
+        elif (
+            use_cached
+            and materials_record_path.exists()
+            and materials_path_nifti.exists()
+        ):
+            log.info(f"using cached materials segmentation at {materials_path_nifti}")
+            material_names = data_utils.load_json(materials_record_path)
+            materal_data = nib.load(materials_path_nifti).get_fdata()
+            materials = {}
+            for name, label in material_names.items():
+                materials[name] = materal_data == label
         else:
             log.info(f"segmenting materials in volume")
             materials = cls._segment_materials(
                 hu_values, use_thresholding=use_thresholding
             )
 
-            if materials_path is not None:
-                np.savez(materials_path, **materials)
+            if save_cache and not materials_path_nifti.exists():
+                log.debug(f"saving materials segmentation to {materials_path_nifti}")
+                material_names = dict((m, i) for i, m in enumerate(materials.keys()))
+                material_data = np.zeros(hu_values.shape, dtype=np.int16)
+                for m in material_names:
+                    material_data[materials[m]] = material_names[m]
+                img = nib.Nifti1Image(material_data, geo.get_data(anatomical_from_ijk))
+                nib.save(img, materials_path_nifti)
+                data_utils.save_json(materials_record_path, material_names)
 
         return materials
 
@@ -291,6 +322,7 @@ class Volume(object):
         world_from_anatomical: Optional[geo.FrameTransform] = None,
         use_thresholding: bool = True,
         use_cached: bool = True,
+        save_cache: bool = False,
         cache_dir: Optional[Path] = None,
         materials: Optional[Dict[str, np.ndarray]] = None,
         segmentation: bool = False,
@@ -317,7 +349,7 @@ class Volume(object):
         """
         path = Path(path)
 
-        if use_cached and cache_dir is None:
+        if cache_dir is None:
             cache_dir = path.parent / "cache"
 
             if not cache_dir.exists():
@@ -342,8 +374,10 @@ class Volume(object):
             if materials is None:
                 materials = cls.segment_materials(
                     hu_values,
+                    anatomical_from_ijk,
                     use_thresholding=use_thresholding,
                     use_cached=use_cached,
+                    save_cache=save_cache,
                     cache_dir=cache_dir,
                     prefix=path.name.split(".")[0],
                 )
@@ -931,14 +965,15 @@ class Volume(object):
     def get_surface(
         self,
         material: str = "bone",
-        cache_dir: Optional[Path] = None,
         use_cached: bool = True,
     ):
+        log.info(f"cache_dir: {self.cache_dir}")
         cache_path = (
             None
-            if cache_dir is None
-            else Path(cache_dir) / f"cached_{material}_mesh.vtp"
+            if self.cache_dir is None
+            else self.cache_dir / f"cached_{material}_mesh.vtp"
         )
+        log.info(f"cache_path: {cache_path}")
         if use_cached and cache_path is not None and cache_path.exists():
             log.info(f"reading cached {material} mesh from {cache_path}")
             surface = pv.read(cache_path)
@@ -946,8 +981,8 @@ class Volume(object):
             log.info(f"meshing {material} segmentation...")
             surface = self._make_surface(material)
             if cache_path is not None:
-                if not cache_dir.exists():
-                    cache_dir.mkdir()
+                if not self.cache_dir.exists():
+                    self.cache_dir.mkdir()
                 log.info(f"caching {material} surface to {cache_path}.")
                 surface.save(cache_path)
         return surface
@@ -1004,7 +1039,6 @@ class Volume(object):
             log.debug(f"getting full surface mesh for volume")
             material_mesh = self.get_surface(
                 material=self._mesh_material,
-                cache_dir=self.cache_dir,
                 use_cached=use_cached,
             )
 
