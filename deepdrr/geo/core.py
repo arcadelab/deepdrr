@@ -1785,6 +1785,12 @@ def frame_transform(*args) -> FrameTransform:
     frame_transform((R, t)) -> FrameTransform.from_rt(R, t)
     frame_transform(R, t) -> FrameTransform.from_rt(R, t)
 
+    R maybe be given as a (3,3) matrix or as a 9-vector. If provided as a 9-vector, column major order is assumed,
+    such that (a11, a21, a31, a12, a22, a32, a13, a23, a33) corresponds to
+    [[a11, a12, a13],
+     [a21, a22, a23],
+     [a31, a32, a33]]
+
     Returns:
         FrameTransform: [description]
     """
@@ -1826,13 +1832,16 @@ def frame_transform(*args) -> FrameTransform:
             and args[1].shape == (3,)
         ):
             return FrameTransform.from_rt(rotation=args[0], translation=args[1])
-        elif (
-            isinstance(args[0], (list, tuple))
-            and isinstance(args[1], (list, tuple))
-            and len(args[0]) == 9
-            and len(args[1]) == 3
-        ):
-            return frame_transform(np.array(args[0]).reshape(3,3), np.array(args[1]))
+        elif isinstance(args[0], (list, tuple)) and isinstance(args[1], (list, tuple)):
+            r = np.array(args[0])
+            if r.shape == (3, 3):
+                pass
+            elif r.shape == (9,):
+                r = r.reshape(3, 3).T
+            t = np.array(args[1])
+            if r.shape != (3, 3) or t.shape != (3,):
+                raise TypeError(f"couldn't convert to FrameTransform: {args}")
+            return FrameTransform.from_rt(r, t)
         else:
             raise TypeError(
                 f"could not parse FrameTransfrom from [R, t]: [{args[0]}, {args[1]}]"
@@ -1844,11 +1853,11 @@ def frame_transform(*args) -> FrameTransform:
 RAS_from_LPS = FrameTransform(
     np.array([[-1, 0, 0, 0], [0, -1, 0, 0], [0, 0, 1, 0], [0, 0, 0, 1]])
 )
-
 LPS_from_RAS = RAS_from_LPS.inv
+
 mm_from_m = FrameTransform.from_scaling(1e3)
-m_from_mm = mm_from_m.inv
+m_from_mm = FrameTransform.from_scaling(1e-3)
 cm_from_m = FrameTransform.from_scaling(1e2)
-m_from_cm = cm_from_m.inv
+m_from_cm = FrameTransform.from_scaling(1e-2)
+mm_from_cm = FrameTransform.from_scaling(1e1)
 cm_from_mm = FrameTransform.from_scaling(1e-1)
-mm_from_cm = cm_from_mm.inv
