@@ -1814,14 +1814,25 @@ def frame_transform(*args) -> FrameTransform:
                 raise TypeError(f"couldn't convert numpy array to FrameTransform: {a}")
         elif isinstance(a, (tuple, list)) and len(a) == 2:
             return frame_transform(a[0], a[1])
+        else:
+            raise TypeError(f"couldn't convert to FrameTransform: {a}")
     elif len(args) == 2:
-        if (
+        if isinstance(args[0], Rotation) and isinstance(args[1], Point3D):
+            return FrameTransform.from_rt(args[0], args[1])
+        elif (
             isinstance(args[0], np.ndarray)
             and isinstance(args[1], np.ndarray)
             and args[0].shape == (3, 3)
             and args[1].shape == (3,)
         ):
             return FrameTransform.from_rt(rotation=args[0], translation=args[1])
+        elif (
+            isinstance(args[0], (list, tuple))
+            and isinstance(args[1], (list, tuple))
+            and len(args[0]) == 9
+            and len(args[1]) == 3
+        ):
+            return frame_transform(np.array(args[0]).reshape(3,3), np.array(args[1]))
         else:
             raise TypeError(
                 f"could not parse FrameTransfrom from [R, t]: [{args[0]}, {args[1]}]"
