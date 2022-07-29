@@ -680,7 +680,7 @@ class Volume(object):
     def __array__(self) -> np.ndarray:
         return self.data
 
-    def translate_center_to(self, x: geo.Point3D) -> None:
+    def place_center(self, x: geo.Point3D) -> None:
         """Translate the volume so that its center is located at world-space point x.
 
         Only changes the translation elements of the world_from_anatomical transform. Preserves the current rotation of the
@@ -696,6 +696,8 @@ class Volume(object):
         )
         center_world = self.world_from_anatomical @ center_anatomical
         self.place(center_anatomical, x)
+
+    translate_center_to = place_center
 
     def place(
         self, point_in_anatomical: geo.Point3D, desired_point_in_world: geo.Point3D
