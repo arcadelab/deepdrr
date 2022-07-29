@@ -53,15 +53,6 @@ class Device(ABC):
 
     @property
     @abstractmethod
-    def camera3d_from_device(self) -> geo.FrameTransform:
-        """Get the FrameTransform for the device's camera3d_from_device frame (in the current pose).
-
-        Returns:
-            FrameTransform: the "camera3d_from_device" frame transformation for the device.
-        """
-        pass
-
-    @property
     def device_from_camera3d(self) -> geo.FrameTransform:
         """Get the FrameTransform for the device's camera3d_from_device frame (in the current pose).
 
@@ -71,7 +62,25 @@ class Device(ABC):
         Returns:
             FrameTransform: the "device_from_camera3d" frame transformation for the device.
         """
-        return self.camera3d_from_device.inverse()
+        pass
+
+    @property
+    def camera3d_from_device(self) -> geo.FrameTransform:
+        """Get the FrameTransform for the device's camera3d_from_device frame (in the current pose).
+
+        Returns:
+            FrameTransform: the "camera3d_from_device" frame transformation for the device.
+        """
+        return self.device_from_camera3d.inverse()
+
+    @property
+    def world_from_camera3d(self) -> geo.FrameTransform:
+        """Get the FrameTransform for the device's camera3d_from_world frame (in the current pose).
+
+        Returns:
+            FrameTransform: the "world_from_camera3d" frame transformation for the device.
+        """
+        return self.world_from_device @ self.device_from_camera3d
 
     @property
     def camera3d_from_world(self) -> geo.FrameTransform:
@@ -81,15 +90,6 @@ class Device(ABC):
             FrameTransform: the "camera3d_from_world" frame transformation for the device.
         """
         return self.camera3d_from_device @ self.device_from_world
-
-    @property
-    def world_from_camera3d(self) -> geo.FrameTransform:
-        """Get the FrameTransform for the device's camera3d_from_world frame (in the current pose).
-
-        Returns:
-            FrameTransform: the "world_from_camera3d" frame transformation for the device.
-        """
-        return self.camera3d_from_world.inverse()
 
     def get_camera_projection(self) -> geo.CameraProjection:
         """Get the camera projection for the device in the current pose.
