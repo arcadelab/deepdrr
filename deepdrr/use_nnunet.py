@@ -117,6 +117,110 @@ class Segmentation():
             
             #Soft Tissue
             segmentation["soft tissue"] = np.logical_and(segmented_volume > 2, segmented_volume != 6)
+            
+        if TaskType==1:  # for fused label
+            # Air
+            segmentation["air"] = segmented_volume == 1
+            
+            # Bone
+            segmentation["bone"] = segmented_volume == 2
+            
+            # Lung
+            segmentation["lung"] = segmented_volume == 6
+            
+            # Liver
+            segmentation["liver"] = segmented_volume == 4
+            
+            #Soft Tissue
+            segmentation["soft tissue"] = (segmented_volume > 2) * (segmented_volume != 4) * (segmented_volume != 6)
+            
+        if TaskType==2:  # for fused label
+            # Air
+            segmentation["air"] = segmented_volume == 1
+            
+            # Bone
+            segmentation["bone"] = segmented_volume == 2
+            
+            # Lung
+            segmentation["lung"] = segmented_volume == 6
+            
+            # Liver
+            segmentation["liver"] = segmented_volume == 4
+            
+            # kidney
+            segmentation["kidney"] = segmented_volume == 7
+            
+            #Soft Tissue
+            segmentation["soft tissue"] = (segmented_volume > 2) * (segmented_volume != 4) * (segmented_volume != 6) * (segmented_volume != 7)
+            
+        if TaskType==3:  # for fused label
+            # Air
+            segmentation["air"] = segmented_volume == 1
+            
+            # Bone
+            segmentation["bone"] = segmented_volume == 2
+            
+            # Lung
+            segmentation["lung"] = segmented_volume == 6
+            
+            # Liver
+            segmentation["liver"] = segmented_volume == 4
+            
+            # kidney
+            segmentation["kidney"] = segmented_volume == 7
+            
+            # stomach
+            segmentation["water"] = segmented_volume == 11
+            
+            #Soft Tissue
+            segmentation["soft tissue"] = (segmented_volume > 2) * (segmented_volume != 4) * (segmented_volume != 6) * (segmented_volume != 7) * (segmented_volume != 11)
+            
+        if TaskType==4:  # for fused label
+            # Air
+            segmentation["air"] = segmented_volume == 1
+            
+            # Bone
+            segmentation["bone"] = segmented_volume == 2
+            
+            # Lung
+            segmentation["lung"] = segmented_volume == 6
+            
+            # Liver
+            segmentation["liver"] = segmented_volume == 4
+            
+            # kidney
+            segmentation["kidney"] = segmented_volume == 7
+            
+            # stomach & bladder & gallbladder
+            segmentation["water"] = (segmented_volume == 11) + (segmented_volume == 5) + (segmented_volume == 9)
+            
+            #Soft Tissue
+            segmentation["soft tissue"] = (segmented_volume > 2) * (segmented_volume != 4) * (segmented_volume != 6) * (segmented_volume != 7) * (segmented_volume != 11) * (segmented_volume != 5) * (segmented_volume != 9)
+            
+        if TaskType==5:  # for fused label
+            # Air
+            segmentation["air"] = segmented_volume == 1
+            
+            # Bone
+            segmentation["bone"] = segmented_volume == 2
+            
+            # Lung
+            segmentation["lung"] = segmented_volume == 6
+            
+            # Liver
+            segmentation["liver"] = segmented_volume == 4
+            
+            # kidney
+            segmentation["kidney"] = segmented_volume == 7
+            
+            # stomach & bladder & gallbladder
+            segmentation["water"] = (segmented_volume == 11) + (segmented_volume == 5) + (segmented_volume == 9)
+            
+            # spleen
+            segmentation["blood"] = segmented_volume == 8
+            
+            #Soft Tissue
+            segmentation["soft tissue"] = (segmented_volume > 2) * (segmented_volume != 4) * (segmented_volume != 6) * (segmented_volume != 7) * (segmented_volume != 11) * (segmented_volume != 5) * (segmented_volume != 9) * (segmented_volume != 8)
         
         if TaskType==6: # nnunet task 6
             # Soft Tissue
