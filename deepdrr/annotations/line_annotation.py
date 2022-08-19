@@ -8,19 +8,52 @@ import json
 import pyvista as pv
 
 from .. import geo, utils
-from ..vol import Volume, AnyVolume
+from ..vol import Volume
 
-logger = logging.getLogger(__name__)
+log = logging.getLogger(__name__)
 
 
 class LineAnnotation(object):
+    """Really a "segment annotation", but Slicer calls it a line.
+
+    Attributes:
+        startpoint (geo.Point): The startpoint in anatomical coordinates.
+        endpoint (geo.Point): The endpoint in anatomical coordinates.
+
+    """
+
     def __init__(
-        self, startpoint: geo.Point, endpoint: geo.Point, volume: AnyVolume
+        self,
+        startpoint: geo.Point3D,
+        endpoint: geo.Point3D,
+        volume: Optional[Volume] = None,
+        world_from_anatomical: Optional[geo.FrameTransform] = None,
+        anatomical_coordinate_system: Optional[str] = None,
     ) -> None:
+        """Create a Line Annotation.
+
+        Must provide either the volume this relies on, or the minimal attributes (pose of volume in world and coordinate system).
+
+        Args:
+            startpoint (geo.Point): The startpoint in anatomical coordinates.
+            endpoint (geo.Point): The endpoint in anatomical coordinates.
+            volume (Optional[Volume], optional): The volume, with a given pose. If not provided, must provide `world_from_anatomical` and `anatomical_coordinate_system`. Defaults to None.
+            world_from_anatomical (Optional[geo.FrameTransform], optional): [description]. Defaults to None.
+            anatomical_coordinate_system (Optional[str], optional): [description]. Defaults to None.
+        """
         # all points in anatomical coordinates, matching the provided volume.
         self.startpoint = geo.point(startpoint)
         self.endpoint = geo.point(endpoint)
         self.volume = volume
+        if volume is None:
+            assert (
+                world_from_anatomical is not None
+                and anatomical_coordinate_system.upper() in ["RAS", "LPS"]
+            )
+            self._anatomical_coordinate_system = anatomical_coordinate_system.upper()
+            self._world_from_anatomical = geo.frame_transform(world_from_anatomical)
+        else:
+            self.volume = volume
 
         assert (
             self.startpoint.dim == self.endpoint.dim
@@ -29,43 +62,81 @@ class LineAnnotation(object):
     def __str__(self):
         return f"LineAnnotation({self.startpoint}, {self.endpoint})"
 
+    @property
+    def anatomical_coordinate_system(self) -> str:
+        if self.volume is None:
+            return self._anatomical_coordinate_system
+        else:
+            return self.volume.anatomical_coordinate_system
+
+    @property
+    def world_from_anatomical(self) -> geo.FrameTransform:
+        if self.volume is None:
+            return self._world_from_anatomical
+        else:
+            return self.volume.world_from_anatomical
+
     @classmethod
-    def from_markup(cls, path: str, volume: AnyVolume) -> LineAnnotation:
+    def from_markup(
+        cls,
+        path: str,
+        volume: Optional[Volume] = None,
+        world_from_anatomical: Optional[geo.FrameTransform] = None,
+        anatomical_coordinate_system: Optional[str] = None,
+    ) -> LineAnnotation:
         with open(path, "r") as file:
             ann = json.load(file)
+
+        if volume is None:
+            assert (
+                world_from_anatomical is not None
+                and anatomical_coordinate_system is not None
+            ), "must supply the anatomical transform"
+        else:
+            anatomical_coordinate_system = volume.anatomical_coordinate_system
+            world_from_anatomical = volume.world_from_anatomical
 
         control_points = ann["markups"][0]["controlPoints"]
         points = [geo.point(cp["position"]) for cp in control_points]
 
         coordinate_system = ann["markups"][0]["coordinateSystem"]
-        logger.debug(f"coordinate system: {coordinate_system}")
+        log.debug(f"loading markup with coordinate system: {coordinate_system}")
 
-        if volume.anatomical_coordinate_system == "LPS":
+        if anatomical_coordinate_system == "LPS":
             if coordinate_system == "LPS":
                 pass
             elif coordinate_system == "RAS":
-                logger.debug("converting to LPS")
+                log.debug("converting to LPS")
                 points = [geo.LPS_from_RAS @ p for p in points]
             else:
                 raise ValueError
-        elif volume.anatomical_coordinate_system == "RAS":
+        elif anatomical_coordinate_system == "RAS":
             if coordinate_system == "LPS":
-                logger.debug("converting to RAS")
+                log.debug("converting to RAS")
                 points = [geo.RAS_from_LPS @ p for p in points]
             elif coordinate_system == "RAS":
                 pass
             else:
                 raise ValueError
         else:
-            logger.warning(
+            log.warning(
                 "annotation may not be in correct coordinate system. "
                 "Unable to check against provided volume, probably "
                 "because volume was created manually. Proceed with caution."
             )
 
-        return cls(*points, volume)
+        return cls(
+            *points,
+            volume=volume,
+            world_from_anatomical=world_from_anatomical,
+            anatomical_coordinate_system=anatomical_coordinate_system,
+        )
 
-    def save(self, path: str, color: List[float] = [0.5, 0.5, 0.5]):
+    def save(
+        self,
+        path: str,
+        color: List[float] = [1.0, 0.5000076295109484, 0.5000076295109484],
+    ):
         """Save the Line annotation to a mrk.json file, which can be opened by 3D Slicer.
 
         Args:
@@ -74,21 +145,34 @@ class LineAnnotation(object):
         """
         path = Path(path).expanduser()
 
+        def to_lps(x):
+            if self.anatomical_coordinate_system == "LPS":
+                return list(x)
+            elif self.anatomical_coordinate_system == "RAS":
+                return list(geo.LPS_from_RAS @ x)
+            else:
+                raise ValueError
+
+        # log.info(f"start, end: {self.startpoint, self.endpoint}")
+        # log.info(
+        #     f"start, end in world: {self.startpoint_in_world, self.endpoint_in_world}"
+        # )
+
         markup = {
             "@schema": "https://raw.githubusercontent.com/slicer/slicer/master/Modules/Loadable/Markups/Resources/Schema/markups-schema-v1.0.0.json#",
             "markups": [
                 {
                     "type": "Line",
-                    "coordinateSystem": self.volume.anatomical_coordinate_system,
-                    "locked": True,
-                    "labelFormat": "%N-%d",
+                    "coordinateSystem": self.anatomical_coordinate_system,
+                    "locked": False,
+                    "labelFormat": r"%N-%d",
                     "controlPoints": [
                         {
                             "id": "1",
-                            "label": "entry",
+                            "label": "startpoint",
                             "description": "",
                             "associatedNodeID": "",
-                            "position": utils.jsonable(self.startpoint),
+                            "position": list(self.startpoint),
                             "orientation": [
                                 -1.0,
                                 -0.0,
@@ -107,10 +191,10 @@ class LineAnnotation(object):
                         },
                         {
                             "id": "2",
-                            "label": "exit",
+                            "label": "endpoint",
                             "description": "",
                             "associatedNodeID": "",
-                            "position": utils.jsonable(self.endpoint),
+                            "position": list(self.endpoint),
                             "orientation": [
                                 -1.0,
                                 -0.0,
@@ -133,17 +217,17 @@ class LineAnnotation(object):
                             "name": "length",
                             "enabled": True,
                             "value": 124.90054351814699,
-                            "printFormat": "%-#4.4gmm",
+                            "printFormat": r"%-#4.4gmm",
                         }
                     ],
                     "display": {
                         "visibility": True,
                         "opacity": 1.0,
-                        "color": color,
-                        "selectedColor": [1.0, 0.5000076295109484, 0.5000076295109484],
+                        "color": [0.5, 0.5, 0.5],
+                        "selectedColor": color,
                         "activeColor": [0.4, 1.0, 0.0],
-                        "propertiesLabelVisibility": True,
-                        "pointLabelsVisibility": True,
+                        "propertiesLabelVisibility": False,
+                        "pointLabelsVisibility": False,
                         "textScale": 3.0,
                         "glyphType": "Sphere3D",
                         "glyphScale": 5.800000000000001,
@@ -166,24 +250,30 @@ class LineAnnotation(object):
             ],
         }
 
+        markup = utils.jsonable(markup)
+
         with open(path, "w") as file:
-            json.dump(markup, file)
+            json.dump(markup, file, indent=4)
 
     @property
-    def startpoint_in_world(self) -> geo.Point:
-        return self.volume.world_from_anatomical @ self.startpoint
+    def anatomical_from_world(self) -> geo.FrameTransform:
+        return self.world_from_anatomical.inv
 
     @property
-    def endpoint_in_world(self) -> geo.Point:
-        return self.volume.world_from_anatomical @ self.endpoint
+    def startpoint_in_world(self) -> geo.Point3D:
+        return self.world_from_anatomical @ self.startpoint
 
     @property
-    def midpoint_in_world(self) -> geo.Point:
-        return self.volume.world_from_anatomical @ self.startpoint.lerp(
-            self.endpoint, 0.5
-        )
+    def endpoint_in_world(self) -> geo.Point3D:
+        return self.world_from_anatomical @ self.endpoint
 
-    def get_mesh_in_world(self, full: bool = True):
+    @property
+    def midpoint_in_world(self) -> geo.Point3D:
+        return self.world_from_anatomical @ self.startpoint.lerp(self.endpoint, 0.5)
+
+    def get_mesh_in_world(
+        self, full: bool = True, use_cached: bool = False
+    ) -> pv.PolyData:
         u = self.startpoint_in_world
         v = self.endpoint_in_world
 

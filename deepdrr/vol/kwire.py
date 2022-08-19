@@ -7,20 +7,20 @@ from . import Volume
 from .. import geo
 from ..utils import data_utils
 
-logger = logging.getLogger(__name__)
+log = logging.getLogger(__name__)
 
 
 class KWire(Volume):
-    tip_in_ijk: geo.Point3D
-    base_in_ijk: geo.Point3D
 
     _mesh_material = "titanium"
+
+    diameter = 2.0  # mm
 
     def __init__(
         self,
         *args,
-        tip_in_ijk: Optional[geo.Point3D] = None,
-        base_in_ijk: Optional[geo.Point3D] = None,
+        tip: Optional[geo.Point3D] = None,
+        base: Optional[geo.Point3D] = None,
         **kwargs,
     ) -> None:
         """A special volume which can be positioned using the tip and base points.
@@ -28,20 +28,21 @@ class KWire(Volume):
         Use the `from_example()` class method to create a KWire from the example volume (which will be downloaded).
 
         Args:
-            tip_in_ijk (geo.Point3D): The location of the tool tip in IJK.
-            base_in_ijk (geo.Point3D): The location of the tool base in IJK.
+            tip (geo.Point3D): The location of the tool tip in RAS.
+            base (geo.Point3D): The location of the tool base in RAS.
         """
 
         super(KWire, self).__init__(*args, **kwargs)
-        assert (
-            tip_in_ijk is not None and base_in_ijk is not None
-        ), "must provide points for the base and tip of the kwire"
-        self.tip_in_ijk = geo.point(tip_in_ijk)
-        self.base_in_ijk = geo.point(base_in_ijk)
+        assert tip is not None and base is not None
+        self.tip = geo.point(tip)
+        self.base = geo.point(base)
 
     @classmethod
-    def from_example(cls, **kwargs):
+    def from_example(cls, density: float = 7.5, **kwargs):
         """Creates a KWire from the provided download link.
+
+        Args:
+            density (float, optional): Density of the K-wire metal.
 
         Returns:
             KWire: The example KWire built into DeepDRR.
@@ -51,17 +52,18 @@ class KWire(Volume):
         filename = "Kwire2.nii.gz"
         path = data_utils.download(url, filename, md5=md5)
         shape = (100, 100, 2000)
-        tip_in_ijk = geo.point(shape[0] / 2, shape[1] / 2, 0)
-        base_in_ijk = geo.point(shape[0] / 2, shape[1] / 2, shape[2] - 1)
+        tip = geo.point(-1, -1, 0)
+        base = geo.point(-1, -1, 200)
         tool = cls.from_nifti(
-            path, tip_in_ijk=tip_in_ijk, base_in_ijk=base_in_ijk, **kwargs
+            path, density_kwargs=dict(density=density), tip=tip, base=base, **kwargs
         )
         return tool
 
     @staticmethod
-    def _convert_hounsfield_to_density(hu_values: np.ndarray):
+    def _convert_hounsfield_to_density(hu_values: np.ndarray, density: float = 7.5):
         # TODO: coefficient should be 2?
-        return 2 * hu_values
+        # Should be density of steel.
+        return density * hu_values
 
     @staticmethod
     def _segment_materials(
@@ -73,9 +75,17 @@ class KWire(Volume):
         return dict(titanium=(hu_values > 0))
 
     @property
+    def tip_in_ijk(self) -> geo.Point3D:
+        return self.ijk_from_anatomical @ self.tip
+
+    @property
+    def base_in_ijk(self) -> geo.Point3D:
+        return self.ijk_from_anatomical @ self.base
+
+    @property
     def tip_in_anatomical(self) -> geo.Point3D:
         """Get the location of the tool tip (the pointy end) in anatomical coordinates."""
-        return self.anatomical_from_ijk @ self.tip_in_ijk
+        return self.tip
 
     @property
     def base_in_anatomical(self) -> geo.Point3D:
@@ -98,8 +108,8 @@ class KWire(Volume):
 
     def align(
         self,
-        start_point_in_world: geo.Point3D,
-        end_point_in_world: geo.Point3D,
+        startpoint_in_world: geo.Point3D,
+        endpoint_in_world: geo.Point3D,
         progress: float = 1.0,
     ) -> None:
         """Align the tool so that it lies between the two points, tip pointing toward the endpoint.
@@ -111,11 +121,14 @@ class KWire(Volume):
                 on a scale from 0 to 1. 0 corresponds to the tip placed at the start point, 1 at the end point. Defaults to 1.0.
         """
         # useful: https://math.stackexchange.com/questions/180418/calculate-rotation-matrix-to-align-vector-a-to-vector-b-in-3d
+        startpoint_in_world = geo.point(startpoint_in_world)
+        endpoint_in_world = geo.point(endpoint_in_world)
+        progress = float(progress)
 
         # interpolate along the direction of the tool to get the desired points in world.
-        trajectory_vector = end_point_in_world - start_point_in_world
+        trajectory_vector = endpoint_in_world - startpoint_in_world
 
-        desired_tip_in_world = end_point_in_world - (1 - progress) * trajectory_vector
+        desired_tip_in_world = endpoint_in_world - (1 - progress) * trajectory_vector
         desired_base_in_world = (
             desired_tip_in_world - trajectory_vector.hat() * self.length_in_world
         )
@@ -126,3 +139,7 @@ class KWire(Volume):
             self.tip_in_anatomical,
             self.base_in_anatomical,
         )
+
+    @property
+    def radius(self) -> float:
+        return self.diameter / 2

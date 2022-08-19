@@ -682,6 +682,8 @@ extern "C" {
         // int debug = (udx == 973) && (vdx == 598); // larger image size
         // int debug = (udx == 243) && (vdx == 149); // 4x4 binning
 
+        // if (udx == 40) printf("udx: %d, vdx: %d\n", udx, vdx);
+
         // if the current point is outside the output image, no computation needed
         if (udx >= out_width || vdx >= out_height)
             return;
@@ -707,7 +709,8 @@ extern "C" {
         float rz = u * world_from_index[6] + v * world_from_index[7] + world_from_index[8];
 
         /* make the ray a unit vector */
-        float inv_ray_norm = 1.0f / sqrtf(rx * rx + ry * ry + rz * rz);
+        float ray_length = sqrtf(rx * rx + ry * ry + rz * rz);
+        float inv_ray_norm = 1.0f / ray_length;
         rx *= inv_ray_norm;
         ry *= inv_ray_norm;
         rz *= inv_ray_norm;
@@ -780,9 +783,9 @@ extern "C" {
         // Means none of the volumes have do_trace = 1.
         if (do_return) return;
 
-        // if (debug) printf("global min, max alphas: %f, %f\n", minAlpha, maxAlpha);
+        // printf("global min, max alphas: %f, %f\n", minAlpha, maxAlpha);
 
-        // Part 2: Cast ray if it intersects the volume
+        // Part 2: Cast ray if it intersects any of the volumes
         int num_steps = ceil((maxAlpha - minAlpha) / step);
         // if (debug) printf("num_steps: %d\n", num_steps);
 
@@ -800,6 +803,11 @@ extern "C" {
         int n_vols_at_curr_priority; // how many volumes to consider at the location
         float seg_at_alpha[NUM_VOLUMES][NUM_MATERIALS];
         // if (debug) printf("start trace\n");
+
+        // Attenuate up to minAlpha, assuming it is filled with air.
+        if (ATTENUATE_OUTSIDE_VOLUME) {
+            area_density[AIR_INDEX] += (minAlpha / step) * AIR_DENSITY;
+        }
 
         // trace (if doing the last segment separately, need to use num_steps - 1
         for (int t = 0; t < num_steps; t++) {
@@ -828,12 +836,12 @@ extern "C" {
 
             // if (debug) printf("  got priority at alpha, num vols\n"); // This is the one that seems to take a half a second.
             if (0 == n_vols_at_curr_priority) {
-                // Outside the bounds of all volumes to trace. Assume nominal density of air is 0.0f.
-                // Thus, we don't need to add to area_density
-                ;
+                // Outside the bounds of all volumes to trace. Use the default AIR_DENSITY.
+                if (ATTENUATE_OUTSIDE_VOLUME) {
+                    area_density[AIR_INDEX] += AIR_DENSITY;
+                }
             } else {
                 float weight = 1.0f / ((float) n_vols_at_curr_priority);
-
 
                 // For the entry boundary, multiply by 0.5. That is, for the initial interpolated value,
                 // only a half step-size is considered in the computation. For the second-to-last interpolation
@@ -843,6 +851,11 @@ extern "C" {
                 INTERPOLATE(weight);
             }
             alpha += step;
+        }
+
+        // Attenuate from the end of the volume to the detector.
+        if (ATTENUATE_OUTSIDE_VOLUME) {
+            area_density[AIR_INDEX] += (ray_length - maxAlpha) / step * AIR_DENSITY;
         }
 
         // if (debug) printf("finished trace, num_steps: %d\n", num_steps);
