@@ -103,6 +103,7 @@ class MobileCArm(Device):
 
         """
         self.world_from_device = geo.frame_transform(world_from_device)
+        self.enforce_isocenter_bounds = enforce_isocenter_bounds
         self.isocenter = geo.point(isocenter)
         self.alpha = utils.radians(alpha, degrees=degrees)
         self.beta = utils.radians(beta, degrees=degrees)
@@ -131,11 +132,11 @@ class MobileCArm(Device):
             source_to_detector_distance=self.source_to_detector_distance,
         )
         self.rotate_camera_left = rotate_camera_left
-        self.enforce_isocenter_bounds = enforce_isocenter_bounds
 
         # May upset some code that was erroneously using isocenter to position the Carm.
-        if np.any(np.array(isocenter) < self.min_isocenter) or np.any(
-            np.array(isocenter) > self.max_isocenter
+        if enforce_isocenter_bounds and (
+            np.any(np.array(isocenter) < self.min_isocenter)
+            or np.any(np.array(isocenter) > self.max_isocenter)
         ):
             raise ValueError(
                 f"isocenter {self.isocenter} is out of bounds. Use world_from_device transform to position the carm in the world."
@@ -242,6 +243,10 @@ class MobileCArm(Device):
         )
 
         return gamma_rotation @ camera3d_from_arm @ self.arm_from_device
+
+    @property
+    def device_from_camera3d(self) -> geo.FrameTransform:
+        return self.camera3d_from_device.inv
 
     @property
     def camera3d_from_world(self) -> geo.FrameTransform:

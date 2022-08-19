@@ -19,25 +19,9 @@ class Device(ABC):
     sensor_width: int
     pixel_size: float
 
-    @property
-    @abstractmethod
-    def camera_intrinsics(self) -> geo.CameraIntrinsicTransform:
-        """Get the camera intrinsics for the device in the current pose.
-
-        Returns:
-            CameraIntrinsicTransform: the camera intrinsics for the device.
-        """
-        pass
-
-    @property
-    @abstractmethod
-    def world_from_device(self) -> geo.FrameTransform:
-        """Get the FrameTransform for the device's local frame.
-
-        Returns:
-            FrameTransform: the "world_from_device" frame transformation for the device.
-        """
-        pass
+    camera_intrinsics: geo.CameraIntrinsicTransform
+    source_to_detector_distance: float
+    world_from_device: geo.FrameTransform
 
     @property
     def device_from_world(self) -> geo.FrameTransform:
@@ -133,16 +117,6 @@ class Device(ABC):
             Vector3D: the principle ray for the device as a unit vector.
         """
         return (self.world_from_device @ self.principle_ray).normalized()
-
-    @property
-    @abstractmethod
-    def source_to_detector_distance(self) -> float:
-        """Get the distance between the source and the detector in the current pose in mm.
-
-        Returns:
-            float: the distance between the source and the detector.
-        """
-        pass
 
     @property
     def source_in_world(self) -> geo.Point3D:
