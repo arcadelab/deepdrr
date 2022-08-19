@@ -573,12 +573,14 @@ class Volume(object):
             ],
             axis=1,
         )
+        log.debug("TODO: double check this transform.")
         anatomical_from_ijk = np.concatenate(
             [ijk_from_anatomical, [[0, 0, 0, 1]]], axis=0
         )
         data = cls._convert_hounsfield_to_density(hu_values)
         materials = cls.segment_materials(
             hu_values,
+            anatomical_from_ijk=anatomical_from_ijk,
             use_thresholding=use_thresholding,
             use_cached=use_cached,
             cache_dir=cache_dir,
