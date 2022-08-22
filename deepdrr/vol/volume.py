@@ -888,7 +888,14 @@ class Volume(object):
         Accepts arguments passed to :func:`deepdrr.utils.mesh_utils.isosurface`.
 
         Args:
-            todo
+            value (float): The value at which to make the isosurface.
+            label (int): The label of the isosurface.
+            node_centered (bool): If True, the isosurface is centered at the node.
+                If False, the isosurface is centered at the cell.
+            smooth (bool): If True, the isosurface is smoothed.
+            decimation (float): The decimation factor (how many points to remove).
+            smooth_iter (int): The number of smoothing iterations.
+            relaxation_factor (float): The relaxation factor.
 
         Returns:
             pv.PolyData: The surface mesh in anatomical coordinates.
