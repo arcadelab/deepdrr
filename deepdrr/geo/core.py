@@ -1566,8 +1566,11 @@ class FrameTransform(Transform):
         Returns:
             FrameTransform: The transformation `F` such that `F(x) = rotation @ x + translation`
         """
+        # Process weird rotation shapes
         if isinstance(rotation, Rotation):
             rotation = rotation.as_matrix()
+        elif isinstance(rotation, np.ndarray) and rotation.shape == (4,):
+            rotation = Rotation.from_quat(rotation).as_matrix()
 
         if rotation is not None:
             dim = np.array(rotation).shape[0]

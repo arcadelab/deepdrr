@@ -6,7 +6,6 @@ from __future__ import annotations
 from typing import Union, Tuple, List, Optional, Dict
 
 import logging
-from deepdrr.device.device import Device
 import numpy as np
 from pathlib import Path
 import nibabel as nib
@@ -20,6 +19,8 @@ from .. import geo
 from .. import utils
 from ..utils import data_utils
 from ..utils import mesh_utils
+from ..device import Device
+from ..projector.material_coefficients import material_coefficients
 
 pv, pv_available = utils.try_import_pyvista()
 vtk, nps, vtk_available = utils.try_import_vtk()
@@ -224,8 +225,7 @@ class Volume(object):
 
     @staticmethod
     def _segment_materials(
-        hu_values: np.ndarray,
-        use_thresholding: bool = True,
+        hu_values: np.ndarray, use_thresholding: bool = True,
     ) -> Dict[str, np.ndarray]:
         """Segment the materials.
 
@@ -283,6 +283,9 @@ class Volume(object):
         materials_path_npz = path_root.with_suffix(".npz")
         materials_record_path = path_root.with_suffix(".json")
         materials_path_nifti = path_root.with_suffix(".nii.gz")
+        material_paths = [
+            path_root / f"{m}.nii.gz" for m in material_coefficients.keys()
+        ]
         if use_cached and materials_path_npz.exists():
             log.info(f"using cached materials segmentation at {materials_path_npz}")
             materials = dict(np.load(materials_path_npz))
@@ -297,6 +300,13 @@ class Volume(object):
             materials = {}
             for name, label in material_names.items():
                 materials[name] = materal_data == label
+        elif use_cached and any([p.exists() for p in material_paths]):
+            materials = {}
+            for p in material_paths:
+                materials[p.stem.split(".")[0]] = nib.load(p).get_fdata()
+            log.info(
+                f"using cached materials segmentation with {list(materials.keys())}"
+            )
         else:
             log.info(f"segmenting materials in volume")
             materials = cls._segment_materials(
@@ -567,10 +577,7 @@ class Volume(object):
         path = Path(path)
         hu_values, header = nrrd.read(path)
         ijk_from_anatomical = np.concatenate(
-            [
-                header["space directions"],
-                header["space origin"].reshape(-1, 1),
-            ],
+            [header["space directions"], header["space origin"].reshape(-1, 1),],
             axis=1,
         )
         log.debug("TODO: double check this transform.")
@@ -665,10 +672,7 @@ class Volume(object):
         """The spacing of the voxels."""
         return geo.vector(np.abs(np.array(self.anatomical_from_ijk.R)).max(axis=0))
 
-    def _format_materials(
-        self,
-        materials: Dict[str, np.ndarray],
-    ) -> np.ndarray:
+    def _format_materials(self, materials: Dict[str, np.ndarray],) -> np.ndarray:
         """Standardize the input material segmentation."""
         for mat in materials:
             materials[mat] = np.array(materials[mat]).astype(np.float32)
@@ -934,9 +938,7 @@ class Volume(object):
             np.sign(R[2, 2]) * t[2],
         )
         vol.SetSpacing(
-            -abs(R[0, 0]),
-            abs(R[1, 1]),  # negate?
-            abs(R[2, 2]),
+            -abs(R[0, 0]), abs(R[1, 1]), abs(R[2, 2]),  # negate?
         )
 
         segmentation = segmentation.astype(np.uint8)
@@ -974,9 +976,7 @@ class Volume(object):
         return surface
 
     def get_surface(
-        self,
-        material: str = "bone",
-        use_cached: bool = True,
+        self, material: str = "bone", use_cached: bool = True,
     ):
         log.info(f"cache_dir: {self.cache_dir}")
         cache_path = (
@@ -1001,9 +1001,7 @@ class Volume(object):
     _mesh_material = "bone"
 
     def get_mesh_in_world(
-        self,
-        full: bool = False,
-        use_cached: bool = True,
+        self, full: bool = False, use_cached: bool = True,
     ) -> pv.PolyData:
         """Get a pyvista mesh of the outline in world-space.
 
@@ -1049,8 +1047,7 @@ class Volume(object):
         if full:
             log.debug(f"getting full surface mesh for volume")
             material_mesh = self.get_surface(
-                material=self._mesh_material,
-                use_cached=use_cached,
+                material=self._mesh_material, use_cached=use_cached,
             )
 
             material_mesh.transform(geo.get_data(self.world_from_anatomical))
@@ -1075,7 +1072,6 @@ class MetalVolume(Volume):
             raise NotImplementedError
 
         return dict(
-            air=(hu_values == 0),
-            bone=(hu_values > 0),
-            titanium=(hu_values > 0),
+            air=(hu_values == 0), bone=(hu_values > 0), titanium=(hu_values > 0),
         )
+
