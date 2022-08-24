@@ -1787,12 +1787,22 @@ def frame_transform(*args) -> FrameTransform:
     frame_transform(t: Point | np.ndarray[3]) -> FrameTransform.from_translation(t)
     frame_transform((R, t)) -> FrameTransform.from_rt(R, t)
     frame_transform(R, t) -> FrameTransform.from_rt(R, t)
+    frame_transform([a00, a10, a20, a01, a11, a21, a02, a12, a22, a03, a13, a23]) -> FrameTransform([
+        [a00, a01, a02, a03],
+        [a10, a11, a12, a13],
+        [a20, a21, a22, a23],
+        [0, 0, 0, 1]]
+    )
 
     R maybe be given as a (3,3) matrix or as a 9-vector. If provided as a 9-vector, column major order is assumed,
     such that (a11, a21, a31, a12, a22, a32, a13, a23, a33) corresponds to
     [[a11, a12, a13],
      [a21, a22, a23],
      [a31, a32, a33]]
+
+    [R | t] may be given as a (12,) array-like, where the first 9 elements are the rotation in column major order,  and the last 3 are the translation.
+
+    If a string provided, it is converted to an array with whitespace separator.
 
     Returns:
         FrameTransform: [description]
@@ -1819,10 +1829,23 @@ def frame_transform(*args) -> FrameTransform:
                 return FrameTransform.from_rt(rotation=a)
             elif a.shape == (3,) or a.shape == (1, 3):
                 return FrameTransform.from_rt(translation=a)
+            elif a.shape == (12,):
+                # ITK-style transform, column-major order
+                r = a[:9].reshape((3, 3)).T
+                t = a[9:].reshape((3,))
+                return FrameTransform.from_rt(r, t)
+            elif a.shape == (16,):
+                # Assumed to be row-major order
+                return FrameTransform(a.reshape((4, 4)))
             else:
                 raise TypeError(f"couldn't convert numpy array to FrameTransform: {a}")
-        elif isinstance(a, (tuple, list)) and len(a) == 2:
-            return frame_transform(a[0], a[1])
+        elif isinstance(a, (tuple, list)):
+            if len(a) == 2:
+                return frame_transform(a[0], a[1])
+            else:
+                return frame_transform(np.array(a))
+        elif isinstance(a, str):
+            return frame_transform(np.fromstring(a, sep=" "))
         else:
             raise TypeError(f"couldn't convert to FrameTransform: {a}")
     elif len(args) == 2:
