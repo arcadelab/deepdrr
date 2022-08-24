@@ -477,7 +477,8 @@ class Vector(PointOrVector):
     def normalized(self) -> Self:
         return self * (1 / self.norm())
 
-    hat = normalized
+    def hat(self) -> Self:
+        return self.normalized()
 
     def dot(self, other) -> float:
         if isinstance(other, Vector) and self.dim == other.dim:
@@ -1772,6 +1773,11 @@ class FrameTransform(Transform):
     def inv(self):
         R_inv = np.linalg.inv(self.R)
         return FrameTransform.from_rt(R_inv, -(R_inv @ self.t))
+
+    @property
+    def o(self):
+        """If this is the A_from_B transform, return the origin of frame B in frame A."""
+        return point(self.t)
 
 
 def frame_transform(*args) -> FrameTransform:

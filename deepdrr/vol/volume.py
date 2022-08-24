@@ -203,27 +203,18 @@ class Volume(object):
     @classmethod
     def _get_cache_path_root(
         cls,
-        use_thresholding: bool = True,
+        cache_name: str,
         cache_dir: Optional[Path] = None,
-        prefix: str = "",
     ) -> Optional[Path]:
         """Get the cache path."""
-        cache_dir = cls._get_cache_dir(cache_dir)
         if cache_dir is None:
             return None
 
-        name = "cached_{}{}materials{}".format(
-            prefix,
-            "_" if prefix else "",
-            "_with_thresholding" if use_thresholding else "",
-        )
+        cache_dir = Path(cache_dir).expanduser()
+        if not cache_dir.exists():
+            cache_dir.mkdir(parents=True)
 
-        # If the file exists in the parent directory of cache dir, as was previously standard for `from_nifti`, then move it to the new cache path.
-        p = cache_dir.parent / name
-        if p.exists():
-            p.rename(cache_dir / name)
-
-        return cache_dir / name
+        return cache_dir / cache_name
 
     @staticmethod
     def _convert_hounsfield_to_density(hu_values: np.ndarray, smooth_air: bool = False):
@@ -270,7 +261,7 @@ class Volume(object):
         use_cached: bool = True,
         save_cache: bool = False,
         cache_dir: Optional[Path] = None,
-        prefix: str = "",
+        cache_name: Optional[str] = None,
     ) -> Dict[str, np.ndarray]:
         """Segment the materials in a volume, potentially caching.
 
@@ -282,14 +273,16 @@ class Volume(object):
             use_cached (bool, optional): use the cached segmentation, if it exists. Defaults to True.
             save_cache (bool, optional): save the segmentation to cache_dir. Defaults to True.
             cache_dir (Optional[Path], optional): where to look for the segmentation cache. If None, no caching performed. Defaults to None.
-            prefix (str, optional): Optional prefix to prepend to the cache names. Defaults to ''.
+            cache_name (str, optional): Name of cache file. Must be provided if use_cached or cache_dir is True. Defaults to None.
 
         Returns:
             Dict[str, np.ndarray]: materials segmentation.
         """
         path_root = cls._get_cache_path_root(
-            use_thresholding=use_thresholding, cache_dir=cache_dir, prefix=prefix
+            cache_name,
+            cache_dir=cache_dir,
         )
+        log.info(f"Cache path root: {path_root}")
 
         if path_root is None:
             log.info(f"segmenting materials in volume")
@@ -301,9 +294,6 @@ class Volume(object):
         materials_path_npz = path_root.with_suffix(".npz")
         materials_record_path = path_root.with_suffix(".json")
         materials_path_nifti = path_root.with_suffix(".nii.gz")
-        material_paths = [
-            path_root / f"{m}.nii.gz" for m in material_coefficients.keys()
-        ]
         if use_cached and materials_path_npz.exists():
             log.info(f"using cached materials segmentation at {materials_path_npz}")
             materials = dict(np.load(materials_path_npz))
@@ -318,13 +308,6 @@ class Volume(object):
             materials = {}
             for name, label in material_names.items():
                 materials[name] = materal_data == label
-        elif use_cached and any([p.exists() for p in material_paths]):
-            materials = {}
-            for p in material_paths:
-                materials[p.stem.split(".")[0]] = nib.load(p).get_fdata()
-            log.info(
-                f"using cached materials segmentation with {list(materials.keys())}"
-            )
         else:
             log.info(f"segmenting materials in volume")
             materials = cls._segment_materials(
@@ -416,7 +399,7 @@ class Volume(object):
                     use_cached=use_cached,
                     save_cache=save_cache,
                     cache_dir=cache_dir,
-                    prefix=path.name.split(".")[0],
+                    cache_name=path.name.split(".")[0],
                 )
 
         return cls(
@@ -622,7 +605,7 @@ class Volume(object):
             use_thresholding=use_thresholding,
             use_cached=use_cached,
             cache_dir=cache_dir,
-            prefix=path.stem,
+            cache_name=path.stem,
         )
 
         anatomical_coordinate_system = {
