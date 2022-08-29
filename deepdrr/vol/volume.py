@@ -19,6 +19,8 @@ from .. import geo
 from .. import utils
 from ..utils import mesh_utils
 from .. import use_nnunet
+import re
+import subprocess
 
 pv, pv_available = utils.try_import_pyvista()
 vtk, nps, vtk_available = utils.try_import_vtk()
@@ -411,6 +413,17 @@ class Volume(object):
                 if cache_dir is None:
                     raise ValueError("cache_dir not given when trying to read mask.")
                 materials = segmentation_nnunet.read_mask(cache_dir,mask_type)  #6:Lung, 17:multi-organ, 0:default
+            elif segmentation_method == "TotalSegmentator":
+                pattern = r"(?P<base>case-\d+)\.nii\.gz"
+                if (m := re.match(pattern, Path(cache_dir).name)) is None:
+                    return None
+                else:
+                    case_name = m.group("base")
+                print('TotalSegmentator segmenting...  ' + file_base)
+                var = subprocess.Popen(['TotalSegmentator', '-i', cache_dir, '-o', '/home/sean/torso_mid_result/totalsegmentor_result/seg-' +
+              case_name], stdout=subprocess.PIPE)
+                print(var.communicate()[0])
+                print('Done.')
             else:
                 raise ValueError(
                     f"Unknown segmentation method: {segmentation_method}. "
