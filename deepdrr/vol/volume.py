@@ -415,15 +415,17 @@ class Volume(object):
                 materials = segmentation_nnunet.read_mask(cache_dir,mask_type)  #6:Lung, 17:multi-organ, 0:default
             elif segmentation_method == "TotalSegmentator":
                 pattern = r"(?P<base>case-\d+)\.nii\.gz"
-                if (m := re.match(pattern, Path(cache_dir).name)) is None:
+                if (m := re.match(pattern, Path(path).name)) is None:
                     return None
                 else:
                     case_name = m.group("base")
                 print('TotalSegmentator segmenting...  ' + file_base)
-                var = subprocess.Popen(['TotalSegmentator', '-i', cache_dir, '-o', '/home/sean/torso_mid_result/totalsegmentor_result/seg-' +
-              case_name], stdout=subprocess.PIPE)
+                var = subprocess.Popen(['TotalSegmentator', '-i', path, '-o', cache_dir], stdout=subprocess.PIPE)
                 print(var.communicate()[0])
-                print('Done.')
+                print('Segmentation Done. Reading mask ...')
+#                 segmentation_nnunet = use_nnunet.Segmentation()
+#                 materials = segmentation_nnunet.read_mask(cache_dir,mask_type)
+                print('Done reading mask.')
             else:
                 raise ValueError(
                     f"Unknown segmentation method: {segmentation_method}. "
