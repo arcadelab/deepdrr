@@ -420,7 +420,7 @@ class Volume(object):
                     return None
                 else:
                     case_name = m.group("base")
-                print('TotalSegmentator segmenting...  ' + file_base)
+                print('TotalSegmentator segmenting...  ' + case_name)
                 var = subprocess.Popen(['TotalSegmentator', '-i', path, '-o', cache_dir], stdout=subprocess.PIPE)
                 print(var.communicate()[0])
                 print('Segmentation Done. Reading mask ...')
