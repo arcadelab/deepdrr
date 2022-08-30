@@ -415,7 +415,8 @@ class Volume(object):
                 materials = segmentation_nnunet.read_mask(cache_dir,mask_type)  #6:Lung, 17:multi-organ, 0:default
             elif segmentation_method == "TotalSegmentator":
                 pattern = r"(?P<base>case-\d+)\.nii\.gz"
-                if (m := re.match(pattern, Path(path).name)) is None:
+                m = re.match(pattern, Path(path).name)
+                if m is None:
                     return None
                 else:
                     case_name = m.group("base")
