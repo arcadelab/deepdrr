@@ -424,8 +424,8 @@ class Volume(object):
                 var = subprocess.Popen(['TotalSegmentator', '-i', path, '-o', cache_dir], stdout=subprocess.PIPE)
                 print(var.communicate()[0])
                 print('Segmentation Done. Reading mask ...')
-#                 segmentation_nnunet = use_nnunet.Segmentation()
-#                 materials = segmentation_nnunet.read_mask(cache_dir,mask_type)
+                segmentation_nnunet = use_nnunet.Segmentation()
+                materials = segmentation_nnunet.read_mask(cache_dir,LabelType=104)
                 print('Done reading mask.')
             else:
                 raise ValueError(
