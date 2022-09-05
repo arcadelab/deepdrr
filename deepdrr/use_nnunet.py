@@ -3,6 +3,7 @@ import numpy as np
 from pathlib import Path
 import torch
 from torch.autograd import Variable
+import glob
 
 # import nnunet
 # from .network_segmentation import VNet
@@ -101,7 +102,7 @@ class Segmentation():
         print(var.communicate()[0])
         print('Done.')
     
-    def segment(self, segmented_volume, TaskType=17):
+    def segment(self, segmented_volume, TaskType=17, name = None):
         
         segmentation = {}
         
@@ -240,6 +241,10 @@ class Segmentation():
 
             # Liver
             segmentation["Liver"] = segmented_volume == 6
+            
+        if TaskType==104: # TotalSegmentator
+            
+            segmentation[name] = segmented_volume == 1
 
         return segmentation
     
@@ -256,9 +261,41 @@ class Segmentation():
         return segmentation
     
     def read_mask(self, dir, LabelType=0):
-        seg_volume = nib.load(dir)
-        seg_volume_arr=seg_volume.get_fdata()
-        segmentation = self.segment(seg_volume_arr, LabelType)
+        if LabelType==104:
+            segmentation = self.merge("rib")
+            segmentation = self.merge("vertebrae")
+            segmentation = self.merge("hip")
+            segmentation = self.merge("sacrum")
+            segmentation = self.merge("femur")
+            segmentation = self.merge("air")
+            segmentation["soft tissue"] = np.logical_not(segmentation["air"]+segmentation["rib"]+segmentation["vertebrae"]+segmentation["hip"]+segmentation["sacrum"]+segmentation["femur"])
+        else:
+            seg_volume = nib.load(dir)
+            seg_volume_arr=seg_volume.get_fdata()
+            segmentation = self.segment(seg_volume_arr, LabelType)
+        return segmentation
+    
+    def merge(name):
+        if name == "air":
+            flag = True
+            for p in dir.glob("*.nii.gz"):
+                seg_volume = nib.load(dir / p)
+                seg_volume_arr = seg_volume.get_fdata()
+                if flag:
+                    merged = seg_volume_arr
+                    flag = False
+                merged = np.logical_not(np.logical_or(merged,seg_volume_arr))
+            segmentation = self.segment(merged, LabelType, name=name)
+            return segmentation
+        flag = True
+        for p in dir.glob(f"{name}_*.nii.gz"):
+            seg_volume = nib.load(dir / p)
+            seg_volume_arr = seg_volume.get_fdata()
+            if flag:
+                merged = seg_volume_arr
+                flag = False
+            merged = np.logical_or(merged,seg_volume_arr)
+        segmentation = self.segment(merged, LabelType, name=name)
         return segmentation
     
 # 1. setup nnunet paths (input / output) (*system path)
