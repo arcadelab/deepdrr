@@ -1893,3 +1893,14 @@ cm_from_m = FrameTransform.from_scaling(1e2)
 m_from_cm = FrameTransform.from_scaling(1e-2)
 mm_from_cm = FrameTransform.from_scaling(1e1)
 cm_from_mm = FrameTransform.from_scaling(1e-1)
+
+# Slicer coordinates are annoying. You flip the Z axis and convert to meters.
+unity_from_slicer = frame_transform(
+    """
+0.001 0 0 0
+0 0.001 0 0
+0 0 -0.001 0
+0 0 0 1
+"""
+)
+slicer_from_unity = unity_from_slicer.inv

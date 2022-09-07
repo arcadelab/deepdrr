@@ -50,6 +50,8 @@ from .core import (
     m_from_cm,
     cm_from_mm,
     mm_from_cm,
+    unity_from_slicer,
+    slicer_from_unity,
 )
 from .exceptions import JoinError, MeetError
 from .camera_intrinsic_transform import CameraIntrinsicTransform
@@ -91,6 +93,8 @@ __all__ = [
     "m_from_cm",
     "cm_from_mm",
     "mm_from_cm",
+    "unity_from_slicer",
+    "slicer_from_unity",
     "JoinError",
     "MeetError",
     "CameraIntrinsicTransform",

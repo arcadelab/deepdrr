@@ -86,11 +86,13 @@ class Volume(object):
         Returns:
             Dict[str, Any]: The configuration of the volume.
         """
-        return self.config | {
-            "anatomical_from_ijk": self.anatomical_from_ijk,
-            "world_from_anatomical": self.world_from_anatomical,
-            "anatomical_coordinate_system": self.anatomical_coordinate_system,
-        }
+        config = self.config.copy()
+        config.update(
+            anatomical_from_ijk=self.anatomical_from_ijk,
+            world_from_anatomical=self.world_from_anatomical,
+            anatomical_coordinate_system=self.anatomical_coordinate_system,
+        )
+        return config
 
     @classmethod
     def from_parameters(
