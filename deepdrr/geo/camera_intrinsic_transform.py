@@ -11,6 +11,11 @@ class CameraIntrinsicTransform(FrameTransform):
     dim: int = 2
     input_dim: int = 2
 
+    """The intrinsic camera transform.
+    
+    It should be scaled such that the units of the matrix (including the focal length) are in pixels
+    """
+
     def __init__(self, data: np.ndarray) -> None:
         super().__init__(data)
         assert self.data.shape == (3, 3), f"unrecognized shape: {self.data.shape}"
@@ -30,9 +35,7 @@ class CameraIntrinsicTransform(FrameTransform):
         from the index-space centered on the principle ray.
 
         Note:
-            Focal lengths are often measured in world units (e.g. millimeters.),
-            but here they are in pixels.
-            The conversion can be taken from the size of a pixel.
+            Focal lengths are usually measured in world units (e.g. millimeters.). This function handles the conversion.
 
         Useful references include Szeliski's "Computer Vision"
         - https://ksimek.github.io/2013/08/13/intrinsic/
@@ -112,12 +115,14 @@ class CameraIntrinsicTransform(FrameTransform):
 
     @property
     def focal_length(self) -> float:
-        """Focal length in pixels."""
+        """Focal length in the matrix units."""
         return self.fx
 
     @property
     def sensor_width(self) -> int:
-        """Get the sensor width in pixels.
+        """Get the sensor width in the matrix units.
+
+        Assumes optical center is at the center of the sensor.
 
         Based on the convention of origin in top left, with x pointing to the right and y pointing down."""
         return int(np.ceil(2 * self.data[0, 2]))
@@ -126,10 +131,12 @@ class CameraIntrinsicTransform(FrameTransform):
     def sensor_height(self) -> int:
         """Get the sensor height in pixels.
 
+        Assumes optical center is at the center of the sensor.
+
         Based on the convention of origin in top left, with x pointing to the right and y pointing down."""
         return int(np.ceil(2 * self.data[1, 2]))
 
     @property
     def sensor_size(self) -> Tuple[int, int]:
-        """Tuple with the (width, height) of the sense/image, in pixels."""
+        """Tuple with the (width, height) of the sense/image, in matrix units."""
         return (self.sensor_width, self.sensor_height)

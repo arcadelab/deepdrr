@@ -180,7 +180,7 @@ def neglog(image: np.ndarray, epsilon: float = 0.01) -> np.ndarray:
     image_min = image.min(axis=(1, 2), keepdims=True)
     image_max = image.max(axis=(1, 2), keepdims=True)
     if np.any(image_max == image_min):
-        logger.warning(
+        logger.debug(
             f"mapping constant image to 0. This probably indicates the projector is pointed away from the volume."
         )
         # TODO(killeen): for multiple images, only fill the bad ones
