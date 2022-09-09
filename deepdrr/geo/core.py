@@ -1801,7 +1801,7 @@ def frame_transform(*args) -> FrameTransform:
     )
 
     R maybe be given as a (3,3) matrix or as a 9-vector. If provided as a 9-vector, column major order is assumed,
-    such that (a11, a21, a31, a12, a22, a32, a13, a23, a33) corresponds to
+    such that (a11, a21, a31, a12, a22, a32, a13, a23, a33) is the rotation matrix.
     [[a11, a12, a13],
      [a21, a22, a23],
      [a31, a32, a33]]
