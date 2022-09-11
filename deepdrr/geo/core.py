@@ -1779,6 +1779,14 @@ class FrameTransform(Transform):
         """If this is the A_from_B transform, return the origin of frame B in frame A."""
         return point(self.t)
 
+    def tostring(self):
+        formatter = {"float_kind": lambda x: "%.8f" % x}
+        lines = [
+            np.array2string(self.data[i], separator=" ", formatter=formatter)[1:-1]
+            for i in range(self.data.shape[0])
+        ]
+        return "\n".join(lines)
+
 
 def frame_transform(*args) -> FrameTransform:
     """Convenience function for creating a frame transform.
