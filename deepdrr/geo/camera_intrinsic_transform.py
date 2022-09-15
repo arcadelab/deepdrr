@@ -19,6 +19,8 @@ class CameraIntrinsicTransform(FrameTransform):
     def __init__(self, data: np.ndarray) -> None:
         super().__init__(data)
         assert self.data.shape == (3, 3), f"unrecognized shape: {self.data.shape}"
+        self._sensor_height = None
+        self._sensor_width = None
 
     @classmethod
     def from_parameters(
@@ -125,7 +127,14 @@ class CameraIntrinsicTransform(FrameTransform):
         Assumes optical center is at the center of the sensor.
 
         Based on the convention of origin in top left, with x pointing to the right and y pointing down."""
-        return int(np.ceil(2 * self.data[0, 2]))
+        if self._sensor_width is None:
+            return int(np.ceil(2 * self.data[0, 2]))
+        else:
+            return self._sensor_width
+
+    @sensor_width.setter
+    def sensor_width(self, value: int):
+        self._sensor_width = value
 
     @property
     def sensor_height(self) -> int:
@@ -134,7 +143,14 @@ class CameraIntrinsicTransform(FrameTransform):
         Assumes optical center is at the center of the sensor.
 
         Based on the convention of origin in top left, with x pointing to the right and y pointing down."""
-        return int(np.ceil(2 * self.data[1, 2]))
+        if self._sensor_height is None:
+            return int(np.ceil(2 * self.data[1, 2]))
+        else:
+            return self._sensor_height
+
+    @sensor_height.setter
+    def sensor_height(self, value: int):
+        self._sensor_height = value
 
     @property
     def sensor_size(self) -> Tuple[int, int]:
