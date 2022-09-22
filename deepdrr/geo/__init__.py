@@ -35,16 +35,29 @@ from .core import (
     vector,
     line,
     plane,
+    p,
+    v,
+    l,
+    pl,
     Transform,
     FrameTransform,
     frame_transform,
     RAS_from_LPS,
     LPS_from_RAS,
+    mm_from_m,
+    m_from_mm,
+    cm_from_m,
+    m_from_cm,
+    cm_from_mm,
+    mm_from_cm,
+    unity_from_slicer,
+    slicer_from_unity,
 )
 from .exceptions import JoinError, MeetError
 from .camera_intrinsic_transform import CameraIntrinsicTransform
 from .camera_projection import CameraProjection
 from scipy.spatial.transform import Rotation
+from .random import spherical_uniform
 
 __all__ = [
     "HomogeneousObject",
@@ -65,14 +78,27 @@ __all__ = [
     "vector",
     "line",
     "plane",
+    "p",
+    "v",
+    "l",
+    "pl",
     "Transform",
     "FrameTransform",
     "frame_transform",
     "RAS_from_LPS",
     "LPS_from_RAS",
+    "mm_from_m",
+    "m_from_mm",
+    "cm_from_m",
+    "m_from_cm",
+    "cm_from_mm",
+    "mm_from_cm",
+    "unity_from_slicer",
+    "slicer_from_unity",
     "JoinError",
     "MeetError",
     "CameraIntrinsicTransform",
     "CameraProjection",
     "Rotation",
+    "spherical_uniform",
 ]

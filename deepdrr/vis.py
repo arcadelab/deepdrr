@@ -11,11 +11,25 @@ They may not function properly in Jupyter notebooks.
 
 Any object with the `get_mesh_in_world()` method can be visualized.
 
+NOTE: often, PyVista will not render in an ssh window. To fix this, try some of the following:
+```bash
+#!/bin/bash
+sudo apt-get install xvfb
+export DISPLAY=:99.0
+export PYVISTA_OFF_SCREEN=true
+export PYVISTA_USE_IPYVTK=true
+export MESA_GL_VERSION_OVERRIDE=3.2
+export MESA_GLSL_VERSION_OVERRIDE=150
+Xvfb :99 -screen 0 1024x768x24 > /dev/null 2>&1 &
+sleep 3
+```
+
 """
 
 import logging
-from typing import Any, Union, List
+from typing import Any, Union, List, Optional
 import numpy as np
+import os
 
 from . import utils
 
@@ -30,15 +44,33 @@ def show(
     colors: List[str] = ["tan", "cyan", "green", "red"],
     background: str = "white",
     use_cached: Union[bool, List[bool]] = True,
-) -> np.ndarray:
+    offscreen: bool = False,
+    mesh: Optional[pv.PolyData] = None,
+    mesh_color: str = "black",
+) -> Optional[np.ndarray]:
     """Show the given items in a pyvista window.
 
     Args:
         full (bool, optional): [description]. Defaults to True.
     """
+    if offscreen:
+        os.environ["PYVISTA_OFF_SCREEN"] = "true"
+    os.environ["PYVISTA_USE_IPYVTK"] = "true"
+    os.environ["MESA_GL_VERSION_OVERRIDE"] = "3.2"
+    os.environ["MESA_GLSL_VERSION_OVERRIDE"] = "150"
+
+    log.debug("display: {}".format(os.environ["DISPLAY"]))
+    if offscreen and os.environ.get("DISPLAY") != ":99":
+        os.environ["DISPLAY"] = ":99"
+        os.system("Xvfb :99 -screen 0 1024x768x24 > /dev/null 2>&1 &")
+        os.system("sleep 3")
+
     plotter = pv.Plotter()
     plotter.show_axes()
     plotter.set_background(background)
+
+    if mesh is not None:
+        plotter.add_mesh(mesh, color=mesh_color)
 
     items = item
     fulls = utils.listify(full, len(items))
@@ -53,6 +85,10 @@ def show(
 
     plotter.reset_camera()
     plotter.show(auto_close=False)
-    image = plotter.screenshot()
+    try:
+        image = plotter.screenshot()
+    except RuntimeError as e:
+        log.warning(f"Failed to take screenshot: {e}")
+        image = None
     plotter.close()
     return image

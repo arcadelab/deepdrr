@@ -42,6 +42,7 @@ if TYPE_CHECKING:
 
 from .exceptions import *
 
+PV = TypeVar("PV", bound="PointOrVector")
 P = TypeVar("P", bound="Point")
 V = TypeVar("V", bound="Vector")
 L = TypeVar("L", bound="Line")
@@ -307,11 +308,19 @@ class Point(PointOrVector, Joinable):
         ...
 
     @overload
+    def __sub__(self, other: Point) -> Vector:
+        ...
+
+    @overload
     def __sub__(self, other: Vector2D) -> Point2D:
         ...
 
     @overload
     def __sub__(self, other: Vector3D) -> Point3D:
+        ...
+
+    @overload
+    def __sub__(self, other: Vector) -> Point:
         ...
 
     def __sub__(self, other):
@@ -403,7 +412,9 @@ class Point(PointOrVector, Joinable):
 
 class Vector(PointOrVector):
     def __init__(self, data: np.ndarray) -> None:
-        assert data[-1] == 0
+        if np.isclose(data[-1], 0):
+            data[-1] = 0
+        assert data[-1] == 0, f"cannot create a vector with non-zero w: {data[-1]}"
         super().__init__(data)
 
     @classmethod
@@ -463,8 +474,11 @@ class Vector(PointOrVector):
     def __rsub__(self, other: Vector):
         return self.__neg__().__add__(other)
 
-    def hat(self) -> Self:
+    def normalized(self) -> Self:
         return self * (1 / self.norm())
+
+    def hat(self) -> Self:
+        return self.normalized()
 
     def dot(self, other) -> float:
         if isinstance(other, Vector) and self.dim == other.dim:
@@ -825,6 +839,8 @@ class Line2D(Line, HyperPlane):
             Vector2D: The unit-length direction of the line.
 
         """
+        # If a x + b y + c = 0, then for all w,
+        # a (x + wb) + b (y - wa) + c = ax + awb + by - bwa + c = 0
         return vector(self.b, -self.a).hat()
 
     def get_point(self) -> Point:
@@ -834,7 +850,7 @@ class Line2D(Line, HyperPlane):
             Point: A point on the line.
 
         """
-        return Line2D([self.data[1], -self.data[0], 0]).meet(self)
+        return Point2D([0, -self.c / self.b, 1])
 
 
 class Plane(HyperPlane):
@@ -843,12 +859,21 @@ class Plane(HyperPlane):
     dim = 3
 
     @classmethod
-    def from_point_normal(r: Point3D, n: Vector3D):
+    def from_point_normal(cls, r: Point3D, n: Vector3D):
+        """Make a plane from a point and a normal vector.
+
+        Args:
+            r (Point3D): The point on the plane.
+            n (Vector3D): The normal vector of the plane.
+
+        Returns:
+            Plane: The plane.
+        """
         r = point(r)
         n = vector(n)
-        a, b, c = r
-        d = -(a * n.x + b * n.y + c * n.z)
-        return Plane(np.array([a, b, c, d]))
+        a, b, c = n
+        d = -(a * r.x + b * r.y + c * r.z)
+        return cls(np.array([a, b, c, d]))
 
     @classmethod
     def from_points(cls, a: Point3D, b: Point3D, c: Point3D) -> None:
@@ -858,6 +883,9 @@ class Plane(HyperPlane):
             a (Point3D): a point on the plane.
             b (Point3D): a point on the plane.
             c (Point3D): a point on the plane.
+
+        Returns:
+            Plane: The plane.
         """
         a = point(a)
         b = point(b)
@@ -996,10 +1024,10 @@ class Line3D(Line, Primitive, Joinable, Meetable):
         """Get the sixth parameter of the line."""
         return self.data[5]
 
-    def join(self, other):
+    def join(self, other: Point3D) -> Plane:
         return other.join(self)
 
-    def meet(self, other):
+    def meet(self, other: Plane) -> Point3D:
         return other.meet(self)
 
     def get_direction(self) -> Vector3D:
@@ -1029,6 +1057,16 @@ def _array(x: Union[List[np.ndarray], List[float]]) -> np.ndarray:
 
 @overload
 def point(p: P) -> P:
+    ...
+
+
+@overload
+def point(v: Vector2D) -> Point2D:
+    ...
+
+
+@overload
+def point(v: Vector3D) -> Point3D:
     ...
 
 
@@ -1082,6 +1120,16 @@ def point(*args):
 
 @overload
 def vector(v: V) -> V:
+    ...
+
+
+@overload
+def vector(p: Point2D) -> Vector2D:
+    ...
+
+
+@overload
+def vector(p: Point3D) -> Vector3D:
     ...
 
 
@@ -1339,6 +1387,34 @@ class Transform(HomogeneousObject):
         )
         return cls(data)
 
+    @overload
+    def __matmul__(self: FrameTransform, other: FrameTransform) -> FrameTransform:
+        ...
+
+    @overload
+    def __matmul__(self: FrameTransform, other: PV) -> PV:
+        ...
+
+    @overload
+    def __matmul__(self: CameraProjection, other: Point3D) -> Point2D:
+        ...
+
+    @overload
+    def __matmul__(self: CameraProjection, other: Vector3D) -> Vector2D:
+        ...
+
+    @overload
+    def __matmul__(self: CameraProjection, other: Line3D) -> Point2D:
+        ...
+
+    @overload
+    def __matmul__(self: CameraProjection, other: Plane) -> Line2D:
+        ...
+
+    @overload
+    def __matmul__(self, other: Primitive) -> Primitive:
+        ...
+
     def __matmul__(
         self,
         other: Union[Transform, PointOrVector],
@@ -1347,7 +1423,14 @@ class Transform(HomogeneousObject):
             assert (
                 self.input_dim == other.dim
             ), f"dimensions must match between other ({other.dim}) and self ({self.input_dim})"
+            out = self.data @ other.data
+            # log.debug(f"{self.shape} @ {other.shape} = {out.shape}")
+            # log.debug(f"out: {out}")
             return _point_or_vector(self.data @ other.data)
+        elif isinstance(other, Line2D):
+            raise NotImplementedError
+        elif isinstance(other, (Line2D, Line3D, Plane)):
+            raise NotImplementedError()
         elif isinstance(other, Transform):
             # if other is a Transform, then compose their inverses as well to store that.
             assert (
@@ -1360,8 +1443,6 @@ class Transform(HomogeneousObject):
                 return FrameTransform(self.data @ other.data)
             else:
                 return Transform(self.data @ other.data, _inv=_inv)
-        elif isinstance(other, (Line2D, Line3D, Plane)):
-            raise NotImplementedError()
         else:
             return NotImplemented
 
@@ -1397,6 +1478,17 @@ class Transform(HomogeneousObject):
             )
 
         return Transform(self._inv, _inv=self.data)
+
+    def inverse(self) -> Transform:
+        """Get the inverse of the Transform.
+
+        Returns:
+            (Transform): a Transform (or subclass) that is well-defined as the inverse of this transform.
+
+        Raises:
+            NotImplementedError: if _inv is None and method is not overriden.
+        """
+        return self.inv
 
     def get_center(self) -> Point3D:
         """If the transform is a projection, get the center of the projection.
@@ -1475,8 +1567,11 @@ class FrameTransform(Transform):
         Returns:
             FrameTransform: The transformation `F` such that `F(x) = rotation @ x + translation`
         """
+        # Process weird rotation shapes
         if isinstance(rotation, Rotation):
             rotation = rotation.as_matrix()
+        elif isinstance(rotation, np.ndarray) and rotation.shape == (4,):
+            rotation = Rotation.from_quat(rotation).as_matrix()
 
         if rotation is not None:
             dim = np.array(rotation).shape[0]
@@ -1662,14 +1757,35 @@ class FrameTransform(Transform):
     def R(self):
         return self.data[0 : self.dim, 0 : self.dim]
 
+    @R.setter
+    def R(self, R):
+        self.data[0 : self.dim, 0 : self.dim] = R
+
     @property
     def t(self):
         return self.data[0 : self.dim, self.dim]
+
+    @t.setter
+    def t(self, t):
+        self.data[0 : self.dim, self.dim] = t
 
     @property
     def inv(self):
         R_inv = np.linalg.inv(self.R)
         return FrameTransform.from_rt(R_inv, -(R_inv @ self.t))
+
+    @property
+    def o(self):
+        """If this is the A_from_B transform, return the origin of frame B in frame A."""
+        return point(self.t)
+
+    def tostring(self):
+        formatter = {"float_kind": lambda x: "%.8f" % x}
+        lines = [
+            np.array2string(self.data[i], separator=" ", formatter=formatter)[1:-1]
+            for i in range(self.data.shape[0])
+        ]
+        return "\n".join(lines)
 
 
 def frame_transform(*args) -> FrameTransform:
@@ -1685,6 +1801,22 @@ def frame_transform(*args) -> FrameTransform:
     frame_transform(t: Point | np.ndarray[3]) -> FrameTransform.from_translation(t)
     frame_transform((R, t)) -> FrameTransform.from_rt(R, t)
     frame_transform(R, t) -> FrameTransform.from_rt(R, t)
+    frame_transform([a00, a10, a20, a01, a11, a21, a02, a12, a22, a03, a13, a23]) -> FrameTransform([
+        [a00, a01, a02, a03],
+        [a10, a11, a12, a13],
+        [a20, a21, a22, a23],
+        [0, 0, 0, 1]]
+    )
+
+    R maybe be given as a (3,3) matrix or as a 9-vector. If provided as a 9-vector, column major order is assumed,
+    such that (a11, a21, a31, a12, a22, a32, a13, a23, a33) is the rotation matrix.
+    [[a11, a12, a13],
+     [a21, a22, a23],
+     [a31, a32, a33]]
+
+    [R | t] may be given as a (12,) array-like, where the first 9 elements are the rotation in column major order,  and the last 3 are the translation.
+
+    If a string provided, it is converted to an array with whitespace separator.
 
     Returns:
         FrameTransform: [description]
@@ -1711,18 +1843,45 @@ def frame_transform(*args) -> FrameTransform:
                 return FrameTransform.from_rt(rotation=a)
             elif a.shape == (3,) or a.shape == (1, 3):
                 return FrameTransform.from_rt(translation=a)
+            elif a.shape == (12,):
+                # ITK-style transform, column-major order
+                r = a[:9].reshape((3, 3)).T
+                t = a[9:].reshape((3,))
+                return FrameTransform.from_rt(r, t)
+            elif a.shape == (16,):
+                # Assumed to be row-major order
+                return FrameTransform(a.reshape((4, 4)))
             else:
                 raise TypeError(f"couldn't convert numpy array to FrameTransform: {a}")
-        elif isinstance(a, (tuple, list)) and len(a) == 2:
-            return frame_transform(a[0], a[1])
+        elif isinstance(a, (tuple, list)):
+            if len(a) == 2:
+                return frame_transform(a[0], a[1])
+            else:
+                return frame_transform(np.array(a))
+        elif isinstance(a, str):
+            return frame_transform(np.fromstring(a, sep=" "))
+        else:
+            raise TypeError(f"couldn't convert to FrameTransform: {a}")
     elif len(args) == 2:
-        if (
+        if isinstance(args[0], Rotation) and isinstance(args[1], Point3D):
+            return FrameTransform.from_rt(args[0], args[1])
+        elif (
             isinstance(args[0], np.ndarray)
             and isinstance(args[1], np.ndarray)
             and args[0].shape == (3, 3)
             and args[1].shape == (3,)
         ):
             return FrameTransform.from_rt(rotation=args[0], translation=args[1])
+        elif isinstance(args[0], (list, tuple)) and isinstance(args[1], (list, tuple)):
+            r = np.array(args[0])
+            if r.shape == (3, 3):
+                pass
+            elif r.shape == (9,):
+                r = r.reshape(3, 3).T
+            t = np.array(args[1])
+            if r.shape != (3, 3) or t.shape != (3,):
+                raise TypeError(f"couldn't convert to FrameTransform: {args}")
+            return FrameTransform.from_rt(r, t)
         else:
             raise TypeError(
                 f"could not parse FrameTransfrom from [R, t]: [{args[0]}, {args[1]}]"
@@ -1734,5 +1893,22 @@ def frame_transform(*args) -> FrameTransform:
 RAS_from_LPS = FrameTransform(
     np.array([[-1, 0, 0, 0], [0, -1, 0, 0], [0, 0, 1, 0], [0, 0, 0, 1]])
 )
-
 LPS_from_RAS = RAS_from_LPS.inv
+
+mm_from_m = FrameTransform.from_scaling(1e3)
+m_from_mm = FrameTransform.from_scaling(1e-3)
+cm_from_m = FrameTransform.from_scaling(1e2)
+m_from_cm = FrameTransform.from_scaling(1e-2)
+mm_from_cm = FrameTransform.from_scaling(1e1)
+cm_from_mm = FrameTransform.from_scaling(1e-1)
+
+# Slicer coordinates are annoying. You flip the Z axis and convert to meters.
+unity_from_slicer = frame_transform(
+    """
+0.001 0 0 0
+0 0.001 0 0
+0 0 -0.001 0
+0 0 0 1
+"""
+)
+slicer_from_unity = unity_from_slicer.inv

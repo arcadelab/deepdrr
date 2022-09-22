@@ -40,7 +40,10 @@ DeepDRR requires an NVIDIA GPU, preferably with >11 GB of memory.
 conda install -c conda-forge pycuda
 ```
 
-to install it in your environment. 4. You may also wish to [install PyTorch](https://pytorch.org/get-started/locally/) separately, depending on your setup. 5. Install from `PyPI`
+to install it in your environment. 
+
+4. You may also wish to [install PyTorch](https://pytorch.org/get-started/locally/) separately, depending on your setup. 
+5. Install from `PyPI`
 
 ```bash
 pip install deepdrr
