@@ -252,7 +252,7 @@ class Volume(object):
     ) -> Dict[str, np.ndarray]:
         """Segment the materials in a volume, potentially caching.
 
-        If cache_dir is None, then 
+        If cache_dir is None, then
 
         Args:
             hu_values (np.ndarray): volume data in Hounsfield Units.
@@ -293,6 +293,7 @@ class Volume(object):
         cache_dir: Optional[Path] = None,
         materials: Optional[Dict[str, np.ndarray]] = None,
         segmentation: bool = False,
+        label: Union[None, int, List[int]] = None,
         density_kwargs: dict = {},
         **kwargs,
     ):
@@ -309,6 +310,7 @@ class Volume(object):
                 If not provided, materials are segmented from the CT. Defaults to None.
             segmentation (bool, optional) If the file is a segmentation file, then its "materials" correspond to a high density material (bone),
                 where the values are >0. Defaults to false. Overrides provided materials.
+            label: which labels to treat as solid. If None, then all nonzero labels are treated as solid. Defaults to None.
             density_kwargs: Additional kwargs passed to convert_hounsfield_to_density.
 
         Returns:
@@ -333,7 +335,16 @@ class Volume(object):
 
         if segmentation:
             data = img.get_fdata()
-            materials = dict(bone=data > 0)
+            if label is None:
+                seg = data > 0
+            elif isinstance(label, int):
+                seg = data == label
+            elif isinstance(label, list):
+                seg = np.isin(data, label)
+            else:
+                raise ValueError(f"Invalid label: {label}")
+            materials = dict(bone=seg)
+            data = seg.astype(np.float32)
         else:
             hu_values = img.get_fdata()
             data = cls._convert_hounsfield_to_density(hu_values, **density_kwargs)
