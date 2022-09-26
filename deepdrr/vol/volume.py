@@ -780,7 +780,7 @@ class Volume(object):
         self.world_from_anatomical = T @ R @ T.inv @ self.world_from_anatomical
         return self
 
-    def faceup(self):
+    def supine(self):
         """Turns the volume to be face up.
 
         This aligns the patient so that, in world space,
@@ -800,9 +800,9 @@ class Volume(object):
         else:
             raise NotImplementedError
 
-    supine = faceup
+    faceup = supine
 
-    def facedown(self):
+    def prone(self):
         """Turns the volume to be face down.
 
         This aligns the patient so that, in world space,
@@ -822,7 +822,7 @@ class Volume(object):
         else:
             raise NotImplementedError
 
-    prone = facedown
+    facedown = prone
 
     def orient_patient(
         self,
