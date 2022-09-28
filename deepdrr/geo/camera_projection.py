@@ -47,6 +47,7 @@ class CameraProjection(Transform):
             if isinstance(extrinsic, FrameTransform)
             else FrameTransform(extrinsic)
         )
+        super().__init__(self.index_from_world.data)
 
     @classmethod
     def from_rtk(
