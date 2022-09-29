@@ -53,6 +53,17 @@ class CameraProjection(Transform):
             get_data(index_from_world), _inv=get_data(index_from_world.inv)
         )
 
+    def get_config(self) -> dict[str, Any]:
+        """Get the configuration of the camera projection.
+
+        Returns:
+            dict[str, Any]: the configuration of the camera projection.
+        """
+        return {
+            "intrinsic": self.index_from_camera2d,
+            "extrinsic": self.camera3d_from_world,
+        }
+
     @property
     def index_from_world(self) -> Transform:
         return self

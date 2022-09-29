@@ -1368,7 +1368,7 @@ class Transform(HomogeneousObject):
             np.ndarray: the non-homogeneous array
         """
 
-        return np.array(self.data[:-1, :], *args, **kwargs)
+        return np.array(self.data, *args, **kwargs)
 
     @classmethod
     def from_array(cls, array: np.ndarray) -> Transform:
@@ -1382,9 +1382,9 @@ class Transform(HomogeneousObject):
         Returns:
             Transform: the transform.
         """
-        data = np.concatenate(
-            [array, np.array([0 for _ in range(array.shape[1] - 1)] + [1])], axis=0
-        )
+        bottom_row = np.zeros((1, array.shape[1]))
+        bottom_row[0, -1] = 1
+        data = np.concatenate([array, bottom_row], axis=0)
         return cls(data)
 
     @overload
@@ -1841,6 +1841,8 @@ def frame_transform(*args) -> FrameTransform:
                 return FrameTransform(a)
             elif a.shape == (3, 3):
                 return FrameTransform.from_rt(rotation=a)
+            elif a.shape == (3, 4):
+                return FrameTransform.from_array(a)
             elif a.shape == (3,) or a.shape == (1, 3):
                 return FrameTransform.from_rt(translation=a)
             elif a.shape == (12,):

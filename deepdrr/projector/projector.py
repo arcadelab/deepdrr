@@ -388,7 +388,7 @@ class Projector(object):
 
             # Get the volume min/max points in world coordinates.
             sx, sy, sz = proj.get_center_in_world()
-            world_from_index = np.array(proj.world_from_index).astype(np.float32)
+            world_from_index = np.array(proj.world_from_index).astype(np.float32)[:-1]
             cuda.memcpy_htod(self.world_from_index_gpu, world_from_index)
 
             for vol_id, _vol in enumerate(self.volumes):
@@ -409,7 +409,7 @@ class Projector(object):
                     np.array([source_ijk[2]]),
                 )
 
-                ijk_from_world = np.array(_vol.ijk_from_world).astype(np.float32)
+                ijk_from_world = np.array(_vol.ijk_from_world).astype(np.float32)[:-1]
                 cuda.memcpy_htod(
                     int(self.ijk_from_world_gpu)
                     + (ijk_from_world.size * NUMBYTES_FLOAT32) * vol_id,
@@ -580,11 +580,11 @@ class Projector(object):
                     )
                     print(f"\t{corner}")
 
-                world_from_ijk_arr = np.array(self.megavol_ijk_from_world.inv)
+                world_from_ijk_arr = np.array(self.megavol_ijk_from_world.inv)[:-1]
                 cuda.memcpy_htod(self.world_from_ijk_gpu, world_from_ijk_arr)
                 # print(f"world_from_ijk_arr:\n{world_from_ijk_arr}")
 
-                ijk_from_world_arr = np.array(self.megavol_ijk_from_world)
+                ijk_from_world_arr = np.array(self.megavol_ijk_from_world)[:-1]
                 cuda.memcpy_htod(self.ijk_from_world_gpu, ijk_from_world_arr)
                 # print(f"ijk_from_world_arr:\n{ijk_from_world_arr}")
 
