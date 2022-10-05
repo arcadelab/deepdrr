@@ -87,18 +87,21 @@ The following minimal example loads a CT volume from a NifTi `.nii.gz` file and 
 ```python
 from deepdrr import geo, Volume, MobileCArm
 from deepdrr.projector import Projector # separate import for CUDA init
-import matplotlib.pyplot as plt
 
-volume = Volume.from_nifti('/path/to/ct_image.nii.gz')
 carm = MobileCArm()
-carm.reposition(volume.center_in_world)
+ct = Volume.from_nifti('/path/to/ct_image.nii.gz')
 
-with Projector(volume, carm=carm) as projector:
+# Initialize the Projector object (allocates GPU memory)
+with Projector(ct, carm=carm) as projector:
+    # Orient and position the patient model in world space.
+    ct.orient_patient(head_first=True, supine=True)
+    ct.place_center(carm.isocenter_in_world)
+    
+    # Move the C-arm to the desired pose.
     carm.move_to(alpha=30, beta=10, degrees=True)
-    projection = projector()
-
-plt.imshow(projection, cmap='gray')
-plt.show()
+    
+    # Run projection
+    image = projector()
 ```
 
 The script `example_projector.py` gives an alternative example. Additional tutorials are in progress at [deepdrr.readthedocs.io](https://deepdrr.readthedocs.io). Contributions are welcome.
