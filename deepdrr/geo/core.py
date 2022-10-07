@@ -1396,6 +1396,10 @@ class Transform(HomogeneousObject):
         ...
 
     @overload
+    def __matmul__(self: FrameTransform, other: L) -> L:
+        ...
+
+    @overload
     def __matmul__(self: CameraProjection, other: Point3D) -> Point2D:
         ...
 
@@ -1419,23 +1423,31 @@ class Transform(HomogeneousObject):
         self,
         other: Union[Transform, PointOrVector],
     ) -> Union[Transform, PointOrVector]:
-        if isinstance(other, PointOrVector):
+        def check_dim():
             assert (
                 self.input_dim == other.dim
-            ), f"dimensions must match between other ({other.dim}) and self ({self.input_dim})"
+            ), f"dimensions must match. Got {self.input_dim} and {other.dim}"
+
+        if isinstance(other, PointOrVector):
+            check_dim()
             out = self.data @ other.data
             # log.debug(f"{self.shape} @ {other.shape} = {out.shape}")
             # log.debug(f"out: {out}")
             return _point_or_vector(self.data @ other.data)
-        elif isinstance(other, Line2D):
-            raise NotImplementedError
-        elif isinstance(other, (Line2D, Line3D, Plane)):
-            raise NotImplementedError()
+        elif isinstance(other, Line2D) and isinstance(self, FrameTransform):
+            check_dim()
+            l0, l1, l2 = other.data
+            r00, r01, r10, r11 = self.R.flat
+            p0, p1 = self.t
+            l0_ = r11 * l0 - r10 * l1
+            l1_ = -r01 * l0 + r00 * l1
+            l2_ = np.linalg.det([[l0, l1, l2], [r00, r01, p0], [r10, r11, p1]])
+            return line(l0_, l1_, l2_)
+        elif isinstance(other, (Line3D, Plane)):
+            raise NotImplementedError("Line3D and Plane transforms not implemented")
         elif isinstance(other, Transform):
             # if other is a Transform, then compose their inverses as well to store that.
-            assert (
-                self.input_dim == other.dim
-            ), f"dimensions must match between other ({other.dim}) and self ({self.input_dim})"
+            check_dim()
             _inv = other.inv.data @ self.inv.data
 
             if isinstance(self, FrameTransform) and isinstance(other, FrameTransform):
@@ -1601,8 +1613,9 @@ class FrameTransform(Transform):
         cls: Type[FrameTransform],
         scaling: Union[int, float, np.ndarray],
         translation: Optional[Union[Point3D, np.ndarray]] = None,
+        dim: Optional[int] = None,
     ) -> FrameTransform:
-        """Create a frame based on scaling dimensions. Assumes dim = 3.
+        """Create a frame based on scaling dimensions.
 
         Args:
             cls (Type[FrameTransform]): the class.
@@ -1611,8 +1624,14 @@ class FrameTransform(Transform):
         Returns:
             FrameTransform:
         """
-        scaling = np.array(scaling) * np.ones(3)
-        translation = np.zeros(3) if translation is None else translation
+        if isinstance(scaling, (int, float)) or np.isscalar(scaling):
+            dim = 3 if dim is None else dim
+            scaling = np.ones(dim) * scaling
+        else:
+            scaling = np.array(scaling)
+            dim = scaling.shape[0]
+
+        translation = np.zeros(dim) if translation is None else translation
         return cls.from_rt(np.diag(scaling), translation)
 
     @classmethod
