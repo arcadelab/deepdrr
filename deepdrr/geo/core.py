@@ -40,7 +40,7 @@ from scipy.spatial.transform import Rotation
 if TYPE_CHECKING:
     from .camera_projection import CameraProjection
 
-from .exceptions import *
+from .exceptions import MeetError, JoinError
 
 PV = TypeVar("PV", bound="PointOrVector")
 P = TypeVar("P", bound="Point")
@@ -1790,7 +1790,7 @@ class FrameTransform(Transform):
 
     @property
     def inv(self):
-        R_inv = np.linalg.inv(self.R)
+        R_inv = self.R.T
         return FrameTransform.from_rt(R_inv, -(R_inv @ self.t))
 
     @property
@@ -1805,6 +1805,9 @@ class FrameTransform(Transform):
             for i in range(self.data.shape[0])
         ]
         return "\n".join(lines)
+
+
+F = FrameTransform
 
 
 def frame_transform(*args) -> FrameTransform:
@@ -1910,6 +1913,8 @@ def frame_transform(*args) -> FrameTransform:
     else:
         raise TypeError(f"too many arguments: {args}")
 
+
+f = frame_transform
 
 RAS_from_LPS = FrameTransform(
     np.array([[-1, 0, 0, 0], [0, -1, 0, 0], [0, 0, 1, 0], [0, 0, 0, 1]])
