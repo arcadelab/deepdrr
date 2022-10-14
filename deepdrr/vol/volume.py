@@ -354,6 +354,7 @@ class Volume(object):
                 in the same location as the nifti file. Defaults to None.
             materials: Optional material segmentation, as a dictionary mapping material name to binary segmentation.
                 If not provided, materials are segmented from the CT. Defaults to None.
+                Can also provide a dictionary mapping material names to Nifti files containing the segmentations.
             segmentation (bool, optional) If the file is a segmentation file, then its "materials" correspond to a high density material (bone),
                 where the values are >0. Defaults to false. Overrides provided materials.
             label: which labels to treat as solid. If None, then all nonzero labels are treated as solid. Defaults to None.
@@ -413,6 +414,18 @@ class Volume(object):
                     cache_dir=cache_dir,
                     cache_name=path.name.split(".")[0],
                 )
+            else:
+                # Check if the materials provided are path names.
+                for m in materials:
+                    if isinstance(materials[m], (str, Path)):
+                        if Path(materials[m]).exists():
+                            materials[m] = nib.load(materials[m]).get_fdata() > 0
+                        else:
+                            raise ValueError(
+                                f"Could not find material {m} at {materials[m]}"
+                            )
+                    else:
+                        materials[m] = materials[m].astype(np.bool)
 
         return cls(
             data,
