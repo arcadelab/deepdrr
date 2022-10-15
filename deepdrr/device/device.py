@@ -75,6 +75,21 @@ class Device(ABC):
         """
         return self.camera3d_from_device @ self.device_from_world
 
+    @property
+    def index_from_camera3d(self) -> geo.CameraProjection:
+        """Get the CameraIntrinsicTransform for the device's camera3d_from_index frame (in the current pose).
+
+        Returns:
+            CameraIntrinsicTransform: the "index_from_camera3d" frame transformation for the device.
+        """
+        return geo.CameraProjection(
+            self.camera_intrinsics, geo.FrameTransform.identity()
+        )
+
+    @property
+    def camera3d_from_index(self) -> geo.Transform:
+        return self.index_from_camera3d.inv
+
     def get_camera_projection(self) -> geo.CameraProjection:
         """Get the camera projection for the device in the current pose.
 
@@ -91,6 +106,15 @@ class Device(ABC):
             CameraProjection: the "index_from_world" camera projection for the device.
         """
         return self.get_camera_projection()
+
+    @property
+    def world_from_index(self) -> geo.Transform:
+        """Get the world_from_index transform for the device in the current pose.
+
+        Returns:
+            Transform: the "world_from_index" transform for the device.
+        """
+        return self.index_from_world.inv
 
     @property
     @abstractmethod

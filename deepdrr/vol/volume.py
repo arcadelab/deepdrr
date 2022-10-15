@@ -425,7 +425,7 @@ class Volume(object):
                                 f"Could not find material {m} at {materials[m]}"
                             )
                     else:
-                        materials[m] = materials[m].astype(np.bool)
+                        materials[m] = materials[m].astype(bool)
 
         return cls(
             data,
