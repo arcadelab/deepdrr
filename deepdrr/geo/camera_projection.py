@@ -3,7 +3,15 @@ from __future__ import annotations
 from typing import Union, Optional, Any, TYPE_CHECKING
 import numpy as np
 
-from .core import Transform, FrameTransform, point, Point3D, get_data, Plane
+from .core import (
+    Transform,
+    FrameTransform,
+    point,
+    Point3D,
+    get_data,
+    Plane,
+    frame_transform,
+)
 from .camera_intrinsic_transform import CameraIntrinsicTransform
 
 if TYPE_CHECKING:
@@ -43,14 +51,12 @@ class CameraProjection(Transform):
             if isinstance(intrinsic, CameraIntrinsicTransform)
             else CameraIntrinsicTransform(intrinsic)
         )
-        self.camera3d_from_world = (
-            extrinsic
-            if isinstance(extrinsic, FrameTransform)
-            else FrameTransform(extrinsic)
-        )
+        self.camera3d_from_world = frame_transform(extrinsic)
         index_from_world = self.index_from_camera3d @ self.camera3d_from_world
+
+        # TODO: adding _inv here causes the inverse projection to be different, WHY?
         super().__init__(
-            get_data(index_from_world), _inv=get_data(index_from_world.inv)
+            get_data(index_from_world),  # _inv=get_data(index_from_world.inv)
         )
 
     def get_config(self) -> dict[str, Any]:

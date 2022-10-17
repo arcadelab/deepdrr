@@ -149,6 +149,8 @@ def _get_kernel_scatter_module(num_materials) -> SourceModule:
 
 
 class Projector(object):
+    volumes: List[vol.Volume]
+
     def __init__(
         self,
         volume: Union[vol.Volume, List[vol.Volume]],
@@ -388,7 +390,11 @@ class Projector(object):
 
             # Get the volume min/max points in world coordinates.
             sx, sy, sz = proj.get_center_in_world()
-            world_from_index = np.array(proj.world_from_index).astype(np.float32)[:-1]
+            log.debug(f"original world_from_index: {proj.world_from_index}")
+            world_from_index = np.array(proj.world_from_index[:-1, :]).astype(
+                np.float32
+            )
+            log.debug(f"world_from_index: {world_from_index}")
             cuda.memcpy_htod(self.world_from_index_gpu, world_from_index)
 
             for vol_id, _vol in enumerate(self.volumes):
@@ -409,7 +415,9 @@ class Projector(object):
                     np.array([source_ijk[2]]),
                 )
 
-                ijk_from_world = np.array(_vol.ijk_from_world).astype(np.float32)[:-1]
+                ijk_from_world = (
+                    _vol.ijk_from_world.toarray()
+                )  # TODO: use this elsewhere, when 3x4 matrix is needed
                 cuda.memcpy_htod(
                     int(self.ijk_from_world_gpu)
                     + (ijk_from_world.size * NUMBYTES_FLOAT32) * vol_id,

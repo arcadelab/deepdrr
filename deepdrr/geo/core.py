@@ -1408,11 +1408,7 @@ class Transform(HomogeneousObject):
         ...
 
     @overload
-    def __matmul__(self: CameraProjection, other: Line3D) -> Point2D:
-        ...
-
-    @overload
-    def __matmul__(self: CameraProjection, other: Plane) -> Line2D:
+    def __matmul__(self: CameraProjection, other: Line3D) -> Line2D:
         ...
 
     @overload
@@ -1443,8 +1439,12 @@ class Transform(HomogeneousObject):
             l1_ = -r01 * l0 + r00 * l1
             l2_ = np.linalg.det([[l0, l1, l2], [r00, r01, p0], [r10, r11, p1]])
             return line(l0_, l1_, l2_)
-        elif isinstance(other, (Line3D, Plane)):
-            raise NotImplementedError("Line3D and Plane transforms not implemented")
+        elif isinstance(other, (Line3D, Plane)) and isinstance(self, FrameTransform):
+            p = other.get_point()
+            v = other.get_direction()
+            p_ = self @ p
+            v_ = self @ v
+            return line(p_, v_)
         elif isinstance(other, Transform):
             # if other is a Transform, then compose their inverses as well to store that.
             check_dim()
@@ -1805,6 +1805,14 @@ class FrameTransform(Transform):
             for i in range(self.data.shape[0])
         ]
         return "\n".join(lines)
+
+    def toarray(self):
+        """Return the transform as a 3x4 numpy array.
+
+        This is different from calling np.array() on the transform, which returns a 4x4 array.
+
+        """
+        return self.data[: self.dim, :].astype(np.float32).copy()
 
 
 F = FrameTransform
