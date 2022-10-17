@@ -393,18 +393,15 @@ class Projector(object):
 
             # Get the volume min/max points in world coordinates.
             sx, sy, sz = proj.get_center_in_world()
-            log.debug(f"original world_from_index: {proj.world_from_index}")
             world_from_index = np.array(proj.world_from_index[:-1, :]).astype(
                 np.float32
             )
-            log.debug(f"world_from_index: {world_from_index}")
             cuda.memcpy_htod(self.world_from_index_gpu, world_from_index)
 
             for vol_id, _vol in enumerate(self.volumes):
                 source_ijk = np.array(
                     _vol.ijk_from_world @ proj.center_in_world
                 ).astype(np.float32)
-                log.debug(f"source point for volume #{vol_id}: {source_ijk}")
                 cuda.memcpy_htod(
                     int(self.sourceX_gpu) + int(NUMBYTES_INT32 * vol_id),
                     np.array([source_ijk[0]]),
@@ -418,11 +415,9 @@ class Projector(object):
                     np.array([source_ijk[2]]),
                 )
 
-                log.debug(f"ijk_from_world:\n{_vol.ijk_from_world}")
                 ijk_from_world = (
                     _vol.ijk_from_world.toarray()
                 )  # TODO: use this elsewhere, when 3x4 matrix is needed
-                log.debug(f"ijk_from_world:\n{ijk_from_world}")
                 cuda.memcpy_htod(
                     int(self.ijk_from_world_gpu)
                     + (ijk_from_world.size * NUMBYTES_FLOAT32) * vol_id,
