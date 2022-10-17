@@ -1567,7 +1567,7 @@ class FrameTransform(Transform):
     def from_rt(
         cls,
         rotation: Optional[Union[Rotation, np.ndarray]] = None,
-        translation: Optional[Union[Point3D, np.ndarray]] = None,
+        translation: Optional[Union[Point3D, Vector3D, np.ndarray]] = None,
         dim: Optional[int] = None,
     ) -> FrameTransform:
         """Make a frame translation from a rotation and translation, as [R,t], where x' = Rx + t.
@@ -1744,6 +1744,8 @@ class FrameTransform(Transform):
     ) -> FrameTransform:
         """Get the `B_from_A` frame transform that aligns the line segments, given by endpoints.
 
+        Perfectly aligns the two line segments, so there is possibly some scaling.
+
         Args:
             x_B (Point3D): The first endpoint, in frame B.
             y_B (Point3D): The second endpoint, in frame B.
@@ -1774,6 +1776,32 @@ class FrameTransform(Transform):
             @ cls.from_rotation(rot)
             @ cls.from_translation(-x_A.as_vector())
         )
+
+    @classmethod
+    def from_pointdir(
+        cls: Type[FrameTransform],
+        origin: Point3D,
+        direction: Vector3D,
+        axis: Union[str, Vector3D] = "z",
+    ) -> FrameTransform:
+        """Get the pose of the coordinate frame given its origin and direction of the given axis.
+
+        Args:
+            origin (Point3D): The origin of the frame.
+            direction (Vector3D): The direction of the axis.
+            axis (Union[str, Vector3D], optional): The axis to align with the direction. Defaults to "z".
+
+        """
+        ax = (
+            dict(x=vector(1, 0, 0), y=vector(0, 1, 0), z=vector(0, 0, 1))[axis.lower()]
+            if isinstance(axis, str)
+            else vector(axis)
+        )
+
+        rotvec = ax.cross(direction).hat()
+        rotvec = rotvec * ax.angle(direction)
+        rot = Rotation.from_rotvec(np.array(rotvec))
+        return cls.from_rt(rotation=rot, translation=origin)
 
     @property
     def R(self):
