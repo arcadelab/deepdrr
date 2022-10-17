@@ -311,6 +311,8 @@ class Projector(object):
         for mat in self.all_materials:
             assert mat in material_coefficients, f"unrecognized material: {mat}"
 
+        # initialized when arrays are allocated, but shouldn't be relied on.
+        self.output_shape = None
         self.initialized = False
 
     @property
@@ -338,10 +340,6 @@ class Projector(object):
                 f"projector contains multiple volumes. Access them with `projector.volumes[i]`"
             )
         return self.volumes[0]
-
-    @property
-    def output_shape(self) -> Tuple[int, int]:
-        return self.camera_intrinsics.sensor_size
 
     @property
     def output_size(self) -> int:
@@ -388,6 +386,11 @@ class Projector(object):
                 f"Projecting and attenuating camera position {i+1} / {len(camera_projections)}"
             )
 
+            if self.output_shape != proj.intrinsic.sensor_size:
+                # If the output shape is different from the projection shape, we need to
+                # re-allocate the output arrays.
+                self.initialize_output_arrays()
+
             # Get the volume min/max points in world coordinates.
             sx, sy, sz = proj.get_center_in_world()
             log.debug(f"original world_from_index: {proj.world_from_index}")
@@ -398,9 +401,9 @@ class Projector(object):
             cuda.memcpy_htod(self.world_from_index_gpu, world_from_index)
 
             for vol_id, _vol in enumerate(self.volumes):
-                source_ijk = np.array(proj.get_center_in_volume(_vol)).astype(
-                    np.float32
-                )
+                source_ijk = np.array(
+                    _vol.ijk_from_world @ proj.center_in_world
+                ).astype(np.float32)
                 log.debug(f"source point for volume #{vol_id}: {source_ijk}")
                 cuda.memcpy_htod(
                     int(self.sourceX_gpu) + int(NUMBYTES_INT32 * vol_id),
@@ -415,9 +418,11 @@ class Projector(object):
                     np.array([source_ijk[2]]),
                 )
 
+                log.debug(f"ijk_from_world:\n{_vol.ijk_from_world}")
                 ijk_from_world = (
                     _vol.ijk_from_world.toarray()
                 )  # TODO: use this elsewhere, when 3x4 matrix is needed
+                log.debug(f"ijk_from_world:\n{ijk_from_world}")
                 cuda.memcpy_htod(
                     int(self.ijk_from_world_gpu)
                     + (ijk_from_world.size * NUMBYTES_FLOAT32) * vol_id,
@@ -805,6 +810,43 @@ class Projector(object):
 
         return self.project(*camera_projections)
 
+    def initialize_output_arrays(self):
+        """Allocate arrays dependent on the output size. Frees previously allocated arrays.
+
+        This may have to be called multiple times if the output size changes.
+
+        """
+        if self.initialized:
+            self.intensity_gpu.free()
+            self.photon_prob_gpu.free()
+            if self.collected_energy:
+                self.solid_angle_gpu.free()
+
+        # Changes the output size as well
+        self.output_shape = self.camera_intrinsics.sensor_size
+
+        # allocate intensity array on GPU (4 bytes to a float32)
+        self.intensity_gpu = cuda.mem_alloc(self.output_size * NUMBYTES_FLOAT32)
+        log.debug(
+            f"bytes alloc'd for {self.output_shape} self.intensity_gpu: {self.output_size * NUMBYTES_FLOAT32}"
+        )
+
+        # allocate photon_prob array on GPU (4 bytes to a float32)
+        self.photon_prob_gpu = cuda.mem_alloc(self.output_size * NUMBYTES_FLOAT32)
+        log.debug(
+            f"bytes alloc'd for {self.output_shape} self.photon_prob_gpu: {self.output_size * NUMBYTES_FLOAT32}"
+        )
+
+        # allocate solid_angle array on GPU as needed (4 bytes to a float32)
+        if self.collected_energy:
+            self.solid_angle_gpu = cuda.mem_alloc(self.output_size * NUMBYTES_FLOAT32)
+            log.debug(
+                f"bytes alloc'd for {self.output_shape} self.solid_angle_gpu: {self.output_size * NUMBYTES_FLOAT32}"
+            )
+        else:
+            # NULL. Don't need to do solid angle calculation
+            self.solid_angle_gpu = np.int32(0)
+
     def initialize(self):
         """Allocate GPU memory and transfer the volume, segmentations to GPU."""
         if self.initialized:
@@ -936,7 +978,7 @@ class Projector(object):
             f"time elapsed after intializing multivolume stuff: {init_tock - init_tick}"
         )
 
-        # allocate ijk_from_index matrix array on GPU (3x3 array x 4 bytes per float32)
+        # allocate world_from_index matrix array on GPU (3x3 array x 4 bytes per float32)
         self.world_from_index_gpu = cuda.mem_alloc(3 * 3 * NUMBYTES_FLOAT32)
 
         # allocate ijk_from_world for each volume.
@@ -944,27 +986,8 @@ class Projector(object):
             len(self.volumes) * 3 * 4 * NUMBYTES_FLOAT32
         )
 
-        # allocate intensity array on GPU (4 bytes to a float32)
-        self.intensity_gpu = cuda.mem_alloc(self.output_size * NUMBYTES_FLOAT32)
-        log.debug(
-            f"bytes alloc'd for self.intensity_gpu: {self.output_size * NUMBYTES_FLOAT32}"
-        )
-
-        # allocate photon_prob array on GPU (4 bytes to a float32)
-        self.photon_prob_gpu = cuda.mem_alloc(self.output_size * NUMBYTES_FLOAT32)
-        log.debug(
-            f"bytes alloc'd for self.photon_prob_gpu: {self.output_size * NUMBYTES_FLOAT32}"
-        )
-
-        # allocate solid_angle array on GPU as needed (4 bytes to a float32)
-        if self.collected_energy:
-            self.solid_angle_gpu = cuda.mem_alloc(self.output_size * NUMBYTES_FLOAT32)
-            log.debug(
-                f"bytes alloc'd for self.solid_angle_gpu: {self.output_size * NUMBYTES_FLOAT32}"
-            )
-        else:
-            # NULL. Don't need to do solid angle calculation
-            self.solid_angle_gpu = np.int32(0)
+        # Initializes the output_shape as well.
+        self.initialize_output_arrays()
 
         # allocate and transfer spectrum energies (4 bytes to a float32)
         assert isinstance(self.spectrum, np.ndarray)

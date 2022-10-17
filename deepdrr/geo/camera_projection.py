@@ -56,7 +56,7 @@ class CameraProjection(Transform):
 
         # TODO: adding _inv here causes the inverse projection to be different, WHY?
         super().__init__(
-            get_data(index_from_world),  # _inv=get_data(index_from_world.inv)
+            get_data(index_from_world), _inv=get_data(index_from_world.inv)
         )
 
     def get_config(self) -> dict[str, Any]:

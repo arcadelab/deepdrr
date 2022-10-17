@@ -136,7 +136,10 @@ class HomogeneousObject(ABC):
         return np.array(self.data, *args, **kwargs)
 
     def __str__(self):
-        return f"{self.__class__.__name__[0]}{np.array_str(self.data, suppress_small=True)}"
+        if len(self.shape) == 0:
+            return f"{self.__class__.__name__[0]}{np.array_str(self.data, suppress_small=True)}"
+        else:
+            return f"{self.__class__.__name__[0]}(\n{np.array_str(self.data, suppress_small=True)}\n)"
 
     def __repr__(self):
         if self.data.ndim == 1:
@@ -293,7 +296,7 @@ class Point(PointOrVector, Joinable):
 
     @classmethod
     def from_any(
-        cls: Type[T],
+        cls: Type[Point],
         other: Union[np.ndarray, Point],
     ):
         """If other is not a point, make it one."""
@@ -419,7 +422,7 @@ class Vector(PointOrVector):
 
     @classmethod
     def from_array(
-        cls: Type[T],
+        cls: Type[Vector],
         v: np.ndarray,
     ) -> T:
         v = np.array(v).astype(cls.dtype)
@@ -428,7 +431,7 @@ class Vector(PointOrVector):
 
     @classmethod
     def from_any(
-        cls: Type[T],
+        cls: Type[Vector],
         other: Union[np.ndarray, Vector],
     ):
         """If other is not a Vector, make it one."""
@@ -1790,7 +1793,9 @@ class FrameTransform(Transform):
 
     @property
     def inv(self):
-        R_inv = self.R.T
+        # This is necessary because we use FrameTransform to represent affine as well as rigid transforms.
+        # TODO: separate?
+        R_inv = np.linalg.inv(self.R)
         return FrameTransform.from_rt(R_inv, -(R_inv @ self.t))
 
     @property
@@ -1812,14 +1817,14 @@ class FrameTransform(Transform):
         This is different from calling np.array() on the transform, which returns a 4x4 array.
 
         """
-        return self.data[: self.dim, :].astype(np.float32).copy()
+        return self.data[:-1, :].astype(np.float32).copy()
 
 
 F = FrameTransform
 
 
 def frame_transform(*args) -> FrameTransform:
-    """Convenience function for creating a frame transform.
+    """Convenience function for creating a 3D frame transform.
 
     The output depends on how the function is called:
     frame_transform() -> 3D identity transform
