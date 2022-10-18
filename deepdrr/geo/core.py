@@ -38,9 +38,10 @@ import scipy.spatial.distance
 from scipy.spatial.transform import Rotation
 
 if TYPE_CHECKING:
-    from .camera_projection import CameraProjection
+    from ..vol import Volume
 
 from .exceptions import MeetError, JoinError
+
 
 PV = TypeVar("PV", bound="PointOrVector")
 P = TypeVar("P", bound="Point")
@@ -350,7 +351,7 @@ class Point(PointOrVector, Joinable):
                 f"ambiguous subtraction of {self} and {other}. Can't determine if point or vector."
             )
         else:
-            raise TypeError(f"cannot subtract {type(other)} {other} from a point")
+            raise TypeError(f"cannot do {other} - {self}")
 
     def __rsub__(self, other):
         """Means other - self was called."""
@@ -564,6 +565,23 @@ class Vector(PointOrVector):
         rot = Rotation.from_rotvec(v * theta)
         return FrameTransform.from_rotation(rot)
 
+    def rotate(self, n: Vector, theta: Optional[float] = None) -> Vector:
+        """Rotate self by the given vector.
+
+        Args:
+            n (Vector): the axis of rotation. If theta is None, the magnitude of this vector is
+                used. Otherwise, it is ignored.
+            theta (float, optional): the angle of rotation. Defaults to None.
+
+        Returns:
+            Vector: the rotated vector.
+        """
+        if theta is None:
+            theta = n.norm()
+
+        rot = Rotation.from_rotvec(n.hat() * theta)
+        return vector(rot.apply(self))
+
     def cosine_distance(self, other: Vector) -> float:
         """Get the cosine distance between the angles.
 
@@ -722,6 +740,21 @@ class HyperPlane(Primitive, Meetable):
         if self.dim < 3:
             raise ValueError("2D lines have no constant term")
         return self.data[3]
+
+    def evaluate(self, p: Point) -> float:
+        """Evaluate the hyperplane at the given point.
+
+        The sign of this value tells you which side of the hyperplane the point is on.
+
+        Args:
+            p (Point): the point to evaluate at.
+
+        Returns:
+            float: the value of the hyperplane at the given point.
+
+        """
+        assert self.dim == p.dim, f"dimension mismatch: {self.dim} != {p.dim}"
+        return self.data @ p.data
 
 
 class Line(Primitive, Meetable):
@@ -1433,7 +1466,7 @@ class Transform(HomogeneousObject):
             # log.debug(f"{self.shape} @ {other.shape} = {out.shape}")
             # log.debug(f"out: {out}")
             return _point_or_vector(self.data @ other.data)
-        elif isinstance(other, Line2D) and isinstance(self, FrameTransform):
+        elif isinstance(self, FrameTransform) and isinstance(other, Line2D):
             check_dim()
             l0, l1, l2 = other.data
             r00, r01, r10, r11 = self.R.flat
@@ -1442,12 +1475,19 @@ class Transform(HomogeneousObject):
             l1_ = -r01 * l0 + r00 * l1
             l2_ = np.linalg.det([[l0, l1, l2], [r00, r01, p0], [r10, r11, p1]])
             return line(l0_, l1_, l2_)
-        elif isinstance(other, (Line3D, Plane)) and isinstance(self, FrameTransform):
+        elif isinstance(self, FrameTransform) and isinstance(other, (Line3D, Plane)):
             p = other.get_point()
             v = other.get_direction()
             p_ = self @ p
             v_ = self @ v
             return line(p_, v_)
+        elif isinstance(self, CameraProjection) and isinstance(other, Line3D):
+            p1 = other.get_point()
+            v = other.get_direction()
+            p2 = p1 + v
+            p1_ = self @ p1
+            p2_ = self @ p2
+            return line(p1_, p2_)
         elif isinstance(other, Transform):
             # if other is a Transform, then compose their inverses as well to store that.
             check_dim()
@@ -1979,3 +2019,343 @@ unity_from_slicer = frame_transform(
 """
 )
 slicer_from_unity = unity_from_slicer.inv
+
+
+# TODO: reorganize geo so you have primitives.py and transforms.py. Have separate classes for each type of transform?
+
+
+class CameraIntrinsicTransform(FrameTransform):
+    dim: int = 2
+    input_dim: int = 2
+
+    """The intrinsic camera transform.
+    
+    It should be scaled such that the units of the matrix (including the focal length) are in pixels
+    """
+
+    def __init__(self, data: np.ndarray) -> None:
+        super().__init__(data)
+        assert self.data.shape == (3, 3), f"unrecognized shape: {self.data.shape}"
+        self._sensor_height = None
+        self._sensor_width = None
+
+    @classmethod
+    def from_parameters(
+        cls,
+        optical_center: Point2D,
+        focal_length: Union[float, Tuple[float, float]] = 1,
+        shear: float = 0,
+        aspect_ratio: Optional[float] = None,
+    ) -> CameraIntrinsicTransform:
+        """The camera intrinsic matrix.
+
+        The intrinsic matrix is fundamentally a FrameTransform in 2D, namely `index_from_camera2d`.
+        It transforms to the index-space of the image (as mapped on the sensor)
+        from the index-space centered on the principle ray.
+
+        Note:
+            Focal lengths are usually measured in world units (e.g. millimeters.). This function handles the conversion.
+
+        Useful references include Szeliski's "Computer Vision"
+        - https://ksimek.github.io/2013/08/13/intrinsic/
+
+        Args:
+            optical_center (Point2D): the index-space point where the isocenter (or pinhole) is centered.
+            focal_length (Union[float, Tuple[float, float]]): the focal length in index units. Can be a tubple (f_x, f_y),
+                or a scalar used for both, or a scalar modified by aspect_ratio, in index units.
+            shear (float): the shear `s` of the camera.
+            aspect_ratio (Optional[float], optional): the aspect ratio `a` (for use with one focal length). If not provided, aspect
+                ratio is 1. Defaults to None.
+
+        Returns:
+            CameraIntrinsicTransform: The camera intrinsic matrix.
+
+        """
+        optical_center = point(optical_center)
+        assert optical_center.dim == 2, "center point not in 2D"
+
+        cx, cy = np.array(optical_center)
+
+        if aspect_ratio is None:
+            fx, fy = utils.tuplify(focal_length, 2)
+        else:
+            assert isinstance(
+                focal_length, (float, int)
+            ), "cannot use aspect ratio if both focal lengths provided"
+            fx, fy = (focal_length, aspect_ratio * focal_length)
+
+        data = np.array([[fx, shear, cx], [0, fy, cy], [0, 0, 1]]).astype(np.float32)
+
+        return cls(data)
+
+    @classmethod
+    def from_sizes(
+        cls,
+        sensor_size: Union[int, Tuple[int, int]],
+        pixel_size: Union[float, Tuple[float, float]],
+        source_to_detector_distance: float,
+    ) -> CameraIntrinsicTransform:
+        """Generate the camera from human-readable parameters.
+
+        This is the recommended way to create the camera. Note that although pixel_size and source_to_detector distance are measured in world units,
+        the camera intrinsic matrix contains no information about the world, as these are merely used to compute the focal length in pixels.
+
+        Args:
+            sensor_size (Union[float, Tuple[float, float]]): (width, height) of the sensor, or a single value for both, in pixels.
+            pixel_size (Union[float, Tuple[float, float]]): (width, height) of a pixel, or a single value for both, in world units (e.g. mm).
+            source_to_detector_distance (float): distance from source to detector in world units.
+
+        Returns:
+
+        """
+        sensor_size = utils.tuplify(sensor_size, 2)
+        pixel_size = utils.tuplify(pixel_size, 2)
+        fx = source_to_detector_distance / pixel_size[0]
+        fy = source_to_detector_distance / pixel_size[1]
+        optical_center = point(sensor_size[0] / 2, sensor_size[1] / 2)
+        return cls.from_parameters(optical_center=optical_center, focal_length=(fx, fy))
+
+    @property
+    def optical_center(self) -> Point2D:
+        return Point2D(self.data[:, 2])
+
+    @property
+    def fx(self) -> float:
+        return self.data[0, 0]
+
+    @property
+    def fy(self) -> float:
+        return self.data[1, 1]
+
+    @property
+    def aspect_ratio(self) -> float:
+        """Image aspect ratio."""
+        return self.fy / self.fx
+
+    @property
+    def focal_length(self) -> float:
+        """Focal length in the matrix units."""
+        return self.fx
+
+    @property
+    def sensor_width(self) -> int:
+        """Get the sensor width in the matrix units.
+
+        Assumes optical center is at the center of the sensor.
+
+        Based on the convention of origin in top left, with x pointing to the right and y pointing down."""
+        if self._sensor_width is None:
+            return int(np.ceil(2 * self.data[0, 2]))
+        else:
+            return self._sensor_width
+
+    @sensor_width.setter
+    def sensor_width(self, value: int):
+        self._sensor_width = value
+
+    @property
+    def sensor_height(self) -> int:
+        """Get the sensor height in pixels.
+
+        Assumes optical center is at the center of the sensor.
+
+        Based on the convention of origin in top left, with x pointing to the right and y pointing down."""
+        if self._sensor_height is None:
+            return int(np.ceil(2 * self.data[1, 2]))
+        else:
+            return self._sensor_height
+
+    @sensor_height.setter
+    def sensor_height(self, value: int):
+        self._sensor_height = value
+
+    @property
+    def sensor_size(self) -> Tuple[int, int]:
+        """Tuple with the (width, height) of the sense/image, in matrix units."""
+        return (self.sensor_width, self.sensor_height)
+
+
+class CameraProjection(Transform):
+    dim = 3
+    index_from_camera2d: CameraIntrinsicTransform
+    camera3d_from_world: FrameTransform
+
+    def __init__(
+        self,
+        intrinsic: Union[CameraIntrinsicTransform, np.ndarray],
+        extrinsic: Union[FrameTransform, np.ndarray],
+    ) -> None:
+        """A class for instantiating camera projections.
+
+        The object itself contains the "index_from_world" transform, or P = K[R|t].
+
+        A helpful resource for this is:
+        - http://wwwmayr.in.tum.de/konferenzen/MB-Jass2006/courses/1/slides/h-1-5.pdf
+            which specifically Taylors the discussion toward C arms.
+
+        Args:
+            intrinsic (CameraIntrinsicTransform): the camera intrinsic matrix, or a mapping to 2D image index coordinates
+                from camera coordinates, i.e. index_from_camera2d.
+            extrinsic (FrameTransform): the camera extrinsic matrix, or simply a FrameTransform to camera coordinates
+                 from world coordinates, i.e. camera3d_from_world.
+
+        """
+        self.index_from_camera2d = (
+            intrinsic
+            if isinstance(intrinsic, CameraIntrinsicTransform)
+            else CameraIntrinsicTransform(intrinsic)
+        )
+        self.camera3d_from_world = frame_transform(extrinsic)
+        index_from_world = self.index_from_camera3d @ self.camera3d_from_world
+
+        # TODO: adding _inv here causes the inverse projection to be different, WHY?
+        super().__init__(
+            get_data(index_from_world), _inv=get_data(index_from_world.inv)
+        )
+
+    def get_config(self) -> dict[str, Any]:
+        """Get the configuration of the camera projection.
+
+        Returns:
+            dict[str, Any]: the configuration of the camera projection.
+        """
+        return {
+            "intrinsic": self.index_from_camera2d,
+            "extrinsic": self.camera3d_from_world,
+        }
+
+    @property
+    def index_from_world(self) -> Transform:
+        return self
+
+    @classmethod
+    def from_krt(
+        cls, K: np.ndarray, R: np.ndarray, t: np.ndarray
+    ) -> "CameraProjection":
+        """Create a CameraProjection from a camera intrinsic matrix and extrinsic matrix.
+
+        Args:
+            K (np.ndarray): the camera intrinsic matrix.
+            R (np.ndarray): the camera extrinsic matrix.
+            t (np.ndarray): the camera extrinsic translation vector.
+
+        Returns:
+            CameraProjection: the camera projection.
+        """
+        return cls(intrinsic=K, extrinsic=FrameTransform.from_rt(K, R, t))
+
+    @classmethod
+    def from_rtk(
+        cls,
+        R: np.ndarray,
+        t: Point3D,
+        K: Union[CameraIntrinsicTransform, np.ndarray],
+    ):
+        return cls(intrinsic=K, extrinsic=FrameTransform.from_rt(R, t))
+
+    @property
+    def K(self):
+        return self.index_from_camera2d
+
+    @property
+    def R(self):
+        return self.camera3d_from_world.R
+
+    @property
+    def t(self):
+        return self.camera3d_from_world.t
+
+    @property
+    def intrinsic(self) -> CameraIntrinsicTransform:
+        return self.index_from_camera2d
+
+    @property
+    def extrinsic(self) -> FrameTransform:
+        return self.camera3d_from_world
+
+    @property
+    def index_from_camera3d(self) -> Transform:
+        proj = np.concatenate([np.eye(3), np.zeros((3, 1))], axis=1)
+        camera2d_from_camera3d = Transform(proj, _inv=proj.T)
+        return self.index_from_camera2d @ camera2d_from_camera3d
+
+    @property
+    def camera3d_from_index(self) -> Transform:
+        return self.index_from_camera3d.inv
+
+    @property
+    def world_from_index(self) -> Transform:
+        """Gets the world-space vector between the source in world and the given point in index space."""
+        return self.index_from_world.inv
+
+    @property
+    def world_from_index_on_image_plane(self) -> FrameTransform:
+        """Get the transform to points in world on the image (detector) plane from image indices.
+
+        The point input point should still be 3D, with a 0 in the z coordinate.
+
+        """
+        proj = np.array([[1, 0, 0], [0, 1, 0], [0, 0, 0], [0, 0, 1]])
+        proj = Transform(proj, _inv=proj.T)
+        index_from_world_3d = proj @ self.index_from_world
+        return FrameTransform(data=get_data(index_from_world_3d.inv))
+
+    @property
+    def sensor_width(self) -> int:
+        return self.intrinsic.sensor_width
+
+    @property
+    def sensor_height(self) -> int:
+        return self.intrinsic.sensor_height
+
+    def get_center_in_world(self) -> Point3D:
+        """Get the center of the camera (origin of camera3d frame) in world coordinates.
+
+        That is, get the translation vector of the world_from_camera3d FrameTransform
+
+        This is comparable to the function get_camera_center() in DeepDRR.
+
+        Returns:
+            Point3D: the center of the camera in center.
+        """
+
+        # TODO: can also get the center from the intersection of three planes formed
+        # by self.data.
+
+        world_from_camera3d = self.camera3d_from_world.inv
+        return world_from_camera3d(point(0, 0, 0))
+
+    @property
+    def center_in_world(self) -> Point3D:
+        return self.get_center_in_world()
+
+    def get_center_in_volume(self, volume: Volume) -> Point3D:
+        """Get the camera center in IJK-space.
+
+        In original deepdrr, this is the `source_point` of `get_canonical_proj_matrix()`
+
+        Args:
+            volume (AnyVolume): the volume to get the camera center in.
+
+        Returns:
+            Point3D: the camera center in the volume's IJK-space.
+        """
+        return volume.ijk_from_world @ self.center_in_world
+
+    def get_ray_transform(self, volume: Volume) -> Transform:
+        """Get the ray transform for the camera, in IJK-space.
+
+        ijk_from_index transformation that goes from Point2D to Vector3D, with the vector in the
+        Point2D frame.
+
+        The ray transform takes a Point2D and converts it to a Vector3D. This is the vector in
+        the direction pointing between the camera center (or source) and a given index-space
+        point on the detector.
+
+        Args:
+            volume (AnyVolume): the volume to get get the ray transfrom through.
+
+        Returns:
+            Transform: the `ijk_from_index` transform.
+        """
+        return volume.ijk_from_world @ self.world_from_index

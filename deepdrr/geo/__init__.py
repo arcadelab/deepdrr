@@ -54,10 +54,10 @@ from .core import (
     mm_from_cm,
     unity_from_slicer,
     slicer_from_unity,
+    CameraProjection,
+    CameraIntrinsicTransform,
 )
 from .exceptions import JoinError, MeetError
-from .camera_intrinsic_transform import CameraIntrinsicTransform
-from .camera_projection import CameraProjection
 from scipy.spatial.transform import Rotation
 from .random import spherical_uniform
 
