@@ -1888,7 +1888,10 @@ class FrameTransform(Transform):
         return self.data[:-1, :].astype(np.float32).copy()
 
 
-F = FrameTransform
+class F(FrameTransform):
+    """Alias for FrameTransform."""
+
+    pass
 
 
 def frame_transform(*args) -> FrameTransform:
