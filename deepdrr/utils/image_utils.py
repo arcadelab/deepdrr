@@ -1,8 +1,10 @@
+from datetime import datetime
 import logging
 import numpy as np
 from PIL import Image
 from pathlib import Path
 import cv2
+import matplotlib.pyplot as plt
 
 from .. import geo
 
@@ -89,9 +91,8 @@ def draw_line(
 
 
     """
-    s = geo.p(0, (line.a * 0 + line.c) / line.b)
-    t = geo.p(image.shape[1], (line.a * image.shape[1] + line.c) / line.b)
-    log.debug(f"Drawing line {s} -> {t}")
+    s = geo.p(0, -(line.a * 0 + line.c) / line.b)
+    t = geo.p(image.shape[1], -(line.a * image.shape[1] + line.c) / line.b)
     image = ensure_cdim(as_uint8(image))
     image = cv2.line(
         image, (int(s.x), int(s.y)), (int(t.x), int(t.y)), color, thickness

@@ -931,6 +931,24 @@ class Plane(HyperPlane):
 
         return a.join(b).join(c)
 
+    def get_point(self) -> Point3D:
+        """Get an arbitrary point on the plane.
+
+        Returns:
+            Point3D: A point on the plane.
+
+        """
+        return Point3D([0, 0, -self.d / self.c, 1])
+
+    def get_normal(self) -> Vector3D:
+        """Get the normal vector of the plane.
+
+        Returns:
+            Vector3D: The normal vector of the plane.
+
+        """
+        return vector(self.data[:3])
+
     @property
     def normal(self) -> Vector3D:
         return vector(self.data[:3])
@@ -1466,16 +1484,18 @@ class Transform(HomogeneousObject):
             # log.debug(f"{self.shape} @ {other.shape} = {out.shape}")
             # log.debug(f"out: {out}")
             return _point_or_vector(self.data @ other.data)
-        elif isinstance(self, FrameTransform) and isinstance(other, Line2D):
-            check_dim()
-            l0, l1, l2 = other.data
-            r00, r01, r10, r11 = self.R.flat
-            p0, p1 = self.t
-            l0_ = r11 * l0 - r10 * l1
-            l1_ = -r01 * l0 + r00 * l1
-            l2_ = np.linalg.det([[l0, l1, l2], [r00, r01, p0], [r10, r11, p1]])
-            return line(l0_, l1_, l2_)
-        elif isinstance(self, FrameTransform) and isinstance(other, (Line3D, Plane)):
+        # elif isinstance(self, FrameTransform) and isinstance(other, Line2D):
+        #     check_dim()
+        #     l0, l1, l2 = other.data
+        #     r00, r01, r10, r11 = self.R.flat
+        #     p0, p1 = self.t
+        #     l0_ = r11 * l0 - r10 * l1
+        #     l1_ = -r01 * l0 + r00 * l1
+        #     l2_ = np.linalg.det([[l0, l1, l2], [r00, r01, p0], [r10, r11, p1]])
+        #     return line(l0_, l1_, l2_)
+        elif isinstance(self, FrameTransform) and isinstance(
+            other, (Line2D, Line3D, Plane)
+        ):
             p = other.get_point()
             v = other.get_direction()
             p_ = self @ p
