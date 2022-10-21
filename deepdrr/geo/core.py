@@ -1907,6 +1907,30 @@ class FrameTransform(Transform):
         """
         return self.data[:-1, :].astype(np.float32).copy()
 
+    def as_quatpos(self) -> np.ndarray:
+        """Return the transform as a quaternion and position.
+
+        Returns:
+            np.ndarray: A 7-element array, with the first 4 elements being the quaternion, and the last 3 being the position.
+
+        """
+        return np.array([*Rotation.from_matrix(self.R).as_quat(), *self.t])
+
+    @classmethod
+    def from_quatpos(cls, quatpos: np.ndarray) -> FrameTransform:
+        """Create a transform from a quaternion and position.
+
+        Args:
+            quatpos (np.ndarray): A 7-element array, with the first 4 elements being the quaternion, and the last 3 being the position.
+
+        Returns:
+            FrameTransform: The transform.
+
+        """
+        return cls.from_rt(
+            Rotation.from_quat(quatpos[:4]).as_matrix(),
+            quatpos[4:],
+        )
 
 class F(FrameTransform):
     """Alias for FrameTransform."""
@@ -1979,6 +2003,9 @@ def frame_transform(*args) -> FrameTransform:
             elif a.shape == (16,):
                 # Assumed to be row-major order
                 return FrameTransform(a.reshape((4, 4)))
+            elif a.shape == (7,):
+                # Quaternion position
+                return FrameTransform.from_quatpos(a)
             else:
                 raise TypeError(f"couldn't convert numpy array to FrameTransform: {a}")
         elif isinstance(a, (tuple, list)):
