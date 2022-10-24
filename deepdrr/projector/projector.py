@@ -28,15 +28,28 @@ from .mcgpu_rita_samplers import rita_samplers
 
 log = logging.getLogger(__name__)
 
-try:
-    import pycuda.autoprimaryctx
+# try:
+#     import pycuda.autoprimaryctx
 
-    # import pycuda.autoinit # causes problems when running with pytorch concurrently
-    import pycuda.driver as cuda
-    from pycuda.autoinit import context
-    from pycuda.compiler import SourceModule
-except ImportError:
-    log.warning(f"Running without pycuda: projector operations will fail.")
+#     # import pycuda.autoinit # causes problems when running with pytorch concurrently
+#     import pycuda.driver as cuda
+#     from pycuda.autoinit import context
+#     from pycuda.compiler import SourceModule
+# except ImportError:
+#     log.warning(f"Running without pycuda: projector operations will fail.")
+
+
+def import_pycuda():
+    """Import pycuda and return the context.
+
+    Returns:
+        pycuda.autoinit.context: The pycuda context.
+    """
+    if "pycuda" not in globals():
+        import pycuda.autoprimaryctx
+        import pycuda.driver as cuda
+        import pycuda.autoinit
+        import pycuda.compiler
 
 
 NUMBYTES_INT8 = 1
@@ -203,6 +216,8 @@ class Projector(object):
             intensity_upper_bound (float, optional): Maximum intensity, clipped before neglog, after noise and scatter. A good value is 40 keV / photon. Defaults to None.
             carm (MobileCArm, optional): Deprecated alias for `device`. See `device`.
         """
+        import_pycuda()
+
         # set variables
         volume = utils.listify(volume)
         self.volumes = []

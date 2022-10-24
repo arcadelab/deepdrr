@@ -496,45 +496,6 @@ class Vector(PointOrVector):
         else:
             raise TypeError(f"unrecognized type for cross product: {type(other)}")
 
-    def perpendicular(self, random: bool = False) -> Vector3D:
-        """Find an arbitrary perpendicular vector to self.
-
-        Args:
-            random: Whether to randomize the vector's direction in
-                the perpendicular plane, drawing from [0, 2pi).
-                Defaults to False.
-
-        Returns:
-            Vector3D: A vector in 3D space, perpendicular
-                to the original.
-
-        """
-        # TODO: if the vector is 2D, return one of the other vectors in the plane, to keep it 2D.
-
-        if self.x == self.y == self.z == 0:
-            raise ValueError("zero-vector")
-
-        # If one dimension is zero, this can be solved by setting that to
-        # non-zero and the others to zero. Example: (4, 2, 0) lies in the
-        # x-y-Plane, so (0, 0, 1) is orthogonal to the plane.
-        if self.x == 0:
-            return vector(1, 0, 0)
-        if self.y == 0:
-            return vector(0, 1, 0)
-        if self.z == 0:
-            return vector(0, 0, 1)
-
-        # arbitrarily set a = b = 1
-        # then the equation simplifies to
-        #     c = -(x + y)/z
-        v = vector(1, 1, -1.0 * (self.x + self.y) / self.z).hat()
-
-        if random:
-            angle = np.random.uniform(0, 2 * np.pi)
-            v = vector(Rotation.from_rotvec(angle * self.hat()).apply(v))
-
-        return v
-
     def angle(self, other: Vector) -> float:
         """Get the angle between self and other in radians."""
         other = vector(other)
@@ -639,6 +600,26 @@ class Vector2D(Vector):
 
     dim = 2
 
+    def perpendicular(self, random: bool = False) -> Vector2D:
+        """Find an arbitrary perpendicular vector to self.
+
+        Args:
+            random: Whether to randomize the vector's direction in
+                the perpendicular plane, drawing from [0, 2pi).
+                Defaults to False.
+
+        Returns:
+            Vector3D: A vector in 3D space, perpendicular
+                to the original.
+
+        """
+        # TODO: if the vector is 2D, return one of the other vectors in the plane, to keep it 2D.
+
+        v = vector(-self.y, self.x)
+        if random and np.random.rand() < 0.5:
+            v = -v
+        return v
+
 
 class Point3D(Point):
     """Homogeneous point in 3D, represented as an array with [x, y, z, 1]"""
@@ -685,6 +666,45 @@ class Vector3D(Vector):
     def as_plane(self) -> Plane:
         """Get the plane through the origin with this vector as its normal."""
         return Plane(self.data)
+
+    def perpendicular(self, random: bool = False) -> Vector3D:
+        """Find an arbitrary perpendicular vector to self.
+
+        Args:
+            random: Whether to randomize the vector's direction in
+                the perpendicular plane, drawing from [0, 2pi).
+                Defaults to False.
+
+        Returns:
+            Vector3D: A vector in 3D space, perpendicular
+                to the original.
+
+        """
+        # TODO: if the vector is 2D, return one of the other vectors in the plane, to keep it 2D.
+
+        if self.x == self.y == self.z == 0:
+            raise ValueError("zero-vector")
+
+        # If one dimension is zero, this can be solved by setting that to
+        # non-zero and the others to zero. Example: (4, 2, 0) lies in the
+        # x-y-Plane, so (0, 0, 1) is orthogonal to the plane.
+        if self.x == 0:
+            return vector(1, 0, 0)
+        if self.y == 0:
+            return vector(0, 1, 0)
+        if self.z == 0:
+            return vector(0, 0, 1)
+
+        # arbitrarily set a = b = 1
+        # then the equation simplifies to
+        #     c = -(x + y)/z
+        v = vector(1, 1, -1.0 * (self.x + self.y) / self.z).hat()
+
+        if random:
+            angle = np.random.uniform(0, 2 * np.pi)
+            v = vector(Rotation.from_rotvec(angle * self.hat()).apply(v))
+
+        return v
 
 
 class HyperPlane(Primitive, Meetable):
@@ -814,6 +834,7 @@ class Line(Primitive, Meetable):
             float: The distance from the line to the other point.
 
         """
+        other = point(other)
         p = self.get_point()
         v = self.get_direction()
         diff = other - p
@@ -1385,10 +1406,20 @@ def _point_or_vector(data: np.ndarray):
 
 
 ### aliases ###
-p = point
-v = vector
-l = line
-pl = plane
+def p(*args):
+    return point(*args)
+
+
+def v(*args):
+    return vector(*args)
+
+
+def l(*args):
+    return line(*args)
+
+
+def pl(*args):
+    return plane(*args)
 
 
 """
@@ -1457,9 +1488,10 @@ class Transform(HomogeneousObject):
     def __matmul__(self: CameraProjection, other: Point3D) -> Point2D:
         ...
 
-    @overload
-    def __matmul__(self: CameraProjection, other: Vector3D) -> Vector2D:
-        ...
+    # @overload
+    # def __matmul__(self: CameraProjection, other: Vector3D) -> Vector2D:
+    #     ...
+    # TODO: this is not actually well defined unless the vector has a location.
 
     @overload
     def __matmul__(self: CameraProjection, other: Line3D) -> Line2D:
@@ -1481,8 +1513,6 @@ class Transform(HomogeneousObject):
         if isinstance(other, PointOrVector):
             check_dim()
             out = self.data @ other.data
-            # log.debug(f"{self.shape} @ {other.shape} = {out.shape}")
-            # log.debug(f"out: {out}")
             return _point_or_vector(self.data @ other.data)
         # elif isinstance(self, FrameTransform) and isinstance(other, Line2D):
         #     check_dim()
@@ -1931,6 +1961,7 @@ class FrameTransform(Transform):
             Rotation.from_quat(quatpos[:4]).as_matrix(),
             quatpos[4:],
         )
+
 
 class F(FrameTransform):
     """Alias for FrameTransform."""
