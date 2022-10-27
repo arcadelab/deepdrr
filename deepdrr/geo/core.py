@@ -257,22 +257,23 @@ class PointOrVector(Primitive):
         return self * (1 / other)
 
     @property
-    def x(self):
+    def x(self) -> float:
         return self.data[0]
 
     @property
-    def y(self):
+    def y(self) -> float:
         assert self.dim >= 2
-        return self.data[1]
+        return float(self.data[1])
 
     @property
-    def z(self):
+    def z(self) -> float:
         assert self.dim >= 3
-        return self.data[2]
+        return float(self.data[2])
 
     @property
-    def w(self):
-        return self.data[-1]
+    def w(self) -> float:
+        # Should always be 1 or 0.
+        return float(self.data[-1])
 
 
 class Point(PointOrVector, Joinable):
@@ -776,6 +777,64 @@ class HyperPlane(Primitive, Meetable):
         assert self.dim == p.dim, f"dimension mismatch: {self.dim} != {p.dim}"
         return self.data @ p.data
 
+    def get_normal(self) -> Vector3D:
+        """Get the normal vector of the plane.
+
+        Returns:
+            Vector3D: The normal vector of the plane.
+
+        """
+        return vector(self.data[: self.dim])
+
+    def normal(self) -> Vector3D:
+        return self.get_normal()
+
+    @property
+    def n(self) -> Vector3D:
+        return self.get_normal()
+
+    def signed_distance(self, p: Point) -> float:
+        """Get the signed distance from the given point to the hyperplane.
+
+        Args:
+            p (Point): the point to measure the distance from.
+
+        Returns:
+            float: the signed distance from the point to the hyperplane.
+
+        """
+        p = point(p)
+        if self.dim != p.dim:
+            raise ValueError(f"dimension mismatch: {self.dim} != {p.dim}")
+        return -self.evaluate(p) / (p.w * self.n.norm())
+
+    def distance(self, p: Point) -> float:
+        """Get the distance of the point to the hyperplane.
+
+        Args:
+            p (Point): the point to evaluate at.
+
+        Returns:
+            float: the distance of the point to the hyperplane.
+
+        """
+        return abs(self.signed_distance(p))
+
+    def project(self, p: P) -> P:
+        """Get the closest point on the hyperplane to p.
+
+        Args:
+            p (Point): The point to project.
+
+        Returns:
+            Point: The closest point on the hyperplane to p.
+
+        """
+        p = point(p)  # guaranteed to be homogenized
+        assert np.isclose(p.w, 1), f"point is not homogenized: {p}"
+        d = self.signed_distance(p)
+        return p + d * self.n
+
 
 class Line(Primitive, Meetable):
     """Abstract parent class for lines."""
@@ -799,6 +858,23 @@ class Line(Primitive, Meetable):
 
         """
         pass
+
+    @overload
+    def as_points(self: Line2D) -> Tuple[Point2D, Point2D]:
+        ...
+
+    @overload
+    def as_points(self: Line3D) -> Tuple[Point3D, Point3D]:
+        ...
+
+    def as_points(self):
+        """Get two points on the line.
+
+        Returns:
+            Tuple[Point, Point]: Two points on the line.
+
+        """
+        return self.get_point(), self.get_point() + self.get_direction()
 
     @overload
     def project(self: Line2D, other: Point2D) -> Point2D:
@@ -960,19 +1036,6 @@ class Plane(HyperPlane):
 
         """
         return Point3D([0, 0, -self.d / self.c, 1])
-
-    def get_normal(self) -> Vector3D:
-        """Get the normal vector of the plane.
-
-        Returns:
-            Vector3D: The normal vector of the plane.
-
-        """
-        return vector(self.data[:3])
-
-    @property
-    def normal(self) -> Vector3D:
-        return vector(self.data[:3])
 
     @overload
     def meet(self, other: Plane) -> Line3D:
