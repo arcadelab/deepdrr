@@ -26,7 +26,7 @@ def get_time(path: str) -> Optional[datetime]:
     return t
 
 
-def get_image_path(
+def find_dicom(
     image_dir: Path, device_time: datetime, max_difference: Optional[int] = 2
 ) -> Optional[Path]:
     """Get the image with the given acquisition time.
