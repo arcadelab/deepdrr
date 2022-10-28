@@ -256,6 +256,9 @@ class PointOrVector(Primitive):
     def __div__(self, other: float) -> Self:
         return self * (1 / other)
 
+    def __truediv__(self, other: float) -> Self:
+        return self * (1 / other)
+
     @property
     def x(self) -> float:
         return self.data[0]
@@ -1548,6 +1551,10 @@ class Transform(HomogeneousObject):
         ...
 
     @overload
+    def __matmul__(self: FrameTransform, other: Plane) -> Plane:
+        ...
+
+    @overload
     def __matmul__(self: CameraProjection, other: Point3D) -> Point2D:
         ...
 
@@ -1586,14 +1593,18 @@ class Transform(HomogeneousObject):
         #     l1_ = -r01 * l0 + r00 * l1
         #     l2_ = np.linalg.det([[l0, l1, l2], [r00, r01, p0], [r10, r11, p1]])
         #     return line(l0_, l1_, l2_)
-        elif isinstance(self, FrameTransform) and isinstance(
-            other, (Line2D, Line3D, Plane)
-        ):
+        elif isinstance(self, FrameTransform) and isinstance(other, (Line2D, Line3D)):
             p = other.get_point()
             v = other.get_direction()
             p_ = self @ p
             v_ = self @ v
             return line(p_, v_)
+        elif isinstance(self, FrameTransform) and isinstance(other, Plane):
+            p = other.get_point()
+            n = other.get_normal()
+            p_ = self @ p
+            n_ = self @ n
+            return plane(p_, n_)
         elif isinstance(self, CameraProjection) and isinstance(other, Line3D):
             p1 = other.get_point()
             v = other.get_direction()

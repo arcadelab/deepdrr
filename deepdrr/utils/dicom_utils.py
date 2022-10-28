@@ -71,7 +71,7 @@ def find_dicom(
     return image_path
 
 
-def load_image(path: str) -> np.ndarray:
+def read_image(path: str) -> np.ndarray:
     """Load a DICOM image.
 
     Args:
