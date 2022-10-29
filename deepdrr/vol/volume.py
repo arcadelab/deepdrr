@@ -131,6 +131,7 @@ class Volume(object):
             anatomical_coordinate_system is None
             or anatomical_coordinate_system == "none"
         ):
+            raise NotImplementedError
             anatomical_from_ijk = geo.FrameTransform.from_scaling(
                 scaling=spacing, translation=origin
             )

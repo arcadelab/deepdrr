@@ -1131,9 +1131,13 @@ class Projector(object):
                 # We assume that megavol.world_from_anatomical is the identity transform
                 # We assume that the origin for the maegvol is voxel (0,0,0)
                 # Reference the Volume class for calculation of anatomical_from_ijk
-                megavol_world_from_ijk = geo.FrameTransform.from_scaling(
-                    scaling=self.megavol_spacing
-                )
+                log.warning("TODO: check from_scaling is correct")
+
+                f = np.eye(4)
+                f[0, 0] = self.megavol_spacing[0]
+                f[1, 1] = self.megavol_spacing[1]
+                f[2, 2] = self.megavol_spacing[2]
+                megavol_world_from_ijk = geo.FrameTransform(f)
                 self.megavol_ijk_from_world = megavol_world_from_ijk.inv
 
                 log.info(f"max_world_point: {max_world_point}")

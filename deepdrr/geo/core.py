@@ -41,6 +41,7 @@ if TYPE_CHECKING:
     from ..vol import Volume
 
 from .exceptions import MeetError, JoinError
+from .. import utils
 
 
 PV = TypeVar("PV", bound="PointOrVector")
@@ -137,13 +138,13 @@ class HomogeneousObject(ABC):
         return np.array(self.data, *args, **kwargs)
 
     def __str__(self):
-        if len(self.shape) == 0:
+        if self.data.ndim < 2:
             return f"{self.__class__.__name__[0]}{np.array_str(self.data, suppress_small=True)}"
         else:
             return f"{self.__class__.__name__[0]}(\n{np.array_str(self.data, suppress_small=True)}\n)"
 
     def __repr__(self):
-        if self.data.ndim == 1:
+        if self.data.ndim < 2:
             s = np.array_str(self.data, suppress_small=True)
             return f"{self.__class__.__name__}({s})"
         else:
@@ -167,6 +168,9 @@ class HomogeneousObject(ABC):
     @property
     def shape(self) -> Tuple[int, ...]:
         return self.data.shape
+
+    def copy(self) -> Self:
+        return self.__class__(self.data.copy())
 
 
 def get_data(x: Union[HomogeneousObject, List[HomogeneousObject]]) -> np.ndarray:
@@ -1555,6 +1559,14 @@ class Transform(HomogeneousObject):
         ...
 
     @overload
+    def __matmul__(self: FrameTransform, other: CameraProjection) -> CameraProjection:
+        ...
+
+    @overload
+    def __matmul__(self: CameraProjection, other: FrameTransform) -> CameraProjection:
+        ...
+
+    @overload
     def __matmul__(self: CameraProjection, other: Point3D) -> Point2D:
         ...
 
@@ -1612,6 +1624,10 @@ class Transform(HomogeneousObject):
             p1_ = self @ p1
             p2_ = self @ p2
             return line(p1_, p2_)
+        elif isinstance(self, CameraProjection) and isinstance(other, FrameTransform):
+            return CameraProjection(self.intrinsic, self.extrinsic @ other)
+        elif isinstance(self, FrameTransform) and isinstance(other, CameraProjection):
+            return CameraProjection(self @ other.intrinsic, other.extrinsic)
         elif isinstance(other, Transform):
             # if other is a Transform, then compose their inverses as well to store that.
             check_dim()
@@ -1642,7 +1658,7 @@ class Transform(HomogeneousObject):
         return self @ other
 
     @property
-    def inv(self) -> Transform:
+    def inv(self) -> Self:
         """Get the inverse of the Transform.
 
         Returns:
@@ -1658,7 +1674,15 @@ class Transform(HomogeneousObject):
 
         return Transform(self._inv, _inv=self.data)
 
-    def inverse(self) -> Transform:
+    @overload
+    def inverse(self: FrameTransform) -> FrameTransform:
+        ...
+
+    @overload
+    def inverse(self: Transform) -> Transform:
+        ...
+
+    def inverse(self):
         """Get the inverse of the Transform.
 
         Returns:
@@ -1778,28 +1802,21 @@ class FrameTransform(Transform):
     @classmethod
     def from_scaling(
         cls: Type[FrameTransform],
-        scaling: Union[int, float, np.ndarray],
-        translation: Optional[Union[Point3D, np.ndarray]] = None,
-        dim: Optional[int] = None,
+        scaling: Union[int, float],
+        dim: int = 3,
     ) -> FrameTransform:
-        """Create a frame based on scaling dimensions.
+        """Create a frame based on scaling dimensions uniformly.
 
         Args:
             cls (Type[FrameTransform]): the class.
-            scaling (Union[int, float, np.ndarray]): coefficient to scale by, or one for each dimension.
+            dim (int, optional): the dimension of the frame. Defaults to 3.
 
         Returns:
             FrameTransform:
         """
-        if isinstance(scaling, (int, float)) or np.isscalar(scaling):
-            dim = 3 if dim is None else dim
-            scaling = np.ones(dim) * scaling
-        else:
-            scaling = np.array(scaling)
-            dim = scaling.shape[0]
-
-        translation = np.zeros(dim) if translation is None else translation
-        return cls.from_rt(np.diag(scaling), translation)
+        F = np.eye(dim + 1)
+        F[dim, dim] = 1 / scaling
+        return cls(F)
 
     @classmethod
     def from_translation(
@@ -2348,11 +2365,13 @@ class CameraProjection(Transform):
         - http://wwwmayr.in.tum.de/konferenzen/MB-Jass2006/courses/1/slides/h-1-5.pdf
             which specifically Taylors the discussion toward C arms.
 
+        TODO: RQ decomposition of projection matrix to get K, R, t as another constructor.
+
         Args:
             intrinsic (CameraIntrinsicTransform): the camera intrinsic matrix, or a mapping to 2D image index coordinates
-                from camera coordinates, i.e. index_from_camera2d.
+                from camera coordinates, i.e. index_from_camera2d, usually denoted as :math:`K`.
             extrinsic (FrameTransform): the camera extrinsic matrix, or simply a FrameTransform to camera coordinates
-                 from world coordinates, i.e. camera3d_from_world.
+                 from world coordinates, i.e. camera3d_from_world, usually denoted :math:`[R | t]`.
 
         """
         self.index_from_camera2d = (
