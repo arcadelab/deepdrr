@@ -36,6 +36,7 @@ from typing_extensions import Self
 import numpy as np
 import scipy.spatial.distance
 from scipy.spatial.transform import Rotation
+from copy import deepcopy
 
 if TYPE_CHECKING:
     from ..vol import Volume
@@ -169,8 +170,12 @@ class HomogeneousObject(ABC):
     def shape(self) -> Tuple[int, ...]:
         return self.data.shape
 
+    def get_config(self) -> dict:
+        """Get a config dict with the data in this object."""
+        return {"data": self.data.tolist()}
+
     def copy(self) -> Self:
-        return self.__class__(self.data.copy())
+        return self.__class__(**self.get_config())
 
 
 def get_data(x: Union[HomogeneousObject, List[HomogeneousObject]]) -> np.ndarray:
@@ -1559,6 +1564,12 @@ class Transform(HomogeneousObject):
         ...
 
     @overload
+    def __matmul__(
+        self: FrameTransform, other: CameraIntrinsicTransform
+    ) -> CameraIntrinsicTransform:
+        ...
+
+    @overload
     def __matmul__(self: FrameTransform, other: CameraProjection) -> CameraProjection:
         ...
 
@@ -1624,20 +1635,24 @@ class Transform(HomogeneousObject):
             p1_ = self @ p1
             p2_ = self @ p2
             return line(p1_, p2_)
+        elif isinstance(self, FrameTransform) and isinstance(
+            other, CameraIntrinsicTransform
+        ):
+            return CameraIntrinsicTransform(
+                self.data @ other.data, other._sensor_height, other._sensor_width
+            )
         elif isinstance(self, CameraProjection) and isinstance(other, FrameTransform):
-            return CameraProjection(self.intrinsic, self.extrinsic @ other)
+            return CameraProjection(self.intrinsic.copy(), self.extrinsic @ other)
         elif isinstance(self, FrameTransform) and isinstance(other, CameraProjection):
-            return CameraProjection(self @ other.intrinsic, other.extrinsic)
+            return CameraProjection(self @ other.intrinsic, other.extrinsic.copy())
+        if isinstance(self, FrameTransform) and isinstance(other, FrameTransform):
+            # very common case of composing FrameTransforms.
+            return FrameTransform(self.data @ other.data)
         elif isinstance(other, Transform):
             # if other is a Transform, then compose their inverses as well to store that.
             check_dim()
             _inv = other.inv.data @ self.inv.data
-
-            if isinstance(self, FrameTransform) and isinstance(other, FrameTransform):
-                # very common case of composing FrameTransforms.
-                return FrameTransform(self.data @ other.data)
-            else:
-                return Transform(self.data @ other.data, _inv=_inv)
+            return Transform(self.data @ other.data, _inv=_inv)
         else:
             return NotImplemented
 
@@ -2184,10 +2199,10 @@ cm_from_mm = FrameTransform.from_scaling(1e-1)
 # Slicer coordinates are annoying. You flip the Z axis and convert to meters.
 unity_from_slicer = frame_transform(
     """
-0.001 0 0 0
-0 0.001 0 0
-0 0 -0.001 0
-0 0 0 1
+1 0 0 0
+0 1 0 0
+0 0 -1 0
+0 0 0 1000
 """
 )
 slicer_from_unity = unity_from_slicer.inv
@@ -2205,11 +2220,23 @@ class CameraIntrinsicTransform(FrameTransform):
     It should be scaled such that the units of the matrix (including the focal length) are in pixels
     """
 
-    def __init__(self, data: np.ndarray) -> None:
+    def __init__(
+        self,
+        data: np.ndarray,
+        sensor_height: Optional[int] = None,
+        sensor_width: Optional[int] = None,
+    ) -> None:
         super().__init__(data)
         assert self.data.shape == (3, 3), f"unrecognized shape: {self.data.shape}"
-        self._sensor_height = None
-        self._sensor_width = None
+        self._sensor_height = sensor_height
+        self._sensor_width = sensor_width
+
+    def get_config(self):
+        return {
+            "data": self.data.tolist(),
+            "sensor_height": self.sensor_height,
+            "sensor_width": self.sensor_width,
+        }
 
     @classmethod
     def from_parameters(

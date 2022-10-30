@@ -325,8 +325,9 @@ class Projector(object):
         for mat in self.all_materials:
             assert mat in material_coefficients, f"unrecognized material: {mat}"
 
-        # initialized when arrays are allocated, but shouldn't be relied on.
+        # initialized when arrays are allocated.
         self.output_shape = None
+
         self.initialized = False
 
     @property
@@ -400,13 +401,12 @@ class Projector(object):
                 f"Projecting and attenuating camera position {i+1} / {len(camera_projections)}"
             )
 
-            if self.output_shape != proj.intrinsic.sensor_size:
-                # If the output shape is different from the projection shape, we need to
-                # re-allocate the output arrays.
-                self.initialize_output_arrays()
+            # Only re-allocate if the output shape has changed.
+            self.initialize_output_arrays(proj.intrinsic.sensor_size)
 
             # Get the volume min/max points in world coordinates.
             sx, sy, sz = proj.get_center_in_world()
+            log.debug(f"proj.world_from_index: {proj.world_from_index}")
             world_from_index = np.array(proj.world_from_index[:-1, :]).astype(
                 np.float32
             )
@@ -437,6 +437,10 @@ class Projector(object):
                     + (ijk_from_world.size * NUMBYTES_FLOAT32) * vol_id,
                     ijk_from_world,
                 )
+
+            log.debug(
+                f"proj: {proj.sensor_height, proj.sensor_width}, output_shape: {self.output_shape}"
+            )
 
             args = [
                 np.int32(proj.sensor_width),  # out_width
@@ -819,12 +823,17 @@ class Projector(object):
 
         return self.project(*camera_projections)
 
-    def initialize_output_arrays(self):
+    def initialize_output_arrays(self, sensor_size: Tuple[int, int]) -> None:
         """Allocate arrays dependent on the output size. Frees previously allocated arrays.
 
         This may have to be called multiple times if the output size changes.
 
         """
+        # TODO: only allocate if the size grows. Otherwise, reuse the existing arrays.
+
+        if self.initialized and self.output_shape == sensor_size:
+            return
+
         if self.initialized:
             self.intensity_gpu.free()
             self.photon_prob_gpu.free()
@@ -832,7 +841,7 @@ class Projector(object):
                 self.solid_angle_gpu.free()
 
         # Changes the output size as well
-        self.output_shape = self.camera_intrinsics.sensor_size
+        self.output_shape = sensor_size
 
         # allocate intensity array on GPU (4 bytes to a float32)
         self.intensity_gpu = cuda.mem_alloc(self.output_size * NUMBYTES_FLOAT32)
@@ -996,7 +1005,7 @@ class Projector(object):
         )
 
         # Initializes the output_shape as well.
-        self.initialize_output_arrays()
+        self.initialize_output_arrays(self.camera_intrinsics.sensor_size)
 
         # allocate and transfer spectrum energies (4 bytes to a float32)
         assert isinstance(self.spectrum, np.ndarray)
