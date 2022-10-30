@@ -406,7 +406,6 @@ class Projector(object):
 
             # Get the volume min/max points in world coordinates.
             sx, sy, sz = proj.get_center_in_world()
-            log.debug(f"proj.world_from_index: {proj.world_from_index}")
             world_from_index = np.array(proj.world_from_index[:-1, :]).astype(
                 np.float32
             )
@@ -437,10 +436,6 @@ class Projector(object):
                     + (ijk_from_world.size * NUMBYTES_FLOAT32) * vol_id,
                     ijk_from_world,
                 )
-
-            log.debug(
-                f"proj: {proj.sensor_height, proj.sensor_width}, output_shape: {self.output_shape}"
-            )
 
             args = [
                 np.int32(proj.sensor_width),  # out_width

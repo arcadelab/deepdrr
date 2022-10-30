@@ -86,14 +86,14 @@ def draw_line(
     """Draw a line on an image.
 
     Args:
-        image (np.ndarray): the image to draw on. Must be [H, W, C].
+        image (np.ndarray): the image to draw on.
         line (geo.Line2D): the line to draw.
 
 
     """
     s = geo.p(0, -(line.a * 0 + line.c) / line.b)
     t = geo.p(image.shape[1], -(line.a * image.shape[1] + line.c) / line.b)
-    image = ensure_cdim(as_uint8(image))
+    image = ensure_cdim(as_uint8(image)).copy()
     image = cv2.line(
         image, (int(s.x), int(s.y)), (int(t.x), int(t.y)), color, thickness
     )
