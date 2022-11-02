@@ -17,9 +17,13 @@ def get_time(path: str) -> Optional[datetime]:
 
     """
     p = Path(path)
+    
     try:
         t = datetime.strptime(p.stem.split("_")[1][:-3], r"%Y%m%d%H%M%S")
     except ValueError:
+        log.debug(f"Could not parse time from {path}")
+        return None
+    except IndexError:
         log.debug(f"Could not parse time from {path}")
         return None
 

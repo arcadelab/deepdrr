@@ -30,20 +30,24 @@ def as_uint8(image: np.ndarray) -> np.ndarray:
     return image
 
 
-def save(path: str, image: np.ndarray) -> None:
+def save(path: Path, image: np.ndarray, mkdir: bool = True) -> None:
     """Save the given image using PIL.
 
     Args:
-        path (str): the path to write the image to. Also determines the type.
+        path (Path): the path to write the image to. Also determines the type.
         image (np.ndarray): the image, in [C, H, W] or [H, W, C] order. (If the former, transposes).
             If in float32, assumed to be a float image. Converted to uint8 before saving.
     """
+    path = Path(path)
+    if not path.parent.exists() and mkdir:
+        path.parent.mkdir(parents=True)
+
     if len(image.shape) == 3 and image.shape[0] in [3, 4]:
         image = image.transpose(1, 2, 0)
 
     image = as_uint8(image)
 
-    Image.fromarray(image).save(path)
+    Image.fromarray(image).save(str(path))
 
 
 def image_saver(images: np.ndarray, prefix: str, path: str) -> bool:
@@ -97,4 +101,25 @@ def draw_line(
     image = cv2.line(
         image, (int(s.x), int(s.y)), (int(t.x), int(t.y)), color, thickness
     )
+    return image
+
+
+def draw_circles(
+    image: np.ndarray,
+    circles: np.ndarray,
+    color: tuple = (255, 0, 0),
+    thickness: int = 2,
+) -> np.ndarray:
+    """Draw circles on an image.
+
+    Args:
+        image (np.ndarray): the image to draw on.
+        circles (np.ndarray): the circles to draw. [N, 3] array of [x, y, r] coordinates.
+
+    """
+    image = ensure_cdim(as_uint8(image)).copy()
+    for circle in circles:
+        image = cv2.circle(
+            image, (int(circle[0]), int(circle[1])), int(circle[2]), color, thickness
+        )
     return image
