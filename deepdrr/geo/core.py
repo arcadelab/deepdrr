@@ -45,6 +45,7 @@ from .exceptions import MeetError, JoinError
 from .. import utils
 
 
+Pr = TypeVar("Pr", bound="Primitive")
 PV = TypeVar("PV", bound="PointOrVector")
 P = TypeVar("P", bound="Point")
 V = TypeVar("V", bound="Vector")
@@ -1556,6 +1557,10 @@ class Transform(HomogeneousObject):
         ...
 
     @overload
+    def __matmul__(self: FrameTransform, other: List[Pr]) -> List[Pr]:
+        ...
+
+    @overload
     def __matmul__(self: FrameTransform, other: L) -> L:
         ...
 
@@ -1579,6 +1584,10 @@ class Transform(HomogeneousObject):
 
     @overload
     def __matmul__(self: CameraProjection, other: Point3D) -> Point2D:
+        ...
+
+    @overload
+    def __matmul__(self: CameraProjection, other: List[Point3D]) -> List[Point2D]:
         ...
 
     # @overload
@@ -1616,6 +1625,14 @@ class Transform(HomogeneousObject):
         #     l1_ = -r01 * l0 + r00 * l1
         #     l2_ = np.linalg.det([[l0, l1, l2], [r00, r01, p0], [r10, r11, p1]])
         #     return line(l0_, l1_, l2_)
+        elif isinstance(self, (FrameTransform, CameraProjection)) and isinstance(
+            other, list
+        ):
+            # TODO: handle fiducials elegantly, so the transform just affects their
+            # world_from_anatomical. It think we need to change the design so that matmul is
+            # implemented by the right side object as well, because this function is getting quite
+            # bulky.
+            return [self @ x for x in other]
         elif isinstance(self, FrameTransform) and isinstance(other, (Line2D, Line3D)):
             p = other.get_point()
             v = other.get_direction()
@@ -1645,7 +1662,7 @@ class Transform(HomogeneousObject):
             return CameraProjection(self.intrinsic.copy(), self.extrinsic @ other)
         elif isinstance(self, FrameTransform) and isinstance(other, CameraProjection):
             return CameraProjection(self @ other.intrinsic, other.extrinsic.copy())
-        if isinstance(self, FrameTransform) and isinstance(other, FrameTransform):
+        elif isinstance(self, FrameTransform) and isinstance(other, FrameTransform):
             # very common case of composing FrameTransforms.
             return FrameTransform(self.data @ other.data)
         elif isinstance(other, Transform):
@@ -1929,6 +1946,26 @@ class FrameTransform(Transform):
             raise RuntimeError(f"det(R) = {d}, should be +1 for rotation matrices.")
 
         return cls.from_rt(rotation=R, translation=t)
+
+    @classmethod
+    def from_points(
+        cls,
+        points_B: Union[List[Point], np.ndarray],
+        points_A: Union[List[Point], np.ndarray],
+    ):
+        """Create a (rigid) frame transform from a known point correspondence.
+
+        Args:
+            points_B: a list of N corresponding points in the B frame.
+            points_A: a list of N points in the A frame (or an array with shape [N, 3]).
+
+        Returns:
+            FrameTransform: the `B_from_A` transform that minimizes the mean squared distance
+                between matching points.
+
+        """
+        # TODO: either generalize this to not require correspondence, or do `from_pointclouds`
+        return cls.from_point_correspondence(points_B, points_A)
 
     @classmethod
     def from_line_segments(

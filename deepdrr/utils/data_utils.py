@@ -1,4 +1,4 @@
-from typing import Optional, Any
+from typing import List, Optional, Any
 import os
 import logging
 import numpy as np
@@ -93,7 +93,7 @@ def save_json(path: str, obj: Any):
         json.dump(obj, file, indent=4, sort_keys=True)
 
 
-def load_json(path: str):
+def load_json(path: str) -> Any:
     with open(path, "r") as file:
         out = json.load(file)
     return out

@@ -13,6 +13,10 @@ from ..vol import Volume
 log = logging.getLogger(__name__)
 
 
+# TODO: make this totally independent of the Volume it corresponds to, and make a super-class for
+# all annotations.
+
+
 class LineAnnotation(object):
     """Really a "segment annotation", but Slicer calls it a line.
 
@@ -77,7 +81,7 @@ class LineAnnotation(object):
             return self.volume.world_from_anatomical
 
     @classmethod
-    def from_markup(
+    def from_json(
         cls,
         path: str,
         volume: Optional[Volume] = None,
@@ -131,6 +135,10 @@ class LineAnnotation(object):
             world_from_anatomical=world_from_anatomical,
             anatomical_coordinate_system=anatomical_coordinate_system,
         )
+
+    @classmethod
+    def from_markup(cls, *args, **kwargs):
+        return cls.from_json(*args, **kwargs)
 
     def save(
         self,

@@ -5,6 +5,7 @@ from PIL import Image
 from pathlib import Path
 import cv2
 import matplotlib.pyplot as plt
+from typing import Optional
 
 from .. import geo
 
@@ -109,6 +110,7 @@ def draw_circles(
     circles: np.ndarray,
     color: tuple = (255, 0, 0),
     thickness: int = 2,
+    radius: Optional[int] = None,
 ) -> np.ndarray:
     """Draw circles on an image.
 
@@ -117,9 +119,17 @@ def draw_circles(
         circles (np.ndarray): the circles to draw. [N, 3] array of [x, y, r] coordinates.
 
     """
+    circles = np.array(circles)
     image = ensure_cdim(as_uint8(image)).copy()
     for circle in circles:
-        image = cv2.circle(
-            image, (int(circle[0]), int(circle[1])), int(circle[2]), color, thickness
-        )
+        if circles.shape[1] == 3:
+            x, y, r = circle
+        elif circles.shape[1] == 2:
+            x, y = circle
+            r = radius if radius is not None else 15
+        else:
+            raise ValueError(f"bad circles shape: {circles.shape}")
+        if radius is not None:
+            r = radius
+        image = cv2.circle(image, (int(x), int(y)), int(r), color, thickness)
     return image
