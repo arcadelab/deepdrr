@@ -231,7 +231,7 @@ class LineAnnotation(object):
                     "display": {
                         "visibility": True,
                         "opacity": 1.0,
-                        "color": [0.5, 0.5, 0.5],
+                        "color": color,
                         "selectedColor": color,
                         "activeColor": [0.4, 1.0, 0.0],
                         "propertiesLabelVisibility": False,
