@@ -246,6 +246,8 @@ class Projector(object):
         else:
             self.device = device
 
+        self._camera_intrinsics = camera_intrinsics
+
         self.step = float(step)
         self.mode = mode
         self.spectrum = _get_spectrum(spectrum)
@@ -334,15 +336,19 @@ class Projector(object):
     def source_to_detector_distance(self) -> float:
         if self.device is not None:
             return self.device.source_to_detector_distance
+        elif self._camera_intrinsics is not None:
+            return self._camera_intrinsics.focal_length
         else:
             raise RuntimeError(
-                "No device provided. Set the device attribute by passing `device=<device>` to the constructor."
+                "No device provided. Set the device attribute by sing `device=<device>` to the constructor."
             )
 
     @property
     def camera_intrinsics(self) -> geo.CameraIntrinsicTransform:
         if self.device is not None:
             return self.device.camera_intrinsics
+        elif self._camera_intrinsics is not None:
+            return self._camera_intrinsics
         else:
             raise RuntimeError(
                 "No device provided. Set the device attribute by passing `device=<device>` to the constructor."

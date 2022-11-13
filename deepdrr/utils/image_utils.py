@@ -31,7 +31,7 @@ def as_uint8(image: np.ndarray) -> np.ndarray:
     return image
 
 
-def save(path: Path, image: np.ndarray, mkdir: bool = True) -> None:
+def save(path: Path, image: np.ndarray, mkdir: bool = True) -> Path:
     """Save the given image using PIL.
 
     Args:
@@ -49,6 +49,7 @@ def save(path: Path, image: np.ndarray, mkdir: bool = True) -> None:
     image = as_uint8(image)
 
     Image.fromarray(image).save(str(path))
+    return path
 
 
 def image_saver(images: np.ndarray, prefix: str, path: str) -> bool:

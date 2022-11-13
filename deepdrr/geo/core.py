@@ -455,7 +455,9 @@ class Vector(PointOrVector):
     def __mul__(self, other: Union[int, float]) -> Self:
         """Vectors can be multiplied by scalars."""
         if isinstance(other, (int, float, np.number)) or np.isscalar(other):
-            return type(self)(float(other) * self.data)
+            data = self.data.copy()
+            data[:-1] *= float(other)
+            return type(self)(data)
         else:
             return NotImplemented
 
@@ -539,23 +541,6 @@ class Vector(PointOrVector):
         theta = self.angle(other)
         rot = Rotation.from_rotvec(v * theta)
         return FrameTransform.from_rotation(rot)
-
-    def rotate(self, n: Vector, theta: Optional[float] = None) -> Vector:
-        """Rotate self by the given vector.
-
-        Args:
-            n (Vector): the axis of rotation. If theta is None, the magnitude of this vector is
-                used. Otherwise, it is ignored.
-            theta (float, optional): the angle of rotation. Defaults to None.
-
-        Returns:
-            Vector: the rotated vector.
-        """
-        if theta is None:
-            theta = n.norm()
-
-        rot = Rotation.from_rotvec(n.hat() * theta)
-        return vector(rot.apply(self))
 
     def cosine_distance(self, other: Vector) -> float:
         """Get the cosine distance between the angles.
@@ -719,6 +704,35 @@ class Vector3D(Vector):
             v = vector(Rotation.from_rotvec(angle * self.hat()).apply(v))
 
         return v
+
+    def rotvec_to(self, other: Vector3D) -> Vector3D:
+        """Get the rotvec that rotates self to other."""
+        v = self.cross(other)
+        if np.isclose(v.norm(), 0):
+            return vector([0, 0, 0])
+        v = v.hat()
+        theta = self.angle(other)
+        return v * theta
+
+    def rotate(self, n: Vector3D, theta: Optional[float] = None) -> Vector3D:
+        """Rotate self by the given vector.
+
+        Args:
+            n (Vector): the axis of rotation. If theta is None, the magnitude of this vector is
+                used. Otherwise, it is ignored.
+            theta (float, optional): the angle of rotation. Defaults to None.
+
+        Returns:
+            Vector: the rotated vector.
+        """
+        if theta is None:
+            theta = n.norm()
+
+        if np.isclose(theta, 0):
+            return self
+
+        rot = Rotation.from_rotvec(n.hat() * theta)
+        return vector(rot.apply(self))
 
 
 class HyperPlane(Primitive, Meetable):
@@ -2356,6 +2370,14 @@ class CameraIntrinsicTransform(FrameTransform):
         return Point2D(self.data[:, 2])
 
     @property
+    def cx(self) -> float:
+        return self.data[0, 2]
+
+    @property
+    def cy(self) -> float:
+        return self.data[1, 2]
+
+    @property
     def fx(self) -> float:
         return self.data[0, 0]
 
@@ -2371,7 +2393,7 @@ class CameraIntrinsicTransform(FrameTransform):
     @property
     def focal_length(self) -> float:
         """Focal length in the matrix units."""
-        return self.fx
+        return abs(self.fx)
 
     @property
     def sensor_width(self) -> int:
@@ -2545,6 +2567,15 @@ class CameraProjection(Transform):
     @property
     def sensor_height(self) -> int:
         return self.intrinsic.sensor_height
+
+    @property
+    def world_from_camera3d(self) -> FrameTransform:
+        return self.camera3d_from_world.inv
+
+    @property
+    def principle_ray_in_world(self) -> Vector3D:
+        """Get the principle ray in world coordinates."""
+        return self.world_from_camera3d @ vector(0, 0, 1)
 
     def get_center_in_world(self) -> Point3D:
         """Get the center of the camera (origin of camera3d frame) in world coordinates.

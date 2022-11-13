@@ -279,6 +279,14 @@ class LineAnnotation(object):
     def midpoint_in_world(self) -> geo.Point3D:
         return self.world_from_anatomical @ self.startpoint.lerp(self.endpoint, 0.5)
 
+    @property
+    def trajectory_in_world(self) -> geo.Vector3D:
+        return self.endpoint_in_world - self.startpoint_in_world
+
+    @property
+    def direction_in_world(self) -> geo.Vector3D:
+        return self.trajectory_in_world.normalized()
+
     def get_mesh_in_world(
         self, full: bool = True, use_cached: bool = False
     ) -> pv.PolyData:
