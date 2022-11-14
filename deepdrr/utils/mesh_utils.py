@@ -55,7 +55,7 @@ def isosurface(
     log.debug("transfer scalars")
     scalars = nps.numpy_to_vtk(data.ravel(order="F"), deep=True)
     vol.GetPointData().SetScalars(scalars)
-    
+
     log.debug("marching cubes...")
     dmc = vtk.vtkDiscreteMarchingCubes()
     dmc.SetInputData(vol)
