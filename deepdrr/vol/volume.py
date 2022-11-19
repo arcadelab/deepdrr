@@ -3,7 +3,7 @@
 """
 
 from __future__ import annotations
-from typing import Any, Union, Tuple, List, Optional, Dict
+from typing import Any, Union, Tuple, List, Optional, Dict, Type
 
 import logging
 import numpy as np
@@ -13,6 +13,7 @@ from pydicom.filereader import dcmread
 import nrrd
 from scipy.spatial.transform import Rotation
 from scipy.interpolate import RegularGridInterpolator
+import pyvista as pv
 
 from .. import load_dicom
 from .. import geo
@@ -22,7 +23,6 @@ from ..utils import mesh_utils
 from ..device import Device
 from ..projector.material_coefficients import material_coefficients
 
-pv, pv_available = utils.try_import_pyvista()
 vtk, nps, vtk_available = utils.try_import_vtk()
 
 
@@ -32,9 +32,14 @@ log = logging.getLogger(__name__)
 class Volume(object):
     data: np.ndarray
     materials: Dict[str, np.ndarray]
-    anatomical_from_ijk: geo.FrameTransform
+    anatomical_from_IJK: geo.FrameTransform
     world_from_anatomical: geo.FrameTransform
     anatomical_coordinate_system: Optional[str]
+
+    anatomical_from_ijk = property(
+        lambda self: self.anatomical_from_IJK,
+        lambda self, value: setattr(self, "anatomical_from_IJK", value),
+    )
 
     cache_dir: Optional[Path] = None
     # TODO: The current Volume class is really a scanned volume. We should have a BaseVolume or
@@ -44,11 +49,12 @@ class Volume(object):
         self,
         data: np.ndarray,
         materials: Dict[str, np.ndarray],
-        anatomical_from_ijk: geo.FrameTransform,
+        anatomical_from_IJK: geo.FrameTransform,
         world_from_anatomical: Optional[geo.FrameTransform] = None,
         anatomical_coordinate_system: Optional[str] = None,
         cache_dir: Optional[str] = None,
         config: Dict[str, Any] = dict(),
+        anatomical_from_ijk: Optional[geo.FrameTransform] = None,
     ) -> None:
         """A deepdrr Volume object with materials segmentation and orientation in world-space.
 
@@ -58,7 +64,7 @@ class Volume(object):
         Args:
             data (np.ndarray): The density data (a 3D array).
             materials (Dict[str, np.ndarray]): material segmentation of the volume, mapping material name to binary segmentation.
-            anatomical_from_ijk (geo.FrameTransform): transformation from IJK space to anatomical (RAS or LPS).
+            anatomical_from_IJK (geo.FrameTransform): transformation from IJK space to anatomical (RAS or LPS).
             world_from_anatomical (Optional[geo.FrameTransform], optional): transformation from the anatomical space to world coordinates. If None, assumes identity. Defaults to None.
             anatomical_coordinate_system (str, optional): String denoting the coordinate system. Either "LPS", "RAS", or None.
                 This may be useful for ensuring compatibility with other data, but it is not checked or used internally (yet). Defaults to None.
@@ -66,7 +72,10 @@ class Volume(object):
         """
         self.data = np.array(data).astype(np.float32)
         self.materials = self._format_materials(materials)
-        self.anatomical_from_ijk = geo.frame_transform(anatomical_from_ijk)
+        if anatomical_from_ijk is not None:
+            # Deprecation warning
+            anatomical_from_IJK = anatomical_from_ijk
+        self.anatomical_from_IJK = geo.frame_transform(anatomical_from_IJK)
         self.world_from_anatomical = (
             geo.FrameTransform.identity(3)
             if world_from_anatomical is None
@@ -329,6 +338,96 @@ class Volume(object):
 
         return materials
 
+    @property
+    def LPS_from_IJK(self):
+        """Get the LPS_from_IJK transform."""
+        if self.anatomical_coordinate_system == "LPS":
+            return self.anatomical_from_ijk
+        elif self.anatomical_coordinate_system == "RAS":
+            return geo.LPS_from_RAS @ self.anatomical_from_ijk
+        else:
+            raise ValueError(
+                f"Unknown anatomical coordinate system {self.anatomical_coordinate_system}"
+            )
+
+    @property
+    def IJK_from_LPS(self):
+        return self.LPS_from_IJK.inverse()
+
+    @property
+    def RAS_from_IJK(self):
+        """Get the RAS_from_IJK transform."""
+        if self.anatomical_coordinate_system == "RAS":
+            return self.anatomical_from_ijk
+        elif self.anatomical_coordinate_system == "LPS":
+            return geo.RAS_from_LPS @ self.anatomical_from_ijk
+        else:
+            raise ValueError(
+                f"Unknown anatomical coordinate system {self.anatomical_coordinate_system}"
+            )
+
+    @property
+    def IJK_from_RAS(self):
+        return self.RAS_from_IJK.inverse()
+
+    def save(self, path: Path):
+        """Save the volume to disk as a nifti file.
+
+        Args:
+            path (Path): a directory to save the volume and segmentations to.
+        """
+        path = Path(path)
+        if not path.exists():
+            path.mkdir(parents=True)
+
+        # save the volume
+        img = nib.Nifti1Image(self.data, geo.get_data(self.RAS_from_IJK))
+        nib.save(img, path / "data.nii.gz")
+
+        # Save the segmentations
+        for name, segmentation in self.materials.items():
+            img = nib.Nifti1Image(
+                segmentation.astype(np.int32), geo.get_data(self.RAS_from_IJK)
+            )
+            nib.save(img, path / f"{name}.nii.gz")
+
+        self.world_from_anatomical.save(path / "world_from_anatomical.txt")
+
+    @classmethod
+    def load(cls: Type[Volume], path: Path) -> Volume:
+        """Load a volume from disk.
+
+        Args:
+            path (Path): a directory containing the volume and segmentations.
+
+        Returns: Volume.
+        """
+
+        path = Path(path)
+        if not path.exists():
+            raise ValueError(f"Path {path} does not exist.")
+
+        # load the volume
+        img = nib.load(path / "data.nii.gz")
+        data = img.get_fdata()
+
+        # load the segmentations
+        materials = {}
+        for p in path.glob("*.nii.gz"):
+            if p.name == "data.nii.gz":
+                continue
+            materials[p.stem.split(".")[0]] = nib.load(p).get_fdata()
+
+        world_from_anatomical = geo.F.load(path / "world_from_anatomical.txt")
+
+        return cls(
+            data=data,
+            materials=materials,
+            world_from_anatomical=world_from_anatomical,
+            anatomical_from_IJK=geo.F(img.affine),
+            anatomical_coordinate_system="RAS",
+        )
+
     @classmethod
     def from_nifti(
         cls,
@@ -383,7 +482,7 @@ class Volume(object):
 
         log.info(f"loading NiFti volume from {path}")
         img = nib.load(path)
-        if img.header.get_xyzt_units()[0] != "mm":
+        if img.header.get_xyzt_units()[0] not in ["mm", "unknown"]:
             log.warning(
                 f'got NifTi xyz units: {img.header.get_xyzt_units()[0]}. (Expected "mm").'
             )
@@ -655,6 +754,10 @@ class Volume(object):
     @property
     def ijk_from_world(self) -> geo.FrameTransform:
         return self.world_from_ijk.inv
+
+    @property
+    def IJK_from_world(self) -> geo.FrameTransform:
+        return self.ijk_from_world @ self.IJK_from_ijk
 
     @property
     def anatomical_from_world(self):
@@ -929,6 +1032,7 @@ class Volume(object):
         decimation: float = 0.01,
         smooth_iter: int = 30,
         relaxation_factor: float = 0.25,
+        convert_to_LPS: bool = False,
     ) -> pv.PolyData:
         """Make an isosurface from the volume's data, transforming to anatomical_coordinates.
 
@@ -943,6 +1047,7 @@ class Volume(object):
             decimation (float): The decimation factor (how many points to remove).
             smooth_iter (int): The number of smoothing iterations.
             relaxation_factor (float): The relaxation factor.
+            convert_to_LPS (bool): If True, the isosurface is converted to LPS coordinates. (Recommended)
 
         Returns:
             pv.PolyData: The surface mesh in anatomical coordinates.
@@ -958,11 +1063,14 @@ class Volume(object):
             relaxation_factor=relaxation_factor,
         )
         surface.transform(geo.get_data(self.anatomical_from_ijk), inplace=True)
+
+        if self.anatomical_coordinate_system == "RAS" and convert_to_LPS:
+            surface.transform(geo.get_data(geo.RAS_from_LPS), inplace=True)
+
         return surface
 
     def _make_surface(self, material: str = "bone"):
         """Make a surface for the boolean segmentation"""
-        assert vtk_available and pv_available
         assert (
             material in self.materials
         ), f'"{material}" not in {self.materials.keys()}'
@@ -1062,10 +1170,6 @@ class Volume(object):
         Returns:
             pv.PolyData: pyvista mesh.
         """
-
-        assert (
-            pv_available
-        ), f"PyVista not available for obtaining Volume mesh. Try: `pip install pyvista`"
 
         x, y, z = np.array(self.shape) - 1
         points = [

@@ -287,6 +287,16 @@ class LineAnnotation(object):
     def direction_in_world(self) -> geo.Vector3D:
         return self.trajectory_in_world.normalized()
 
+    def get_mesh(self):
+        """Get the mesh in anatomical coordinates."""
+        u = self.startpoint
+        v = self.endpoint
+
+        mesh = pv.Line(u, v)
+        mesh += pv.Sphere(2.5, u)
+        mesh += pv.Sphere(2.5, v)
+        return mesh
+
     def get_mesh_in_world(
         self, full: bool = True, use_cached: bool = False
     ) -> pv.PolyData:

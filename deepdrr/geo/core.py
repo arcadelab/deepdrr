@@ -17,6 +17,7 @@ KNOWN ISSUES:
 """
 
 from __future__ import annotations
+from pathlib import Path
 import traceback
 
 from typing import (
@@ -1844,6 +1845,83 @@ class FrameTransform(Transform):
         )
 
         return cls(data)
+
+    def save_txt(self, path: Union[str, Path]) -> None:
+        """Save the transform to a text file.
+
+        Args:
+            path (Union[str, Path]): path to save the transform to.
+
+        """
+
+        r = self.R.T.reshape(-1)
+        t = self.t.reshape(-1)
+        rt = (
+            np.array2string(
+                np.concatenate([r, t]),
+                separator=" ",
+                max_line_width=1000,
+                formatter={"float_kind": lambda x: "%.8f" % x},
+            )
+            .replace("[", "")
+            .replace("]", "")
+        )
+        content = f"""#Insight Transform File V1.0
+#Transform 0
+Transform: AffineTransform_double_3_3
+Parameters: {rt}
+FixedParameters: 0 0 0
+"""
+        with open(path, "w") as f:
+            f.write(content)
+
+    @classmethod
+    def load_txt(cls, path: Union[str, Path]) -> FrameTransform:
+        """Load a transform from a text file.
+
+        Args:
+            path (Union[str, Path]): path to load the transform from.
+
+        Returns:
+            FrameTransform: the loaded transform.
+
+        """
+        with open(path, "r") as f:
+            lines = f.readlines()
+
+        params = lines[3].split(":")[1].strip().split(" ")
+        params = np.array([float(p) for p in params])
+        dim = int(np.sqrt(len(params) - 1))
+        R = params[: dim**2].reshape((dim, dim))
+        t = params[dim**2 :]
+        return cls.from_rt(R, t, dim)
+
+    def save(self, path: Union[str, Path]) -> None:
+        """Save the transform to a file.
+
+        Args:
+            path (Union[str, Path]): path to save the transform to.
+
+        """
+        path = Path(path)
+        if path.suffix == ".txt":
+            self.save_txt(path)
+        else:
+            raise NotImplementedError(f"Invalid suffix {path.suffix}")
+
+    @classmethod
+    def load(cls, path: Union[str, Path]) -> None:
+        """Load the transform from a file.
+
+        Args:
+            path (Union[str, Path]): path to load the transform from.
+
+        """
+        path = Path(path)
+        if path.suffix == ".txt":
+            cls.load_txt(path)
+        else:
+            raise NotImplementedError(f"Invalid suffix {path.suffix}")
 
     @classmethod
     def from_scaling(
