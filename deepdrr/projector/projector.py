@@ -418,8 +418,12 @@ class Projector(object):
             cuda.memcpy_htod(self.world_from_index_gpu, world_from_index)
 
             for vol_id, _vol in enumerate(self.volumes):
+                log.debug(f"Projecting volume {type(_vol)} / {len(self.volumes)}")
+                if hasattr(_vol, "tip_in_world"):
+                    log.debug(f"tip_in_anatomical: {_vol.tip}")
+                    log.debug(f"base_in_anatomical: {_vol.base}")
                 source_ijk = np.array(
-                    _vol.ijk_from_world @ proj.center_in_world
+                    _vol.IJK_from_world @ proj.center_in_world
                 ).astype(np.float32)
                 cuda.memcpy_htod(
                     int(self.sourceX_gpu) + int(NUMBYTES_INT32 * vol_id),
@@ -434,13 +438,12 @@ class Projector(object):
                     np.array([source_ijk[2]]),
                 )
 
-                ijk_from_world = (
-                    _vol.ijk_from_world.toarray()
-                )  # TODO: use this elsewhere, when 3x4 matrix is needed
+                # TODO: prefer toarray() to get transform throughout
+                IJK_from_world = _vol.IJK_from_world.toarray()
                 cuda.memcpy_htod(
                     int(self.ijk_from_world_gpu)
-                    + (ijk_from_world.size * NUMBYTES_FLOAT32) * vol_id,
-                    ijk_from_world,
+                    + (IJK_from_world.size * NUMBYTES_FLOAT32) * vol_id,
+                    IJK_from_world,
                 )
 
             args = [

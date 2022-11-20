@@ -36,11 +36,6 @@ class Volume(object):
     world_from_anatomical: geo.FrameTransform
     anatomical_coordinate_system: Optional[str]
 
-    anatomical_from_ijk = property(
-        lambda self: self.anatomical_from_IJK,
-        lambda self, value: setattr(self, "anatomical_from_IJK", value),
-    )
-
     cache_dir: Optional[Path] = None
     # TODO: The current Volume class is really a scanned volume. We should have a BaseVolume or
     # GenericVolume, which might be subclassed by tools or other types of volumes not constructed
@@ -49,7 +44,7 @@ class Volume(object):
         self,
         data: np.ndarray,
         materials: Dict[str, np.ndarray],
-        anatomical_from_IJK: geo.FrameTransform,
+        anatomical_from_IJK: Optional[geo.FrameTransform] = None,
         world_from_anatomical: Optional[geo.FrameTransform] = None,
         anatomical_coordinate_system: Optional[str] = None,
         cache_dir: Optional[str] = None,
@@ -84,7 +79,6 @@ class Volume(object):
         self.anatomical_coordinate_system = anatomical_coordinate_system
         assert self.anatomical_coordinate_system in ["LPS", "RAS", None]
         self.cache_dir = None if cache_dir is None else Path(cache_dir).expanduser()
-
         self.config = config
 
     def get_config(self) -> Dict[str, Any]:
@@ -97,7 +91,7 @@ class Volume(object):
         """
         config = self.config.copy()
         config.update(
-            anatomical_from_ijk=self.anatomical_from_ijk,
+            anatomical_from_IJK=self.anatomical_from_IJK,
             world_from_anatomical=self.world_from_anatomical,
             anatomical_coordinate_system=self.anatomical_coordinate_system,
         )
@@ -141,7 +135,7 @@ class Volume(object):
             or anatomical_coordinate_system == "none"
         ):
             raise NotImplementedError
-            anatomical_from_ijk = geo.FrameTransform.from_scaling(
+            anatomical_from_IJK = geo.FrameTransform.from_scaling(
                 scaling=spacing, translation=origin
             )
         elif anatomical_coordinate_system == "LPS":
@@ -151,7 +145,7 @@ class Volume(object):
                 [0, 0, spacing[2]],
                 [0, -spacing[1], 0],
             ]
-            anatomical_from_ijk = geo.FrameTransform.from_rt(
+            anatomical_from_IJK = geo.FrameTransform.from_rt(
                 rotation=rotation, translation=origin
             )
         elif anatomical_coordinate_system == "RAS":
@@ -164,7 +158,7 @@ class Volume(object):
         return cls(
             data=data,
             materials=materials,
-            anatomical_from_ijk=anatomical_from_ijk,
+            anatomical_from_ijk=anatomical_from_IJK,
             world_from_anatomical=world_from_anatomical,
             anatomical_coordinate_system=anatomical_coordinate_system,
             **kwargs,
@@ -339,28 +333,36 @@ class Volume(object):
         return materials
 
     @property
-    def LPS_from_IJK(self):
+    def anatomical_from_ijk(self) -> geo.FrameTransform:
+        return self.anatomical_from_IJK
+
+    @anatomical_from_ijk.setter
+    def anatomical_from_ijk(self, value: geo.FrameTransform):
+        self.anatomical_from_IJK = value
+
+    @property
+    def LPS_from_IJK(self) -> geo.FrameTransform:
         """Get the LPS_from_IJK transform."""
         if self.anatomical_coordinate_system == "LPS":
-            return self.anatomical_from_ijk
+            return self.anatomical_from_IJK
         elif self.anatomical_coordinate_system == "RAS":
-            return geo.LPS_from_RAS @ self.anatomical_from_ijk
+            return geo.LPS_from_RAS @ self.anatomical_from_IJK
         else:
             raise ValueError(
                 f"Unknown anatomical coordinate system {self.anatomical_coordinate_system}"
             )
 
     @property
-    def IJK_from_LPS(self):
+    def IJK_from_LPS(self) -> geo.FrameTransform:
         return self.LPS_from_IJK.inverse()
 
     @property
     def RAS_from_IJK(self):
         """Get the RAS_from_IJK transform."""
         if self.anatomical_coordinate_system == "RAS":
-            return self.anatomical_from_ijk
+            return self.anatomical_from_IJK
         elif self.anatomical_coordinate_system == "LPS":
-            return geo.RAS_from_LPS @ self.anatomical_from_ijk
+            return geo.RAS_from_LPS @ self.anatomical_from_IJK
         else:
             raise ValueError(
                 f"Unknown anatomical coordinate system {self.anatomical_coordinate_system}"
@@ -423,8 +425,8 @@ class Volume(object):
         return cls(
             data=data,
             materials=materials,
-            world_from_anatomical=world_from_anatomical,
             anatomical_from_IJK=geo.F(img.affine),
+            world_from_anatomical=world_from_anatomical,
             anatomical_coordinate_system="RAS",
         )
 
@@ -487,7 +489,7 @@ class Volume(object):
                 f'got NifTi xyz units: {img.header.get_xyzt_units()[0]}. (Expected "mm").'
             )
 
-        anatomical_from_ijk = geo.FrameTransform(img.affine)
+        anatomical_from_IJK = geo.FrameTransform(img.affine)
 
         if segmentation:
             data = img.get_fdata()
@@ -507,7 +509,7 @@ class Volume(object):
             if materials is None:
                 materials = cls.segment_materials(
                     hu_values,
-                    anatomical_from_ijk,
+                    anatomical_from_IJK,
                     use_thresholding=use_thresholding,
                     use_cached=use_cached,
                     save_cache=save_cache,
@@ -530,8 +532,8 @@ class Volume(object):
         return cls(
             data,
             materials,
-            anatomical_from_ijk,
-            world_from_anatomical,
+            anatomical_from_IJK=anatomical_from_IJK,
+            world_from_anatomical=world_from_anatomical,
             anatomical_coordinate_system="RAS",
             cache_dir=cache_dir,
             config=config,
@@ -748,16 +750,20 @@ class Volume(object):
         )
 
     @property
-    def world_from_ijk(self) -> geo.FrameTransform:
-        return self.world_from_anatomical @ self.anatomical_from_ijk
+    def world_from_IJK(self) -> geo.FrameTransform:
+        return self.world_from_anatomical @ self.anatomical_from_IJK
 
     @property
-    def ijk_from_world(self) -> geo.FrameTransform:
-        return self.world_from_ijk.inv
+    def world_from_ijk(self) -> geo.FrameTransform:
+        return self.world_from_IJK
 
     @property
     def IJK_from_world(self) -> geo.FrameTransform:
-        return self.ijk_from_world @ self.IJK_from_ijk
+        return self.world_from_IJK.inverse()
+
+    @property
+    def ijk_from_world(self) -> geo.FrameTransform:
+        return self.world_from_IJK.inv
 
     @property
     def anatomical_from_world(self):
@@ -765,7 +771,11 @@ class Volume(object):
 
     @property
     def ijk_from_anatomical(self):
-        return self.anatomical_from_ijk.inv
+        return self.anatomical_from_IJK.inv
+
+    @property
+    def IJK_from_anatomical(self):
+        return self.anatomical_from_IJK.inv
 
     @property
     def origin(self) -> geo.Point3D:

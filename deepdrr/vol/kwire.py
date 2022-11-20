@@ -15,6 +15,8 @@ class KWire(Volume):
     _mesh_material = "titanium"
 
     diameter = 2.0  # mm
+    tip_in_IJK: geo.Point3D
+    base_in_IJK: geo.Point3D
 
     def __init__(
         self,
@@ -34,11 +36,17 @@ class KWire(Volume):
 
         super(KWire, self).__init__(*args, **kwargs)
         assert tip is not None and base is not None
-        self.tip = geo.point(tip)
-        self.base = geo.point(base)
+        self.tip_in_IJK = self.IJK_from_anatomical @ geo.point(tip)
+        self.base_in_IJK = self.IJK_from_anatomical @ geo.point(base)
 
     @classmethod
-    def from_example(cls, density: float = 7.5, **kwargs):
+    def from_example(
+        cls,
+        diameter: float = 2,
+        density: float = 7.5,
+        world_from_anatomical: Optional[geo.F] = None,
+        **kwargs,
+    ):
         """Creates a KWire from the provided download link.
 
         Args:
@@ -57,7 +65,22 @@ class KWire(Volume):
         tool = cls.from_nifti(
             path, density_kwargs=dict(density=density), tip=tip, base=base, **kwargs
         )
+
+        # scale the tool to the desired radius
+        tool.scale(diameter / tool.diameter)
+
         return tool
+
+    def scale(self, factor: float) -> None:
+        """Scales the volume by the given factor.
+
+        Args:
+            factor (float): The factor by which to scale the tool. 1 would be no scaling.
+        """
+        scaling = geo.F(
+            np.diag([factor, factor, factor, 1.0]),
+        )
+        self.anatomical_from_IJK = scaling @ self.anatomical_from_IJK
 
     @staticmethod
     def _convert_hounsfield_to_density(hu_values: np.ndarray, density: float = 7.5):
@@ -75,12 +98,22 @@ class KWire(Volume):
         return dict(titanium=(hu_values > 0))
 
     @property
+    def tip(self) -> geo.Point3D:
+        """The tip of the tool in world space."""
+        return self.anatomical_from_IJK @ self.tip_in_IJK
+
+    @property
+    def base(self) -> geo.Point3D:
+        """The base of the tool in world space."""
+        return self.anatomical_from_IJK @ self.base_in_IJK
+
+    @property
     def tip_in_ijk(self) -> geo.Point3D:
-        return self.ijk_from_anatomical @ self.tip
+        return self.tip_in_IJK
 
     @property
     def base_in_ijk(self) -> geo.Point3D:
-        return self.ijk_from_anatomical @ self.base
+        return self.base_in_IJK
 
     @property
     def tip_in_anatomical(self) -> geo.Point3D:
@@ -90,17 +123,17 @@ class KWire(Volume):
     @property
     def base_in_anatomical(self) -> geo.Point3D:
         """Get the location of the tool base in anatomical coordinates."""
-        return self.anatomical_from_ijk @ self.base_in_ijk
+        return self.base
 
     @property
     def tip_in_world(self) -> geo.Point3D:
         """Get the location of the tool tip (the pointy end) in world coordinates."""
-        return self.world_from_ijk @ self.tip_in_ijk
+        return self.world_from_IJK @ self.tip_in_IJK
 
     @property
     def base_in_world(self) -> geo.Point3D:
         """Get the location of the tool base in world coordinates."""
-        return self.world_from_ijk @ self.base_in_ijk
+        return self.world_from_IJK @ self.base_in_IJK
 
     @property
     def length_in_world(self):
@@ -127,8 +160,7 @@ class KWire(Volume):
 
         # interpolate along the direction of the tool to get the desired points in world.
         trajectory_vector = endpoint_in_world - startpoint_in_world
-
-        desired_tip_in_world = endpoint_in_world - (1 - progress) * trajectory_vector
+        desired_tip_in_world = startpoint_in_world.lerp(endpoint_in_world, progress)
         desired_base_in_world = (
             desired_tip_in_world - trajectory_vector.hat() * self.length_in_world
         )

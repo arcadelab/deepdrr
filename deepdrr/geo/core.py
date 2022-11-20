@@ -2170,7 +2170,8 @@ FixedParameters: 0 0 0
         This is different from calling np.array() on the transform, which returns a 4x4 array.
 
         """
-        return self.data[:-1, :].astype(np.float32).copy()
+        data = self.data[:-1, :] / self.data[-1, -1]
+        return data.astype(np.float32).copy()
 
     def as_quatpos(self) -> np.ndarray:
         """Return the transform as a quaternion and position.
