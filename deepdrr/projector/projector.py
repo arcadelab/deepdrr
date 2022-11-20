@@ -418,10 +418,6 @@ class Projector(object):
             cuda.memcpy_htod(self.world_from_index_gpu, world_from_index)
 
             for vol_id, _vol in enumerate(self.volumes):
-                log.debug(f"Projecting volume {type(_vol)} / {len(self.volumes)}")
-                if hasattr(_vol, "tip_in_world"):
-                    log.debug(f"tip_in_anatomical: {_vol.tip}")
-                    log.debug(f"base_in_anatomical: {_vol.base}")
                 source_ijk = np.array(
                     _vol.IJK_from_world @ proj.center_in_world
                 ).astype(np.float32)
