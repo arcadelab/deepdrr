@@ -71,6 +71,7 @@ def isosurface(
     surface: pv.PolyData = pv.wrap(dmc.GetOutput())
 
     if not surface.is_all_triangles():
+        log.debug("triangulate...")
         surface.triangulate(inplace=True)
 
     log.debug("decimate")
