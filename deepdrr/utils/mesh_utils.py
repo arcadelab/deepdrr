@@ -65,6 +65,7 @@ def isosurface(
     dmc.Update()
 
     surface: pv.PolyData = pv.wrap(dmc.GetOutput())
+
     if not surface.is_all_triangles():
         surface.triangulate(inplace=True)
 

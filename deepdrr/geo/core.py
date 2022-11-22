@@ -3,13 +3,13 @@
 
 """Homogeneous geometry library. 
 
-Copyright (c) 2021, Benjamin D. Killeen. MIT License.
+Copyright (c) 2022, Benjamin D. Killeen. MIT License.
 
 KNOWN ISSUES: 
 
 - When multiplying vectors by scalars it is safer to put the vector on the left. This is because
   your float or int may actually by a numpy scalar, in which case numpy will greedily convert the
-  vector (which has an __array__ methodz) to a numpy array, so the multiplication will return an
+  vector (which has an __array__ method) to a numpy array, so the multiplication will return an
   np.ndarray and not a geo.Vector. It will still be the *correct* result, just the wrong type (and
   no longer homogeneous).
 

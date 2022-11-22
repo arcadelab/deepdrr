@@ -58,7 +58,7 @@ def download(
 
     path = root / filename
     if extract_name is not None:
-        extract_archive(path, root / extract_name, remove_finished=True)
+        extract_archive(path, root, remove_finished=True)
         path = root / extract_name
 
     return path
