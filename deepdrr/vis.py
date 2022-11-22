@@ -30,10 +30,11 @@ import logging
 from typing import Any, Union, List, Optional
 import numpy as np
 import os
+import pyvista as pv
 
 from . import utils
+from . import geo
 
-pv, pv_available = utils.try_import_pyvista()
 
 log = logging.getLogger(__name__)
 
@@ -92,3 +93,108 @@ def show(
         image = None
     plotter.close()
     return image
+
+
+def get_frustum_mesh(
+    camera_projection: geo.CameraProjection,
+    pixel_size: float,
+    image_path: Optional[str] = None,
+    image_plane_distance: Optional[float] = None,
+    full_frustum: bool = True,
+) -> pv.PolyData:
+    """Get a really simple camera mesh for the camera projections.
+
+    Args:
+        camera_projection (geo.CameraProjection): The camera projection.
+        pixel_size (float): The pixel size in mm.
+        image_path (str, optional): The path to the image. Defaults to None.
+        image_plane_distance (float, optional): The distance from the camera to the image plane visualization. Defaults to None,
+            which uses the distance from the camera to the image plane.
+        full_frustum (bool, optional): Whether to show the full frustum, or just the principle ray. Defaults to True.
+
+    Returns:
+        pv.PolyData: Mesh representing the C-arm frustum.
+    """
+
+    focal_length_mm = camera_projection.intrinsic.focal_length * pixel_size
+    sensor_height = camera_projection.intrinsic.sensor_height
+    sensor_width = camera_projection.intrinsic.sensor_width
+    sensor_height_mm = camera_projection.intrinsic.sensor_height * pixel_size
+    sensor_width_mm = camera_projection.intrinsic.sensor_width * pixel_size
+
+    # In camera frame
+    s = geo.p(0, 0, 0)
+    c = s + geo.v(0, 0, focal_length_mm)
+    cx = pixel_size * camera_projection.intrinsic.cx
+    cy = pixel_size * camera_projection.intrinsic.cy
+    ul = geo.p(-cx, cy, focal_length_mm)
+    ur = geo.p(cx, cy, focal_length_mm)
+    bl = geo.p(-cx, -cy, focal_length_mm)
+    br = geo.p(cx, -cy, focal_length_mm)
+
+    mesh = pv.Sphere(10, center=s)
+    if full_frustum:
+        mesh += (
+            pv.Line(ur, ul)
+            + pv.Line(br, bl)
+            + pv.Line(ur, br)
+            + pv.Line(ul, bl)
+            + pv.Line(s, ul)
+            + pv.Line(s, ur)
+            + pv.Line(s, bl)
+            + pv.Line(s, br)
+        )
+    else:
+        mesh += pv.Line(s, c)
+
+    if image_plane_distance is not None:
+        pixel_size_at_plane = pixel_size / focal_length_mm * image_plane_distance
+        cx_at_plane = pixel_size_at_plane * camera_projection.intrinsic.cx
+        cy_at_plane = pixel_size_at_plane * camera_projection.intrinsic.cy
+    else:
+        image_plane_distance = focal_length_mm
+        pixel_size_at_plane = pixel_size
+        cx_at_plane = cx
+        cy_at_plane = cy
+
+    if image_path is not None:
+        image = pv.read(image_path)
+        # This is just a hack because some of rob's images are rotated by 180 degrees
+        if camera_projection.intrinsic.fx > 0:
+            image = image.transform(
+                np.array(
+                    [
+                        [pixel_size_at_plane, 0, 0, -cx_at_plane],
+                        [0, -pixel_size_at_plane, 0, cy_at_plane],
+                        [0, 0, 1, image_plane_distance],
+                        [0, 0, 0, 1],
+                    ]
+                ),
+                inplace=False,
+            )
+        else:
+            image = image.transform(
+                np.array(
+                    [
+                        [-pixel_size_at_plane, 0, 0, cx_at_plane],
+                        [0, pixel_size_at_plane, 0, -cy_at_plane],
+                        [0, 0, 1, image_plane_distance],
+                        [0, 0, 0, 1],
+                    ]
+                ),
+                inplace=False,
+            )
+
+    else:
+        image = pv.Plane(
+            center=[0, 0, focal_length_mm],
+            direction=[0, 0, 1],
+            i_size=sensor_width_mm,
+            j_size=sensor_height_mm,
+        )
+
+    image = image.transform(
+        geo.get_data(camera_projection.world_from_camera3d), inplace=False
+    )
+    mesh.transform(geo.get_data(camera_projection.world_from_camera3d), inplace=True)
+    return mesh, image

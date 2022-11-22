@@ -52,10 +52,14 @@ def isosurface(
     else:
         data = (data > value).astype(np.uint8)
 
+    if np.sum(data) == 0:
+        log.warning("No voxels in isosurface")
+        return pv.PolyData()
+
     log.debug("transfer scalars")
     scalars = nps.numpy_to_vtk(data.ravel(order="F"), deep=True)
     vol.GetPointData().SetScalars(scalars)
-    
+
     log.debug("marching cubes...")
     dmc = vtk.vtkDiscreteMarchingCubes()
     dmc.SetInputData(vol)
@@ -65,6 +69,7 @@ def isosurface(
     dmc.Update()
 
     surface: pv.PolyData = pv.wrap(dmc.GetOutput())
+
     if not surface.is_all_triangles():
         surface.triangulate(inplace=True)
 

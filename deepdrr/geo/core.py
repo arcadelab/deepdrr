@@ -3,13 +3,13 @@
 
 """Homogeneous geometry library. 
 
-Copyright (c) 2021, Benjamin D. Killeen. MIT License.
+Copyright (c) 2022, Benjamin D. Killeen. MIT License.
 
 KNOWN ISSUES: 
 
 - When multiplying vectors by scalars it is safer to put the vector on the left. This is because
   your float or int may actually by a numpy scalar, in which case numpy will greedily convert the
-  vector (which has an __array__ methodz) to a numpy array, so the multiplication will return an
+  vector (which has an __array__ method) to a numpy array, so the multiplication will return an
   np.ndarray and not a geo.Vector. It will still be the *correct* result, just the wrong type (and
   no longer homogeneous).
 
@@ -17,6 +17,7 @@ KNOWN ISSUES:
 """
 
 from __future__ import annotations
+from pathlib import Path
 import traceback
 
 from typing import (
@@ -36,12 +37,16 @@ from typing_extensions import Self
 import numpy as np
 import scipy.spatial.distance
 from scipy.spatial.transform import Rotation
+from copy import deepcopy
 
 if TYPE_CHECKING:
-    from .camera_projection import CameraProjection
+    from ..vol import Volume
 
-from .exceptions import *
+from .exceptions import MeetError, JoinError
+from .. import utils
 
+
+Pr = TypeVar("Pr", bound="Primitive")
 PV = TypeVar("PV", bound="PointOrVector")
 P = TypeVar("P", bound="Point")
 V = TypeVar("V", bound="Vector")
@@ -136,10 +141,13 @@ class HomogeneousObject(ABC):
         return np.array(self.data, *args, **kwargs)
 
     def __str__(self):
-        return f"{self.__class__.__name__[0]}{np.array_str(self.data, suppress_small=True)}"
+        if self.data.ndim < 2:
+            return f"{self.__class__.__name__[0]}{np.array_str(self.data, suppress_small=True)}"
+        else:
+            return f"{self.__class__.__name__[0]}(\n{np.array_str(self.data, suppress_small=True)}\n)"
 
     def __repr__(self):
-        if self.data.ndim == 1:
+        if self.data.ndim < 2:
             s = np.array_str(self.data, suppress_small=True)
             return f"{self.__class__.__name__}({s})"
         else:
@@ -163,6 +171,13 @@ class HomogeneousObject(ABC):
     @property
     def shape(self) -> Tuple[int, ...]:
         return self.data.shape
+
+    def get_config(self) -> dict:
+        """Get a config dict with the data in this object."""
+        return {"data": self.data.tolist()}
+
+    def copy(self) -> Self:
+        return self.__class__(**self.get_config())
 
 
 def get_data(x: Union[HomogeneousObject, List[HomogeneousObject]]) -> np.ndarray:
@@ -252,23 +267,27 @@ class PointOrVector(Primitive):
     def __div__(self, other: float) -> Self:
         return self * (1 / other)
 
+    def __truediv__(self, other: float) -> Self:
+        return self * (1 / other)
+
     @property
-    def x(self):
+    def x(self) -> float:
         return self.data[0]
 
     @property
-    def y(self):
+    def y(self) -> float:
         assert self.dim >= 2
-        return self.data[1]
+        return float(self.data[1])
 
     @property
-    def z(self):
+    def z(self) -> float:
         assert self.dim >= 3
-        return self.data[2]
+        return float(self.data[2])
 
     @property
-    def w(self):
-        return self.data[-1]
+    def w(self) -> float:
+        # Should always be 1 or 0.
+        return float(self.data[-1])
 
 
 class Point(PointOrVector, Joinable):
@@ -293,7 +312,7 @@ class Point(PointOrVector, Joinable):
 
     @classmethod
     def from_any(
-        cls: Type[T],
+        cls: Type[Point],
         other: Union[np.ndarray, Point],
     ):
         """If other is not a point, make it one."""
@@ -347,7 +366,7 @@ class Point(PointOrVector, Joinable):
                 f"ambiguous subtraction of {self} and {other}. Can't determine if point or vector."
             )
         else:
-            raise TypeError(f"cannot subtract {type(other)} {other} from a point")
+            raise TypeError(f"cannot do {other} - {self}")
 
     def __rsub__(self, other):
         """Means other - self was called."""
@@ -419,7 +438,7 @@ class Vector(PointOrVector):
 
     @classmethod
     def from_array(
-        cls: Type[T],
+        cls: Type[Vector],
         v: np.ndarray,
     ) -> T:
         v = np.array(v).astype(cls.dtype)
@@ -428,7 +447,7 @@ class Vector(PointOrVector):
 
     @classmethod
     def from_any(
-        cls: Type[T],
+        cls: Type[Vector],
         other: Union[np.ndarray, Vector],
     ):
         """If other is not a Vector, make it one."""
@@ -437,7 +456,9 @@ class Vector(PointOrVector):
     def __mul__(self, other: Union[int, float]) -> Self:
         """Vectors can be multiplied by scalars."""
         if isinstance(other, (int, float, np.number)) or np.isscalar(other):
-            return type(self)(float(other) * self.data)
+            data = self.data.copy()
+            data[:-1] *= float(other)
+            return type(self)(data)
         else:
             return NotImplemented
 
@@ -477,7 +498,8 @@ class Vector(PointOrVector):
     def normalized(self) -> Self:
         return self * (1 / self.norm())
 
-    hat = normalized
+    def hat(self) -> Self:
+        return self.normalized()
 
     def dot(self, other) -> float:
         if isinstance(other, Vector) and self.dim == other.dim:
@@ -490,45 +512,6 @@ class Vector(PointOrVector):
             return vector(np.cross(self, other))
         else:
             raise TypeError(f"unrecognized type for cross product: {type(other)}")
-
-    def perpendicular(self, random: bool = False) -> Vector3D:
-        """Find an arbitrary perpendicular vector to self.
-
-        Args:
-            random: Whether to randomize the vector's direction in
-                the perpendicular plane, drawing from [0, 2pi).
-                Defaults to False.
-
-        Returns:
-            Vector3D: A vector in 3D space, perpendicular
-                to the original.
-
-        """
-        # TODO: if the vector is 2D, return one of the other vectors in the plane, to keep it 2D.
-
-        if self.x == self.y == self.z == 0:
-            raise ValueError("zero-vector")
-
-        # If one dimension is zero, this can be solved by setting that to
-        # non-zero and the others to zero. Example: (4, 2, 0) lies in the
-        # x-y-Plane, so (0, 0, 1) is orthogonal to the plane.
-        if self.x == 0:
-            return vector(1, 0, 0)
-        if self.y == 0:
-            return vector(0, 1, 0)
-        if self.z == 0:
-            return vector(0, 0, 1)
-
-        # arbitrarily set a = b = 1
-        # then the equation simplifies to
-        #     c = -(x + y)/z
-        v = vector(1, 1, -1.0 * (self.x + self.y) / self.z).hat()
-
-        if random:
-            angle = np.random.uniform(0, 2 * np.pi)
-            v = vector(Rotation.from_rotvec(angle * self.hat()).apply(v))
-
-        return v
 
     def angle(self, other: Vector) -> float:
         """Get the angle between self and other in radians."""
@@ -617,6 +600,26 @@ class Vector2D(Vector):
 
     dim = 2
 
+    def perpendicular(self, random: bool = False) -> Vector2D:
+        """Find an arbitrary perpendicular vector to self.
+
+        Args:
+            random: Whether to randomize the vector's direction in
+                the perpendicular plane, drawing from [0, 2pi).
+                Defaults to False.
+
+        Returns:
+            Vector3D: A vector in 3D space, perpendicular
+                to the original.
+
+        """
+        # TODO: if the vector is 2D, return one of the other vectors in the plane, to keep it 2D.
+
+        v = vector(-self.y, self.x)
+        if random and np.random.rand() < 0.5:
+            v = -v
+        return v
+
 
 class Point3D(Point):
     """Homogeneous point in 3D, represented as an array with [x, y, z, 1]"""
@@ -663,6 +666,74 @@ class Vector3D(Vector):
     def as_plane(self) -> Plane:
         """Get the plane through the origin with this vector as its normal."""
         return Plane(self.data)
+
+    def perpendicular(self, random: bool = False) -> Vector3D:
+        """Find an arbitrary perpendicular vector to self.
+
+        Args:
+            random: Whether to randomize the vector's direction in
+                the perpendicular plane, drawing from [0, 2pi).
+                Defaults to False.
+
+        Returns:
+            Vector3D: A vector in 3D space, perpendicular
+                to the original.
+
+        """
+        # TODO: if the vector is 2D, return one of the other vectors in the plane, to keep it 2D.
+
+        if self.x == self.y == self.z == 0:
+            raise ValueError("zero-vector")
+
+        # If one dimension is zero, this can be solved by setting that to
+        # non-zero and the others to zero. Example: (4, 2, 0) lies in the
+        # x-y-Plane, so (0, 0, 1) is orthogonal to the plane.
+        if self.x == 0:
+            return vector(1, 0, 0)
+        if self.y == 0:
+            return vector(0, 1, 0)
+        if self.z == 0:
+            return vector(0, 0, 1)
+
+        # arbitrarily set a = b = 1
+        # then the equation simplifies to
+        #     c = -(x + y)/z
+        v = vector(1, 1, -1.0 * (self.x + self.y) / self.z).hat()
+
+        if random:
+            angle = np.random.uniform(0, 2 * np.pi)
+            v = vector(Rotation.from_rotvec(angle * self.hat()).apply(v))
+
+        return v
+
+    def rotvec_to(self, other: Vector3D) -> Vector3D:
+        """Get the rotvec that rotates self to other."""
+        v = self.cross(other)
+        if np.isclose(v.norm(), 0):
+            return vector([0, 0, 0])
+        v = v.hat()
+        theta = self.angle(other)
+        return v * theta
+
+    def rotate(self, n: Vector3D, theta: Optional[float] = None) -> Vector3D:
+        """Rotate self by the given vector.
+
+        Args:
+            n (Vector): the axis of rotation. If theta is None, the magnitude of this vector is
+                used. Otherwise, it is ignored.
+            theta (float, optional): the angle of rotation. Defaults to None.
+
+        Returns:
+            Vector: the rotated vector.
+        """
+        if theta is None:
+            theta = n.norm()
+
+        if np.isclose(theta, 0):
+            return self
+
+        rot = Rotation.from_rotvec(n.hat() * theta)
+        return vector(rot.apply(self))
 
 
 class HyperPlane(Primitive, Meetable):
@@ -719,6 +790,79 @@ class HyperPlane(Primitive, Meetable):
             raise ValueError("2D lines have no constant term")
         return self.data[3]
 
+    def evaluate(self, p: Point) -> float:
+        """Evaluate the hyperplane at the given point.
+
+        The sign of this value tells you which side of the hyperplane the point is on.
+
+        Args:
+            p (Point): the point to evaluate at.
+
+        Returns:
+            float: the value of the hyperplane at the given point.
+
+        """
+        assert self.dim == p.dim, f"dimension mismatch: {self.dim} != {p.dim}"
+        return self.data @ p.data
+
+    def get_normal(self) -> Vector3D:
+        """Get the normal vector of the plane.
+
+        Returns:
+            Vector3D: The normal vector of the plane.
+
+        """
+        return vector(self.data[: self.dim])
+
+    def normal(self) -> Vector3D:
+        return self.get_normal()
+
+    @property
+    def n(self) -> Vector3D:
+        return self.get_normal()
+
+    def signed_distance(self, p: Point) -> float:
+        """Get the signed distance from the given point to the hyperplane.
+
+        Args:
+            p (Point): the point to measure the distance from.
+
+        Returns:
+            float: the signed distance from the point to the hyperplane.
+
+        """
+        p = point(p)
+        if self.dim != p.dim:
+            raise ValueError(f"dimension mismatch: {self.dim} != {p.dim}")
+        return -self.evaluate(p) / (p.w * self.n.norm())
+
+    def distance(self, p: Point) -> float:
+        """Get the distance of the point to the hyperplane.
+
+        Args:
+            p (Point): the point to evaluate at.
+
+        Returns:
+            float: the distance of the point to the hyperplane.
+
+        """
+        return abs(self.signed_distance(p))
+
+    def project(self, p: P) -> P:
+        """Get the closest point on the hyperplane to p.
+
+        Args:
+            p (Point): The point to project.
+
+        Returns:
+            Point: The closest point on the hyperplane to p.
+
+        """
+        p = point(p)  # guaranteed to be homogenized
+        assert np.isclose(p.w, 1), f"point is not homogenized: {p}"
+        d = self.signed_distance(p)
+        return p + d * self.n
+
 
 class Line(Primitive, Meetable):
     """Abstract parent class for lines."""
@@ -742,6 +886,23 @@ class Line(Primitive, Meetable):
 
         """
         pass
+
+    @overload
+    def as_points(self: Line2D) -> Tuple[Point2D, Point2D]:
+        ...
+
+    @overload
+    def as_points(self: Line3D) -> Tuple[Point3D, Point3D]:
+        ...
+
+    def as_points(self):
+        """Get two points on the line.
+
+        Returns:
+            Tuple[Point, Point]: Two points on the line.
+
+        """
+        return self.get_point(), self.get_point() + self.get_direction()
 
     @overload
     def project(self: Line2D, other: Point2D) -> Point2D:
@@ -777,6 +938,7 @@ class Line(Primitive, Meetable):
             float: The distance from the line to the other point.
 
         """
+        other = point(other)
         p = self.get_point()
         v = self.get_direction()
         diff = other - p
@@ -894,9 +1056,14 @@ class Plane(HyperPlane):
 
         return a.join(b).join(c)
 
-    @property
-    def normal(self) -> Vector3D:
-        return vector(self.data[:3])
+    def get_point(self) -> Point3D:
+        """Get an arbitrary point on the plane.
+
+        Returns:
+            Point3D: A point on the plane.
+
+        """
+        return Point3D([0, 0, -self.d / self.c, 1])
 
     @overload
     def meet(self, other: Plane) -> Line3D:
@@ -1330,10 +1497,20 @@ def _point_or_vector(data: np.ndarray):
 
 
 ### aliases ###
-p = point
-v = vector
-l = line
-pl = plane
+def p(*args):
+    return point(*args)
+
+
+def v(*args):
+    return vector(*args)
+
+
+def l(*args):
+    return line(*args)
+
+
+def pl(*args):
+    return plane(*args)
 
 
 """
@@ -1367,7 +1544,7 @@ class Transform(HomogeneousObject):
             np.ndarray: the non-homogeneous array
         """
 
-        return np.array(self.data[:-1, :], *args, **kwargs)
+        return np.array(self.data, *args, **kwargs)
 
     @classmethod
     def from_array(cls, array: np.ndarray) -> Transform:
@@ -1381,9 +1558,9 @@ class Transform(HomogeneousObject):
         Returns:
             Transform: the transform.
         """
-        data = np.concatenate(
-            [array, np.array([0 for _ in range(array.shape[1] - 1)] + [1])], axis=0
-        )
+        bottom_row = np.zeros((1, array.shape[1]))
+        bottom_row[0, -1] = 1
+        data = np.concatenate([array, bottom_row], axis=0)
         return cls(data)
 
     @overload
@@ -1395,19 +1572,46 @@ class Transform(HomogeneousObject):
         ...
 
     @overload
+    def __matmul__(self: FrameTransform, other: List[Pr]) -> List[Pr]:
+        ...
+
+    @overload
+    def __matmul__(self: FrameTransform, other: L) -> L:
+        ...
+
+    @overload
+    def __matmul__(self: FrameTransform, other: Plane) -> Plane:
+        ...
+
+    @overload
+    def __matmul__(
+        self: FrameTransform, other: CameraIntrinsicTransform
+    ) -> CameraIntrinsicTransform:
+        ...
+
+    @overload
+    def __matmul__(self: FrameTransform, other: CameraProjection) -> CameraProjection:
+        ...
+
+    @overload
+    def __matmul__(self: CameraProjection, other: FrameTransform) -> CameraProjection:
+        ...
+
+    @overload
     def __matmul__(self: CameraProjection, other: Point3D) -> Point2D:
         ...
 
     @overload
-    def __matmul__(self: CameraProjection, other: Vector3D) -> Vector2D:
+    def __matmul__(self: CameraProjection, other: List[Point3D]) -> List[Point2D]:
         ...
 
-    @overload
-    def __matmul__(self: CameraProjection, other: Line3D) -> Point2D:
-        ...
+    # @overload
+    # def __matmul__(self: CameraProjection, other: Vector3D) -> Vector2D:
+    #     ...
+    # TODO: this is not actually well defined unless the vector has a location.
 
     @overload
-    def __matmul__(self: CameraProjection, other: Plane) -> Line2D:
+    def __matmul__(self: CameraProjection, other: Line3D) -> Line2D:
         ...
 
     @overload
@@ -1418,30 +1622,69 @@ class Transform(HomogeneousObject):
         self,
         other: Union[Transform, PointOrVector],
     ) -> Union[Transform, PointOrVector]:
-        if isinstance(other, PointOrVector):
+        def check_dim():
             assert (
                 self.input_dim == other.dim
-            ), f"dimensions must match between other ({other.dim}) and self ({self.input_dim})"
+            ), f"dimensions must match. Got {self.input_dim} and {other.dim}"
+
+        if isinstance(other, PointOrVector):
+            check_dim()
             out = self.data @ other.data
-            # log.debug(f"{self.shape} @ {other.shape} = {out.shape}")
-            # log.debug(f"out: {out}")
             return _point_or_vector(self.data @ other.data)
-        elif isinstance(other, Line2D):
-            raise NotImplementedError
-        elif isinstance(other, (Line2D, Line3D, Plane)):
-            raise NotImplementedError()
+        # elif isinstance(self, FrameTransform) and isinstance(other, Line2D):
+        #     check_dim()
+        #     l0, l1, l2 = other.data
+        #     r00, r01, r10, r11 = self.R.flat
+        #     p0, p1 = self.t
+        #     l0_ = r11 * l0 - r10 * l1
+        #     l1_ = -r01 * l0 + r00 * l1
+        #     l2_ = np.linalg.det([[l0, l1, l2], [r00, r01, p0], [r10, r11, p1]])
+        #     return line(l0_, l1_, l2_)
+        elif isinstance(self, (FrameTransform, CameraProjection)) and isinstance(
+            other, list
+        ):
+            # TODO: handle fiducials elegantly, so the transform just affects their
+            # world_from_anatomical. It think we need to change the design so that matmul is
+            # implemented by the right side object as well, because this function is getting quite
+            # bulky.
+            return [self @ x for x in other]
+        elif isinstance(self, FrameTransform) and isinstance(other, (Line2D, Line3D)):
+            p = other.get_point()
+            v = other.get_direction()
+            p_ = self @ p
+            v_ = self @ v
+            return line(p_, v_)
+        elif isinstance(self, FrameTransform) and isinstance(other, Plane):
+            p = other.get_point()
+            n = other.get_normal()
+            p_ = self @ p
+            n_ = self @ n
+            return plane(p_, n_)
+        elif isinstance(self, CameraProjection) and isinstance(other, Line3D):
+            p1 = other.get_point()
+            v = other.get_direction()
+            p2 = p1 + v
+            p1_ = self @ p1
+            p2_ = self @ p2
+            return line(p1_, p2_)
+        elif isinstance(self, FrameTransform) and isinstance(
+            other, CameraIntrinsicTransform
+        ):
+            return CameraIntrinsicTransform(
+                self.data @ other.data, other._sensor_height, other._sensor_width
+            )
+        elif isinstance(self, CameraProjection) and isinstance(other, FrameTransform):
+            return CameraProjection(self.intrinsic.copy(), self.extrinsic @ other)
+        elif isinstance(self, FrameTransform) and isinstance(other, CameraProjection):
+            return CameraProjection(self @ other.intrinsic, other.extrinsic.copy())
+        elif isinstance(self, FrameTransform) and isinstance(other, FrameTransform):
+            # very common case of composing FrameTransforms.
+            return FrameTransform(self.data @ other.data)
         elif isinstance(other, Transform):
             # if other is a Transform, then compose their inverses as well to store that.
-            assert (
-                self.input_dim == other.dim
-            ), f"dimensions must match between other ({other.dim}) and self ({self.input_dim})"
+            check_dim()
             _inv = other.inv.data @ self.inv.data
-
-            if isinstance(self, FrameTransform) and isinstance(other, FrameTransform):
-                # very common case of composing FrameTransforms.
-                return FrameTransform(self.data @ other.data)
-            else:
-                return Transform(self.data @ other.data, _inv=_inv)
+            return Transform(self.data @ other.data, _inv=_inv)
         else:
             return NotImplemented
 
@@ -1462,7 +1705,7 @@ class Transform(HomogeneousObject):
         return self @ other
 
     @property
-    def inv(self) -> Transform:
+    def inv(self) -> Self:
         """Get the inverse of the Transform.
 
         Returns:
@@ -1478,7 +1721,15 @@ class Transform(HomogeneousObject):
 
         return Transform(self._inv, _inv=self.data)
 
-    def inverse(self) -> Transform:
+    @overload
+    def inverse(self: FrameTransform) -> FrameTransform:
+        ...
+
+    @overload
+    def inverse(self: Transform) -> Transform:
+        ...
+
+    def inverse(self):
         """Get the inverse of the Transform.
 
         Returns:
@@ -1551,7 +1802,7 @@ class FrameTransform(Transform):
     def from_rt(
         cls,
         rotation: Optional[Union[Rotation, np.ndarray]] = None,
-        translation: Optional[Union[Point3D, np.ndarray]] = None,
+        translation: Optional[Union[Point3D, Vector3D, np.ndarray]] = None,
         dim: Optional[int] = None,
     ) -> FrameTransform:
         """Make a frame translation from a rotation and translation, as [R,t], where x' = Rx + t.
@@ -1566,8 +1817,11 @@ class FrameTransform(Transform):
         Returns:
             FrameTransform: The transformation `F` such that `F(x) = rotation @ x + translation`
         """
+        # Process weird rotation shapes
         if isinstance(rotation, Rotation):
             rotation = rotation.as_matrix()
+        elif isinstance(rotation, np.ndarray) and rotation.shape == (4,):
+            rotation = Rotation.from_quat(rotation).as_matrix()
 
         if rotation is not None:
             dim = np.array(rotation).shape[0]
@@ -1592,24 +1846,101 @@ class FrameTransform(Transform):
 
         return cls(data)
 
+    def save_txt(self, path: Union[str, Path]) -> None:
+        """Save the transform to a text file.
+
+        Args:
+            path (Union[str, Path]): path to save the transform to.
+
+        """
+
+        r = self.R.T.reshape(-1)
+        t = self.t.reshape(-1)
+        rt = (
+            np.array2string(
+                np.concatenate([r, t]),
+                separator=" ",
+                max_line_width=1000,
+                formatter={"float_kind": lambda x: "%.8f" % x},
+            )
+            .replace("[", "")
+            .replace("]", "")
+        )
+        content = f"""#Insight Transform File V1.0
+#Transform 0
+Transform: AffineTransform_double_3_3
+Parameters: {rt}
+FixedParameters: 0 0 0
+"""
+        with open(path, "w") as f:
+            f.write(content)
+
+    @classmethod
+    def load_txt(cls, path: Union[str, Path]) -> FrameTransform:
+        """Load a transform from a text file.
+
+        Args:
+            path (Union[str, Path]): path to load the transform from.
+
+        Returns:
+            FrameTransform: the loaded transform.
+
+        """
+        with open(path, "r") as f:
+            lines = f.readlines()
+
+        params = lines[3].split(":")[1].strip().split(" ")
+        params = np.array([float(p) for p in params])
+        dim = int(np.sqrt(len(params) - 1))
+        R = params[: dim**2].reshape((dim, dim))
+        t = params[dim**2 :]
+        return cls.from_rt(R, t, dim)
+
+    def save(self, path: Union[str, Path]) -> None:
+        """Save the transform to a file.
+
+        Args:
+            path (Union[str, Path]): path to save the transform to.
+
+        """
+        path = Path(path)
+        if path.suffix == ".txt":
+            self.save_txt(path)
+        else:
+            raise NotImplementedError(f"Invalid suffix {path.suffix}")
+
+    @classmethod
+    def load(cls, path: Union[str, Path]) -> None:
+        """Load the transform from a file.
+
+        Args:
+            path (Union[str, Path]): path to load the transform from.
+
+        """
+        path = Path(path)
+        if path.suffix == ".txt":
+            cls.load_txt(path)
+        else:
+            raise NotImplementedError(f"Invalid suffix {path.suffix}")
+
     @classmethod
     def from_scaling(
         cls: Type[FrameTransform],
-        scaling: Union[int, float, np.ndarray],
-        translation: Optional[Union[Point3D, np.ndarray]] = None,
+        scaling: Union[int, float],
+        dim: int = 3,
     ) -> FrameTransform:
-        """Create a frame based on scaling dimensions. Assumes dim = 3.
+        """Create a frame based on scaling dimensions uniformly.
 
         Args:
             cls (Type[FrameTransform]): the class.
-            scaling (Union[int, float, np.ndarray]): coefficient to scale by, or one for each dimension.
+            dim (int, optional): the dimension of the frame. Defaults to 3.
 
         Returns:
             FrameTransform:
         """
-        scaling = np.array(scaling) * np.ones(3)
-        translation = np.zeros(3) if translation is None else translation
-        return cls.from_rt(np.diag(scaling), translation)
+        F = np.eye(dim + 1)
+        F[dim, dim] = 1 / scaling
+        return cls(F)
 
     @classmethod
     def from_translation(
@@ -1709,6 +2040,26 @@ class FrameTransform(Transform):
         return cls.from_rt(rotation=R, translation=t)
 
     @classmethod
+    def from_points(
+        cls,
+        points_B: Union[List[Point], np.ndarray],
+        points_A: Union[List[Point], np.ndarray],
+    ):
+        """Create a (rigid) frame transform from a known point correspondence.
+
+        Args:
+            points_B: a list of N corresponding points in the B frame.
+            points_A: a list of N points in the A frame (or an array with shape [N, 3]).
+
+        Returns:
+            FrameTransform: the `B_from_A` transform that minimizes the mean squared distance
+                between matching points.
+
+        """
+        # TODO: either generalize this to not require correspondence, or do `from_pointclouds`
+        return cls.from_point_correspondence(points_B, points_A)
+
+    @classmethod
     def from_line_segments(
         cls,
         x_B: Point3D,
@@ -1717,6 +2068,8 @@ class FrameTransform(Transform):
         y_A: Point3D,
     ) -> FrameTransform:
         """Get the `B_from_A` frame transform that aligns the line segments, given by endpoints.
+
+        Perfectly aligns the two line segments, so there is possibly some scaling.
 
         Args:
             x_B (Point3D): The first endpoint, in frame B.
@@ -1749,6 +2102,32 @@ class FrameTransform(Transform):
             @ cls.from_translation(-x_A.as_vector())
         )
 
+    @classmethod
+    def from_pointdir(
+        cls: Type[FrameTransform],
+        origin: Point3D,
+        direction: Vector3D,
+        axis: Union[str, Vector3D] = "z",
+    ) -> FrameTransform:
+        """Get the pose of the coordinate frame given its origin and direction of the given axis.
+
+        Args:
+            origin (Point3D): The origin of the frame.
+            direction (Vector3D): The direction of the axis.
+            axis (Union[str, Vector3D], optional): The axis to align with the direction. Defaults to "z".
+
+        """
+        ax = (
+            dict(x=vector(1, 0, 0), y=vector(0, 1, 0), z=vector(0, 0, 1))[axis.lower()]
+            if isinstance(axis, str)
+            else vector(axis)
+        )
+
+        rotvec = ax.cross(direction).hat()
+        rotvec = rotvec * ax.angle(direction)
+        rot = Rotation.from_rotvec(np.array(rotvec))
+        return cls.from_rt(rotation=rot, translation=origin)
+
     @property
     def R(self):
         return self.data[0 : self.dim, 0 : self.dim]
@@ -1767,12 +2146,67 @@ class FrameTransform(Transform):
 
     @property
     def inv(self):
+        # This is necessary because we use FrameTransform to represent affine as well as rigid transforms.
+        # TODO: separate?
         R_inv = np.linalg.inv(self.R)
         return FrameTransform.from_rt(R_inv, -(R_inv @ self.t))
 
+    @property
+    def o(self):
+        """If this is the A_from_B transform, return the origin of frame B in frame A."""
+        return point(self.t)
+
+    def tostring(self):
+        formatter = {"float_kind": lambda x: "%.8f" % x}
+        lines = [
+            np.array2string(self.data[i], separator=" ", formatter=formatter)[1:-1]
+            for i in range(self.data.shape[0])
+        ]
+        return "\n".join(lines)
+
+    def toarray(self):
+        """Return the transform as a 3x4 numpy array.
+
+        This is different from calling np.array() on the transform, which returns a 4x4 array.
+
+        """
+        data = self.data[:-1, :] / self.data[-1, -1]
+        return data.astype(np.float32).copy()
+
+    def as_quatpos(self) -> np.ndarray:
+        """Return the transform as a quaternion and position.
+
+        Returns:
+            np.ndarray: A 7-element array, with the first 4 elements being the quaternion, and the last 3 being the position.
+
+        """
+        return np.array([*Rotation.from_matrix(self.R).as_quat(), *self.t])
+
+    @classmethod
+    def from_quatpos(cls, quatpos: np.ndarray) -> FrameTransform:
+        """Create a transform from a quaternion and position.
+
+        Args:
+            quatpos (np.ndarray): A 7-element array, with the first 4 elements being the quaternion, and the last 3 being the position.
+
+        Returns:
+            FrameTransform: The transform.
+
+        """
+        return cls.from_rt(
+            Rotation.from_quat(quatpos[:4]).as_matrix(),
+            quatpos[4:],
+        )
+
+
+class F(FrameTransform):
+    """Alias for FrameTransform."""
+
+    pass
+
 
 def frame_transform(*args) -> FrameTransform:
-    """Convenience function for creating a frame transform.
+    """Convenience function for creating a 3D frame transform.
 
     The output depends on how the function is called:
     frame_transform() -> 3D identity transform
@@ -1784,12 +2218,22 @@ def frame_transform(*args) -> FrameTransform:
     frame_transform(t: Point | np.ndarray[3]) -> FrameTransform.from_translation(t)
     frame_transform((R, t)) -> FrameTransform.from_rt(R, t)
     frame_transform(R, t) -> FrameTransform.from_rt(R, t)
+    frame_transform([a00, a10, a20, a01, a11, a21, a02, a12, a22, a03, a13, a23]) -> FrameTransform([
+        [a00, a01, a02, a03],
+        [a10, a11, a12, a13],
+        [a20, a21, a22, a23],
+        [0, 0, 0, 1]]
+    )
 
     R maybe be given as a (3,3) matrix or as a 9-vector. If provided as a 9-vector, column major order is assumed,
-    such that (a11, a21, a31, a12, a22, a32, a13, a23, a33) corresponds to
+    such that (a11, a21, a31, a12, a22, a32, a13, a23, a33) is the rotation matrix.
     [[a11, a12, a13],
      [a21, a22, a23],
      [a31, a32, a33]]
+
+    [R | t] may be given as a (12,) array-like, where the first 9 elements are the rotation in column major order,  and the last 3 are the translation.
+
+    If a string provided, it is converted to an array with whitespace separator.
 
     Returns:
         FrameTransform: [description]
@@ -1814,12 +2258,30 @@ def frame_transform(*args) -> FrameTransform:
                 return FrameTransform(a)
             elif a.shape == (3, 3):
                 return FrameTransform.from_rt(rotation=a)
+            elif a.shape == (3, 4):
+                return FrameTransform.from_array(a)
             elif a.shape == (3,) or a.shape == (1, 3):
                 return FrameTransform.from_rt(translation=a)
+            elif a.shape == (12,):
+                # ITK-style transform, column-major order
+                r = a[:9].reshape((3, 3)).T
+                t = a[9:].reshape((3,))
+                return FrameTransform.from_rt(r, t)
+            elif a.shape == (16,):
+                # Assumed to be row-major order
+                return FrameTransform(a.reshape((4, 4)))
+            elif a.shape == (7,):
+                # Quaternion position
+                return FrameTransform.from_quatpos(a)
             else:
                 raise TypeError(f"couldn't convert numpy array to FrameTransform: {a}")
-        elif isinstance(a, (tuple, list)) and len(a) == 2:
-            return frame_transform(a[0], a[1])
+        elif isinstance(a, (tuple, list)):
+            if len(a) == 2:
+                return frame_transform(a[0], a[1])
+            else:
+                return frame_transform(np.array(a))
+        elif isinstance(a, str):
+            return frame_transform(np.fromstring(a, sep=" "))
         else:
             raise TypeError(f"couldn't convert to FrameTransform: {a}")
     elif len(args) == 2:
@@ -1850,6 +2312,8 @@ def frame_transform(*args) -> FrameTransform:
         raise TypeError(f"too many arguments: {args}")
 
 
+f = frame_transform
+
 RAS_from_LPS = FrameTransform(
     np.array([[-1, 0, 0, 0], [0, -1, 0, 0], [0, 0, 1, 0], [0, 0, 0, 1]])
 )
@@ -1861,3 +2325,385 @@ cm_from_m = FrameTransform.from_scaling(1e2)
 m_from_cm = FrameTransform.from_scaling(1e-2)
 mm_from_cm = FrameTransform.from_scaling(1e1)
 cm_from_mm = FrameTransform.from_scaling(1e-1)
+
+# Slicer coordinates are annoying. You flip the Z axis and convert to meters.
+unity_from_slicer = frame_transform(
+    """
+1 0 0 0
+0 1 0 0
+0 0 -1 0
+0 0 0 1000
+"""
+)
+slicer_from_unity = unity_from_slicer.inv
+
+
+# TODO: reorganize geo so you have primitives.py and transforms.py. Have separate classes for each type of transform?
+
+
+class CameraIntrinsicTransform(FrameTransform):
+    dim: int = 2
+    input_dim: int = 2
+
+    """The intrinsic camera transform.
+    
+    It should be scaled such that the units of the matrix (including the focal length) are in pixels
+    """
+
+    def __init__(
+        self,
+        data: np.ndarray,
+        sensor_height: Optional[int] = None,
+        sensor_width: Optional[int] = None,
+    ) -> None:
+        super().__init__(data)
+        assert self.data.shape == (3, 3), f"unrecognized shape: {self.data.shape}"
+        self._sensor_height = sensor_height
+        self._sensor_width = sensor_width
+
+    def get_config(self):
+        return {
+            "data": self.data.tolist(),
+            "sensor_height": self.sensor_height,
+            "sensor_width": self.sensor_width,
+        }
+
+    @classmethod
+    def from_parameters(
+        cls,
+        optical_center: Point2D,
+        focal_length: Union[float, Tuple[float, float]] = 1,
+        shear: float = 0,
+        aspect_ratio: Optional[float] = None,
+    ) -> CameraIntrinsicTransform:
+        """The camera intrinsic matrix.
+
+        The intrinsic matrix is fundamentally a FrameTransform in 2D, namely `index_from_camera2d`.
+        It transforms to the index-space of the image (as mapped on the sensor)
+        from the index-space centered on the principle ray.
+
+        Note:
+            Focal lengths are usually measured in world units (e.g. millimeters.). This function handles the conversion.
+
+        Useful references include Szeliski's "Computer Vision"
+        - https://ksimek.github.io/2013/08/13/intrinsic/
+
+        Args:
+            optical_center (Point2D): the index-space point where the isocenter (or pinhole) is centered.
+            focal_length (Union[float, Tuple[float, float]]): the focal length in index units. Can be a tubple (f_x, f_y),
+                or a scalar used for both, or a scalar modified by aspect_ratio, in index units.
+            shear (float): the shear `s` of the camera.
+            aspect_ratio (Optional[float], optional): the aspect ratio `a` (for use with one focal length). If not provided, aspect
+                ratio is 1. Defaults to None.
+
+        Returns:
+            CameraIntrinsicTransform: The camera intrinsic matrix.
+
+        """
+        optical_center = point(optical_center)
+        assert optical_center.dim == 2, "center point not in 2D"
+
+        cx, cy = np.array(optical_center)
+
+        if aspect_ratio is None:
+            fx, fy = utils.tuplify(focal_length, 2)
+        else:
+            assert isinstance(
+                focal_length, (float, int)
+            ), "cannot use aspect ratio if both focal lengths provided"
+            fx, fy = (focal_length, aspect_ratio * focal_length)
+
+        data = np.array([[fx, shear, cx], [0, fy, cy], [0, 0, 1]]).astype(np.float32)
+
+        return cls(data)
+
+    @classmethod
+    def from_sizes(
+        cls,
+        sensor_size: Union[int, Tuple[int, int]],
+        pixel_size: Union[float, Tuple[float, float]],
+        source_to_detector_distance: float,
+    ) -> CameraIntrinsicTransform:
+        """Generate the camera from human-readable parameters.
+
+        This is the recommended way to create the camera. Note that although pixel_size and source_to_detector distance are measured in world units,
+        the camera intrinsic matrix contains no information about the world, as these are merely used to compute the focal length in pixels.
+
+        Args:
+            sensor_size (Union[float, Tuple[float, float]]): (width, height) of the sensor, or a single value for both, in pixels.
+            pixel_size (Union[float, Tuple[float, float]]): (width, height) of a pixel, or a single value for both, in world units (e.g. mm).
+            source_to_detector_distance (float): distance from source to detector in world units.
+
+        Returns:
+
+        """
+        sensor_size = utils.tuplify(sensor_size, 2)
+        pixel_size = utils.tuplify(pixel_size, 2)
+        fx = source_to_detector_distance / pixel_size[0]
+        fy = source_to_detector_distance / pixel_size[1]
+        optical_center = point(sensor_size[0] / 2, sensor_size[1] / 2)
+        return cls.from_parameters(optical_center=optical_center, focal_length=(fx, fy))
+
+    @property
+    def optical_center(self) -> Point2D:
+        return Point2D(self.data[:, 2])
+
+    @property
+    def cx(self) -> float:
+        return self.data[0, 2]
+
+    @property
+    def cy(self) -> float:
+        return self.data[1, 2]
+
+    @property
+    def fx(self) -> float:
+        return self.data[0, 0]
+
+    @property
+    def fy(self) -> float:
+        return self.data[1, 1]
+
+    @property
+    def aspect_ratio(self) -> float:
+        """Image aspect ratio."""
+        return self.fy / self.fx
+
+    @property
+    def focal_length(self) -> float:
+        """Focal length in the matrix units."""
+        return abs(self.fx)
+
+    @property
+    def sensor_width(self) -> int:
+        """Get the sensor width in the matrix units.
+
+        Assumes optical center is at the center of the sensor.
+
+        Based on the convention of origin in top left, with x pointing to the right and y pointing down."""
+        if self._sensor_width is None:
+            return int(np.ceil(2 * self.data[0, 2]))
+        else:
+            return self._sensor_width
+
+    @sensor_width.setter
+    def sensor_width(self, value: int):
+        self._sensor_width = value
+
+    @property
+    def sensor_height(self) -> int:
+        """Get the sensor height in pixels.
+
+        Assumes optical center is at the center of the sensor.
+
+        Based on the convention of origin in top left, with x pointing to the right and y pointing down."""
+        if self._sensor_height is None:
+            return int(np.ceil(2 * self.data[1, 2]))
+        else:
+            return self._sensor_height
+
+    @sensor_height.setter
+    def sensor_height(self, value: int):
+        self._sensor_height = value
+
+    @property
+    def sensor_size(self) -> Tuple[int, int]:
+        """Tuple with the (width, height) of the sense/image, in matrix units."""
+        return (self.sensor_width, self.sensor_height)
+
+
+class CameraProjection(Transform):
+    dim = 3
+    index_from_camera2d: CameraIntrinsicTransform
+    camera3d_from_world: FrameTransform
+
+    def __init__(
+        self,
+        intrinsic: Union[CameraIntrinsicTransform, np.ndarray],
+        extrinsic: Union[FrameTransform, np.ndarray],
+    ) -> None:
+        """A class for instantiating camera projections.
+
+        The object itself contains the "index_from_world" transform, or P = K[R|t].
+
+        A helpful resource for this is:
+        - http://wwwmayr.in.tum.de/konferenzen/MB-Jass2006/courses/1/slides/h-1-5.pdf
+            which specifically Taylors the discussion toward C arms.
+
+        TODO: RQ decomposition of projection matrix to get K, R, t as another constructor.
+
+        Args:
+            intrinsic (CameraIntrinsicTransform): the camera intrinsic matrix, or a mapping to 2D image index coordinates
+                from camera coordinates, i.e. index_from_camera2d, usually denoted as :math:`K`.
+            extrinsic (FrameTransform): the camera extrinsic matrix, or simply a FrameTransform to camera coordinates
+                 from world coordinates, i.e. camera3d_from_world, usually denoted :math:`[R | t]`.
+
+        """
+        self.index_from_camera2d = (
+            intrinsic
+            if isinstance(intrinsic, CameraIntrinsicTransform)
+            else CameraIntrinsicTransform(intrinsic)
+        )
+        self.camera3d_from_world = frame_transform(extrinsic)
+        index_from_world = self.index_from_camera3d @ self.camera3d_from_world
+
+        # TODO: adding _inv here causes the inverse projection to be different, WHY?
+        super().__init__(
+            get_data(index_from_world), _inv=get_data(index_from_world.inv)
+        )
+
+    def get_config(self) -> dict[str, Any]:
+        """Get the configuration of the camera projection.
+
+        Returns:
+            dict[str, Any]: the configuration of the camera projection.
+        """
+        return {
+            "intrinsic": self.index_from_camera2d,
+            "extrinsic": self.camera3d_from_world,
+        }
+
+    @property
+    def index_from_world(self) -> Transform:
+        return self
+
+    @classmethod
+    def from_krt(
+        cls, K: np.ndarray, R: np.ndarray, t: np.ndarray
+    ) -> "CameraProjection":
+        """Create a CameraProjection from a camera intrinsic matrix and extrinsic matrix.
+
+        Args:
+            K (np.ndarray): the camera intrinsic matrix.
+            R (np.ndarray): the camera extrinsic matrix.
+            t (np.ndarray): the camera extrinsic translation vector.
+
+        Returns:
+            CameraProjection: the camera projection.
+        """
+        return cls(intrinsic=K, extrinsic=FrameTransform.from_rt(K, R, t))
+
+    @classmethod
+    def from_rtk(
+        cls,
+        R: np.ndarray,
+        t: Point3D,
+        K: Union[CameraIntrinsicTransform, np.ndarray],
+    ):
+        return cls(intrinsic=K, extrinsic=FrameTransform.from_rt(R, t))
+
+    @property
+    def K(self):
+        return self.index_from_camera2d
+
+    @property
+    def R(self):
+        return self.camera3d_from_world.R
+
+    @property
+    def t(self):
+        return self.camera3d_from_world.t
+
+    @property
+    def intrinsic(self) -> CameraIntrinsicTransform:
+        return self.index_from_camera2d
+
+    @property
+    def extrinsic(self) -> FrameTransform:
+        return self.camera3d_from_world
+
+    @property
+    def index_from_camera3d(self) -> Transform:
+        proj = np.concatenate([np.eye(3), np.zeros((3, 1))], axis=1)
+        camera2d_from_camera3d = Transform(proj, _inv=proj.T)
+        return self.index_from_camera2d @ camera2d_from_camera3d
+
+    @property
+    def camera3d_from_index(self) -> Transform:
+        return self.index_from_camera3d.inv
+
+    @property
+    def world_from_index(self) -> Transform:
+        """Gets the world-space vector between the source in world and the given point in index space."""
+        return self.index_from_world.inv
+
+    @property
+    def world_from_index_on_image_plane(self) -> FrameTransform:
+        """Get the transform to points in world on the image (detector) plane from image indices.
+
+        The point input point should still be 3D, with a 0 in the z coordinate.
+
+        """
+        proj = np.array([[1, 0, 0], [0, 1, 0], [0, 0, 0], [0, 0, 1]])
+        proj = Transform(proj, _inv=proj.T)
+        index_from_world_3d = proj @ self.index_from_world
+        return FrameTransform(data=get_data(index_from_world_3d.inv))
+
+    @property
+    def sensor_width(self) -> int:
+        return self.intrinsic.sensor_width
+
+    @property
+    def sensor_height(self) -> int:
+        return self.intrinsic.sensor_height
+
+    @property
+    def world_from_camera3d(self) -> FrameTransform:
+        return self.camera3d_from_world.inv
+
+    @property
+    def principle_ray_in_world(self) -> Vector3D:
+        """Get the principle ray in world coordinates."""
+        return self.world_from_camera3d @ vector(0, 0, 1)
+
+    def get_center_in_world(self) -> Point3D:
+        """Get the center of the camera (origin of camera3d frame) in world coordinates.
+
+        That is, get the translation vector of the world_from_camera3d FrameTransform
+
+        This is comparable to the function get_camera_center() in DeepDRR.
+
+        Returns:
+            Point3D: the center of the camera in center.
+        """
+
+        # TODO: can also get the center from the intersection of three planes formed
+        # by self.data.
+
+        world_from_camera3d = self.camera3d_from_world.inv
+        return world_from_camera3d(point(0, 0, 0))
+
+    @property
+    def center_in_world(self) -> Point3D:
+        return self.get_center_in_world()
+
+    def get_center_in_volume(self, volume: Volume) -> Point3D:
+        """Get the camera center in IJK-space.
+
+        In original deepdrr, this is the `source_point` of `get_canonical_proj_matrix()`
+
+        Args:
+            volume (AnyVolume): the volume to get the camera center in.
+
+        Returns:
+            Point3D: the camera center in the volume's IJK-space.
+        """
+        return volume.ijk_from_world @ self.center_in_world
+
+    def get_ray_transform(self, volume: Volume) -> Transform:
+        """Get the ray transform for the camera, in IJK-space.
+
+        ijk_from_index transformation that goes from Point2D to Vector3D, with the vector in the
+        Point2D frame.
+
+        The ray transform takes a Point2D and converts it to a Vector3D. This is the vector in
+        the direction pointing between the camera center (or source) and a given index-space
+        point on the detector.
+
+        Args:
+            volume (AnyVolume): the volume to get get the ray transfrom through.
+
+        Returns:
+            Transform: the `ijk_from_index` transform.
+        """
+        return volume.ijk_from_world @ self.world_from_index

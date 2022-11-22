@@ -689,6 +689,7 @@ extern "C" {
             return;
 
         // flat index to pixel in *intensity and *photon_prob
+        // int img_dx = vdx * out_width + udx;
         int img_dx = (udx * out_height) + vdx;
 
         // initialize intensity and photon_prob to 0

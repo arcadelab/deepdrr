@@ -13,6 +13,10 @@ from ..vol import Volume
 log = logging.getLogger(__name__)
 
 
+# TODO: make this totally independent of the Volume it corresponds to, and make a super-class for
+# all annotations.
+
+
 class LineAnnotation(object):
     """Really a "segment annotation", but Slicer calls it a line.
 
@@ -77,7 +81,7 @@ class LineAnnotation(object):
             return self.volume.world_from_anatomical
 
     @classmethod
-    def from_markup(
+    def from_json(
         cls,
         path: str,
         volume: Optional[Volume] = None,
@@ -131,6 +135,10 @@ class LineAnnotation(object):
             world_from_anatomical=world_from_anatomical,
             anatomical_coordinate_system=anatomical_coordinate_system,
         )
+
+    @classmethod
+    def from_markup(cls, *args, **kwargs):
+        return cls.from_json(*args, **kwargs)
 
     def save(
         self,
@@ -223,7 +231,7 @@ class LineAnnotation(object):
                     "display": {
                         "visibility": True,
                         "opacity": 1.0,
-                        "color": [0.5, 0.5, 0.5],
+                        "color": color,
                         "selectedColor": color,
                         "activeColor": [0.4, 1.0, 0.0],
                         "propertiesLabelVisibility": False,
@@ -270,6 +278,24 @@ class LineAnnotation(object):
     @property
     def midpoint_in_world(self) -> geo.Point3D:
         return self.world_from_anatomical @ self.startpoint.lerp(self.endpoint, 0.5)
+
+    @property
+    def trajectory_in_world(self) -> geo.Vector3D:
+        return self.endpoint_in_world - self.startpoint_in_world
+
+    @property
+    def direction_in_world(self) -> geo.Vector3D:
+        return self.trajectory_in_world.normalized()
+
+    def get_mesh(self):
+        """Get the mesh in anatomical coordinates."""
+        u = self.startpoint
+        v = self.endpoint
+
+        mesh = pv.Line(u, v)
+        mesh += pv.Sphere(2.5, u)
+        mesh += pv.Sphere(2.5, v)
+        return mesh
 
     def get_mesh_in_world(
         self, full: bool = True, use_cached: bool = False

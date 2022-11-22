@@ -35,10 +35,12 @@ from .core import (
     vector,
     line,
     plane,
+    F,
     p,
     v,
     l,
     pl,
+    f,
     Transform,
     FrameTransform,
     frame_transform,
@@ -50,10 +52,12 @@ from .core import (
     m_from_cm,
     cm_from_mm,
     mm_from_cm,
+    unity_from_slicer,
+    slicer_from_unity,
+    CameraProjection,
+    CameraIntrinsicTransform,
 )
 from .exceptions import JoinError, MeetError
-from .camera_intrinsic_transform import CameraIntrinsicTransform
-from .camera_projection import CameraProjection
 from scipy.spatial.transform import Rotation
 from .random import spherical_uniform
 
@@ -76,10 +80,12 @@ __all__ = [
     "vector",
     "line",
     "plane",
+    "F",
     "p",
     "v",
     "l",
     "pl",
+    "f",
     "Transform",
     "FrameTransform",
     "frame_transform",
@@ -91,6 +97,8 @@ __all__ = [
     "m_from_cm",
     "cm_from_mm",
     "mm_from_cm",
+    "unity_from_slicer",
+    "slicer_from_unity",
     "JoinError",
     "MeetError",
     "CameraIntrinsicTransform",
