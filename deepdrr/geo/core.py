@@ -1274,6 +1274,8 @@ def point(*args):
     """
     if len(args) == 1 and isinstance(args[0], Point):
         return args[0]
+    elif len(args) == 1 and isinstance(args[0], dict) and "data" in args[0]:
+        return point(args[0]["data"])
 
     x = _array(args)
     if x.shape == (2,):
@@ -1339,6 +1341,8 @@ def vector(*args):
     """
     if len(args) == 1 and isinstance(args[0], Vector):
         return args[0]
+    elif len(args) == 1 and isinstance(args[0], dict) and "data" in args[0]:
+        return vector(args[0]["data"])
 
     v = _array(args)
     if v.shape == (2,):
@@ -2282,6 +2286,12 @@ def frame_transform(*args) -> FrameTransform:
                 return frame_transform(np.array(a))
         elif isinstance(a, str):
             return frame_transform(np.fromstring(a, sep=" "))
+        elif isinstance(a, dict) and "data" in a:
+            return frame_transform(a["data"])
+        elif isinstance(a, dict) and "R" in a and "t" in a:
+            return frame_transform(a["R"], a["t"])
+        elif isinstance(a, dict):
+            raise TypeError(f"couldn't convert dict to FrameTransform: {a}")
         else:
             raise TypeError(f"couldn't convert to FrameTransform: {a}")
     elif len(args) == 2:
