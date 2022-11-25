@@ -1275,7 +1275,12 @@ def point(*args):
     if len(args) == 1 and isinstance(args[0], Point):
         return args[0]
     elif len(args) == 1 and isinstance(args[0], dict) and "data" in args[0]:
-        return point(args[0]["data"])
+        if len(args[0]["data"]) == 3:
+            return Point2D(args[0]["data"])
+        elif len(args[0]["data"]) == 4:
+            return Point3D(args[0]["data"])
+        else:
+            raise ValueError(f"invalid data for point: {args[0]['data']}")
 
     x = _array(args)
     if x.shape == (2,):
@@ -1342,7 +1347,12 @@ def vector(*args):
     if len(args) == 1 and isinstance(args[0], Vector):
         return args[0]
     elif len(args) == 1 and isinstance(args[0], dict) and "data" in args[0]:
-        return vector(args[0]["data"])
+        if len(args[0]["data"]) == 3:
+            return Vector2D(args[0]["data"])
+        elif len(args[0]["data"]) == 4:
+            return Vector3D(args[0]["data"])
+        else:
+            raise ValueError(f"invalid data for vector: {args[0]['data']}")
 
     v = _array(args)
     if v.shape == (2,):
