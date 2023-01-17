@@ -807,13 +807,16 @@ class Projector(object):
         if self.device is None:
             raise RuntimeError("must provide carm device to projector")
 
+        if not isinstance(self.device, CArm):
+            raise TypeError("device must be a CArm")
+
         camera_projections = []
         phis, thetas = utils.generate_uniform_angles(phi_range, theta_range)
         for phi, theta in zip(phis, thetas):
             extrinsic = self.device.get_camera3d_from_world(
                 self.device.isocenter,
-                phi=phi,
-                theta=theta,
+                phi,
+                theta,
                 degrees=degrees,
             )
 
