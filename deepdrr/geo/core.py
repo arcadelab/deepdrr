@@ -2178,6 +2178,18 @@ FixedParameters: 0 0 0
         ]
         return "\n".join(lines)
 
+    def transform_points(self, points: np.ndarray) -> np.ndarray:
+        """Transform a set of points.
+
+        Args:
+            points (np.ndarray): [N, D] array of nonhomogeneous points.
+
+        Returns:
+            np.ndarray: The transformed points.
+
+        """
+        return (self.R @ points.T).T + self.t
+
     def toarray(self):
         """Return the transform as a 3x4 numpy array.
 
