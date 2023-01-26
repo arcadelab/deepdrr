@@ -36,6 +36,7 @@ from abc import ABC, abstractmethod
 from typing_extensions import Self
 import numpy as np
 import scipy.spatial.distance
+from scipy.spatial import cKDTree
 from scipy.spatial.transform import Rotation
 from copy import deepcopy
 
@@ -2055,23 +2056,42 @@ FixedParameters: 0 0 0
 
     @classmethod
     def from_points(
-        cls,
-        points_B: Union[List[Point], np.ndarray],
-        points_A: Union[List[Point], np.ndarray],
+        cls: Type[FrameTransform],
+        points_B: Union[List[Point3D], np.ndarray],
+        points_A: Union[List[Point3D], np.ndarray],
+        max_iterations: int = 1000,
     ):
-        """Create a (rigid) frame transform from a known point correspondence.
+        """Create a (rigid) frame transform from ICP between the two point clouds.
 
         Args:
-            points_B: a list of N corresponding points in the B frame.
-            points_A: a list of N points in the A frame (or an array with shape [N, 3]).
+            points_B: a list of M points in the B frame.
+            points_A: a list of N points in the A frame, corresponding to the same shape as `points_B`.
 
         Returns:
             FrameTransform: the `B_from_A` transform that minimizes the mean squared distance
                 between matching points.
 
         """
+        points_B = np.array(points_B)
+        points_A = np.array(points_A)
+        prev_cost = np.inf
+        B_from_A = cls.identity(3)
+        tree_B = cKDTree(points_B)
+
         # TODO: either generalize this to not require correspondence, or do `from_pointclouds`
-        return cls.from_point_correspondence(points_B, points_A)
+        for _ in range(max_iterations):
+            points_A_in_B = B_from_A.transform_array(points_A)
+
+            # [m_B, m_A]
+            distances, indices = tree_B.query(points_A_in_B, k=1)
+            cost = np.mean(distances)
+            log.debug(f"ICP cost: {cost}")
+            if np.isclose(cost, prev_cost):
+                break
+            prev_cost = cost
+            B_from_A = cls.from_point_correspondence(points_B[indices], points_A)
+
+        return B_from_A
 
     @classmethod
     def from_line_segments(
@@ -2178,7 +2198,7 @@ FixedParameters: 0 0 0
         ]
         return "\n".join(lines)
 
-    def transform_points(self, points: np.ndarray) -> np.ndarray:
+    def transform_array(self, points: np.ndarray) -> np.ndarray:
         """Transform a set of points.
 
         Args:
