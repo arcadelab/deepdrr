@@ -1,4 +1,4 @@
-from typing import List, Optional, Any
+from typing import List, Optional, Any, Tuple
 import os
 import logging
 import numpy as np
@@ -97,3 +97,56 @@ def load_json(path: str) -> Any:
     with open(path, "r") as file:
         out = json.load(file)
     return out
+
+
+def save_fcsv(
+    path: str, points: np.ndarray, names: List[str], coordinate_system: str = "LPS"
+):
+    """Save a fcsv file.
+
+    Args:
+        path (str): The path to save the file to.
+        points (np.ndarray): The points to save. Shape: (N, 3)
+        names (List[str]): The names of the points. Shape: (N,)
+    """
+    assert points.shape[0] == len(names)
+    assert points.shape[1] == 3
+    assert coordinate_system in ["LPS", "RAS"]
+    with open(path, "w") as file:
+        file.write("# Markups fiducial file version = 5.0\n")
+        file.write(f"# CoordinateSystem = {coordinate_system}\n")
+        file.write(
+            f"# columns = id,x,y,z,ow,ox,oy,oz,vis,sel,lock,label,desc,associatedNodeID\n"
+        )
+        lines = []
+        for i, (point, name) in enumerate(zip(points, names)):
+            line = f"{i}, {point[0]}, {point[1]}, {point[2]}, 0, 0, 0, 1, 1, 1, 1, {name}, , \n"
+            lines.append(line)
+
+        file.writelines(lines)
+
+
+def load_fcsv(path: str) -> Tuple[np.ndarray, np.ndarray[str]]:
+    """Load a fcsv file.
+
+    Args:
+        path (str): The path to the fcsv file.
+
+    Returns:
+        np.ndarray: The points. Shape: (N, 3)
+        np.ndarray: The names of the points. Shape: (N,)
+    """
+    with open(path, "r") as file:
+        lines = file.readlines()
+    points = []
+    names = []
+    for line in lines:
+        if line.startswith("#"):
+            continue
+        point = line.split(",")[1:4]
+        point = [float(p) for p in point]
+        points.append(point)
+        name = line.split(",")[12]
+        names.append(name)
+    points = np.array(points)
+    return points, names

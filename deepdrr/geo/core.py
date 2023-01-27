@@ -2080,7 +2080,7 @@ FixedParameters: 0 0 0
 
         # TODO: either generalize this to not require correspondence, or do `from_pointclouds`
         for _ in range(max_iterations):
-            points_A_in_B = B_from_A.transform_array(points_A)
+            points_A_in_B = B_from_A.transform_points(points_A)
 
             # [m_B, m_A]
             distances, indices = tree_B.query(points_A_in_B, k=1)
@@ -2198,7 +2198,7 @@ FixedParameters: 0 0 0
         ]
         return "\n".join(lines)
 
-    def transform_array(self, points: np.ndarray) -> np.ndarray:
+    def transform_points(self, points: np.ndarray) -> np.ndarray:
         """Transform a set of points.
 
         Args:
