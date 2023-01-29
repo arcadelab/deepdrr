@@ -8,7 +8,7 @@ import urllib
 import subprocess
 import json
 
-logger = logging.getLogger(__name__)
+log = logging.getLogger(__name__)
 
 
 def download(
@@ -45,15 +45,15 @@ def download(
     try:
         download_url(url, root, filename=filename, md5=md5)
     except urllib.error.HTTPError:
-        logger.warning(f"Pretty download failed. Attempting with wget...")
+        log.warning(f"Pretty download failed. Attempting with wget...")
         subprocess.call(["wget", "-O", str(root / filename), url])
     except FileNotFoundError:
-        logger.warning(
+        log.warning(
             f"Download failed. Try installing wget. This is probably because you are on windows."
         )
         exit()
     except Exception as e:
-        logger.error(f"Download failed: {e}")
+        log.error(f"Download failed: {e}")
         exit()
 
     path = root / filename
@@ -100,7 +100,10 @@ def load_json(path: str) -> Any:
 
 
 def save_fcsv(
-    path: str, points: np.ndarray, names: List[str], coordinate_system: str = "LPS"
+    path: str,
+    points: np.ndarray,
+    names: Optional[List[str]] = None,
+    coordinate_system: str = "LPS",
 ):
     """Save a fcsv file.
 
@@ -109,9 +112,12 @@ def save_fcsv(
         points (np.ndarray): The points to save. Shape: (N, 3)
         names (List[str]): The names of the points. Shape: (N,)
     """
+    if names is None:
+        names = ["" for i in range(len(points))]
     assert points.shape[0] == len(names)
-    assert points.shape[1] == 3
     assert coordinate_system in ["LPS", "RAS"]
+    assert points.shape[1] == 3
+
     with open(path, "w") as file:
         file.write("# Markups fiducial file version = 5.0\n")
         file.write(f"# CoordinateSystem = {coordinate_system}\n")
