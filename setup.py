@@ -23,7 +23,7 @@ setuptools.setup(
         "pydicom",
         "pynrrd",
         "pyvista",
-        "pycuda",
+        "pycuda==2021.1",
         "rich",
     ],
     include_package_data=True,
