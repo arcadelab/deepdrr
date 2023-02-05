@@ -1208,6 +1208,71 @@ class Line3D(Line, Primitive, Joinable, Meetable):
         return d.as_plane().meet(self)
 
 
+class Ray3D(Primitive, Joinable, Meetable):
+    """A homogeneous representation of a ray.
+
+    This is just a (4,2) array with the homogeneous coordinates of the
+    origin and the direction, respectively.
+
+    """
+
+    def __init__(self, data: np.ndarray) -> None:
+        assert data.shape == (4, 2)
+        super().__init__(data)
+
+    @classmethod
+    def from_pd(cls: Type[Ray3D], p: Point3D, d: Vector3D) -> Ray3D:
+        """_summary_
+
+        Args:
+            cls (Type[Ray3D]): _description_
+            p (Point3D): _description_
+            d (Vector3D): _description_
+        """
+        return cls(np.hstack([get_data(p), get_data(d)]))
+
+    @property
+    def p(self) -> Point3D:
+        return Point3D(self.data[:, 0])
+
+    @p.setter
+    def p(self, p: Union[Point3D, np.ndarray]) -> None:
+        p_ = point(p)
+        self.data[:, 0] = get_data(p_)
+
+    @property
+    def v(self) -> Vector3D:
+        return Vector3D(self.data[:, 1])
+
+    @v.setter
+    def v(self, v: Union[Vector3D, np.ndarray]) -> None:
+        v_ = vector(v)
+        self.data[:, 1] = get_data(v_)
+
+    def get_direction(self) -> Vector3D:
+        return self.v
+
+    def get_point(self) -> Point3D:
+        return self.p
+
+    def join(self, other: Point3D) -> Plane:
+        l = self.p.join(self.p + self.v)
+        return l.join(other)
+
+    def meet(self, other: Plane) -> Point3D:
+        # TODO: depending on direction, ray may not intersect plane. Sort of the whole point.
+        l = self.p.join(self.p + self.v)
+        return l.meet(other)
+
+    def angle(self, other: Ray3D) -> float:
+        """Get the angle between two rays."""
+        return self.v.angle(other.v)
+
+    def __iter__(self) -> Iterator[Union[Point3D, Vector3D]]:
+        yield self.p
+        yield self.v
+
+
 ### convenience functions for instantiating primitive objects ###
 
 
@@ -1779,7 +1844,7 @@ class FrameTransform(Transform):
         self,
         data: np.ndarray,  # the homogeneous frame transformation matrix
     ) -> None:
-        """Defines a rigid (affine) transformation from one frame to another.
+        """Defines an affine transformation from one frame to another.
 
         So that, for a point `x` in world-coordinates `F(x)` (or `F @ x`) is the same point in `F`'s
         coordinates. Note that if `x` is a numpy array, it is assumed to be a point.
@@ -2137,7 +2202,7 @@ FixedParameters: 0 0 0
         )
 
     @classmethod
-    def from_pointdir(
+    def from_pd(
         cls: Type[FrameTransform],
         origin: Point3D,
         direction: Vector3D,
@@ -2162,6 +2227,16 @@ FixedParameters: 0 0 0
         rot = Rotation.from_rotvec(np.array(rotvec))
         return cls.from_rt(rotation=rot, translation=origin)
 
+    @classmethod
+    def from_pointdir(
+        cls: Type[FrameTransform],
+        *args,
+        **kwargs,
+    ) -> FrameTransform:
+        """Alias for `from_pd`."""
+        return cls.from_pd(*args, **kwargs)
+
+
     @property
     def R(self):
         return self.data[0 : self.dim, 0 : self.dim]
@@ -2177,6 +2252,18 @@ FixedParameters: 0 0 0
     @t.setter
     def t(self, t):
         self.data[0 : self.dim, self.dim] = t
+
+    @property
+    def i(self) -> Vector:
+        return vector(self.data[0 : self.dim, 0])
+
+    @property
+    def j(self) -> Vector:
+        return vector(self.data[0 : self.dim, 1])
+
+    @property
+    def k(self) -> Vector:
+        return vector(self.data[0 : self.dim, 2])
 
     @property
     def inv(self):

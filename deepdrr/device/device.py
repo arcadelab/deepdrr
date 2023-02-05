@@ -8,6 +8,10 @@ from .. import geo
 class Device(ABC):
     """A parent class representing X-ray device interfaces in DeepDRR.
 
+    To implement a sub class, the following methods/attributes must be implemented:
+        - device_from_camera3d
+
+
     Attributes:
         sensor_height (int): the height of the sensor in pixels.
         sensor_width (int): the width of the sensor in pixels.
@@ -117,18 +121,20 @@ class Device(ABC):
         return self.index_from_world.inv
 
     @property
-    @abstractmethod
     def principle_ray(self) -> geo.Vector3D:
         """Get the principle ray for the device in the current pose in the device frame.
 
         The principle ray is the direction of the ray that passes through the center of the
         image. It points from the source toward the detector.
 
+        By default, this is just the z axis, but this can be overridden by sub classes.
+
         Returns:
             Vector3D: the principle ray for the device as a unit vector.
 
         """
-        pass
+        principle_ray_in_camera3d = geo.v(0, 0, 1)
+        return self.device_from_camera3d @ principle_ray_in_camera3d
 
     @property
     def principle_ray_in_world(self) -> geo.Vector3D:

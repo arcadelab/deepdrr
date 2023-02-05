@@ -36,6 +36,12 @@ def pose_vector_angles(pose: geo.Vector3D) -> Tuple[float, float]:
 
 
 class MobileCArm(Device):
+    """A C-arm imaging device with orbital movement (alpha, beta) and isocenter movement (x, y, z).
+
+    Default parameters are based on the Siemens CIOS Spin.
+
+    """
+
     # basic parameters which can be safely set by user, but move_by() and reposition() are recommended.
     isocenter: geo.Point3D  # the isocenter point in the device frame
     alpha: float  # alpha angle in radians

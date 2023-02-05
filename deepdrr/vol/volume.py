@@ -871,6 +871,10 @@ class Volume(object):
         t_WA = p_W - r_WA @ p_A
         self.world_from_anatomical.t = t_WA  # fancy setter
 
+    def copy_pose(self, other: Volume) -> None:
+        """Copy the pose of another volume."""
+        self.world_from_anatomical = other.world_from_anatomical.copy()
+
     def translate(self, t: geo.Vector3D) -> Volume:
         """Translate the volume by `t`.
 
