@@ -31,6 +31,7 @@ from .core import (
     Line2D,
     Plane,
     Line3D,
+    Ray3D,
     point,
     vector,
     line,
@@ -76,6 +77,7 @@ __all__ = [
     "Line2D",
     "Plane",
     "Line3D",
+    "Ray3D"
     "point",
     "vector",
     "line",
