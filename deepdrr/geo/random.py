@@ -17,12 +17,12 @@ def _sample_spherical(d_phi: float, n: int) -> np.ndarray:
 
 
 @overload
-def spherical_unifrom(center: Vector3D, d_phi: float, n: int) -> List[Vector3D]:
+def spherical_uniform(center: Vector3D, d_phi: float, n: int) -> List[Vector3D]:
     ...
 
 
 @overload
-def spherical_unifrom(center: Vector3D, d_phi: float, n: None) -> Vector3D:
+def spherical_uniform(center: Vector3D, d_phi: float, n: None) -> Vector3D:
     ...
 
 

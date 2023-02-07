@@ -225,6 +225,9 @@ class Projector(object):
             assert isinstance(_vol, vol.Volume)
             self.volumes.append(_vol)
 
+        if len(self.volumes) > 10:
+            raise ValueError("Only up to 10 volumes are supported")
+
         if priorities is None:
             self.priorities = [
                 len(self.volumes) - 1 - i for i in range(len(self.volumes))

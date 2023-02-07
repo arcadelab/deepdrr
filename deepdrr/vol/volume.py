@@ -1234,13 +1234,13 @@ class Volume(object):
         """
         crop_box = np.array(crop_box)
         crop_box = np.round(crop_box).astype(int)
-        crop_box = np.clip(crop_box, 0, self.shape)
+        crop_box = np.clip(crop_box, 0, np.array(self.shape)[:, np.newaxis])
 
         cropped_data = self.data[
             crop_box[0, 0] : crop_box[0, 1],
             crop_box[1, 0] : crop_box[1, 1],
             crop_box[2, 0] : crop_box[2, 1],
-        ].copy()
+        ]
 
         cropped_materials = {}
         for m, d in self.materials.items():
@@ -1248,7 +1248,7 @@ class Volume(object):
                 crop_box[0, 0] : crop_box[0, 1],
                 crop_box[1, 0] : crop_box[1, 1],
                 crop_box[2, 0] : crop_box[2, 1],
-            ].copy()
+            ]
 
         cropped_anatomical_from_IJK = self.anatomical_from_ijk.copy()
         cropped_anatomical_from_IJK.t = self.anatomical_from_ijk @ geo.p(crop_box[:, 0])

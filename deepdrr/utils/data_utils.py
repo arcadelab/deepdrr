@@ -126,7 +126,7 @@ def save_fcsv(
         )
         lines = []
         for i, (point, name) in enumerate(zip(points, names)):
-            line = f"{i}, {point[0]}, {point[1]}, {point[2]}, 0, 0, 0, 1, 1, 1, 1, {name}, , \n"
+            line = f"{i},{point[0]},{point[1]},{point[2]},0,0,0,1,1,1,1,{name},,\n"
             lines.append(line)
 
         file.writelines(lines)
@@ -152,7 +152,7 @@ def load_fcsv(path: str) -> Tuple[np.ndarray, np.ndarray[str]]:
         point = line.split(",")[1:4]
         point = [float(p) for p in point]
         points.append(point)
-        name = line.split(",")[12]
+        name = line.split(",")[11].strip()
         names.append(name)
     points = np.array(points)
     return points, names

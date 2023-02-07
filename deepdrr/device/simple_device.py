@@ -68,25 +68,49 @@ class SimpleDevice(Device):
 
     def set_view(
         self,
-        point: geo.Point3D,
-        direction: geo.Vector3D,
+        point: geo.Point3D = None,
+        direction: geo.Vector3D = None,
         up: Optional[geo.Vector3D] = None,
+        source_to_point_distance: Optional[float] = None,
+        source_to_point_fraction: float = 0.5,
     ):
         """Set the view of the device.
 
         Args:
-            point (Point3D): the point at the center of the source and detector, in world coordinates.
-            direction (Vector3D): the direction from the source to the detector, in world coordinates.
+            center (Point3D): the point at the center of the source and detector, in world coordinates. If None,
+                the point is left unchanged (rotation only). Default: None.
+            direction (Vector3D): the direction from the source to the detector, in world coordinates. If None,
+                the direction is set to the +Z axis. Default: None.
             up (Vector3D): the up vector of the image, in world_coordinates. It's projection
                 corresponds to the -Y axis in the camera3d frame. If None, the up vector is set to the -Y
                 axis of the device frame.
+            source_to_point_distance (float): the distance from the source to the point. If None, the distance
+                is `source_to_point_fraction` of the source-to-detector distance. Default: None.
+            source_to_point_fraction (float): the fraction of the source-to-detector distance to use as the
+                source-to-point distance. Default: 0.5.
         """
-        point_in_device = self.device_from_world @ geo.point(point)
-        direction_in_device = self.device_from_world @ geo.vector(direction)
-        if up is not None:
-            up_in_device = self.device_from_world @ geo.vector(up)
+
+        if source_to_point_distance is None:
+            source_to_point_distance = (
+                self.source_to_detector_distance * source_to_point_fraction
+            )
+
+        if point is None:
+            point_in_device = self.device_from_camera3d @ geo.point(
+                0, 0, source_to_point_distance
+            )
         else:
+            point_in_device = self.device_from_world @ geo.point(point)
+
+        if direction is None:
+            direction_in_device = self.device_from_camera3d @ geo.vector(0, 0, 1)
+        else:
+            direction_in_device = self.device_from_world @ geo.vector(direction)
+
+        if up is None:
             up_in_device = geo.vector(0, -1, 0)
+        else:
+            up_in_device = self.device_from_world @ geo.vector(up)
 
         # Get the "ray" frame, which has its origin at the isocenter and its z-axis along the ray.
         # The "ray" frame has an arbitrary rotation about the z-axis.
@@ -116,7 +140,7 @@ class SimpleDevice(Device):
 
         # Get the "camera3d" frame, which is translated in negative z.
         ray_up_from_camera3d = geo.F.from_rt(
-            translation=geo.vector(0, 0, -self.source_to_detector_distance)
+            translation=geo.vector(0, 0, -source_to_point_distance)
         )
 
         self._device_from_camera3d = (
