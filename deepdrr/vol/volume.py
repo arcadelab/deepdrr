@@ -1223,6 +1223,73 @@ class Volume(object):
 
         return mesh
 
+    def crop(self, crop_box: Tuple[Tuple[float, float], ...]) -> Volume:
+        """Crop the volume to a given bounding box.
+
+        Args:
+            crop_box (Tuple[Tuple[float, float], ...]): The bounding box to crop to, in IJK.
+
+        Returns:
+            Volume: The cropped volume.
+        """
+        crop_box = np.array(crop_box)
+        crop_box = np.round(crop_box).astype(int)
+        crop_box = np.clip(crop_box, 0, self.shape)
+
+        cropped_data = self.data[
+            crop_box[0, 0] : crop_box[0, 1],
+            crop_box[1, 0] : crop_box[1, 1],
+            crop_box[2, 0] : crop_box[2, 1],
+        ].copy()
+
+        cropped_materials = {}
+        for m, d in self.materials.items():
+            cropped_materials[m] = d[
+                crop_box[0, 0] : crop_box[0, 1],
+                crop_box[1, 0] : crop_box[1, 1],
+                crop_box[2, 0] : crop_box[2, 1],
+            ].copy()
+
+        cropped_anatomical_from_IJK = self.anatomical_from_ijk.copy()
+        cropped_anatomical_from_IJK.t = self.anatomical_from_ijk @ geo.p(crop_box[:, 0])
+
+        return type(self)(
+            cropped_data,
+            materials=cropped_materials,
+            anatomical_from_IJK=cropped_anatomical_from_IJK,
+            world_from_anatomical=self.world_from_anatomical,
+            cache_dir=self.cache_dir,
+            config=self.config,
+        )
+
+    def get_bbox_IJK(self) -> np.ndarray:
+        """Get the bounding box of the materials in IJK.
+
+        Returns:
+            np.ndarray: The bounding box as a [3, 2] array.
+        """
+        any_material = np.zeros_like(self.data, dtype=bool)
+        for d in self.materials.values():
+            any_material = np.logical_or(any_material, d)
+        indices = np.nonzero(any_material)
+        bbox = np.array(
+            [
+                [np.min(indices[0]), np.max(indices[0])],
+                [np.min(indices[1]), np.max(indices[1])],
+                [np.min(indices[2]), np.max(indices[2])],
+            ]
+        )
+        return bbox
+
+    def shrink(self) -> Volume:
+        """Crop the volume to remove empty space.
+
+        Returns:
+            Volume: The cropped volume.
+        """
+
+        return self.crop(self.get_bbox_IJK())
+
 
 class MetalVolume(Volume):
     """Same as a volume, but with a different segmentation for the materials."""

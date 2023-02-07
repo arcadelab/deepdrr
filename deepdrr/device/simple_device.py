@@ -91,8 +91,11 @@ class SimpleDevice(Device):
         # Get the "ray" frame, which has its origin at the isocenter and its z-axis along the ray.
         # The "ray" frame has an arbitrary rotation about the z-axis.
         z_axis = geo.vector(0, 0, 1)
-        rotvec = z_axis.cross(direction_in_device).hat()
-        rotvec = rotvec * z_axis.angle(direction_in_device)
+        if (rotvec := z_axis.cross(direction_in_device)).norm() < 1e-6:
+            # The direction is parallel to the z-axis. The ray frame is the device frame.
+            rotvec = geo.vector(0, 0, 0)
+        else:
+            rotvec = rotvec.hat() * z_axis.angle(direction_in_device)
         rot = geo.Rotation.from_rotvec(rotvec)
         device_from_ray = geo.F.from_rt(rot, point_in_device)
 
@@ -102,8 +105,12 @@ class SimpleDevice(Device):
         up_vector_in_image_plane = geo.vector(
             up_vector_in_ray[0], up_vector_in_ray[1], 0
         )
-        rotvec = neg_y_axis.cross(up_vector_in_image_plane).hat()
-        rotvec = rotvec * neg_y_axis.angle(up_vector_in_image_plane)
+
+        if (rotvec := neg_y_axis.cross(up_vector_in_image_plane)).norm() < 1e-6:
+            # The up vector is parallel to the -Y axis. The ray-up frame is the ray frame.
+            rotvec = geo.vector(0, 0, 0)
+        else:
+            rotvec = rotvec.hat() * neg_y_axis.angle(up_vector_in_image_plane)
         rot = geo.Rotation.from_rotvec(rotvec)
         ray_from_ray_up = geo.F.from_rt(rot, geo.point(0, 0, 0))
 
