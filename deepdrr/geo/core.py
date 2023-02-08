@@ -233,8 +233,26 @@ class Meetable(ABC):
 
         Returns:
             Primitive: the intersection of `self` and `other`.
+
+        Raises:
+            MeetError: if the objects cannot be intersected.
         """
         pass
+
+    def intersects(self, other: Meetable) -> bool:
+        """Check if two objects intersect.
+
+        Args:
+            other (Primitive): the other primitive.
+
+        Returns:
+            bool: True if the objects intersect, False otherwise.
+        """
+        try:
+            self.meet(other)
+            return True
+        except MeetError:
+            return False
 
 
 class PointOrVector(Primitive):
@@ -977,9 +995,24 @@ class Line2D(Line, HyperPlane):
     def meet(self, other: Line2D) -> Point2D:
         ...
 
+    @overload
+    def meet(self, other: Segment2D) -> Point2D:
+        ...
+
     def meet(self, other):
-        if isinstance(other, Line2D):
-            return Point2D(np.cross(self.data, other.data))
+        if type(other) is Line2D:
+            m = np.cross(self.data, other.data)
+            if np.isclose(m[2], 0):
+                raise MeetError("lines are parallel")
+            else:
+                return Point2D(m)
+        elif type(other) is Segment2D:
+            r = self.meet(other.line())
+            v = other.p - other.q
+            if 0 <= v.dot(r - other.p) <= v.dot(v):
+                return r
+            else:
+                raise MeetError("line does not meet segment")
         else:
             raise TypeError(f"unrecognized type for meet: {type(other)}")
 
@@ -1101,6 +1134,36 @@ class Segment2D(Line2D):
 
     def get_direction(self) -> Vector2D:
         return (self.q - self.p).hat()
+
+    def meet(self, other: Union[Line2D, Segment2D]) -> Point2D:
+        """Get the point of intersection between this segment and another line.
+
+        Args:
+            other (Line2D): The other line.
+
+        Returns:
+            Point2D: The point of intersection.
+
+        """
+        p = super().meet(other)
+        if type(other) is Line2D:
+            return other.meet(self)
+        elif type(other) is Segment2D:
+            # Checks intersections of one segment with the other line and vice versa.
+            # MeetError is raised if there is no intersection.
+            self.meet(other.line())
+            return other.meet(self.line())
+        else:
+            raise MeetError("no intersection")
+
+    def line(self) -> Line2D:
+        """Get the line containing this segment.
+
+        Returns:
+            Line2D: The line containing this segment.
+
+        """
+        return self.p.join(self.q)
 
 
 class Plane(HyperPlane):
@@ -1541,6 +1604,16 @@ def line(l: Line3D) -> Line3D:
 
 
 @overload
+def line(r: Ray3D) -> Line3D:
+    ...
+
+
+@overload
+def line(s: Segment2D) -> Line2D:
+    ...
+
+
+@overload
 def line(a: float, b: float, c: float) -> Line2D:
     ...
 
@@ -1576,11 +1649,6 @@ def line(x: Point2D, v: Vector2D) -> Line2D:
 
 
 @overload
-def line(x: Point3D, v: Vector3D) -> Line3D:
-    ...
-
-
-@overload
 def line(*args: Any) -> Line:
     ...
 
@@ -1599,8 +1667,10 @@ def line(*args):
 
     if len(args) == 1 and isinstance(args[0], Line):
         return args[0]
-    if len(args) == 1 and isinstance(args[0], Ray3D):
+    elif len(args) == 1 and isinstance(args[0], Ray3D):
         return line(args[0].p, args[0].n)
+    elif len(args) == 1 and isinstance(args[0], Segment2D):
+        return line(args[0].p, args[0].q)
     elif len(args) == 2 and isinstance(args[0], Point) and isinstance(args[1], Point):
         return args[0].join(args[1])
     elif len(args) == 2 and isinstance(args[0], Plane) and isinstance(args[1], Plane):
@@ -1709,14 +1779,7 @@ def ray(x: np.ndarray) -> Ray3D:
 
 
 def ray(*args):
-    """The preferred method for creating a ray.
-
-    Can create a ray using one of the following methods:
-    - Pass the coordinates as separate arguments. For instance, `ray(1, 2, 3, 4, 5, 6)` returns the 3D homogeneous ray `1x + 2y + 3z + 4t = 0`.
-    - Pass a numpy array with the homogeneous coordinates.
-    - Pass a Ray instance, in which case `ray()` is a no-op.
-    - Pass a Point3D and Vector3D instance, in which case `ray(r, n)` returns the ray corresponding to
-    """
+    """More flexible method for creating a ray."""
     if len(args) == 1 and isinstance(args[0], Ray3D):
         return args[0]
     elif len(args) == 1 and isinstance(args[0], Line3D):
@@ -1731,6 +1794,28 @@ def ray(*args):
         return Ray3D.from_pn(r[:3], r[3:])
     elif r.shape == (2, 3):
         return Ray3D.from_pn(r[0], r[1])
+    elif r.shape == (3, 2):
+        return Ray3D.from_pn(r[:, 0], r[:, 1])
+    else:
+        raise ValueError(f"invalid data for ray: {r}")
+
+
+def segment(*args):
+    """More flexible method for creating a segment."""
+    if len(args) == 1 and isinstance(args[0], Segment2D):
+        return args[0]
+    elif (
+        len(args) == 2 and isinstance(args[0], Point3D) and isinstance(args[1], Point3D)
+    ):
+        return Segment2D.from_pq(args[0], args[1])
+
+    r = _array(args)
+    if r.shape == (6,):
+        return Ray3D.from_pn(r[:3], r[3:])
+    elif r.shape == (2, 3):
+        return Ray3D.from_pn(r[0], r[1])
+    elif r.shape == (3, 2):
+        return Ray3D.from_pn(r[:, 0], r[:, 1])
     else:
         raise ValueError(f"invalid data for ray: {r}")
 
