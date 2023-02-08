@@ -1016,6 +1016,93 @@ class Line2D(Line, HyperPlane):
         return Point2D([0, -self.c / self.b, 1])
 
 
+class Segment2D(Line2D):
+    """Represents a line segment in 2D."""
+
+    def __init__(self, data: np.ndarray) -> None:
+        """Initialize the segment.
+
+        Args:
+            data (np.ndarray): [3, 2] array of homogeneous 2D points (in the columns).
+
+        """
+        assert data.shape == (4, 2)
+        super().__init__(data)
+
+    @classmethod
+    def from_pq(cls, p: Point2D, q: Point2D) -> None:
+        """Initialize the segment containing two points.
+
+        Args:
+            p (Point2D): The first point.
+            q (Point2D): The second point.
+
+        Returns:
+            Segment2D: The segment.
+
+        """
+        p = point(p)
+        q = point(q)
+        assert p.dim == 2 and q.dim == 2, "points must be 2D"
+        assert p.w == 1 and q.w == 1, "points must be homogenized"
+        return cls(np.array([p.data, q.data]).T)
+
+    @property
+    def p(self) -> Point2D:
+        """Get the first point of the segment.
+
+        Returns:
+            Point2D: The first point of the segment.
+
+        """
+        return Point2D(self.data[:, 0])
+
+    @p.setter
+    def p(self, value: Point2D) -> None:
+        """Set the first point of the segment.
+
+        Args:
+            value (Point2D): The new first point of the segment.
+
+        """
+        self.data[:, 0] = point(value).data
+
+    @property
+    def q(self) -> Point2D:
+        """Get the second point of the segment.
+
+        Returns:
+            Point2D: The second point of the segment.
+
+        """
+        return Point2D(self.data[:, 1])
+
+    @q.setter
+    def q(self, value: Point2D) -> None:
+        """Set the second point of the segment.
+
+        Args:
+            value (Point2D): The new second point of the segment.
+
+        """
+        self.data[:, 1] = point(value).data
+
+    def length(self) -> float:
+        """Get the length of the segment.
+
+        Returns:
+            float: The length of the segment.
+
+        """
+        return (self.p - self.q).norm()
+
+    def get_point(self) -> Point2D:
+        return self.p
+
+    def get_direction(self) -> Vector2D:
+        return (self.q - self.p).hat()
+
+
 class Plane(HyperPlane):
     """Represents a plane in 3D"""
 
@@ -2699,7 +2786,8 @@ class CameraIntrinsicTransform(FrameTransform):
 
         Assumes optical center is at the center of the sensor.
 
-        Based on the convention of origin in top left, with x pointing to the right and y pointing down."""
+        Based on the convention of origin in top left, with x pointing to the right and y pointing down.
+        """
         if self._sensor_width is None:
             return int(np.ceil(2 * self.data[0, 2]))
         else:
@@ -2715,7 +2803,8 @@ class CameraIntrinsicTransform(FrameTransform):
 
         Assumes optical center is at the center of the sensor.
 
-        Based on the convention of origin in top left, with x pointing to the right and y pointing down."""
+        Based on the convention of origin in top left, with x pointing to the right and y pointing down.
+        """
         if self._sensor_height is None:
             return int(np.ceil(2 * self.data[1, 2]))
         else:

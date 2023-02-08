@@ -11,7 +11,6 @@ log = logging.getLogger(__name__)
 
 
 class KWire(Volume):
-
     _mesh_material = "titanium"
 
     diameter = 2.0  # mm
@@ -186,6 +185,10 @@ class KWire(Volume):
     @property
     def trajectory_in_world(self) -> geo.Ray3D:
         return geo.Ray3D.from_pn(self.tip_in_world, self.base_in_world)
+
+    @property
+    def centerline_in_world(self) -> geo.Line3D:
+        return geo.line(self.tip_in_world, self.base_in_world)
 
     def advance(self, distance: float):
         """Move the tool forward by the given distance.
