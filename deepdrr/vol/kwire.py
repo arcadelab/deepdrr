@@ -144,6 +144,7 @@ class KWire(Volume):
         startpoint_in_world: geo.Point3D,
         endpoint_in_world: geo.Point3D,
         progress: float = 1.0,
+        distance: Optional[float] = None,
     ) -> None:
         """Align the tool so that it lies between the two points, tip pointing toward the endpoint.
 
@@ -152,11 +153,17 @@ class KWire(Volume):
             end_point_in_world (geo.Point3D): The second point, in world space. The tip of the tool points toward this point.
             progress (float, optional): Where to place the tip of the tool between the start and end point,
                 on a scale from 0 to 1. 0 corresponds to the tip placed at the start point, 1 at the end point. Defaults to 1.0.
+            distance (Optional[float], optional): The distance of the tip along the trajectory. 0 corresponds
+                to the tip placed at the start point, |startpoint - endpoint| at the end point.
+                Overrides progress if provided. Defaults to None.
+
         """
         # useful: https://math.stackexchange.com/questions/180418/calculate-rotation-matrix-to-align-vector-a-to-vector-b-in-3d
         startpoint_in_world = geo.point(startpoint_in_world)
         endpoint_in_world = geo.point(endpoint_in_world)
-        progress = float(progress)
+
+        if distance is not None:
+            progress = distance / (endpoint_in_world - startpoint_in_world).norm()
 
         # interpolate along the direction of the tool to get the desired points in world.
         trajectory_vector = endpoint_in_world - startpoint_in_world
@@ -175,3 +182,19 @@ class KWire(Volume):
     @property
     def radius(self) -> float:
         return self.diameter / 2
+
+    @property
+    def trajectory_in_world(self) -> geo.Ray3D:
+        return geo.Ray3D.from_pn(self.tip_in_world, self.base_in_world)
+
+    def advance(self, distance: float):
+        """Move the tool forward by the given distance.
+
+        Args:
+            distance (float): The distance to move the tool forward.
+        """
+        self.align(
+            self.tip_in_world,
+            self.base_in_world,
+            distance=distance,
+        )

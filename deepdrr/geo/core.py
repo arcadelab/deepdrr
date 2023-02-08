@@ -22,6 +22,7 @@ import traceback
 
 from typing import (
     Any,
+    Iterator,
     Union,
     Tuple,
     Optional,
@@ -1221,15 +1222,26 @@ class Ray3D(Primitive, Joinable, Meetable):
         super().__init__(data)
 
     @classmethod
-    def from_pd(cls: Type[Ray3D], p: Point3D, d: Vector3D) -> Ray3D:
-        """_summary_
+    def from_pn(cls: Type[Ray3D], p: Point3D, d: Vector3D) -> Ray3D:
+        """Create a ray from a point and a direction."""
+        return cls(np.hstack([get_data(p), get_data(d)]))
+
+    @classmethod
+    def from_point_direction(cls: Type[Ray3D], p: Point3D, d: Vector3D) -> Ray3D:
+        """Create a ray from a point and a direction."""
+        return cls.from_pn(p, d)
+
+    @classmethod
+    def from_pq(cls: Type[Ray3D], p: Point3D, q: Point3D) -> Ray3D:
+        """Create a ray from two points.
+
+        The point q is not preserved in the ray.
 
         Args:
-            cls (Type[Ray3D]): _description_
-            p (Point3D): _description_
-            d (Vector3D): _description_
+            p (Point3D): The origin of the ray.
+            q (Point3D): A point on the ray.
         """
-        return cls(np.hstack([get_data(p), get_data(d)]))
+        return cls.from_pn(p, q - p)
 
     @property
     def p(self) -> Point3D:
@@ -1241,36 +1253,36 @@ class Ray3D(Primitive, Joinable, Meetable):
         self.data[:, 0] = get_data(p_)
 
     @property
-    def v(self) -> Vector3D:
+    def n(self) -> Vector3D:
         return Vector3D(self.data[:, 1])
 
-    @v.setter
-    def v(self, v: Union[Vector3D, np.ndarray]) -> None:
-        v_ = vector(v)
-        self.data[:, 1] = get_data(v_)
+    @n.setter
+    def n(self, n: Union[Vector3D, np.ndarray]) -> None:
+        n_ = vector(n)
+        self.data[:, 1] = get_data(n_)
 
     def get_direction(self) -> Vector3D:
-        return self.v
+        return self.n
 
     def get_point(self) -> Point3D:
         return self.p
 
     def join(self, other: Point3D) -> Plane:
-        l = self.p.join(self.p + self.v)
+        l = self.p.join(self.p + self.n)
         return l.join(other)
 
     def meet(self, other: Plane) -> Point3D:
         # TODO: depending on direction, ray may not intersect plane. Sort of the whole point.
-        l = self.p.join(self.p + self.v)
+        l = self.p.join(self.p + self.n)
         return l.meet(other)
 
     def angle(self, other: Ray3D) -> float:
         """Get the angle between two rays."""
-        return self.v.angle(other.v)
+        return self.n.angle(other.n)
 
     def __iter__(self) -> Iterator[Union[Point3D, Vector3D]]:
         yield self.p
-        yield self.v
+        yield self.n
 
 
 ### convenience functions for instantiating primitive objects ###
@@ -1498,6 +1510,8 @@ def line(*args):
 
     if len(args) == 1 and isinstance(args[0], Line):
         return args[0]
+    if len(args) == 1 and isinstance(args[0], Ray3D):
+        return line(args[0].p, args[0].n)
     elif len(args) == 2 and isinstance(args[0], Point) and isinstance(args[1], Point):
         return args[0].join(args[1])
     elif len(args) == 2 and isinstance(args[0], Plane) and isinstance(args[1], Plane):
@@ -1526,6 +1540,11 @@ def plane(p: Plane) -> Plane:
 
 
 @overload
+def plane(r: Ray3D) -> Ray3D:
+    ...
+
+
+@overload
 def plane(a: float, b: float, c: float, d: float) -> Plane:
     ...
 
@@ -1536,7 +1555,7 @@ def plane(x: np.ndarray) -> Plane:
 
 
 @overload
-def plane(r: Point3D, n: Vector3D) -> Plane:
+def plane(p: Point3D, n: Vector3D) -> Plane:
     ...
 
 
@@ -1547,10 +1566,13 @@ def plane(*args):
     - Pass the coordinates as separate arguments. For instance, `plane(1, 2, 3, 4)` returns the 2D homogeneous plane `1x + 2y + 3z + 4 = 0`.
     - Pass a numpy array with the homogeneous coordinates.
     - Pass a Plane instance, in which case `plane()` is a no-op.
-    - Pass a Point3D and Vector3D instance, in which case `plane(r, n)` returns the plane corresponding to
+    - Pass a Point3D and Vector3D instance, in which case `plane(p, n)` returns the plane corresponding to
+    - Pass a ray, which defines r, n as above.
     """
     if len(args) == 1 and isinstance(args[0], Plane):
         return args[0]
+    elif len(args) == 1 and isinstance(args[0], Ray3D):
+        return Plane.from_point_normal(args[0].p, args[0].n)
     elif (
         len(args) == 2
         and isinstance(args[0], Point3D)
@@ -1565,6 +1587,63 @@ def plane(*args):
         return Plane(p)
     else:
         raise ValueError(f"invalid data for plane: {p}")
+
+
+@overload
+def ray(r: Ray3D) -> Ray3D:
+    ...
+
+
+@overload
+def ray(l: Line3D) -> Ray3D:
+    ...
+
+
+@overload
+def ray(p: Point3D, v: Vector3D) -> Ray3D:
+    ...
+
+
+@overload
+def ray(p: Point3D, q: Point3D) -> Ray3D:
+    ...
+
+
+@overload
+def ray(a: float, b: float, c: float, d: float, e: float, f: float) -> Ray3D:
+    ...
+
+
+@overload
+def ray(x: np.ndarray) -> Ray3D:
+    ...
+
+
+def ray(*args):
+    """The preferred method for creating a ray.
+
+    Can create a ray using one of the following methods:
+    - Pass the coordinates as separate arguments. For instance, `ray(1, 2, 3, 4, 5, 6)` returns the 3D homogeneous ray `1x + 2y + 3z + 4t = 0`.
+    - Pass a numpy array with the homogeneous coordinates.
+    - Pass a Ray instance, in which case `ray()` is a no-op.
+    - Pass a Point3D and Vector3D instance, in which case `ray(r, n)` returns the ray corresponding to
+    """
+    if len(args) == 1 and isinstance(args[0], Ray3D):
+        return args[0]
+    elif len(args) == 1 and isinstance(args[0], Line3D):
+        return Ray3D.from_pn(args[0].get_point(), args[0].get_direction())
+    elif (
+        len(args) == 2 and isinstance(args[0], Point3D) and isinstance(args[1], Point3D)
+    ):
+        return Ray3D.from_pq(args[0], args[1])
+
+    r = _array(args)
+    if r.shape == (6,):
+        return Ray3D.from_pn(r[:3], r[3:])
+    elif r.shape == (2, 3):
+        return Ray3D.from_pn(r[0], r[1])
+    else:
+        raise ValueError(f"invalid data for ray: {r}")
 
 
 def _point_or_vector(data: np.ndarray):
@@ -2235,7 +2314,6 @@ FixedParameters: 0 0 0
     ) -> FrameTransform:
         """Alias for `from_pd`."""
         return cls.from_pd(*args, **kwargs)
-
 
     @property
     def R(self):
