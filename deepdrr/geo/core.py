@@ -1224,6 +1224,8 @@ class Ray3D(Primitive, Joinable, Meetable):
     @classmethod
     def from_pn(cls: Type[Ray3D], p: Point3D, d: Vector3D) -> Ray3D:
         """Create a ray from a point and a direction."""
+        p = point(p)
+        d = vector(d).hat()
         return cls(np.hstack([get_data(p), get_data(d)]))
 
     @classmethod
