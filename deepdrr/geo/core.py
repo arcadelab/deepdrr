@@ -40,6 +40,8 @@ import scipy.spatial.distance
 from scipy.spatial import cKDTree
 from scipy.spatial.transform import Rotation
 from copy import deepcopy
+import math
+import math
 
 if TYPE_CHECKING:
     from ..vol import Volume
@@ -53,7 +55,9 @@ PV = TypeVar("PV", bound="PointOrVector")
 P = TypeVar("P", bound="Point")
 V = TypeVar("V", bound="Vector")
 L = TypeVar("L", bound="Line")
-PL = TypeVar("PL", bound="Plane")
+Pl = TypeVar("Pl", bound="Plane")
+Seg = TypeVar("Seg", bound="Segment")
+R = TypeVar("R", bound="Ray")
 
 
 log = logging.getLogger(__name__)
@@ -534,7 +538,15 @@ class Vector(PointOrVector):
             raise TypeError(f"unrecognized type for cross product: {type(other)}")
 
     def angle(self, other: Vector) -> float:
-        """Get the angle between self and other in radians."""
+        """Get the angle between self and other in radians.
+
+        Args:
+            other (Vector): the other vector.
+
+        Returns:
+            float: the angle between self and other in radians.
+
+        """
         other = vector(other)
         num = self.dot(other)
         den = self.norm() * other.norm()
@@ -542,7 +554,7 @@ class Vector(PointOrVector):
         if np.isclose(cos_theta, 1):
             return 0
         else:
-            return np.arccos(cos_theta)
+            return math.acos(cos_theta)
 
     def rotation(self, other: Vector) -> FrameTransform:
         """Get the rotation F such that `self || F @ other`.
@@ -885,7 +897,7 @@ class HyperPlane(Primitive, Meetable):
 
 
 class Line(Primitive, Meetable):
-    """Abstract parent class for lines."""
+    """Abstract parent class for lines and line-like objects."""
 
     @abstractmethod
     def get_direction(self) -> Vector:
@@ -1047,123 +1059,6 @@ class Line2D(Line, HyperPlane):
 
         """
         return Point2D([0, -self.c / self.b, 1])
-
-
-class Segment2D(Line2D):
-    """Represents a line segment in 2D."""
-
-    def __init__(self, data: np.ndarray) -> None:
-        """Initialize the segment.
-
-        Args:
-            data (np.ndarray): [3, 2] array of homogeneous 2D points (in the columns).
-
-        """
-        assert data.shape == (4, 2)
-        super().__init__(data)
-
-    @classmethod
-    def from_pq(cls, p: Point2D, q: Point2D) -> None:
-        """Initialize the segment containing two points.
-
-        Args:
-            p (Point2D): The first point.
-            q (Point2D): The second point.
-
-        Returns:
-            Segment2D: The segment.
-
-        """
-        p = point(p)
-        q = point(q)
-        assert p.dim == 2 and q.dim == 2, "points must be 2D"
-        assert p.w == 1 and q.w == 1, "points must be homogenized"
-        return cls(np.array([p.data, q.data]).T)
-
-    @property
-    def p(self) -> Point2D:
-        """Get the first point of the segment.
-
-        Returns:
-            Point2D: The first point of the segment.
-
-        """
-        return Point2D(self.data[:, 0])
-
-    @p.setter
-    def p(self, value: Point2D) -> None:
-        """Set the first point of the segment.
-
-        Args:
-            value (Point2D): The new first point of the segment.
-
-        """
-        self.data[:, 0] = point(value).data
-
-    @property
-    def q(self) -> Point2D:
-        """Get the second point of the segment.
-
-        Returns:
-            Point2D: The second point of the segment.
-
-        """
-        return Point2D(self.data[:, 1])
-
-    @q.setter
-    def q(self, value: Point2D) -> None:
-        """Set the second point of the segment.
-
-        Args:
-            value (Point2D): The new second point of the segment.
-
-        """
-        self.data[:, 1] = point(value).data
-
-    def length(self) -> float:
-        """Get the length of the segment.
-
-        Returns:
-            float: The length of the segment.
-
-        """
-        return (self.p - self.q).norm()
-
-    def get_point(self) -> Point2D:
-        return self.p
-
-    def get_direction(self) -> Vector2D:
-        return (self.q - self.p).hat()
-
-    def meet(self, other: Union[Line2D, Segment2D]) -> Point2D:
-        """Get the point of intersection between this segment and another line.
-
-        Args:
-            other (Line2D): The other line.
-
-        Returns:
-            Point2D: The point of intersection.
-
-        """
-        p = super().meet(other)
-        if type(other) is Line2D:
-            return other.meet(self)
-        elif type(other) is Segment2D:
-            # Checks intersections of one segment with the other line and vice versa.
-            # MeetError is raised if there is no intersection.
-            self.meet(other.line())
-            return other.meet(self.line())
-        else:
-            raise MeetError("no intersection")
-
-    def line(self) -> Line2D:
-        """Get the line containing this segment.
-
-        Returns:
-            Line2D: The line containing this segment.
-
-        """
-        return self.p.join(self.q)
 
 
 class Plane(HyperPlane):
@@ -1359,32 +1254,184 @@ class Line3D(Line, Primitive, Joinable, Meetable):
         return d.as_plane().meet(self)
 
 
-class Ray3D(Primitive, Joinable, Meetable):
-    """A homogeneous representation of a ray.
-
-    This is just a (4,2) array with the homogeneous coordinates of the
-    origin and the direction, respectively.
-
-    """
-
+class Segment(Primitive, Meetable):
     def __init__(self, data: np.ndarray) -> None:
-        assert data.shape == (4, 2)
+        """Initialize the segment.
+
+        Args:
+            data (np.ndarray): [3, 2] array of homogeneous 2D points (in the columns).
+
+        """
+        assert data.shape == (self.dim, 2)
         super().__init__(data)
 
+        if np.isclose(self.data[self.dim, :], 0).any():
+            raise ValueError("segment is degenerate")
+        self.data[:, 0] /= self.data[self.dim, 0]
+        self.data[:, 1] /= self.data[self.dim, 1]
+
     @classmethod
-    def from_pn(cls: Type[Ray3D], p: Point3D, d: Vector3D) -> Ray3D:
+    def from_pq(cls: Type[Seg], p: Point, q: Point) -> Seg:
+        """Initialize the segment containing two points.
+
+        Args:
+            p (Point): The first point.
+            q (Point): The second point.
+
+        Returns:
+            Segment: The segment.
+
+        """
+        p = point(p)
+        q = point(q)
+        return cls(np.array([p.data, q.data]).T)
+
+    @classmethod
+    def from_pn(cls: Type[Seg], p: Point, n: Vector) -> Seg:
+        """Initialize the segment containing two points.
+
+        Args:
+            p (Point): The first point.
+            n (Vector): The direction vector.
+
+        Returns:
+            Segment: The segment.
+
+        """
+        p = point(p)
+        n = vector(n)
+        return cls.from_pq(p, p + n)
+
+    @property
+    def p(self) -> Point:
+        """Get the first point of the segment.
+
+        Returns:
+            Point2D: The first point of the segment.
+
+        """
+        return point(self.data[: self.dim, 0])
+
+    @p.setter
+    def p(self, value: Point2D) -> None:
+        """Set the first point of the segment.
+
+        Args:
+            value (Point2D): The new first point of the segment.
+
+        """
+        self.data[:, 0] = point(value).data
+
+    @property
+    def q(self) -> Point:
+        """Get the second point of the segment.
+
+        Returns:
+            Point2D: The second point of the segment.
+
+        """
+        return point(self.data[: self.dim, 1])
+
+    @q.setter
+    def q(self, value: Point) -> None:
+        """Set the second point of the segment.
+
+        Args:
+            value (Point2D): The new second point of the segment.
+
+        """
+        self.data[:, 1] = point(value).data
+
+    def length(self) -> float:
+        """Get the length of the segment.
+
+        Returns:
+            float: The length of the segment.
+
+        """
+        return (self.p - self.q).norm()
+
+    def get_point(self) -> Point:
+        return self.p
+
+    def get_direction(self) -> Vector:
+        return (self.q - self.p).hat()
+
+    def line(self) -> Line:
+        return self.p.join(self.q)
+
+
+class Segment2D(Segment):
+    """Represents a line segment in 2D."""
+
+    dim = 2
+
+    def meet(self, other: Union[Line2D, Segment2D]) -> Point2D:
+        """Get the point of intersection between this segment and another line.
+
+        Args:
+            other (Line2D): The other line.
+
+        Returns:
+            Point2D: The point of intersection.
+
+        """
+        p = super().meet(other)
+        if isinstance(other, Line2D):
+            return other.meet(self)
+        elif isinstance(other, Segment2D):
+            # Checks intersections of one segment with the other line and vice versa.
+            # MeetError is raised if there is no intersection.
+            self.meet(other.line())
+            return other.meet(self.line())
+        else:
+            raise TypeError()
+
+
+class Segment3D(Segment, Joinable):
+    """Represents a segment in 3D."""
+
+    dim = 3
+
+    def join(self, other: Point3D) -> Plane:
+        if isinstance(other, Point3D):
+            return self.line().join(other)
+        else:
+            raise TypeError()
+
+
+class Ray(Primitive, Meetable):
+    def __init__(self, data: np.ndarray) -> None:
+        """Initialize the segment.
+
+        Args:
+            data (np.ndarray): [dim+1, 2] array with a homogeneous point and a vector in the columns.
+
+        """
+        assert data.shape == (self.dim, 2)
+        super().__init__(data)
+
+        if np.isclose(self.data[self.dim, 0], 0):
+            raise ValueError("point is at infinity")
+        if not np.isclose(self.data[self.dim, 1], 0):
+            raise ValueError("direction is not at infinity")
+
+        self.data[:, 0] /= self.data[self.dim, 0]
+
+    @classmethod
+    def from_pn(cls: Type[R], p: Point, d: Vector) -> R:
         """Create a ray from a point and a direction."""
         p = point(p)
         d = vector(d).hat()
         return cls(np.hstack([get_data(p), get_data(d)]))
 
     @classmethod
-    def from_point_direction(cls: Type[Ray3D], p: Point3D, d: Vector3D) -> Ray3D:
+    def from_point_direction(cls: Type[Ray], p: Point, d: Vector) -> Ray:
         """Create a ray from a point and a direction."""
         return cls.from_pn(p, d)
 
     @classmethod
-    def from_pq(cls: Type[Ray3D], p: Point3D, q: Point3D) -> Ray3D:
+    def from_pq(cls: Type[R], p: Point, q: Point) -> R:
         """Create a ray from two points.
 
         The point q is not preserved in the ray.
@@ -1395,29 +1442,58 @@ class Ray3D(Primitive, Joinable, Meetable):
         """
         return cls.from_pn(p, q - p)
 
+    @p.setter
+    def p(self, p: Union[Point, np.ndarray]) -> None:
+        self.data[:, 0] = point(p).data
+
+    @property
+    def n(self) -> Vector:
+        return Vector(self.data[:, 1])
+
+    @n.setter
+    def n(self, n: Union[Vector, np.ndarray]) -> None:
+        self.data[:, 1] = vector(n).data
+
+    def angle(self, other: Ray) -> float:
+        """Get the angle between two rays."""
+        return self.n.angle(other.n)
+
     @property
     def p(self) -> Point3D:
         return Point3D(self.data[:, 0])
-
-    @p.setter
-    def p(self, p: Union[Point3D, np.ndarray]) -> None:
-        p_ = point(p)
-        self.data[:, 0] = get_data(p_)
-
-    @property
-    def n(self) -> Vector3D:
-        return Vector3D(self.data[:, 1])
-
-    @n.setter
-    def n(self, n: Union[Vector3D, np.ndarray]) -> None:
-        n_ = vector(n)
-        self.data[:, 1] = get_data(n_)
 
     def get_direction(self) -> Vector3D:
         return self.n
 
     def get_point(self) -> Point3D:
         return self.p
+
+
+class Ray2D(Ray):
+    dim = 2
+
+    def meet(self, other: Union[Line2D, Segment2D]) -> Point2D:
+        """Get the point of intersection between this ray and another line.
+
+        Args:
+            other (Line2D): The other line.
+
+        Returns:
+            Point2D: The point of intersection.
+
+        """
+        raise NotImplementedError()
+
+
+class Ray3D(Ray, Joinable):
+    """A homogeneous representation of a ray.
+
+    This is just a (4,2) array with the homogeneous coordinates of the
+    origin and the direction, respectively.
+
+    """
+
+    dim = 3
 
     def join(self, other: Point3D) -> Plane:
         l = self.p.join(self.p + self.n)
@@ -1427,10 +1503,6 @@ class Ray3D(Primitive, Joinable, Meetable):
         # TODO: depending on direction, ray may not intersect plane. Sort of the whole point.
         l = self.p.join(self.p + self.n)
         return l.meet(other)
-
-    def angle(self, other: Ray3D) -> float:
-        """Get the angle between two rays."""
-        return self.n.angle(other.n)
 
     def __iter__(self) -> Iterator[Union[Point3D, Vector3D]]:
         yield self.p
@@ -1604,12 +1676,22 @@ def line(l: Line3D) -> Line3D:
 
 
 @overload
+def line(r: Ray2D) -> Line2D:
+    ...
+
+
+@overload
 def line(r: Ray3D) -> Line3D:
     ...
 
 
 @overload
 def line(s: Segment2D) -> Line2D:
+    ...
+
+
+@overload
+def line(s: Segment3D) -> Line3D:
     ...
 
 
@@ -1667,9 +1749,9 @@ def line(*args):
 
     if len(args) == 1 and isinstance(args[0], Line):
         return args[0]
-    elif len(args) == 1 and isinstance(args[0], Ray3D):
+    elif len(args) == 1 and isinstance(args[0], Ray):
         return line(args[0].p, args[0].n)
-    elif len(args) == 1 and isinstance(args[0], Segment2D):
+    elif len(args) == 1 and isinstance(args[0], Segment):
         return line(args[0].p, args[0].q)
     elif len(args) == 2 and isinstance(args[0], Point) and isinstance(args[1], Point):
         return args[0].join(args[1])
@@ -1749,7 +1831,12 @@ def plane(*args):
 
 
 @overload
-def ray(r: Ray3D) -> Ray3D:
+def ray(r: R) -> R:
+    ...
+
+
+@overload
+def ray(l: Line2D) -> Ray2D:
     ...
 
 
@@ -1759,7 +1846,12 @@ def ray(l: Line3D) -> Ray3D:
 
 
 @overload
-def ray(p: Point3D, v: Vector3D) -> Ray3D:
+def ray(p: Point2D, n: Vector2D) -> Ray2D:
+    ...
+
+
+@overload
+def ray(p: Point3D, n: Vector3D) -> Ray3D:
     ...
 
 
@@ -1769,53 +1861,122 @@ def ray(p: Point3D, q: Point3D) -> Ray3D:
 
 
 @overload
+def ray(a: float, b: float, c: float, d: float) -> Ray2D:
+    ...
+
+
+@overload
 def ray(a: float, b: float, c: float, d: float, e: float, f: float) -> Ray3D:
     ...
 
 
 @overload
-def ray(x: np.ndarray) -> Ray3D:
+def ray(x: np.ndarray) -> Ray:
     ...
 
 
 def ray(*args):
     """More flexible method for creating a ray."""
-    if len(args) == 1 and isinstance(args[0], Ray3D):
+    if len(args) == 1 and isinstance(args[0], Ray):
         return args[0]
+    elif len(args) == 1 and isinstance(args[0], Line2D):
+        return Ray2D.from_pn(args[0].get_point(), args[0].get_direction())
     elif len(args) == 1 and isinstance(args[0], Line3D):
         return Ray3D.from_pn(args[0].get_point(), args[0].get_direction())
-    elif (
-        len(args) == 2 and isinstance(args[0], Point3D) and isinstance(args[1], Point3D)
-    ):
-        return Ray3D.from_pq(args[0], args[1])
+    elif len(args) == 2:
+        if isinstance(args[0], Point2D) and isinstance(args[1], Vector2D):
+            return Ray2D.from_pn(args[0], args[1])
+        elif isinstance(args[0], Point3D) and isinstance(args[1], Vector3D):
+            return Ray3D.from_pn(args[0], args[1])
+        elif isinstance(args[0], Point2D) and isinstance(args[1], Point2D):
+            return Ray2D.from_pq(args[0], args[1])
+        elif isinstance(args[0], Point3D) and isinstance(args[1], Point3D):
+            return Ray3D.from_pq(args[0], args[1])
 
     r = _array(args)
-    if r.shape == (6,):
+    if r.shape == (4,):
+        return Ray2D.from_pn(r[:2], r[2:])
+    elif r.shape == (6,):
         return Ray3D.from_pn(r[:3], r[3:])
+    elif r.shape == (2, 2):
+        return Ray3D.from_pn(r[0], r[1])
     elif r.shape == (2, 3):
         return Ray3D.from_pn(r[0], r[1])
+    elif r.shape == (2, 2):
+        return Ray2D.from_pn(r[:, 0], r[:, 1])
     elif r.shape == (3, 2):
         return Ray3D.from_pn(r[:, 0], r[:, 1])
     else:
         raise ValueError(f"invalid data for ray: {r}")
 
 
+@overload
+def segment(s: Seg) -> Seg:
+    ...
+
+
+@overload
+def segment(p: Point2D, q: Point2D) -> Segment2D:
+    ...
+
+
+@overload
+def segment(p: Point3D, q: Point3D) -> Segment3D:
+    ...
+
+
+@overload
+def segment(p: Point2D, n: Vector2D) -> Segment2D:
+    ...
+
+
+@overload
+def segment(p: Point3D, n: Vector3D) -> Segment3D:
+    ...
+
+
+@overload
+def segment(a: float, b: float, c: float, d: float) -> Segment2D:
+    ...
+
+
+@overload
+def segment(a: float, b: float, c: float, d: float, e: float, f: float) -> Segment3D:
+    ...
+
+
+@overload
+def segment(x: np.ndarray) -> Segment:
+    ...
+
+
 def segment(*args):
     """More flexible method for creating a segment."""
-    if len(args) == 1 and isinstance(args[0], Segment2D):
+    if len(args) == 1 and isinstance(args[0], Segment):
         return args[0]
-    elif (
-        len(args) == 2 and isinstance(args[0], Point3D) and isinstance(args[1], Point3D)
-    ):
-        return Segment2D.from_pq(args[0], args[1])
+    elif len(args) == 2:
+        if isinstance(args[0], Point2D) and isinstance(args[1], Point2D):
+            return Segment2D.from_pq(args[0], args[1])
+        elif isinstance(args[0], Point3D) and isinstance(args[1], Point3D):
+            return Segment2D.from_pq(args[0], args[1])
+        elif isinstance(args[0], Point2D) and isinstance(args[1], Vector2D):
+            return Segment2D.from_pn(args[0], args[1])
+        elif isinstance(args[0], Point3D) and isinstance(args[1], Vector3D):
+            return Segment3D.from_pn(args[0], args[1])
 
     r = _array(args)
-    if r.shape == (6,):
-        return Ray3D.from_pn(r[:3], r[3:])
+    if r.shape == (4,):
+        return Segment2D.from_pq(r[:2], r[2:])
+    elif r.shape == (6,):
+        return Segment3D.from_pq(r[:3], r[3:])
+    elif r.shape == (2, 2):
+        return Segment3D.from_pq(r[0], r[1])
     elif r.shape == (2, 3):
-        return Ray3D.from_pn(r[0], r[1])
+        return Segment3D.from_pq(r[0], r[1])
+    elif r.shape == (2, 2):
+        return Segment2D.from_pq(r[:, 0], r[:, 1])
     elif r.shape == (3, 2):
-        return Ray3D.from_pn(r[:, 0], r[:, 1])
+        return Segment3D.from_pq(r[:, 0], r[:, 1])
     else:
         raise ValueError(f"invalid data for ray: {r}")
 
@@ -1913,6 +2074,14 @@ class Transform(HomogeneousObject):
         ...
 
     @overload
+    def __matmul__(self: FrameTransform, other: R) -> R:
+        ...
+
+    @overload
+    def __matmul__(self: FrameTransform, other: Seg) -> Seg:
+        ...
+
+    @overload
     def __matmul__(self: FrameTransform, other: Plane) -> Plane:
         ...
 
@@ -1945,6 +2114,14 @@ class Transform(HomogeneousObject):
 
     @overload
     def __matmul__(self: CameraProjection, other: Line3D) -> Line2D:
+        ...
+
+    @overload
+    def __matmul__(self: CameraProjection, other: Ray3D) -> Ray2D:
+        ...
+
+    @overload
+    def __matmul__(self: CameraProjection, other: Segment3D) -> Segment2D:
         ...
 
     @overload
@@ -1981,38 +2158,59 @@ class Transform(HomogeneousObject):
             # implemented by the right side object as well, because this function is getting quite
             # bulky.
             return [self @ x for x in other]
-        elif isinstance(self, FrameTransform) and isinstance(other, (Line2D, Line3D)):
-            p = other.get_point()
-            v = other.get_direction()
-            p_ = self @ p
-            v_ = self @ v
-            return line(p_, v_)
-        elif isinstance(self, FrameTransform) and isinstance(other, Plane):
-            p = other.get_point()
-            n = other.get_normal()
-            p_ = self @ p
-            n_ = self @ n
-            return plane(p_, n_)
-        elif isinstance(self, CameraProjection) and isinstance(other, Line3D):
-            p1 = other.get_point()
-            v = other.get_direction()
-            p2 = p1 + v
-            p1_ = self @ p1
-            p2_ = self @ p2
-            return line(p1_, p2_)
-        elif isinstance(self, FrameTransform) and isinstance(
-            other, CameraIntrinsicTransform
-        ):
-            return CameraIntrinsicTransform(
-                self.data @ other.data, other._sensor_height, other._sensor_width
-            )
-        elif isinstance(self, CameraProjection) and isinstance(other, FrameTransform):
-            return CameraProjection(self.intrinsic.copy(), self.extrinsic @ other)
-        elif isinstance(self, FrameTransform) and isinstance(other, CameraProjection):
-            return CameraProjection(self @ other.intrinsic, other.extrinsic.copy())
-        elif isinstance(self, FrameTransform) and isinstance(other, FrameTransform):
-            # very common case of composing FrameTransforms.
-            return FrameTransform(self.data @ other.data)
+        elif isinstance(self, FrameTransform):
+            if isinstance(other, FrameTransform):
+                return FrameTransform(self.data @ other.data)
+            elif isinstance(other, Line):
+                p = other.get_point()
+                v = other.get_direction()
+                p_ = self @ p
+                v_ = self @ v
+                return line(p_, v_)
+            elif isinstance(other, Plane):
+                p = other.get_point()
+                n = other.get_normal()
+                p_ = self @ p
+                n_ = self @ n
+                return plane(p_, n_)
+            elif isinstance(other, Ray2D):
+                return Ray2D(self.data @ other.data)
+            elif isinstance(other, Segment2D):
+                return Segment2D(self.data @ other.data)
+            elif isinstance(other, Segment3D):
+                return Segment3D(self.data @ other.data)
+            elif isinstance(other, CameraIntrinsicTransform):
+                return CameraIntrinsicTransform(
+                    self.data @ other.data, other._sensor_height, other._sensor_width
+                )
+            elif isinstance(other, CameraProjection):
+                return CameraProjection(self @ other.intrinsic, other.extrinsic.copy())
+            else:
+                return NotImplemented
+        elif isinstance(self, CameraProjection):
+            if isinstance(other, Line3D):
+                p1 = other.get_point()
+                v = other.get_direction()
+                p2 = p1 + v
+                p1_ = self @ p1
+                p2_ = self @ p2
+                return line(p1_, p2_)
+            elif isinstance(other, Ray3D):
+                p = other.get_point()
+                v = other.get_direction()
+                p_ = self @ p
+                v_ = self @ v
+                return ray(p_, v_)
+            elif isinstance(other, Segment3D):
+                p = other.p
+                q = other.q
+                p_ = self @ p
+                q_ = self @ q
+                return segment(p_, q_)
+            elif isinstance(other, FrameTransform):
+                return CameraProjection(self.intrinsic.copy(), self.extrinsic @ other)
+            else:
+                return NotImplemented
         elif isinstance(other, Transform):
             # if other is a Transform, then compose their inverses as well to store that.
             check_dim()
