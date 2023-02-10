@@ -1039,9 +1039,9 @@ class Volume(object):
         label: Optional[int] = None,
         node_centered: bool = True,
         smooth: bool = True,
-        decimation: float = 0.01,
         smooth_iter: int = 30,
         relaxation_factor: float = 0.25,
+        n_points: int = 10000,
         convert_to_LPS: bool = False,
     ) -> pv.PolyData:
         """Make an isosurface from the volume's data, transforming to anatomical_coordinates.
@@ -1068,9 +1068,9 @@ class Volume(object):
             label=label,
             node_centered=node_centered,
             smooth=smooth,
-            decimation=decimation,
             smooth_iter=smooth_iter,
             relaxation_factor=relaxation_factor,
+            n_points=n_points,
         )
         surface.transform(geo.get_data(self.anatomical_from_ijk), inplace=True)
 
