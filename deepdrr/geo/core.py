@@ -45,55 +45,18 @@ import math
 
 if TYPE_CHECKING:
     from ..vol import Volume
+    from .typing import P, V, R, S, L, Pl, PV, Pr
 
+    from .hyperplane import Plane, Line, Line2D, Line3D
+    from .segment import Segment, Segment2D, Segment3D
+    from .ray import Ray, Ray2D, Ray3D
+
+from .utils import _array, _to_homogeneous, _from_homogeneous
 from .exceptions import MeetError, JoinError
 from .. import utils
 
 
-Pr = TypeVar("Pr", bound="Primitive")
-PV = TypeVar("PV", bound="PointOrVector")
-P = TypeVar("P", bound="Point")
-V = TypeVar("V", bound="Vector")
-L = TypeVar("L", bound="Line")
-Pl = TypeVar("Pl", bound="Plane")
-Seg = TypeVar("Seg", bound="Segment")
-R = TypeVar("R", bound="Ray")
-
-
 log = logging.getLogger(__name__)
-
-
-def _to_homogeneous(x: np.ndarray, is_point: bool = True) -> np.ndarray:
-    """Convert an array to homogeneous points or vectors.
-
-    Args:
-        x (np.ndarray): array with objects on the last axis.
-        is_point (bool, optional): if True, the array represents a point, otherwise it represents a vector. Defaults to True.
-
-    Returns:
-        np.ndarray: array containing the homogeneous point/vector(s).
-    """
-    if is_point:
-        return np.concatenate([x, np.ones_like(x[..., -1:])], axis=-1)
-    else:
-        return np.concatenate([x, np.zeros_like(x[..., -1:])], axis=-1)
-
-
-def _from_homogeneous(x: np.ndarray, is_point: bool = True) -> np.ndarray:
-    """Convert array containing homogeneous data to raw form.
-
-    Args:
-        x (np.ndarray): array containing homogenous
-        is_point (bool, optional): whether the objects are points (true) or vectors (False). Defaults to True.
-
-    Returns:
-        np.ndarray: the raw data representing the point/vector(s).
-    """
-    if is_point:
-        return (x / x[..., -1:])[..., :-1]
-    else:
-        assert np.all(np.isclose(x[..., -1], 0)), f"not a homogeneous vector: {x}"
-        return x[..., :-1]
 
 
 T = TypeVar("T")
@@ -259,6 +222,56 @@ class Meetable(ABC):
             return False
 
 
+class HasLocation(ABC):
+    @abstractmethod
+    def get_point(self) -> Point:
+        """Get the location of the object.
+
+        Returns:
+            Point: the location of the object.
+        """
+        pass
+
+
+class HasDirection(ABC):
+    @abstractmethod
+    def get_direction(self) -> Vector:
+        """Get the direction associated with the object.
+
+        Returns:
+            Vector: the direction of the object.
+        """
+        pass
+
+
+class HasLocationAndDirection(HasLocation, HasDirection):
+    @classmethod
+    @abstractmethod
+    def from_point_direction(cls, point: Point, direction: Vector) -> Self:
+        """Create an object from a point and a direction.
+
+        Args:
+            point (Point): the point.
+            direction (Vector): the direction.
+
+        Returns:
+            Self: the object.
+        """
+        pass
+
+
+class HasProjection(ABC):
+    @classmethod
+    @abstractmethod
+    def projection_type(cls) -> Type[Primitive]:
+        """Get the type of the projection of the object.
+
+        Returns:
+            Type[Primitive]: the type of the projection of the object.
+        """
+        pass
+
+
 class PointOrVector(Primitive):
     """A Homogeneous point or vector in any dimension."""
 
@@ -314,7 +327,7 @@ class PointOrVector(Primitive):
         return float(self.data[-1])
 
 
-class Point(PointOrVector, Joinable):
+class Point(PointOrVector, Joinable, HasLocation):
     def __init__(self, data: np.ndarray) -> None:
         assert not np.isclose(data[-1], 0), "cannot create a point with 0 for w"
         if data[-1] != 1:
@@ -451,6 +464,10 @@ class Point(PointOrVector, Joinable):
     def as_vector(self) -> Vector:
         """Get the vector with the same numerical representation as this point."""
         return vector(np.array(self))
+
+    def get_point(self: Self) -> Self:
+        """Get the point with the same numerical representation as this point."""
+        return self.copy()
 
 
 class Vector(PointOrVector):
@@ -590,6 +607,10 @@ class Vector(PointOrVector):
         """Gets the point with the same numerical representation as this vector."""
         return point(np.array(self))
 
+    def get_direction(self: Self) -> Self:
+        """Gets the vector with the same numerical representation as this vector."""
+        return self.copy()
+
 
 class Point2D(Point):
     """Homogeneous point in 2D, represented as an array with [x, y, 1]"""
@@ -606,6 +627,9 @@ class Point2D(Point):
 
     def join(self, other):
         if isinstance(other, Point2D):
+            # Avoids circular import
+            from .hyperplane import Line2D
+
             return Line2D(np.cross(self.data, other.data))
         elif isinstance(other, Line2D):
             raise NotImplementedError("TODO: get vector from point to line")
@@ -624,7 +648,7 @@ class Point2D(Point):
         """
         s = index_from_world.get_center()
         v = index_from_world.inv @ self
-        return line(s, v)
+        return s.join(s + v)
 
 
 class Vector2D(Vector):
@@ -658,6 +682,10 @@ class Point3D(Point):
 
     dim = 3
 
+    @classmethod
+    def projection_type(cls) -> Type[Point2D]:
+        return Point2D
+
     @overload
     def join(self, other: Point3D) -> Line3D:
         ...
@@ -668,6 +696,8 @@ class Point3D(Point):
 
     def join(self, other):
         if isinstance(other, Point3D):
+            from .hyperplane import Line3D
+
             # Line joining two points in P^3.
             ax, ay, az, aw = self.data
             bx, by, bz, bw = other.data
@@ -683,6 +713,8 @@ class Point3D(Point):
             )
             return Line3D(l)
         elif isinstance(other, Line3D):
+            from .hyperplane import Plane
+
             return Plane(self.data.T @ other.L)
         elif isinstance(other, Plane):
             raise NotImplementedError("TODO: get vector from point to plane")
@@ -690,13 +722,19 @@ class Point3D(Point):
             raise TypeError(f"unrecognized type for join: {type(other)}")
 
 
-class Vector3D(Vector):
+class Vector3D(Vector, HasProjection):
     """Homogeneous vector in 3D, represented as an array with [x, y, z, 0]"""
 
     dim = 3
 
+    @classmethod
+    def projection_type(cls) -> Type[Primitive]:
+        return Vector2D
+
     def as_plane(self) -> Plane:
         """Get the plane through the origin with this vector as its normal."""
+        from .hyperplane import Plane
+
         return Plane(self.data)
 
     def perpendicular(self, random: bool = False) -> Vector3D:
@@ -768,759 +806,7 @@ class Vector3D(Vector):
         return vector(rot.apply(self))
 
 
-class HyperPlane(Primitive, Meetable):
-    """Represents a hyperplane in 2D (a line) or 3D (a plane).
-
-    Hyperplanes can be intersected with other hyperplanes or lower dimensional objects, but they are
-    not joinable.
-
-    """
-
-    def __init__(self, data: np.ndarray) -> None:
-        assert len(data) == self.dim + 1, f"data has shape {data.shape}"
-        super().__init__(data)
-
-    @property
-    def a(self) -> float:
-        """Get the coefficient of the first variable.
-
-        Returns:
-            float: The coefficient of the first variable.
-
-        """
-        return self.data[0]
-
-    @property
-    def b(self) -> float:
-        """Get the coefficient of the second variable.
-
-        Returns:
-            float: The coefficient of the second variable.
-
-        """
-        return self.data[1]
-
-    @property
-    def c(self) -> float:
-        """Get the coefficient of the third variable.
-
-        Returns:
-            float: The coefficient of the third variable.
-
-        """
-        return self.data[2]
-
-    @property
-    def d(self) -> float:
-        """Get the constant term.
-
-        Returns:
-            float: The constant term.
-
-        """
-        if self.dim < 3:
-            raise ValueError("2D lines have no constant term")
-        return self.data[3]
-
-    def evaluate(self, p: Point) -> float:
-        """Evaluate the hyperplane at the given point.
-
-        The sign of this value tells you which side of the hyperplane the point is on.
-
-        Args:
-            p (Point): the point to evaluate at.
-
-        Returns:
-            float: the value of the hyperplane at the given point.
-
-        """
-        assert self.dim == p.dim, f"dimension mismatch: {self.dim} != {p.dim}"
-        return self.data @ p.data
-
-    def get_normal(self) -> Vector3D:
-        """Get the normal vector of the plane.
-
-        Returns:
-            Vector3D: The normal vector of the plane.
-
-        """
-        return vector(self.data[: self.dim])
-
-    def normal(self) -> Vector3D:
-        return self.get_normal()
-
-    @property
-    def n(self) -> Vector3D:
-        return self.get_normal()
-
-    def signed_distance(self, p: Point) -> float:
-        """Get the signed distance from the given point to the hyperplane.
-
-        Args:
-            p (Point): the point to measure the distance from.
-
-        Returns:
-            float: the signed distance from the point to the hyperplane.
-
-        """
-        p = point(p)
-        if self.dim != p.dim:
-            raise ValueError(f"dimension mismatch: {self.dim} != {p.dim}")
-        return -self.evaluate(p) / (p.w * self.n.norm())
-
-    def distance(self, p: Point) -> float:
-        """Get the distance of the point to the hyperplane.
-
-        Args:
-            p (Point): the point to evaluate at.
-
-        Returns:
-            float: the distance of the point to the hyperplane.
-
-        """
-        return abs(self.signed_distance(p))
-
-    def project(self, p: P) -> P:
-        """Get the closest point on the hyperplane to p.
-
-        Args:
-            p (Point): The point to project.
-
-        Returns:
-            Point: The closest point on the hyperplane to p.
-
-        """
-        p = point(p)  # guaranteed to be homogenized
-        assert np.isclose(p.w, 1), f"point is not homogenized: {p}"
-        d = self.signed_distance(p)
-        return p + d * self.n
-
-
-class Line(Primitive, Meetable):
-    """Abstract parent class for lines and line-like objects."""
-
-    @abstractmethod
-    def get_direction(self) -> Vector:
-        """Get the direction of the line.
-
-        Returns:
-            Vector: The unit-length direction of the line.
-
-        """
-        pass
-
-    @abstractmethod
-    def get_point(self) -> Point:
-        """Get an arbitrary point on the line.
-
-        Returns:
-            Point: A point on the line.
-
-        """
-        pass
-
-    @overload
-    def as_points(self: Line2D) -> Tuple[Point2D, Point2D]:
-        ...
-
-    @overload
-    def as_points(self: Line3D) -> Tuple[Point3D, Point3D]:
-        ...
-
-    def as_points(self):
-        """Get two points on the line.
-
-        Returns:
-            Tuple[Point, Point]: Two points on the line.
-
-        """
-        return self.get_point(), self.get_point() + self.get_direction()
-
-    @overload
-    def project(self: Line2D, other: Point2D) -> Point2D:
-        ...
-
-    @overload
-    def project(self: Line3D, other: Point3D) -> Point3D:
-        ...
-
-    def project(self, other):
-        """Get the closest point on the line to another point.
-
-        Args:
-            other (Point): The point to which the closest point is sought.
-
-        Returns:
-            Point: The closest point on the line to the other point.
-
-        """
-        p = self.get_point()
-        v = self.get_direction()
-        other = point(other)
-        d = other - p
-        return p + v.dot(d) * v
-
-    def distance(self, other: Point) -> float:
-        """Get the distance from the line to another point.
-
-        Args:
-            other (Point): The point to which the distance is sought.
-
-        Returns:
-            float: The distance from the line to the other point.
-
-        """
-        other = point(other)
-        p = self.get_point()
-        v = self.get_direction()
-        diff = other - p
-        return (diff - v.dot(diff) * v).norm()
-
-    def angle(self, other: Union[Line, Vector]) -> float:
-        """Get the acute angle between the two lines."""
-        assert other.dim == self.dim
-        d1 = self.get_direction()
-        if isinstance(other, Vector):
-            d2 = other
-        elif isinstance(other, Line):
-            d2 = other.get_direction()
-        else:
-            TypeError
-
-        if d1.dot(d2) < 0:
-            d2 = -d2
-        return d1.angle(d2)
-
-
-class Line2D(Line, HyperPlane):
-    """Represents a line in 2D.
-
-    Consists of a 3-vector :math:`\mathbf{p} = [a, b, c]` such that the line is all the points (x,y)
-    such that :math:`ax + by + c = 0` or, alternatively, all the homogeneous points
-    :math:`\mathbf{x} = [x,y,w]` such that :math:`p^T x = 0`.
-
-    """
-
-    dim = 2
-
-    @overload
-    def meet(self, other: Line2D) -> Point2D:
-        ...
-
-    @overload
-    def meet(self, other: Segment2D) -> Point2D:
-        ...
-
-    def meet(self, other):
-        if type(other) is Line2D:
-            m = np.cross(self.data, other.data)
-            if np.isclose(m[2], 0):
-                raise MeetError("lines are parallel")
-            else:
-                return Point2D(m)
-        elif type(other) is Segment2D:
-            r = self.meet(other.line())
-            v = other.p - other.q
-            if 0 <= v.dot(r - other.p) <= v.dot(v):
-                return r
-            else:
-                raise MeetError("line does not meet segment")
-        else:
-            raise TypeError(f"unrecognized type for meet: {type(other)}")
-
-    def backproject(self, index_from_world: CameraProjection) -> Plane:
-        """Get the plane containing all the points that `P` projects onto this line.
-
-        Args:
-            P (Transform): A so-called `index_from_world` projection transform.
-
-        Returns:
-            Plane:
-        """
-        assert index_from_world.shape == (3, 4), "P is not a projective transformation"
-        return Plane(index_from_world.data.T @ self.data)
-
-    def get_direction(self) -> Vector2D:
-        """Get the direction of the line.
-
-        Returns:
-            Vector2D: The unit-length direction of the line.
-
-        """
-        # If a x + b y + c = 0, then for all w,
-        # a (x + wb) + b (y - wa) + c = ax + awb + by - bwa + c = 0
-        return vector(self.b, -self.a).hat()
-
-    def get_point(self) -> Point:
-        """Get an arbitrary point on the line.
-
-        Returns:
-            Point: A point on the line.
-
-        """
-        return Point2D([0, -self.c / self.b, 1])
-
-
-class Plane(HyperPlane):
-    """Represents a plane in 3D"""
-
-    dim = 3
-
-    @classmethod
-    def from_point_normal(cls, r: Point3D, n: Vector3D):
-        """Make a plane from a point and a normal vector.
-
-        Args:
-            r (Point3D): The point on the plane.
-            n (Vector3D): The normal vector of the plane.
-
-        Returns:
-            Plane: The plane.
-        """
-        r = point(r)
-        n = vector(n)
-        a, b, c = n
-        d = -(a * r.x + b * r.y + c * r.z)
-        return cls(np.array([a, b, c, d]))
-
-    @classmethod
-    def from_points(cls, a: Point3D, b: Point3D, c: Point3D) -> None:
-        """Initialize the plane containing three points.
-
-        Args:
-            a (Point3D): a point on the plane.
-            b (Point3D): a point on the plane.
-            c (Point3D): a point on the plane.
-
-        Returns:
-            Plane: The plane.
-        """
-        a = point(a)
-        b = point(b)
-        c = point(c)
-
-        assert a.dim == 3 and b.dim == 3 and c.dim == 3, "points must be 3D"
-
-        return a.join(b).join(c)
-
-    def get_point(self) -> Point3D:
-        """Get an arbitrary point on the plane.
-
-        Returns:
-            Point3D: A point on the plane.
-
-        """
-        return Point3D([0, 0, -self.d / self.c, 1])
-
-    @overload
-    def meet(self, other: Plane) -> Line3D:
-        ...
-
-    @overload
-    def meet(self, other: Line3D) -> Point3D:
-        ...
-
-    def meet(self, other):
-        if isinstance(other, Plane):
-            # Intersection of two planes in P^3.
-            a1, b1, c1, d1 = self.data
-            a2, b2, c2, d2 = other.data
-            l = np.array(
-                [
-                    -(a1 * b2 - a2 * b1),  # p
-                    a1 * c2 - a2 * c1,  # q
-                    -(a1 * d2 - a2 * d1),  # r
-                    -(b1 * c2 - b2 * c1),  # s
-                    b1 * d2 - b2 * d1,  # t
-                    -(c1 * d2 - c2 * d1),  # u
-                ]
-            )
-            return Line3D(l)
-        elif isinstance(other, Line3D):
-            p = other.K @ self
-            if np.all(np.isclose(p, 0)):
-                raise MeetError("Plane and line are parallel")
-            return Point3D(p)
-        else:
-            raise TypeError(f"unrecognized type for meet: {type(other)}")
-
-
-class Line3D(Line, Primitive, Joinable, Meetable):
-    """Represents a line in 3D as a 6-vector (p,q,r,s,t,u).
-
-    Based on https://dl.acm.org/doi/pdf/10.1145/965141.563900.
-
-    """
-
-    dim = 3
-
-    def __init__(self, data: np.ndarray) -> None:
-        assert data.shape == (6,)
-        # TODO: assert the necessary line conditions
-        super().__init__(data)
-
-    @classmethod
-    def from_primal(cls, lp: np.ndarray) -> Line3D:
-        assert lp.shape == (4, 4)
-        data = np.array([lp[0, 1], -lp[0, 2], lp[0, 3], lp[1, 2], -lp[1, 3], lp[2, 3]])
-        return cls(data)
-
-    @classmethod
-    def from_dual(cls, lk: np.ndarray) -> Line3D:
-        assert lk.shape == (4, 4)
-        data = np.array([lk[3, 2], lk[3, 1], lk[2, 1], lk[3, 0], lk[2, 0], lk[1, 0]])
-        return cls(data)
-
-    def primal(self) -> np.ndarray:
-        """Get the primal matrix of the line."""
-        p, q, r, s, t, u = self.data
-
-        return np.array(
-            [
-                [0, p, -q, r],
-                [-p, 0, s, -t],
-                [q, -s, 0, u],
-                [-r, t, -u, 0],
-            ]
-        )
-
-    @property
-    def L(self) -> np.ndarray:
-        """Get the primal matrix of the line."""
-        return self.primal()
-
-    def dual(self) -> np.ndarray:
-        """Get the dual form of the line."""
-        p, q, r, s, t, u = self
-
-        return np.array(
-            [
-                [0, -u, -t, -s],
-                [u, 0, -r, -q],
-                [t, r, 0, -p],
-                [s, q, p, 0],
-            ]
-        )
-
-    @property
-    def K(self) -> np.ndarray:
-        """Get the dual form of the line."""
-        return self.dual()
-
-    @property
-    def p(self) -> float:
-        """Get the first parameter of the line."""
-        return self.data[0]
-
-    @property
-    def q(self) -> float:
-        """Get the second parameter of the line."""
-        return self.data[1]
-
-    @property
-    def r(self) -> float:
-        """Get the third parameter of the line."""
-        return self.data[2]
-
-    @property
-    def s(self) -> float:
-        """Get the fourth parameter of the line."""
-        return self.data[3]
-
-    @property
-    def t(self) -> float:
-        """Get the fifth parameter of the line."""
-        return self.data[4]
-
-    @property
-    def u(self) -> float:
-        """Get the sixth parameter of the line."""
-        return self.data[5]
-
-    def join(self, other: Point3D) -> Plane:
-        return other.join(self)
-
-    def meet(self, other: Plane) -> Point3D:
-        return other.meet(self)
-
-    def get_direction(self) -> Vector3D:
-        """Get the direction of the line."""
-        d = vector(self.s, self.q, self.p)
-        return d.hat()
-
-    def get_point(self) -> Point3D:
-        """Get a point on the line."""
-        d = self.get_direction()
-        return d.as_plane().meet(self)
-
-
-class Segment(Primitive, Meetable):
-    def __init__(self, data: np.ndarray) -> None:
-        """Initialize the segment.
-
-        Args:
-            data (np.ndarray): [3, 2] array of homogeneous 2D points (in the columns).
-
-        """
-        assert data.shape == (self.dim, 2)
-        super().__init__(data)
-
-        if np.isclose(self.data[self.dim, :], 0).any():
-            raise ValueError("segment is degenerate")
-        self.data[:, 0] /= self.data[self.dim, 0]
-        self.data[:, 1] /= self.data[self.dim, 1]
-
-    @classmethod
-    def from_pq(cls: Type[Seg], p: Point, q: Point) -> Seg:
-        """Initialize the segment containing two points.
-
-        Args:
-            p (Point): The first point.
-            q (Point): The second point.
-
-        Returns:
-            Segment: The segment.
-
-        """
-        p = point(p)
-        q = point(q)
-        return cls(np.array([p.data, q.data]).T)
-
-    @classmethod
-    def from_pn(cls: Type[Seg], p: Point, n: Vector) -> Seg:
-        """Initialize the segment containing two points.
-
-        Args:
-            p (Point): The first point.
-            n (Vector): The direction vector.
-
-        Returns:
-            Segment: The segment.
-
-        """
-        p = point(p)
-        n = vector(n)
-        return cls.from_pq(p, p + n)
-
-    @property
-    def p(self) -> Point:
-        """Get the first point of the segment.
-
-        Returns:
-            Point2D: The first point of the segment.
-
-        """
-        return point(self.data[: self.dim, 0])
-
-    @p.setter
-    def p(self, value: Point2D) -> None:
-        """Set the first point of the segment.
-
-        Args:
-            value (Point2D): The new first point of the segment.
-
-        """
-        self.data[:, 0] = point(value).data
-
-    @property
-    def q(self) -> Point:
-        """Get the second point of the segment.
-
-        Returns:
-            Point2D: The second point of the segment.
-
-        """
-        return point(self.data[: self.dim, 1])
-
-    @q.setter
-    def q(self, value: Point) -> None:
-        """Set the second point of the segment.
-
-        Args:
-            value (Point2D): The new second point of the segment.
-
-        """
-        self.data[:, 1] = point(value).data
-
-    def length(self) -> float:
-        """Get the length of the segment.
-
-        Returns:
-            float: The length of the segment.
-
-        """
-        return (self.p - self.q).norm()
-
-    def get_point(self) -> Point:
-        return self.p
-
-    def get_direction(self) -> Vector:
-        return (self.q - self.p).hat()
-
-    def line(self) -> Line:
-        return self.p.join(self.q)
-
-
-class Segment2D(Segment):
-    """Represents a line segment in 2D."""
-
-    dim = 2
-
-    def meet(self, other: Union[Line2D, Segment2D]) -> Point2D:
-        """Get the point of intersection between this segment and another line.
-
-        Args:
-            other (Line2D): The other line.
-
-        Returns:
-            Point2D: The point of intersection.
-
-        """
-        p = super().meet(other)
-        if isinstance(other, Line2D):
-            return other.meet(self)
-        elif isinstance(other, Segment2D):
-            # Checks intersections of one segment with the other line and vice versa.
-            # MeetError is raised if there is no intersection.
-            self.meet(other.line())
-            return other.meet(self.line())
-        else:
-            raise TypeError()
-
-
-class Segment3D(Segment, Joinable):
-    """Represents a segment in 3D."""
-
-    dim = 3
-
-    def join(self, other: Point3D) -> Plane:
-        if isinstance(other, Point3D):
-            return self.line().join(other)
-        else:
-            raise TypeError()
-
-
-class Ray(Primitive, Meetable):
-    def __init__(self, data: np.ndarray) -> None:
-        """Initialize the segment.
-
-        Args:
-            data (np.ndarray): [dim+1, 2] array with a homogeneous point and a vector in the columns.
-
-        """
-        assert data.shape == (self.dim, 2)
-        super().__init__(data)
-
-        if np.isclose(self.data[self.dim, 0], 0):
-            raise ValueError("point is at infinity")
-        if not np.isclose(self.data[self.dim, 1], 0):
-            raise ValueError("direction is not at infinity")
-
-        self.data[:, 0] /= self.data[self.dim, 0]
-
-    @classmethod
-    def from_pn(cls: Type[R], p: Point, d: Vector) -> R:
-        """Create a ray from a point and a direction."""
-        p = point(p)
-        d = vector(d).hat()
-        return cls(np.hstack([get_data(p), get_data(d)]))
-
-    @classmethod
-    def from_point_direction(cls: Type[Ray], p: Point, d: Vector) -> Ray:
-        """Create a ray from a point and a direction."""
-        return cls.from_pn(p, d)
-
-    @classmethod
-    def from_pq(cls: Type[R], p: Point, q: Point) -> R:
-        """Create a ray from two points.
-
-        The point q is not preserved in the ray.
-
-        Args:
-            p (Point3D): The origin of the ray.
-            q (Point3D): A point on the ray.
-        """
-        return cls.from_pn(p, q - p)
-
-    @property
-    def p(self) -> Point3D:
-        return Point3D(self.data[:, 0])
-
-    @p.setter
-    def p(self, p: Union[Point, np.ndarray]) -> None:
-        self.data[:, 0] = point(p).data
-
-    @property
-    def n(self) -> Vector:
-        return Vector(self.data[:, 1])
-
-    @n.setter
-    def n(self, n: Union[Vector, np.ndarray]) -> None:
-        self.data[:, 1] = vector(n).data
-
-    def angle(self, other: Ray) -> float:
-        """Get the angle between two rays."""
-        return self.n.angle(other.n)
-
-    def get_direction(self) -> Vector3D:
-        return self.n
-
-    def get_point(self) -> Point3D:
-        return self.p
-
-
-class Ray2D(Ray):
-    dim = 2
-
-    def meet(self, other: Union[Line2D, Segment2D]) -> Point2D:
-        """Get the point of intersection between this ray and another line.
-
-        Args:
-            other (Line2D): The other line.
-
-        Returns:
-            Point2D: The point of intersection.
-
-        """
-        raise NotImplementedError()
-
-
-class Ray3D(Ray, Joinable):
-    """A homogeneous representation of a ray.
-
-    This is just a (4,2) array with the homogeneous coordinates of the
-    origin and the direction, respectively.
-
-    """
-
-    dim = 3
-
-    def join(self, other: Point3D) -> Plane:
-        l = self.p.join(self.p + self.n)
-        return l.join(other)
-
-    def meet(self, other: Plane) -> Point3D:
-        # TODO: depending on direction, ray may not intersect plane. Sort of the whole point.
-        l = self.p.join(self.p + self.n)
-        return l.meet(other)
-
-    def __iter__(self) -> Iterator[Union[Point3D, Vector3D]]:
-        yield self.p
-        yield self.n
-
-
 ### convenience functions for instantiating primitive objects ###
-
-
-def _array(x: Union[List[np.ndarray], List[float]]) -> np.ndarray:
-    # TODO: this is a little sketchy
-    if len(x) == 1:
-        return np.array(x[0])
-    else:
-        if isinstance(x[0], np.ndarray):
-            log.warning(f"got unusual args for array: {x}")
-            traceback.print_stack()
-        return np.array(x)
 
 
 @overload
@@ -1665,322 +951,6 @@ def vector(*args):
         raise ValueError(f"invalid data for vector: {v}")
 
 
-@overload
-def line(l: Line2D) -> Line2D:
-    ...
-
-
-@overload
-def line(l: Line3D) -> Line3D:
-    ...
-
-
-@overload
-def line(r: Ray2D) -> Line2D:
-    ...
-
-
-@overload
-def line(r: Ray3D) -> Line3D:
-    ...
-
-
-@overload
-def line(s: Segment2D) -> Line2D:
-    ...
-
-
-@overload
-def line(s: Segment3D) -> Line3D:
-    ...
-
-
-@overload
-def line(a: float, b: float, c: float) -> Line2D:
-    ...
-
-
-@overload
-def line(l: np.ndarray) -> Line:
-    ...
-
-
-@overload
-def line(p: float, q: float, r: float, s: float, t: float, u: float) -> Line3D:
-    ...
-
-
-@overload
-def line(x: Point2D, y: Point2D) -> Line2D:
-    ...
-
-
-@overload
-def line(x: Point3D, y: Point3D) -> Line3D:
-    ...
-
-
-@overload
-def line(a: Plane, b: Plane) -> Line3D:
-    ...
-
-
-@overload
-def line(x: Point2D, v: Vector2D) -> Line2D:
-    ...
-
-
-@overload
-def line(*args: Any) -> Line:
-    ...
-
-
-def line(*args):
-    """The preferred method for creating a line.
-
-    Can create a line using one of the following methods:
-    - Pass the coordinates as separate arguments. For instance, `line(1, 2, 3)` returns the 2D homogeneous line `1x + 2y + 3 = 0`.
-    - Pass a numpy array with the homogeneous coordinates (NOTE THE DIFFERENCE WITH `point` and `vector`).
-    - Pass a Line2D or Line3D instance, in which case `line()` is a no-op.
-    - Pass two points of the same dimension, in which case `line()` returns the line through the points.
-    - Pass two planes, in which case `line()` returns the line of intersection of the planes.
-
-    """
-
-    if len(args) == 1 and isinstance(args[0], Line):
-        return args[0]
-    elif len(args) == 1 and isinstance(args[0], Ray):
-        return line(args[0].p, args[0].n)
-    elif len(args) == 1 and isinstance(args[0], Segment):
-        return line(args[0].p, args[0].q)
-    elif len(args) == 2 and isinstance(args[0], Point) and isinstance(args[1], Point):
-        return args[0].join(args[1])
-    elif len(args) == 2 and isinstance(args[0], Plane) and isinstance(args[1], Plane):
-        return args[0].meet(args[1])
-    elif len(args) == 2 and isinstance(args[0], Point) and isinstance(args[1], Vector):
-        x: Point = args[0]
-        v: Vector = args[1]
-        return x.join(x + v)
-
-    l = _array(args)
-    if l.shape == (3,):
-        return Line2D(l)
-    elif l.shape == (6,):
-        return Line3D(l)
-    elif l.shape == (4, 4):
-        raise ValueError(
-            f"cannot create line from matrix form. Use Line3D.from_dual() or Line3D.from_primal() instead."
-        )
-    else:
-        raise ValueError(f"invalid data for line: {l}")
-
-
-@overload
-def plane(p: Plane) -> Plane:
-    ...
-
-
-@overload
-def plane(r: Ray3D) -> Ray3D:
-    ...
-
-
-@overload
-def plane(a: float, b: float, c: float, d: float) -> Plane:
-    ...
-
-
-@overload
-def plane(x: np.ndarray) -> Plane:
-    ...
-
-
-@overload
-def plane(p: Point3D, n: Vector3D) -> Plane:
-    ...
-
-
-def plane(*args):
-    """The preferred method for creating a plane.
-
-    Can create a plane using one of the following methods:
-    - Pass the coordinates as separate arguments. For instance, `plane(1, 2, 3, 4)` returns the 2D homogeneous plane `1x + 2y + 3z + 4 = 0`.
-    - Pass a numpy array with the homogeneous coordinates.
-    - Pass a Plane instance, in which case `plane()` is a no-op.
-    - Pass a Point3D and Vector3D instance, in which case `plane(p, n)` returns the plane corresponding to
-    - Pass a ray, which defines r, n as above.
-    """
-    if len(args) == 1 and isinstance(args[0], Plane):
-        return args[0]
-    elif len(args) == 1 and isinstance(args[0], Ray3D):
-        return Plane.from_point_normal(args[0].p, args[0].n)
-    elif (
-        len(args) == 2
-        and isinstance(args[0], Point3D)
-        and isinstance(args[1], Vector3D)
-    ):
-        r: Point3D = args[0]
-        n: Vector3D = args[1]
-        return Plane.from_point_normal(r, n)
-
-    p = _array(args)
-    if p.shape == (4,):
-        return Plane(p)
-    else:
-        raise ValueError(f"invalid data for plane: {p}")
-
-
-@overload
-def ray(r: R) -> R:
-    ...
-
-
-@overload
-def ray(l: Line2D) -> Ray2D:
-    ...
-
-
-@overload
-def ray(l: Line3D) -> Ray3D:
-    ...
-
-
-@overload
-def ray(p: Point2D, n: Vector2D) -> Ray2D:
-    ...
-
-
-@overload
-def ray(p: Point3D, n: Vector3D) -> Ray3D:
-    ...
-
-
-@overload
-def ray(p: Point3D, q: Point3D) -> Ray3D:
-    ...
-
-
-@overload
-def ray(a: float, b: float, c: float, d: float) -> Ray2D:
-    ...
-
-
-@overload
-def ray(a: float, b: float, c: float, d: float, e: float, f: float) -> Ray3D:
-    ...
-
-
-@overload
-def ray(x: np.ndarray) -> Ray:
-    ...
-
-
-def ray(*args):
-    """More flexible method for creating a ray."""
-    if len(args) == 1 and isinstance(args[0], Ray):
-        return args[0]
-    elif len(args) == 1 and isinstance(args[0], Line2D):
-        return Ray2D.from_pn(args[0].get_point(), args[0].get_direction())
-    elif len(args) == 1 and isinstance(args[0], Line3D):
-        return Ray3D.from_pn(args[0].get_point(), args[0].get_direction())
-    elif len(args) == 2:
-        if isinstance(args[0], Point2D) and isinstance(args[1], Vector2D):
-            return Ray2D.from_pn(args[0], args[1])
-        elif isinstance(args[0], Point3D) and isinstance(args[1], Vector3D):
-            return Ray3D.from_pn(args[0], args[1])
-        elif isinstance(args[0], Point2D) and isinstance(args[1], Point2D):
-            return Ray2D.from_pq(args[0], args[1])
-        elif isinstance(args[0], Point3D) and isinstance(args[1], Point3D):
-            return Ray3D.from_pq(args[0], args[1])
-
-    r = _array(args)
-    if r.shape == (4,):
-        return Ray2D.from_pn(r[:2], r[2:])
-    elif r.shape == (6,):
-        return Ray3D.from_pn(r[:3], r[3:])
-    elif r.shape == (2, 2):
-        return Ray3D.from_pn(r[0], r[1])
-    elif r.shape == (2, 3):
-        return Ray3D.from_pn(r[0], r[1])
-    elif r.shape == (2, 2):
-        return Ray2D.from_pn(r[:, 0], r[:, 1])
-    elif r.shape == (3, 2):
-        return Ray3D.from_pn(r[:, 0], r[:, 1])
-    else:
-        raise ValueError(f"invalid data for ray: {r}")
-
-
-@overload
-def segment(s: Seg) -> Seg:
-    ...
-
-
-@overload
-def segment(p: Point2D, q: Point2D) -> Segment2D:
-    ...
-
-
-@overload
-def segment(p: Point3D, q: Point3D) -> Segment3D:
-    ...
-
-
-@overload
-def segment(p: Point2D, n: Vector2D) -> Segment2D:
-    ...
-
-
-@overload
-def segment(p: Point3D, n: Vector3D) -> Segment3D:
-    ...
-
-
-@overload
-def segment(a: float, b: float, c: float, d: float) -> Segment2D:
-    ...
-
-
-@overload
-def segment(a: float, b: float, c: float, d: float, e: float, f: float) -> Segment3D:
-    ...
-
-
-@overload
-def segment(x: np.ndarray) -> Segment:
-    ...
-
-
-def segment(*args):
-    """More flexible method for creating a segment."""
-    if len(args) == 1 and isinstance(args[0], Segment):
-        return args[0]
-    elif len(args) == 2:
-        if isinstance(args[0], Point2D) and isinstance(args[1], Point2D):
-            return Segment2D.from_pq(args[0], args[1])
-        elif isinstance(args[0], Point3D) and isinstance(args[1], Point3D):
-            return Segment2D.from_pq(args[0], args[1])
-        elif isinstance(args[0], Point2D) and isinstance(args[1], Vector2D):
-            return Segment2D.from_pn(args[0], args[1])
-        elif isinstance(args[0], Point3D) and isinstance(args[1], Vector3D):
-            return Segment3D.from_pn(args[0], args[1])
-
-    r = _array(args)
-    if r.shape == (4,):
-        return Segment2D.from_pq(r[:2], r[2:])
-    elif r.shape == (6,):
-        return Segment3D.from_pq(r[:3], r[3:])
-    elif r.shape == (2, 2):
-        return Segment3D.from_pq(r[0], r[1])
-    elif r.shape == (2, 3):
-        return Segment3D.from_pq(r[0], r[1])
-    elif r.shape == (2, 2):
-        return Segment2D.from_pq(r[:, 0], r[:, 1])
-    elif r.shape == (3, 2):
-        return Segment3D.from_pq(r[:, 0], r[:, 1])
-    else:
-        raise ValueError(f"invalid data for ray: {r}")
-
-
 def _point_or_vector(data: np.ndarray):
     """Convert a point where the "homogeneous" element may not be 1."""
 
@@ -1997,14 +967,6 @@ def p(*args):
 
 def v(*args):
     return vector(*args)
-
-
-def l(*args):
-    return line(*args)
-
-
-def pl(*args):
-    return plane(*args)
 
 
 """
@@ -2078,7 +1040,7 @@ class Transform(HomogeneousObject):
         ...
 
     @overload
-    def __matmul__(self: FrameTransform, other: Seg) -> Seg:
+    def __matmul__(self: FrameTransform, other: S) -> S:
         ...
 
     @overload
@@ -2173,40 +1135,31 @@ class Transform(HomogeneousObject):
                 p_ = self @ p
                 n_ = self @ n
                 return plane(p_, n_)
-            elif isinstance(other, Ray2D):
-                return Ray2D(self.data @ other.data)
-            elif isinstance(other, Segment2D):
-                return Segment2D(self.data @ other.data)
-            elif isinstance(other, Segment3D):
-                return Segment3D(self.data @ other.data)
             elif isinstance(other, CameraIntrinsicTransform):
                 return CameraIntrinsicTransform(
                     self.data @ other.data, other._sensor_height, other._sensor_width
                 )
             elif isinstance(other, CameraProjection):
                 return CameraProjection(self @ other.intrinsic, other.extrinsic.copy())
+            elif isinstance(other, Primitive):
+                # Catches other primitives, which are parameterized by columns of points or vectors.
+                return type(other)(self.data @ other.data)
             else:
                 return NotImplemented
         elif isinstance(self, CameraProjection):
-            if isinstance(other, Line3D):
-                p1 = other.get_point()
-                v = other.get_direction()
-                p2 = p1 + v
-                p1_ = self @ p1
-                p2_ = self @ p2
-                return line(p1_, p2_)
-            elif isinstance(other, Ray3D):
+            if (
+                isinstance(other, HasProjection)
+                and isinstance(other, HasLocationAndDirection)
+                and issubclass(
+                    projection_type := type(other).projection_type(),
+                    HasLocationAndDirection,
+                )
+            ):
                 p = other.get_point()
                 v = other.get_direction()
                 p_ = self @ p
                 v_ = self @ v
-                return ray(p_, v_)
-            elif isinstance(other, Segment3D):
-                p = other.p
-                q = other.q
-                p_ = self @ p
-                q_ = self @ q
-                return segment(p_, q_)
+                return projection_type.from_point_direction(p_, v_)
             elif isinstance(other, FrameTransform):
                 return CameraProjection(self.intrinsic.copy(), self.extrinsic @ other)
             else:
@@ -2290,7 +1243,7 @@ class Transform(HomogeneousObject):
         return p1.meet(p2).meet(p3)
 
 
-class FrameTransform(Transform):
+class FrameTransform(Transform, HasLocation):
     def __init__(
         self,
         data: np.ndarray,  # the homogeneous frame transformation matrix
@@ -2780,6 +1733,18 @@ FixedParameters: 0 0 0
             Rotation.from_quat(quatpos[:4]).as_matrix(),
             quatpos[4:],
         )
+
+    def get_point(self, point: Point) -> Point:
+        """Transform a point.
+
+        Args:
+            point (Point): The point to transform.
+
+        Returns:
+            Point: The transformed point.
+
+        """
+        return point(self.transform_points(point.as_vector()))
 
 
 class F(FrameTransform):

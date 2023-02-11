@@ -26,24 +26,11 @@ from .core import (
     Point3D,
     Vector2D,
     Vector3D,
-    Line,
-    HyperPlane,
-    Line2D,
-    Segment2D,
-    Plane,
-    Line3D,
-    Ray3D,
     point,
     vector,
-    line,
-    plane,
-    ray,
-    segment,
     F,
     p,
     v,
-    l,
-    pl,
     f,
     Transform,
     FrameTransform,
@@ -61,6 +48,9 @@ from .core import (
     CameraProjection,
     CameraIntrinsicTransform,
 )
+from .hyperplane import HyperPlane, Line, Line2D, Line3D, Plane, line, l, pl, plane
+from .ray import Ray, Ray2D, Ray3D, ray
+from .segment import Segment, Segment2D, Segment3D, segment
 from .exceptions import JoinError, MeetError
 from scipy.spatial.transform import Rotation
 from .random import spherical_uniform
@@ -78,10 +68,15 @@ __all__ = [
     "Line",
     "HyperPlane",
     "Line2D",
-    "Segment2D",
-    "Plane",
     "Line3D",
-    "Ray3D" "point",
+    "Segment",
+    "Segment2D",
+    "Segment3D",
+    "Plane",
+    "Ray",
+    "Ray",
+    "Ray3D",
+    "point",
     "vector",
     "line",
     "plane",
