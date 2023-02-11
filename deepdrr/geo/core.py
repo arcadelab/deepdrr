@@ -1442,6 +1442,10 @@ class Ray(Primitive, Meetable):
         """
         return cls.from_pn(p, q - p)
 
+    @property
+    def p(self) -> Point3D:
+        return Point3D(self.data[:, 0])
+
     @p.setter
     def p(self, p: Union[Point, np.ndarray]) -> None:
         self.data[:, 0] = point(p).data
@@ -1457,10 +1461,6 @@ class Ray(Primitive, Meetable):
     def angle(self, other: Ray) -> float:
         """Get the angle between two rays."""
         return self.n.angle(other.n)
-
-    @property
-    def p(self) -> Point3D:
-        return Point3D(self.data[:, 0])
 
     def get_direction(self) -> Vector3D:
         return self.n
