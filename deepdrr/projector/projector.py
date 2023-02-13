@@ -8,6 +8,7 @@ from typing import Any, Dict, List, Optional, Tuple, Union
 import os
 import warnings
 
+import math
 import torch
 import numpy as np
 
@@ -183,6 +184,7 @@ class Projector(object):
         neglog: bool = True,
         intensity_upper_bound: Optional[float] = None,
         attenuate_outside_volume: bool = False,
+        source_to_detector_distance: float = -1,
         carm: Optional[Device] = None,
     ) -> None:
         """Create the projector, which has info for simulating the DRR.
@@ -214,6 +216,7 @@ class Projector(object):
             collected_energy (bool, optional): Whether to return data of "intensity" (energy deposited per photon, [keV]) or "collected energy" (energy deposited on pixel, [keV / mm^2]). Defaults to False ("intensity").
             neglog (bool, optional): whether to apply negative log transform to intensity images. If True, outputs are in range [0, 1]. Recommended for easy viewing. Defaults to False.
             intensity_upper_bound (float, optional): Maximum intensity, clipped before neglog, after noise and scatter. A good value is 40 keV / photon. Defaults to None.
+            source_to_detector_distance (float, optional): If `device` is not provided, this is the distance from the source to the detector. This limits the lenght rays are traced for. Defaults to -1 (no limit).
             carm (MobileCArm, optional): Deprecated alias for `device`. See `device`.
         """
 
@@ -254,6 +257,7 @@ class Projector(object):
         self.step = float(step)
         self.mode = mode
         self.spectrum = _get_spectrum(spectrum)
+        self._source_to_detector_distance = source_to_detector_distance
 
         if add_scatter is not None:
             log.warning("add_scatter is deprecated. Set scatter_num instead.")
@@ -339,12 +343,8 @@ class Projector(object):
     def source_to_detector_distance(self) -> float:
         if self.device is not None:
             return self.device.source_to_detector_distance
-        elif self._camera_intrinsics is not None:
-            return self._camera_intrinsics.focal_length
         else:
-            raise RuntimeError(
-                "No device provided. Set the device attribute by sing `device=<device>` to the constructor."
-            )
+            return self._source_to_detector_distance
 
     @property
     def camera_intrinsics(self) -> geo.CameraIntrinsicTransform:
@@ -396,6 +396,13 @@ class Projector(object):
             log.debug(
                 f"projecting with source at {camera_projections[0].center_in_world}, pointing in {self.device.principle_ray_in_world}..."
             )
+            max_ray_length = math.sqrt(
+                self.device.source_to_detector_distance**2
+                + self.device.detector_height**2
+                + self.device.detector_width**2
+            )
+        else:
+            max_ray_length = -1
 
         assert isinstance(self.spectrum, np.ndarray)
 
@@ -465,6 +472,7 @@ class Projector(object):
                 self.sourceX_gpu,  # sx_ijk
                 self.sourceY_gpu,  # sy_ijk
                 self.sourceZ_gpu,  # sz_ijk
+                np.float32(max_ray_length), # max_ray_length
                 self.world_from_index_gpu,  # world_from_index
                 self.ijk_from_world_gpu,  # ijk_from_world
                 np.int32(self.spectrum.shape[0]),  # n_bins

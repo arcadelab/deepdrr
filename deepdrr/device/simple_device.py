@@ -76,6 +76,8 @@ class SimpleDevice(Device):
     ):
         """Set the view of the device.
 
+        Can be called with a Ray3D as the first argument, by doing `device.set_view(*ray)`.
+
         Args:
             center (Point3D): the point at the center of the source and detector, in world coordinates. If None,
                 the point is left unchanged (rotation only). Default: None.

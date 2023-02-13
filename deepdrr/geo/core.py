@@ -43,17 +43,16 @@ from copy import deepcopy
 import math
 import math
 
-if TYPE_CHECKING:
-    from ..vol import Volume
-    from .typing import P, V, R, S, L, Pl, PV, Pr
-
-    from .hyperplane import Plane, Line, Line2D, Line3D
-    from .segment import Segment, Segment2D, Segment3D
-    from .ray import Ray, Ray2D, Ray3D
-
 from .utils import _array, _to_homogeneous, _from_homogeneous
 from .exceptions import MeetError, JoinError
 from .. import utils
+
+if TYPE_CHECKING:
+    from ..vol import Volume
+    from .typing import P, V, R, S, L, Pl, PV, Pr
+    from .hyperplane import Plane, Line, Line2D, Line3D
+    from .segment import Segment, Segment2D, Segment3D
+    from .ray import Ray, Ray2D, Ray3D
 
 
 log = logging.getLogger(__name__)
@@ -549,8 +548,12 @@ class Vector(PointOrVector):
             return NotImplemented
 
     def cross(self, other: Vector) -> Vector3D:
-        if isinstance(other, Vector) and self.dim == other.dim:
-            return vector(np.cross(self, other))
+        if isinstance(self, Vector2D) and isinstance(other, Vector2D):
+            return vector(np.cross([self.x, self.y, 0], [other.x, other.y, 0]))
+        elif isinstance(self, Vector3D) and isinstance(other, Vector3D):
+            return vector(
+                np.cross([self.x, self.y, self.z], [other.x, other.y, other.z])
+            )
         else:
             raise TypeError(f"unrecognized type for cross product: {type(other)}")
 
@@ -1069,11 +1072,6 @@ class Transform(HomogeneousObject):
     def __matmul__(self: CameraProjection, other: List[Point3D]) -> List[Point2D]:
         ...
 
-    # @overload
-    # def __matmul__(self: CameraProjection, other: Vector3D) -> Vector2D:
-    #     ...
-    # TODO: this is not actually well defined unless the vector has a location.
-
     @overload
     def __matmul__(self: CameraProjection, other: Line3D) -> Line2D:
         ...
@@ -1123,18 +1121,12 @@ class Transform(HomogeneousObject):
         elif isinstance(self, FrameTransform):
             if isinstance(other, FrameTransform):
                 return FrameTransform(self.data @ other.data)
-            elif isinstance(other, Line):
+            elif isinstance(other, HasLocationAndDirection):
                 p = other.get_point()
                 v = other.get_direction()
                 p_ = self @ p
                 v_ = self @ v
-                return line(p_, v_)
-            elif isinstance(other, Plane):
-                p = other.get_point()
-                n = other.get_normal()
-                p_ = self @ p
-                n_ = self @ n
-                return plane(p_, n_)
+                return type(other).from_point_direction(p_, v_)
             elif isinstance(other, CameraIntrinsicTransform):
                 return CameraIntrinsicTransform(
                     self.data @ other.data, other._sensor_height, other._sensor_width
@@ -1144,6 +1136,11 @@ class Transform(HomogeneousObject):
             elif isinstance(other, Primitive):
                 # Catches other primitives, which are parameterized by columns of points or vectors.
                 return type(other)(self.data @ other.data)
+            elif isinstance(other, Transform):
+                # if other is a Transform, then compose their inverses as well to store that.
+                check_dim()
+                _inv = other.inv.data @ self.inv.data
+                return Transform(self.data @ other.data, _inv=_inv)
             else:
                 return NotImplemented
         elif isinstance(self, CameraProjection):
@@ -1236,6 +1233,8 @@ class Transform(HomogeneousObject):
         """
         if self.shape != (3, 4):
             raise ValueError("transform must be a projection")
+
+        from .hyperplane import plane
 
         p1 = plane(self.data[0, :])
         p2 = plane(self.data[1, :])

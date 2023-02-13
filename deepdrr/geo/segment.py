@@ -33,10 +33,10 @@ class Segment(Primitive, Meetable, HasLocationAndDirection):
         """Initialize the segment.
 
         Args:
-            data (np.ndarray): [3, 2] array of homogeneous 2D points (in the columns).
+            data (np.ndarray): [dim + 1, 2] array of homogeneous 2D points (in the columns).
 
         """
-        assert data.shape == (self.dim, 2)
+        assert data.shape == (self.dim + 1, 2)
         super().__init__(data)
 
         if np.isclose(self.data[self.dim, :], 0).any():
@@ -58,7 +58,7 @@ class Segment(Primitive, Meetable, HasLocationAndDirection):
         """
         p = point(p)
         q = point(q)
-        return cls(np.array([p.data, q.data]).T)
+        return cls(np.stack([p.data, q.data], axis=1))
 
     @classmethod
     def from_point_direction(cls: Type[S], p: Point, n: Vector) -> S:

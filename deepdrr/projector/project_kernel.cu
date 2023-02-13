@@ -999,6 +999,7 @@ __global__ void projectKernel(
     float *sz_ijk, // z-coordinate of source point in IJK space for each volume
                    // (NUM_VOLUMES,) (passed in to avoid re-computing on every
                    // thread)
+    float max_ray_length,    // max distance a ray can travel
     float *world_from_index, // (3, 3) array giving the world_from_index ray
                              // transform for the camera
     float *ijk_from_world, // (NUM_VOLUMES, 3, 4) transform giving the transform
@@ -1109,7 +1110,7 @@ __global__ void projectKernel(
     // entry/exit points of this volume in *this* IJK space.
     do_trace[i] = 1;
     minAlpha_vol[i] = 0;
-    maxAlpha_vol[i] = INFINITY;
+    maxAlpha_vol[i] = max_ray_length > 0 ? max_ray_length : INFINITY;
     if (0.0f != rx_ijk[i]) {
       reci = 1.0f / rx_ijk[i];
       alpha0 = (gVolumeEdgeMinPointX[i] - sx_ijk[i]) * reci;

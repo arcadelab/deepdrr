@@ -33,13 +33,18 @@ R = TypeVar("R", bound="Ray")
 
 class Ray(Primitive, Meetable, HasLocationAndDirection):
     def __init__(self, data: np.ndarray) -> None:
-        """Initialize the segment.
+        """Initialize the ray.
+
+        A ray is defined by a point and a direction. The magnitude of the direction is not preserved.
 
         Args:
             data (np.ndarray): [dim+1, 2] array with a homogeneous point and a vector in the columns.
 
         """
-        assert data.shape == (self.dim, 2)
+        assert data.shape == (
+            self.dim + 1,
+            2,
+        ), f"data must be [dim+1, 2], got {data.shape}"
         super().__init__(data)
 
         if np.isclose(self.data[self.dim, 0], 0):
@@ -47,14 +52,15 @@ class Ray(Primitive, Meetable, HasLocationAndDirection):
         if not np.isclose(self.data[self.dim, 1], 0):
             raise ValueError("direction is not at infinity")
 
-        self.data[:, 0] /= self.data[self.dim, 0]
+        if not np.isclose(self.data[self.dim, 0], 1):
+            self.data[:, 0] /= self.data[self.dim, 0]
 
     @classmethod
     def from_pn(cls: Type[R], p: Point, d: Vector) -> R:
         """Create a ray from a point and a direction."""
         p = point(p)
         d = vector(d).hat()
-        return cls(np.hstack([p.data, d.data]))
+        return cls(np.stack([p.data, d.data], axis=1))
 
     @classmethod
     def from_point_direction(cls: Type[Ray], p: Point, d: Vector) -> Ray:
@@ -83,7 +89,7 @@ class Ray(Primitive, Meetable, HasLocationAndDirection):
 
     @property
     def n(self) -> Vector:
-        return Vector(self.data[:, 1])
+        return vector(self.data[: self.dim, 1])
 
     @n.setter
     def n(self, n: Union[Vector, np.ndarray]) -> None:

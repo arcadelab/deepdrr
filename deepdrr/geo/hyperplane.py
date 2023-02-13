@@ -30,6 +30,9 @@ if TYPE_CHECKING:
     from .core import CameraProjection
 
 
+log = logging.getLogger(__name__)
+
+
 class HyperPlane(Primitive, Meetable, HasLocationAndDirection):
     """Represents a hyperplane in 2D (a line) or 3D (a plane).
 
@@ -232,6 +235,23 @@ class Line(Primitive, Meetable, HasLocationAndDirection):
         if d1.dot(d2) < 0:
             d2 = -d2
         return d1.angle(d2)
+
+    @classmethod
+    def from_point_direction(cls, p: Point, v: Vector) -> Line:
+        """Construct a line from a point and a direction vector.
+
+        Args:
+            p (Point): The point on the line.
+            v (Vector): The direction vector.
+
+        Returns:
+            Line: The line through the point in the direction of the vector.
+
+        """
+        log.debug(f"constructing line from point {p} and direction {v}")
+        p = point(p)
+        v = vector(v)
+        return p.join(p + v)
 
 
 class Line2D(Line, HyperPlane):

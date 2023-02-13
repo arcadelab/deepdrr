@@ -1,6 +1,10 @@
 from typing import List, Optional, overload
 import numpy as np
-from .core import Vector3D, vector
+import logging
+
+from .core import Vector3D, vector, Point3D, point
+
+log = logging.getLogger(__name__)
 
 
 def _sample_spherical(d_phi: float, n: int) -> np.ndarray:
@@ -26,7 +30,7 @@ def spherical_uniform(center: Vector3D, d_phi: float, n: None) -> Vector3D:
     ...
 
 
-def spherical_uniform(center=[0, 0, 1], d_phi=np.pi, n=None):
+def spherical_uniform(center=vector(0, 0, 1), d_phi=np.pi, n=None):
     """Sample unit vectors within `d_phi` radians of `v`."""
     v = vector(center).hat()
     points = _sample_spherical(d_phi, 1 if n is None else n)
@@ -35,3 +39,45 @@ def spherical_uniform(center=[0, 0, 1], d_phi=np.pi, n=None):
         return F @ vector(points[0])
     else:
         return [F @ vector(p) for p in points]
+
+
+@overload
+def normal(
+    center: Point3D, scale: float, radius: Optional[float], n: int
+) -> List[Point3D]:
+    ...
+
+
+@overload
+def normal(center: Point3D, scale: float, radius: Optional[float], n: None) -> Point3D:
+    ...
+
+
+def normal(center=point(0, 0, 0), scale=1, radius=None, n=None):
+    """Sample points from a clipped normal distribution.
+
+    Args:
+        center (Point3D): The center of the distribution.
+        scale (float): The standard deviation of the distribution.
+        radius (float): The radius of the distribution.
+        n (int): The number of points to sample.
+
+    Returns:
+        Point3D: The sampled point or points, if n is not None.
+    """
+    c = point(center)
+
+    n_ = 1 if n is None else n
+    points = np.empty((0, 3))
+    while len(points) < n_:
+        log.debug(f"Sampling {n_ - len(points)} points: {points.shape}")
+
+        new_points = np.random.normal(0, scale, (n_ - len(points), 3))
+        if radius is not None:
+            new_points = new_points[np.linalg.norm(new_points, axis=1) <= radius]
+        points = np.concatenate([points, new_points], axis=0)
+
+    if n is None:
+        return c + vector(points[0])
+    else:
+        return [c + vector(p) for p in points]

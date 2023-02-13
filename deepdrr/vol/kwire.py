@@ -201,3 +201,15 @@ class KWire(Volume):
             self.base_in_world,
             distance=distance,
         )
+
+    def orient(
+        self,
+        startpoint: geo.Point3D,
+        direction: geo.Vector3D,
+        distance: float = 0,
+    ):
+        return self.align(
+            startpoint,
+            startpoint + direction.hat(),
+            distance=distance,
+        )

@@ -372,35 +372,44 @@ class Volume(object):
     def IJK_from_RAS(self):
         return self.RAS_from_IJK.inverse()
 
-    def save(self, path: Path):
+    def save(self, output_dir: Path, segmentation: bool = False):
         """Save the volume to disk as a nifti file.
 
         Args:
-            path (Path): a directory to save the volume and segmentations to.
+            output_dir (Path): a directory to save the volume and segmentations to.
+            segmentation (bool, optional): if the volume is a segmentation, there's
+                no need to save the materials.
         """
-        path = Path(path)
-        if not path.exists():
-            path.mkdir(parents=True)
+        output_dir = Path(output_dir)
+        if not output_dir.exists():
+            output_dir.mkdir(parents=True)
 
         # save the volume
-        img = nib.Nifti1Image(self.data, geo.get_data(self.RAS_from_IJK))
-        nib.save(img, path / "data.nii.gz")
+        img = nib.Nifti1Image(
+            self.data,
+            geo.get_data(self.RAS_from_IJK),
+        )
+        nib.save(img, output_dir / "data.nii.gz")
 
-        # Save the segmentations
+        self.world_from_anatomical.save(output_dir / "world_from_anatomical.txt")
+        if segmentation:
+            return
+
+        # Save the material segmentations
         for name, segmentation in self.materials.items():
             img = nib.Nifti1Image(
                 segmentation.astype(np.int32), geo.get_data(self.RAS_from_IJK)
             )
-            nib.save(img, path / f"{name}.nii.gz")
-
-        self.world_from_anatomical.save(path / "world_from_anatomical.txt")
+            nib.save(img, output_dir / f"{name}.nii.gz")
 
     @classmethod
-    def load(cls: Type[Volume], path: Path) -> Volume:
+    def load(cls: Type[Volume], path: Path, segmentation: bool = False) -> Volume:
         """Load a volume from disk.
 
         Args:
             path (Path): a directory containing the volume and segmentations.
+            segmentation (bool, optional): if the volume is a segmentation,
+                populate the materials from that.
 
         Returns: Volume.
         """
@@ -413,12 +422,19 @@ class Volume(object):
         img = nib.load(path / "data.nii.gz")
         data = img.get_fdata()
 
-        # load the segmentations
-        materials = {}
-        for p in path.glob("*.nii.gz"):
-            if p.name == "data.nii.gz":
-                continue
-            materials[p.stem.split(".")[0]] = nib.load(p).get_fdata()
+        if segmentation:
+            materials = dict(bone=data > 0)
+        else:
+            # load the segmentations
+            materials = {}
+            for p in path.glob("*.nii.gz"):
+                if p.name == "data.nii.gz":
+                    continue
+                materials[p.stem.split(".")[0]] = nib.load(p).get_fdata()
+            if len(materials) == 0:
+                raise ValueError(
+                    f"No materials found in {path}. Did you mean to load a segmentation?"
+                )
 
         world_from_anatomical = geo.F.load(path / "world_from_anatomical.txt")
 
@@ -1258,6 +1274,7 @@ class Volume(object):
             materials=cropped_materials,
             anatomical_from_IJK=cropped_anatomical_from_IJK,
             world_from_anatomical=self.world_from_anatomical,
+            anatomical_coordinate_system=self.anatomical_coordinate_system,
             cache_dir=self.cache_dir,
             config=self.config,
         )

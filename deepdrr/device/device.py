@@ -28,6 +28,16 @@ class Device(ABC):
     world_from_device: geo.FrameTransform
 
     @property
+    def detector_height(self) -> float:
+        """Height of the detector in mm."""
+        return self.sensor_height * self.pixel_size
+
+    @property
+    def detector_width(self) -> float:
+        """Width of the detector in mm."""
+        return self.sensor_width * self.pixel_size
+
+    @property
     def device_from_world(self) -> geo.FrameTransform:
         """Get the FrameTransform for the device's local frame.
 
