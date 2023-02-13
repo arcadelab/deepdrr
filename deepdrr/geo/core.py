@@ -725,14 +725,14 @@ class Point3D(Point):
             raise TypeError(f"unrecognized type for join: {type(other)}")
 
 
-class Vector3D(Vector, HasProjection):
-    """Homogeneous vector in 3D, represented as an array with [x, y, z, 0]"""
+class Vector3D(Vector):
+    """Homogeneous vector in 3D, represented as an array with [x, y, z, 0].
+    
+    A 3d vector still cannot be projected by a camera, because it doesn't have a location.
+    
+    """
 
     dim = 3
-
-    @classmethod
-    def projection_type(cls) -> Type[Primitive]:
-        return Vector2D
 
     def as_plane(self) -> Plane:
         """Get the plane through the origin with this vector as its normal."""

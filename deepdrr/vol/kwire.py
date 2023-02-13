@@ -5,7 +5,7 @@ from pathlib import Path
 
 from . import Volume
 from .. import geo
-from ..utils import data_utils
+from ..utils import data_utils, radians
 
 log = logging.getLogger(__name__)
 
@@ -212,4 +212,17 @@ class KWire(Volume):
             startpoint,
             startpoint + direction.hat(),
             distance=distance,
+        )
+
+    def twist(self, angle: float, degrees: bool = True):
+        """Rotate the tool clockwise (when looking down on it) by `angle`.
+
+        Args:
+            angle (float): The angle.
+            degrees (bool, optional): Whether `angle` is in degrees. Defaults to True.
+        """
+        rotvec = (self.tip - self.base).hat()
+        rotvec *= radians(angle, degrees=degrees)
+        self.world_from_anatomical = self.world_from_anatomical @ geo.frame_transform(
+            geo.Rotation.from_rotvec(rotvec)
         )
