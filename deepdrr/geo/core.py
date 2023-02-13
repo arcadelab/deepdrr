@@ -1154,8 +1154,10 @@ class Transform(HomogeneousObject):
             ):
                 p = other.get_point()
                 v = other.get_direction()
+                q = p + v
                 p_ = self @ p
-                v_ = self @ v
+                q_ = self @ q
+                v_ = q_ - p_
                 return projection_type.from_point_direction(p_, v_)
             elif isinstance(other, FrameTransform):
                 return CameraProjection(self.intrinsic.copy(), self.extrinsic @ other)

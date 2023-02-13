@@ -94,9 +94,12 @@ def draw_line(
     Args:
         image (np.ndarray): the image to draw on.
         line (geo.Line2D): the line to draw.
+        color (tuple, optional): the color to draw the line in. Defaults to (255, 0, 0).
+        thickness (int, optional): the thickness of the line. Defaults to 2.
 
 
     """
+    line = geo.line(line)
     s = geo.p(0, -(line.a * 0 + line.c) / line.b)
     t = geo.p(image.shape[1], -(line.a * image.shape[1] + line.c) / line.b)
     image = ensure_cdim(as_uint8(image)).copy()
