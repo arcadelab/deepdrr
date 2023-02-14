@@ -34,7 +34,7 @@ def spherical_uniform(center=vector(0, 0, 1), d_phi=np.pi, n=None):
     """Sample unit vectors within `d_phi` radians of `v`."""
     v = vector(center).hat()
     points = _sample_spherical(d_phi, 1 if n is None else n)
-    F = v.rotation(vector(0, 0, 1))
+    F = v.rotfrom(vector(0, 0, 1))
     if n is None:
         return F @ vector(points[0])
     else:

@@ -109,10 +109,32 @@ def draw_line(
     return image
 
 
+def draw_segment(
+    image: np.ndarray,
+    segment: geo.Segment2D,
+    color=(255, 0, 0),
+    thickness: int = 2,
+    radius: int = 5,
+) -> np.ndarray:
+    """Draw a segment on an image."""
+
+    image = ensure_cdim(as_uint8(image)).copy()
+    image = cv2.line(
+        image,
+        (int(segment.p.x), int(segment.p.y)),
+        (int(segment.q.x), int(segment.q.y)),
+        color,
+        thickness,
+    )
+    image = cv2.circle(image, (int(segment.p.x), int(segment.p.y)), radius, color, -1)
+    image = cv2.circle(image, (int(segment.q.x), int(segment.q.y)), radius, color, -1)
+    return image
+
+
 def draw_circles(
     image: np.ndarray,
     circles: np.ndarray,
-    color: tuple = (255, 0, 0),
+    color: list[int] = [255, 0, 0],
     thickness: int = 2,
     radius: Optional[int] = None,
 ) -> np.ndarray:

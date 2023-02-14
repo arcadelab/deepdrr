@@ -27,6 +27,8 @@ from .utils import _array
 if TYPE_CHECKING:
     from .hyperplane import Line, Line2D, Line3D, Plane
 
+log = logging.getLogger(__name__)
+
 
 class Segment(Primitive, Meetable, HasLocationAndDirection):
     def __init__(self, data: np.ndarray) -> None:
@@ -36,7 +38,10 @@ class Segment(Primitive, Meetable, HasLocationAndDirection):
             data (np.ndarray): [dim + 1, 2] array of homogeneous 2D points (in the columns).
 
         """
-        assert data.shape == (self.dim + 1, 2)
+        assert data.shape == (
+            self.dim + 1,
+            2,
+        ), f"invalid shape {data.shape}, looking for {(self.dim + 1, 2)} in class {self.__class__.__name__}"
         super().__init__(data)
 
         if np.isclose(self.data[self.dim, :], 0).any():
@@ -193,6 +198,14 @@ class Segment3D(Segment, Joinable, HasProjection):
         else:
             raise TypeError()
 
+    def meet(self, other: Plane) -> Point3D:
+        """Get the point of intersection between this segment and a plane.
+
+        TODO: check if the intersection is on the segment.
+
+        """
+        return self.line().meet(other)
+
 
 @overload
 def segment(s: S) -> S:
@@ -242,7 +255,7 @@ def segment(*args):
         if isinstance(args[0], Point2D) and isinstance(args[1], Point2D):
             return Segment2D.from_pq(args[0], args[1])
         elif isinstance(args[0], Point3D) and isinstance(args[1], Point3D):
-            return Segment2D.from_pq(args[0], args[1])
+            return Segment3D.from_pq(args[0], args[1])
         elif isinstance(args[0], Point2D) and isinstance(args[1], Vector2D):
             return Segment2D.from_point_direction(args[0], args[1])
         elif isinstance(args[0], Point3D) and isinstance(args[1], Vector3D):

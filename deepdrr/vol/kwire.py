@@ -161,15 +161,13 @@ class KWire(Volume):
         startpoint_in_world = geo.point(startpoint_in_world)
         endpoint_in_world = geo.point(endpoint_in_world)
 
-        if distance is not None:
-            progress = distance / (endpoint_in_world - startpoint_in_world).norm()
+        if distance is None:
+            distance = (endpoint_in_world - startpoint_in_world).norm() * progress
 
         # interpolate along the direction of the tool to get the desired points in world.
-        trajectory_vector = endpoint_in_world - startpoint_in_world
-        desired_tip_in_world = startpoint_in_world.lerp(endpoint_in_world, progress)
-        desired_base_in_world = (
-            desired_tip_in_world - trajectory_vector.hat() * self.length_in_world
-        )
+        direction = (endpoint_in_world - startpoint_in_world).hat()
+        desired_tip_in_world = startpoint_in_world + distance * direction
+        desired_base_in_world = desired_tip_in_world - direction * self.length_in_world
 
         self.world_from_anatomical = geo.FrameTransform.from_line_segments(
             desired_tip_in_world,
@@ -208,9 +206,10 @@ class KWire(Volume):
         direction: geo.Vector3D,
         distance: float = 0,
     ):
+        """Place the tip at startpoint and orient the tool to point toward the direction."""
         return self.align(
             startpoint,
-            startpoint + direction.hat(),
+            startpoint + direction,
             distance=distance,
         )
 

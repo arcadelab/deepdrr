@@ -576,8 +576,8 @@ class Vector(PointOrVector):
         else:
             return math.acos(cos_theta)
 
-    def rotation(self, other: Vector) -> FrameTransform:
-        """Get the rotation F such that `self || F @ other`.
+    def rotfrom(self, other: Vector) -> FrameTransform:
+        """Get the rotation such that `self = self.rotfrom(other) @ other`.
 
         NOTE: not tested with 2D vectors.
 
@@ -587,8 +587,9 @@ class Vector(PointOrVector):
         Returns:
             FrameTransform: the rotation that rotates other to self.
         """
-        v = self.cross(other)
+        v = other.cross(self)
         if np.isclose(v.norm(), 0):
+            # TODO: edge case when parallel but in opposite directions?
             return FrameTransform.identity(self.dim)
         v = v.hat()
         theta = self.angle(other)
@@ -727,9 +728,9 @@ class Point3D(Point):
 
 class Vector3D(Vector):
     """Homogeneous vector in 3D, represented as an array with [x, y, z, 0].
-    
+
     A 3d vector still cannot be projected by a camera, because it doesn't have a location.
-    
+
     """
 
     dim = 3
