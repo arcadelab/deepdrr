@@ -31,7 +31,7 @@ def spherical_uniform(center: Vector3D, d_phi: float, n: None) -> Vector3D:
 
 
 def spherical_uniform(center=vector(0, 0, 1), d_phi=np.pi, n=None):
-    """Sample unit vectors within `d_phi` radians of `v`."""
+    """Sample unit vectors on the surface of the sphere within `d_phi` radians of `v`."""
     v = vector(center).hat()
     points = _sample_spherical(d_phi, 1 if n is None else n)
     F = v.rotfrom(vector(0, 0, 1))
@@ -73,6 +73,45 @@ def normal(center=point(0, 0, 0), scale=1, radius=None, n=None):
         log.debug(f"Sampling {n_ - len(points)} points: {points.shape}")
 
         new_points = np.random.normal(0, scale, (n_ - len(points), 3))
+        if radius is not None:
+            new_points = new_points[np.linalg.norm(new_points, axis=1) <= radius]
+        points = np.concatenate([points, new_points], axis=0)
+
+    if n is None:
+        return c + vector(points[0])
+    else:
+        return [c + vector(p) for p in points]
+
+
+@overload
+def uniform(center: Point3D, radius: float, n: int) -> List[Point3D]:
+    ...
+
+
+@overload
+def uniform(center: Point3D, radius: float, n: None) -> Point3D:
+    ...
+
+
+def uniform(center=point(0, 0, 0), radius=1, n=None):
+    """Sample points from a uniform distribution, bounded by a sphere.
+
+    Args:
+        center (Point3D): The center of the distribution.
+        radius (float): The radius of the distribution. Defaults to 1.
+        n (int): The number of points to sample. Defaults to None.
+
+    Returns:
+        Point3D: The sampled point or points, if n is not None.
+    """
+    c = point(center)
+
+    n_ = 1 if n is None else n
+    points = np.empty((0, 3))
+    while len(points) < n_:
+        log.debug(f"Sampling {n_ - len(points)} points: {points.shape}")
+
+        new_points = np.random.uniform(-radius, radius, (n_ - len(points), 3))
         if radius is not None:
             new_points = new_points[np.linalg.norm(new_points, axis=1) <= radius]
         points = np.concatenate([points, new_points], axis=0)

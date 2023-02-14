@@ -31,7 +31,7 @@ if TYPE_CHECKING:
 R = TypeVar("R", bound="Ray")
 
 
-class Ray(Primitive, Meetable, HasLocationAndDirection):
+class Ray(HasLocationAndDirection, Meetable):
     def __init__(self, data: np.ndarray) -> None:
         """Initialize the ray.
 
@@ -94,10 +94,6 @@ class Ray(Primitive, Meetable, HasLocationAndDirection):
     @n.setter
     def n(self, n: Union[Vector, np.ndarray]) -> None:
         self.data[:, 1] = vector(n).data
-
-    def angle(self, other: Ray) -> float:
-        """Get the angle between two rays."""
-        return self.n.angle(other.n)
 
     def get_direction(self) -> Vector3D:
         return self.n

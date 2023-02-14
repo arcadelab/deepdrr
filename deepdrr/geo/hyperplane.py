@@ -33,7 +33,7 @@ if TYPE_CHECKING:
 log = logging.getLogger(__name__)
 
 
-class HyperPlane(Primitive, Meetable, HasLocationAndDirection):
+class HyperPlane(HasLocationAndDirection, Meetable):
     """Represents a hyperplane in 2D (a line) or 3D (a plane).
 
     Hyperplanes can be intersected with other hyperplanes or lower dimensional objects, but they are
@@ -161,7 +161,7 @@ class HyperPlane(Primitive, Meetable, HasLocationAndDirection):
         return p + d * self.n
 
 
-class Line(Primitive, Meetable, HasLocationAndDirection):
+class Line(HasLocationAndDirection, Meetable):
     """Abstract parent class for lines and line-like objects."""
 
     @overload

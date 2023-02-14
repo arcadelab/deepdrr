@@ -30,7 +30,7 @@ if TYPE_CHECKING:
 log = logging.getLogger(__name__)
 
 
-class Segment(Primitive, Meetable, HasLocationAndDirection):
+class Segment(HasLocationAndDirection, Meetable):
     def __init__(self, data: np.ndarray) -> None:
         """Initialize the segment.
 

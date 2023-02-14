@@ -221,7 +221,7 @@ class Meetable(ABC):
             return False
 
 
-class HasLocation(ABC):
+class HasLocation(Primitive):
     @abstractmethod
     def get_point(self) -> Point:
         """Get the location of the object.
@@ -232,7 +232,7 @@ class HasLocation(ABC):
         pass
 
 
-class HasDirection(ABC):
+class HasDirection(Primitive):
     @abstractmethod
     def get_direction(self) -> Vector:
         """Get the direction associated with the object.
@@ -241,6 +241,60 @@ class HasDirection(ABC):
             Vector: the direction of the object.
         """
         pass
+
+    def angle(self, other: HasDirection) -> float:
+        """Get the angle between self and other in radians.
+
+        Args:
+            other (Vector): the other vector.
+
+        Returns:
+            float: the angle between self and other in radians.
+
+        """
+        v = self.get_direction()
+        w = other.get_direction()
+        num = v.dot(w)
+        den = v.norm() * w.norm()
+        cos_theta = num / den
+        if np.isclose(cos_theta, 1):
+            return 0
+        else:
+            return math.acos(cos_theta)
+
+    def rotfrom(self, other: HasDirection) -> FrameTransform:
+        """Get the rotation such that `self = self.rotfrom(other) @ other`.
+
+        NOTE: not tested with 2D vectors.
+
+        Args:
+            other (Vector): the vector to rotate to.
+
+        Returns:
+            FrameTransform: the rotation that rotates other to self.
+        """
+        u = self.get_direction()
+        w = other.get_direction()
+
+        v = w.cross(u)
+        if np.isclose(v.norm(), 0):
+            # TODO: edge case when parallel but in opposite directions?
+            return FrameTransform.identity(self.dim)
+        v = v.hat()
+        theta = self.angle(other)
+        rot = Rotation.from_rotvec(v * theta)
+        return FrameTransform.from_rotation(rot)
+
+    def cosine_distance(self, other: Vector) -> float:
+        """Get the cosine distance between the angles.
+
+        Args:
+            other (Vector): the other vector.
+
+        Returns:
+            float: `1 - cos(angle)`, where `angle` is between self and other.
+        """
+        return float(scipy.spatial.distance.cosine(np.array(self), np.array(other)))
 
 
 class HasLocationAndDirection(HasLocation, HasDirection):
@@ -469,7 +523,7 @@ class Point(PointOrVector, Joinable, HasLocation):
         return self.copy()
 
 
-class Vector(PointOrVector):
+class Vector(PointOrVector, HasDirection):
     def __init__(self, data: np.ndarray) -> None:
         if np.isclose(data[-1], 0):
             data[-1] = 0
@@ -556,56 +610,6 @@ class Vector(PointOrVector):
             )
         else:
             raise TypeError(f"unrecognized type for cross product: {type(other)}")
-
-    def angle(self, other: Vector) -> float:
-        """Get the angle between self and other in radians.
-
-        Args:
-            other (Vector): the other vector.
-
-        Returns:
-            float: the angle between self and other in radians.
-
-        """
-        other = vector(other)
-        num = self.dot(other)
-        den = self.norm() * other.norm()
-        cos_theta = num / den
-        if np.isclose(cos_theta, 1):
-            return 0
-        else:
-            return math.acos(cos_theta)
-
-    def rotfrom(self, other: Vector) -> FrameTransform:
-        """Get the rotation such that `self = self.rotfrom(other) @ other`.
-
-        NOTE: not tested with 2D vectors.
-
-        Args:
-            other (Vector): the vector to rotate to.
-
-        Returns:
-            FrameTransform: the rotation that rotates other to self.
-        """
-        v = other.cross(self)
-        if np.isclose(v.norm(), 0):
-            # TODO: edge case when parallel but in opposite directions?
-            return FrameTransform.identity(self.dim)
-        v = v.hat()
-        theta = self.angle(other)
-        rot = Rotation.from_rotvec(v * theta)
-        return FrameTransform.from_rotation(rot)
-
-    def cosine_distance(self, other: Vector) -> float:
-        """Get the cosine distance between the angles.
-
-        Args:
-            other (Vector): the other vector.
-
-        Returns:
-            float: `1 - cos(angle)`, where `angle` is between self and other.
-        """
-        return float(scipy.spatial.distance.cosine(np.array(self), np.array(other)))
 
     def as_point(self) -> Point:
         """Gets the point with the same numerical representation as this vector."""
@@ -844,6 +848,11 @@ def point(x: np.ndarray) -> Point:
 
 
 @overload
+def point(x: HasLocation) -> Point:
+    ...
+
+
+@overload
 def point(*args: Any) -> Point:
     ...
 
@@ -866,6 +875,8 @@ def point(*args):
     """
     if len(args) == 1 and isinstance(args[0], Point):
         return args[0]
+    elif len(args) == 1 and isinstance(args[0], HasLocation):
+        return args[0].get_point()
     elif len(args) == 1 and isinstance(args[0], dict) and "data" in args[0]:
         if len(args[0]["data"]) == 3:
             return Point2D(args[0]["data"])
@@ -914,6 +925,11 @@ def vector(x: np.ndarray) -> Vector:
 
 
 @overload
+def vector(v: HasDirection) -> Vector:
+    ...
+
+
+@overload
 def vector(*args: Any) -> Vector:
     ...
 
@@ -938,6 +954,8 @@ def vector(*args):
     """
     if len(args) == 1 and isinstance(args[0], Vector):
         return args[0]
+    elif len(args) == 1 and isinstance(args[0], HasDirection):
+        return args[0].get_direction()
     elif len(args) == 1 and isinstance(args[0], dict) and "data" in args[0]:
         if len(args[0]["data"]) == 3:
             return Vector2D(args[0]["data"])

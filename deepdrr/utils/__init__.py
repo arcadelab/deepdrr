@@ -5,7 +5,8 @@ import PIL.Image as Image
 import numpy as np
 import os
 import logging
-from typing import Optional, TypeVar, Any, Tuple, Union, List
+from typing import Optional, TypeVar, Any, Tuple, Union, List, overload
+import math
 
 from .data_utils import jsonable
 from . import data_utils, image_utils, test_utils
@@ -26,6 +27,9 @@ __all__ = [
 
 
 logger = logging.getLogger(__name__)
+
+S = TypeVar("S")
+T = TypeVar("T")
 
 
 def param_saver(
@@ -112,9 +116,32 @@ def listify(x: Union[List[T], T], n: int = 1) -> List[T]:
         return [x] * n
 
 
-def radians(
-    *ts: Union[float, np.ndarray], degrees: bool = True
-) -> Union[float, List[float]]:
+@overload
+def radians(t: float, degrees: bool) -> float:
+    ...
+
+
+@overload
+def radians(t: np.ndarray, degrees: bool) -> np.ndarray:
+    ...
+
+
+@overload
+def radians(ts: list[T], degrees: bool) -> list[T]:
+    ...
+
+
+@overload
+def radians(ts: dict[S, T], degrees: bool) -> dict[S, T]:
+    ...
+
+
+@overload
+def radians(*ts: T, degrees: bool) -> List[T]:
+    ...
+
+
+def radians(*args, degrees=True):
     """Convert to radians.
 
     Args:
@@ -124,9 +151,21 @@ def radians(
     Returns:
         Union[float, List[float]]: each argument, converted to radians.
     """
-    if degrees:
-        ts = [np.radians(t) for t in ts]
-    return ts[0] if len(ts) == 1 else ts
+    if len(args) == 1:
+        if isinstance(args[0], (float, int)):
+            return math.radians(args[0]) if degrees else args[0]
+        elif isinstance(args[0], dict):
+            return {k: radians(v, degrees=degrees) for k, v in args[0].items()}
+        elif isinstance(args[0], (list, tuple)):
+            return [radians(t, degrees=degrees) for t in args[0]]
+        elif isinstance(args[0], np.ndarray):
+            return np.radians(args[0]) if degrees else args[0]
+        else:
+            raise TypeError(f"Cannot convert {type(args[0])} to radians.")
+    elif isinstance(args[-1], bool):
+        return radians(*args[:-1], degrees=args[-1])
+    else:
+        return [radians(t, degrees=degrees) for t in args]
 
 
 def generate_uniform_angles(

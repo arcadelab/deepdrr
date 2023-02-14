@@ -62,7 +62,12 @@ class KWire(Volume):
         tip = geo.point(-1, -1, 0)
         base = geo.point(-1, -1, 200)
         tool = cls.from_nifti(
-            path, density_kwargs=dict(density=density), tip=tip, base=base, **kwargs
+            path,
+            density_kwargs=dict(density=density),
+            tip=tip,
+            base=base,
+            world_from_anatomical=world_from_anatomical,
+            **kwargs,
         )
 
         # scale the tool to the desired radius
