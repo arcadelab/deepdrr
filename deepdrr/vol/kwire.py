@@ -193,18 +193,6 @@ class KWire(Volume):
     def centerline_in_world(self) -> geo.Line3D:
         return geo.line(self.tip_in_world, self.base_in_world)
 
-    def advance(self, distance: float):
-        """Move the tool forward by the given distance.
-
-        Args:
-            distance (float): The distance to move the tool forward.
-        """
-        self.align(
-            self.tip_in_world,
-            self.base_in_world,
-            distance=distance,
-        )
-
     def orient(
         self,
         startpoint: geo.Point3D,
@@ -214,7 +202,7 @@ class KWire(Volume):
         """Place the tip at startpoint and orient the tool to point toward the direction."""
         return self.align(
             startpoint,
-            startpoint + direction,
+            startpoint + direction.hat(),
             distance=distance,
         )
 
@@ -229,4 +217,16 @@ class KWire(Volume):
         rotvec *= radians(angle, degrees=degrees)
         self.world_from_anatomical = self.world_from_anatomical @ geo.frame_transform(
             geo.Rotation.from_rotvec(rotvec)
+        )
+
+    def advance(self, distance: float):
+        """Move the tool forward by the given distance.
+
+        Args:
+            distance (float): The distance to move the tool forward.
+        """
+        self.align(
+            self.tip_in_world,
+            self.tip_in_world + (self.tip_in_world - self.base_in_world),
+            distance=distance,
         )

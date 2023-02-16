@@ -126,6 +126,7 @@ class SimpleDevice(Device):
         device_from_ray = geo.F.from_rt(rot, point_in_device)
 
         # Get the "ray-up" frame, which is rotated about Z to align the up vector with the -Y axis.
+        # TODO: something is wrong here.
         neg_y_axis = geo.vector(0, 1, 0)
         up_vector_in_ray = device_from_ray @ up_in_device
         up_vector_in_image_plane = geo.vector(
@@ -138,7 +139,7 @@ class SimpleDevice(Device):
         else:
             rotvec = rotvec.hat() * neg_y_axis.angle(up_vector_in_image_plane)
         rot = geo.Rotation.from_rotvec(rotvec)
-        ray_from_ray_up = geo.F.from_rt(rot, geo.point(0, 0, 0))
+        ray_from_ray_up = geo.F.from_rt(rot)
 
         # Get the "camera3d" frame, which is translated in negative z.
         ray_up_from_camera3d = geo.F.from_rt(

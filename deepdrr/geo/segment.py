@@ -150,6 +150,14 @@ class Segment(HasLocationAndDirection, Meetable):
     def get_direction(self) -> Vector:
         return self.q - self.p
 
+    @overload
+    def line(self: Segment2D) -> Line2D:
+        ...
+
+    @overload
+    def line(self: Segment3D) -> Line3D:
+        ...
+
     def line(self) -> Line:
         return self.p.join(self.q)
 

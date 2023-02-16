@@ -61,6 +61,10 @@ log = logging.getLogger(__name__)
 T = TypeVar("T")
 
 
+# TODO: make everything generic over the dimension of the space (2D or 3D).
+# Enables better type hints.
+
+
 class HomogeneousObject(ABC):
     """Any of the objects that rely on homogeneous transforms, all of which wrap a single array called `data`."""
 
