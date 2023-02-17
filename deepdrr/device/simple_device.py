@@ -127,8 +127,8 @@ class SimpleDevice(Device):
 
         # Get the "ray-up" frame, which is rotated about Z to align the up vector with the -Y axis.
         # TODO: something is wrong here.
-        neg_y_axis = geo.vector(0, 1, 0)
-        up_vector_in_ray = device_from_ray @ up_in_device
+        neg_y_axis = geo.vector(0, -1, 0)
+        up_vector_in_ray = device_from_ray.inverse() @ up_in_device
         up_vector_in_image_plane = geo.vector(
             up_vector_in_ray[0], up_vector_in_ray[1], 0
         )
