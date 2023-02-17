@@ -161,6 +161,9 @@ class Segment(HasLocationAndDirection, Meetable):
     def line(self) -> Line:
         return self.p.join(self.q)
 
+    def midpoint(self) -> Point:
+        return self.p + (self.q - self.p) / 2
+
 
 class Segment2D(Segment):
     """Represents a line segment in 2D."""

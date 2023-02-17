@@ -472,7 +472,7 @@ class Projector(object):
                 self.sourceX_gpu,  # sx_ijk
                 self.sourceY_gpu,  # sy_ijk
                 self.sourceZ_gpu,  # sz_ijk
-                np.float32(max_ray_length), # max_ray_length
+                np.float32(max_ray_length),  # max_ray_length
                 self.world_from_index_gpu,  # world_from_index
                 self.ijk_from_world_gpu,  # ijk_from_world
                 np.int32(self.spectrum.shape[0]),  # n_bins
@@ -521,14 +521,14 @@ class Projector(object):
                 f"projection #{i}: time elapsed after call to project_kernel: {project_tock - project_tick}"
             )
 
-            intensity = np.empty(self.output_shape, dtype=np.float32)
+            intensity = np.zeros(self.output_shape, dtype=np.float32)
             cuda.memcpy_dtoh(intensity, self.intensity_gpu)
             # transpose the axes, which previously have width on the slow dimension
             log.debug("copied intensity from gpu")
             intensity = np.swapaxes(intensity, 0, 1).copy()
             log.debug("swapped intensity")
 
-            photon_prob = np.empty(self.output_shape, dtype=np.float32)
+            photon_prob = np.zeros(self.output_shape, dtype=np.float32)
             cuda.memcpy_dtoh(photon_prob, self.photon_prob_gpu)
             log.debug("copied photon_prob")
             photon_prob = np.swapaxes(photon_prob, 0, 1).copy()
@@ -693,16 +693,16 @@ class Projector(object):
                         context.synchronize()
 
                 # Copy results from the GPU
-                scatter_intensity = np.empty(self.output_shape, dtype=np.float32)
+                scatter_intensity = np.zeros(self.output_shape, dtype=np.float32)
                 cuda.memcpy_dtoh(scatter_intensity, self.scatter_deposits_gpu)
                 scatter_intensity = np.swapaxes(scatter_intensity, 0, 1).copy()
                 # Here, scatter_intensity is just the recorded deposited_energy. Will need to adjust later
 
-                n_sc = np.empty(self.output_shape, dtype=np.int32)
+                n_sc = np.zeros(self.output_shape, dtype=np.int32)
                 cuda.memcpy_dtoh(n_sc, self.num_scattered_hits_gpu)
                 n_sc = np.swapaxes(n_sc, 0, 1).copy()
 
-                n_pri = np.empty(self.output_shape, dtype=np.int32)
+                n_pri = np.zeros(self.output_shape, dtype=np.int32)
                 cuda.memcpy_dtoh(n_pri, self.num_unscattered_hits_gpu)
                 n_pri = np.swapaxes(n_pri, 0, 1).copy()
 
@@ -752,7 +752,7 @@ class Projector(object):
             # transform to collected energy in keV per cm^2 (or keV per mm^2)
             if self.collected_energy:
                 assert np.int32(0) != self.solid_angle_gpu
-                solid_angle = np.empty(self.output_shape, dtype=np.float32)
+                solid_angle = np.zeros(self.output_shape, dtype=np.float32)
                 cuda.memcpy_dtoh(solid_angle, self.solid_angle_gpu)
                 solid_angle = np.swapaxes(solid_angle, 0, 1).copy()
 
@@ -1040,7 +1040,7 @@ class Projector(object):
         log.debug(f"bytes alloc'd for self.pdf_gpu {n_bins * NUMBYTES_FLOAT32}")
 
         # precompute, allocate, and transfer the get_absorption_coef(energy, material) table (4 bytes to a float32)
-        absorption_coef_table = np.empty(n_bins * len(self.all_materials)).astype(
+        absorption_coef_table = np.zeros(n_bins * len(self.all_materials)).astype(
             np.float32
         )
         for bin in range(n_bins):  # , energy in enumerate(energies):

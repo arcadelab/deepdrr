@@ -99,7 +99,7 @@ class KWire(Volume):
         if not use_thresholding:
             raise NotImplementedError
 
-        return dict(titanium=(hu_values > 0))
+        return dict(iron=(hu_values > 0))
 
     @property
     def tip(self) -> geo.Point3D:
