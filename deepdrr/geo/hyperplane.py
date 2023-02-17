@@ -282,8 +282,8 @@ class Line2D(Line, HyperPlane):
                 return Point2D(m)
         elif isinstance(other, Segment2D):
             r = self.meet(other.line())
-            v = other.p - other.q
-            if 0 <= v.dot(r - other.p) <= v.dot(v):
+            v = other.q - other.p
+            if 0 <= v.dot(r - other.p) / v.normsqr() <= 1:
                 return r
             else:
                 raise MeetError("line does not meet segment")
