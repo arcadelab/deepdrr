@@ -1279,16 +1279,19 @@ class Volume(object):
             config=self.config,
         )
 
-    def get_bbox_IJK(self) -> np.ndarray:
+    def get_bbox_IJK(self) -> Optional[np.ndarray]:
         """Get the bounding box of the materials in IJK.
 
         Returns:
             np.ndarray: The bounding box as a [3, 2] array.
+            None, if the volume is empty.
         """
         any_material = np.zeros_like(self.data, dtype=bool)
         for d in self.materials.values():
             any_material = np.logical_or(any_material, d)
         indices = np.nonzero(any_material)
+        if len(indices[0]) == 0:
+            return None
         bbox = np.array(
             [
                 [np.min(indices[0]), np.max(indices[0])],
@@ -1305,7 +1308,11 @@ class Volume(object):
             Volume: The cropped volume.
         """
 
-        return self.crop(self.get_bbox_IJK())
+        bbox = self.get_bbox_IJK()
+        if bbox is None:
+            log.warning("shrink called on empty volume")
+            return self
+        return self.crop(bbox)
 
 
 class MetalVolume(Volume):

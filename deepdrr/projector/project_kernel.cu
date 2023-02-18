@@ -1,6 +1,8 @@
 #include <cubicTex3D.cu>
 #include <stdio.h>
 
+// Supports at most 20 volumes.
+
 #include "kernel_vol_seg_data.cu"
 
 #define UPDATE(multiplier, vol_id, mat_id)                                     \
@@ -190,13 +192,9 @@
     LOAG_SEGS_FOR_VOL_MAT(vol_id, 13);                                         \
   } while (0)
 #else
-#define LOAD_SEGS_FOR_VOL(vol_id)                                              \
-  do {                                                                         \
-    printf("NUM_MATERIALS not in [1, 14]");                                    \
-  } while (0)
+#error
 #endif
 
-#if NUM_VOLUMES == 1
 #define LOAD_SEGS_AT_ALPHA                                                     \
   do {                                                                         \
     if (do_trace[0]) {                                                         \
@@ -456,12 +454,668 @@
       LOAD_SEGS_FOR_VOL(9);                                                    \
     }                                                                          \
   } while (0)
-#else
+#elif NUM_VOLUMES == 11
 #define LOAD_SEGS_AT_ALPHA                                                     \
   do {                                                                         \
-    printf(                                                                    \
-        "LOAD_SEGS_AT_ALPHA not supported for NUM_VOLUMES outside [1, 10]");   \
+    if (do_trace[0]) {                                                         \
+      GET_POSITION_FOR_VOL(0);                                                 \
+      LOAD_SEGS_FOR_VOL(0);                                                    \
+    }                                                                          \
+    if (do_trace[1]) {                                                         \
+      GET_POSITION_FOR_VOL(1);                                                 \
+      LOAD_SEGS_FOR_VOL(1);                                                    \
+    }                                                                          \
+    if (do_trace[2]) {                                                         \
+      GET_POSITION_FOR_VOL(2);                                                 \
+      LOAD_SEGS_FOR_VOL(2);                                                    \
+    }                                                                          \
+    if (do_trace[3]) {                                                         \
+      GET_POSITION_FOR_VOL(3);                                                 \
+      LOAD_SEGS_FOR_VOL(3);                                                    \
+    }                                                                          \
+    if (do_trace[4]) {                                                         \
+      GET_POSITION_FOR_VOL(4);                                                 \
+      LOAD_SEGS_FOR_VOL(4);                                                    \
+    }                                                                          \
+    if (do_trace[5]) {                                                         \
+      GET_POSITION_FOR_VOL(5);                                                 \
+      LOAD_SEGS_FOR_VOL(5);                                                    \
+    }                                                                          \
+    if (do_trace[6]) {                                                         \
+      GET_POSITION_FOR_VOL(6);                                                 \
+      LOAD_SEGS_FOR_VOL(6);                                                    \
+    }                                                                          \
+    if (do_trace[7]) {                                                         \
+      GET_POSITION_FOR_VOL(7);                                                 \
+      LOAD_SEGS_FOR_VOL(7);                                                    \
+    }                                                                          \
+    if (do_trace[8]) {                                                         \
+      GET_POSITION_FOR_VOL(8);                                                 \
+      LOAD_SEGS_FOR_VOL(8);                                                    \
+    }                                                                          \
+    if (do_trace[9]) {                                                         \
+      GET_POSITION_FOR_VOL(9);                                                 \
+      LOAD_SEGS_FOR_VOL(9);                                                    \
+    }                                                                          \
+    if (do_trace[10]) {                                                        \
+      GET_POSITION_FOR_VOL(10);                                                \
+      LOAD_SEGS_FOR_VOL(10);                                                   \
+    }                                                                          \
   } while (0)
+#elif NUM_VOLUMES == 12
+#define LOAD_SEGS_AT_ALPHA                                                     \
+  do {                                                                         \
+    if (do_trace[0]) {                                                         \
+      GET_POSITION_FOR_VOL(0);                                                 \
+      LOAD_SEGS_FOR_VOL(0);                                                    \
+    }                                                                          \
+    if (do_trace[1]) {                                                         \
+      GET_POSITION_FOR_VOL(1);                                                 \
+      LOAD_SEGS_FOR_VOL(1);                                                    \
+    }                                                                          \
+    if (do_trace[2]) {                                                         \
+      GET_POSITION_FOR_VOL(2);                                                 \
+      LOAD_SEGS_FOR_VOL(2);                                                    \
+    }                                                                          \
+    if (do_trace[3]) {                                                         \
+      GET_POSITION_FOR_VOL(3);                                                 \
+      LOAD_SEGS_FOR_VOL(3);                                                    \
+    }                                                                          \
+    if (do_trace[4]) {                                                         \
+      GET_POSITION_FOR_VOL(4);                                                 \
+      LOAD_SEGS_FOR_VOL(4);                                                    \
+    }                                                                          \
+    if (do_trace[5]) {                                                         \
+      GET_POSITION_FOR_VOL(5);                                                 \
+      LOAD_SEGS_FOR_VOL(5);                                                    \
+    }                                                                          \
+    if (do_trace[6]) {                                                         \
+      GET_POSITION_FOR_VOL(6);                                                 \
+      LOAD_SEGS_FOR_VOL(6);                                                    \
+    }                                                                          \
+    if (do_trace[7]) {                                                         \
+      GET_POSITION_FOR_VOL(7);                                                 \
+      LOAD_SEGS_FOR_VOL(7);                                                    \
+    }                                                                          \
+    if (do_trace[8]) {                                                         \
+      GET_POSITION_FOR_VOL(8);                                                 \
+      LOAD_SEGS_FOR_VOL(8);                                                    \
+    }                                                                          \
+    if (do_trace[9]) {                                                         \
+      GET_POSITION_FOR_VOL(9);                                                 \
+      LOAD_SEGS_FOR_VOL(9);                                                    \
+    }                                                                          \
+    if (do_trace[10]) {                                                        \
+      GET_POSITION_FOR_VOL(10);                                                \
+      LOAD_SEGS_FOR_VOL(10);                                                   \
+    }                                                                          \
+    if (do_trace[11]) {                                                        \
+      GET_POSITION_FOR_VOL(11);                                                \
+      LOAD_SEGS_FOR_VOL(11);                                                   \
+    }                                                                          \
+  } while (0)
+#elif NUM_VOLUMES == 13
+#define LOAD_SEGS_AT_ALPHA                                                     \
+  do {                                                                         \
+    if (do_trace[0]) {                                                         \
+      GET_POSITION_FOR_VOL(0);                                                 \
+      LOAD_SEGS_FOR_VOL(0);                                                    \
+    }                                                                          \
+    if (do_trace[1]) {                                                         \
+      GET_POSITION_FOR_VOL(1);                                                 \
+      LOAD_SEGS_FOR_VOL(1);                                                    \
+    }                                                                          \
+    if (do_trace[2]) {                                                         \
+      GET_POSITION_FOR_VOL(2);                                                 \
+      LOAD_SEGS_FOR_VOL(2);                                                    \
+    }                                                                          \
+    if (do_trace[3]) {                                                         \
+      GET_POSITION_FOR_VOL(3);                                                 \
+      LOAD_SEGS_FOR_VOL(3);                                                    \
+    }                                                                          \
+    if (do_trace[4]) {                                                         \
+      GET_POSITION_FOR_VOL(4);                                                 \
+      LOAD_SEGS_FOR_VOL(4);                                                    \
+    }                                                                          \
+    if (do_trace[5]) {                                                         \
+      GET_POSITION_FOR_VOL(5);                                                 \
+      LOAD_SEGS_FOR_VOL(5);                                                    \
+    }                                                                          \
+    if (do_trace[6]) {                                                         \
+      GET_POSITION_FOR_VOL(6);                                                 \
+      LOAD_SEGS_FOR_VOL(6);                                                    \
+    }                                                                          \
+    if (do_trace[7]) {                                                         \
+      GET_POSITION_FOR_VOL(7);                                                 \
+      LOAD_SEGS_FOR_VOL(7);                                                    \
+    }                                                                          \
+    if (do_trace[8]) {                                                         \
+      GET_POSITION_FOR_VOL(8);                                                 \
+      LOAD_SEGS_FOR_VOL(8);                                                    \
+    }                                                                          \
+    if (do_trace[9]) {                                                         \
+      GET_POSITION_FOR_VOL(9);                                                 \
+      LOAD_SEGS_FOR_VOL(9);                                                    \
+    }                                                                          \
+    if (do_trace[10]) {                                                        \
+      GET_POSITION_FOR_VOL(10);                                                \
+      LOAD_SEGS_FOR_VOL(10);                                                   \
+    }                                                                          \
+    if (do_trace[11]) {                                                        \
+      GET_POSITION_FOR_VOL(11);                                                \
+      LOAD_SEGS_FOR_VOL(11);                                                   \
+    }                                                                          \
+    if (do_trace[12]) {                                                        \
+      GET_POSITION_FOR_VOL(12);                                                \
+      LOAD_SEGS_FOR_VOL(12);                                                   \
+    }                                                                          \
+  } while (0)
+#elif NUM_VOLUMES == 14
+#define LOAD_SEGS_AT_ALPHA                                                     \
+  do {                                                                         \
+    if (do_trace[0]) {                                                         \
+      GET_POSITION_FOR_VOL(0);                                                 \
+      LOAD_SEGS_FOR_VOL(0);                                                    \
+    }                                                                          \
+    if (do_trace[1]) {                                                         \
+      GET_POSITION_FOR_VOL(1);                                                 \
+      LOAD_SEGS_FOR_VOL(1);                                                    \
+    }                                                                          \
+    if (do_trace[2]) {                                                         \
+      GET_POSITION_FOR_VOL(2);                                                 \
+      LOAD_SEGS_FOR_VOL(2);                                                    \
+    }                                                                          \
+    if (do_trace[3]) {                                                         \
+      GET_POSITION_FOR_VOL(3);                                                 \
+      LOAD_SEGS_FOR_VOL(3);                                                    \
+    }                                                                          \
+    if (do_trace[4]) {                                                         \
+      GET_POSITION_FOR_VOL(4);                                                 \
+      LOAD_SEGS_FOR_VOL(4);                                                    \
+    }                                                                          \
+    if (do_trace[5]) {                                                         \
+      GET_POSITION_FOR_VOL(5);                                                 \
+      LOAD_SEGS_FOR_VOL(5);                                                    \
+    }                                                                          \
+    if (do_trace[6]) {                                                         \
+      GET_POSITION_FOR_VOL(6);                                                 \
+      LOAD_SEGS_FOR_VOL(6);                                                    \
+    }                                                                          \
+    if (do_trace[7]) {                                                         \
+      GET_POSITION_FOR_VOL(7);                                                 \
+      LOAD_SEGS_FOR_VOL(7);                                                    \
+    }                                                                          \
+    if (do_trace[8]) {                                                         \
+      GET_POSITION_FOR_VOL(8);                                                 \
+      LOAD_SEGS_FOR_VOL(8);                                                    \
+    }                                                                          \
+    if (do_trace[9]) {                                                         \
+      GET_POSITION_FOR_VOL(9);                                                 \
+      LOAD_SEGS_FOR_VOL(9);                                                    \
+    }                                                                          \
+    if (do_trace[10]) {                                                        \
+      GET_POSITION_FOR_VOL(10);                                                \
+      LOAD_SEGS_FOR_VOL(10);                                                   \
+    }                                                                          \
+    if (do_trace[11]) {                                                        \
+      GET_POSITION_FOR_VOL(11);                                                \
+      LOAD_SEGS_FOR_VOL(11);                                                   \
+    }                                                                          \
+    if (do_trace[12]) {                                                        \
+      GET_POSITION_FOR_VOL(12);                                                \
+      LOAD_SEGS_FOR_VOL(12);                                                   \
+    }                                                                          \
+    if (do_trace[13]) {                                                        \
+      GET_POSITION_FOR_VOL(13);                                                \
+      LOAD_SEGS_FOR_VOL(13);                                                   \
+    }                                                                          \
+  } while (0)
+#elif NUM_VOLUMES == 15
+#define LOAD_SEGS_AT_ALPHA                                                     \
+  do {                                                                         \
+    if (do_trace[0]) {                                                         \
+      GET_POSITION_FOR_VOL(0);                                                 \
+      LOAD_SEGS_FOR_VOL(0);                                                    \
+    }                                                                          \
+    if (do_trace[1]) {                                                         \
+      GET_POSITION_FOR_VOL(1);                                                 \
+      LOAD_SEGS_FOR_VOL(1);                                                    \
+    }                                                                          \
+    if (do_trace[2]) {                                                         \
+      GET_POSITION_FOR_VOL(2);                                                 \
+      LOAD_SEGS_FOR_VOL(2);                                                    \
+    }                                                                          \
+    if (do_trace[3]) {                                                         \
+      GET_POSITION_FOR_VOL(3);                                                 \
+      LOAD_SEGS_FOR_VOL(3);                                                    \
+    }                                                                          \
+    if (do_trace[4]) {                                                         \
+      GET_POSITION_FOR_VOL(4);                                                 \
+      LOAD_SEGS_FOR_VOL(4);                                                    \
+    }                                                                          \
+    if (do_trace[5]) {                                                         \
+      GET_POSITION_FOR_VOL(5);                                                 \
+      LOAD_SEGS_FOR_VOL(5);                                                    \
+    }                                                                          \
+    if (do_trace[6]) {                                                         \
+      GET_POSITION_FOR_VOL(6);                                                 \
+      LOAD_SEGS_FOR_VOL(6);                                                    \
+    }                                                                          \
+    if (do_trace[7]) {                                                         \
+      GET_POSITION_FOR_VOL(7);                                                 \
+      LOAD_SEGS_FOR_VOL(7);                                                    \
+    }                                                                          \
+    if (do_trace[8]) {                                                         \
+      GET_POSITION_FOR_VOL(8);                                                 \
+      LOAD_SEGS_FOR_VOL(8);                                                    \
+    }                                                                          \
+    if (do_trace[9]) {                                                         \
+      GET_POSITION_FOR_VOL(9);                                                 \
+      LOAD_SEGS_FOR_VOL(9);                                                    \
+    }                                                                          \
+    if (do_trace[10]) {                                                        \
+      GET_POSITION_FOR_VOL(10);                                                \
+      LOAD_SEGS_FOR_VOL(10);                                                   \
+    }                                                                          \
+    if (do_trace[11]) {                                                        \
+      GET_POSITION_FOR_VOL(11);                                                \
+      LOAD_SEGS_FOR_VOL(11);                                                   \
+    }                                                                          \
+    if (do_trace[12]) {                                                        \
+      GET_POSITION_FOR_VOL(12);                                                \
+      LOAD_SEGS_FOR_VOL(12);                                                   \
+    }                                                                          \
+    if (do_trace[13]) {                                                        \
+      GET_POSITION_FOR_VOL(13);                                                \
+      LOAD_SEGS_FOR_VOL(13);                                                   \
+    }                                                                          \
+    if (do_trace[14]) {                                                        \
+      GET_POSITION_FOR_VOL(14);                                                \
+      LOAD_SEGS_FOR_VOL(14);                                                   \
+    }                                                                          \
+  } while (0)
+#elif NUM_VOLUMES == 16
+#define LOAD_SEGS_AT_ALPHA                                                     \
+  do {                                                                         \
+    if (do_trace[0]) {                                                         \
+      GET_POSITION_FOR_VOL(0);                                                 \
+      LOAD_SEGS_FOR_VOL(0);                                                    \
+    }                                                                          \
+    if (do_trace[1]) {                                                         \
+      GET_POSITION_FOR_VOL(1);                                                 \
+      LOAD_SEGS_FOR_VOL(1);                                                    \
+    }                                                                          \
+    if (do_trace[2]) {                                                         \
+      GET_POSITION_FOR_VOL(2);                                                 \
+      LOAD_SEGS_FOR_VOL(2);                                                    \
+    }                                                                          \
+    if (do_trace[3]) {                                                         \
+      GET_POSITION_FOR_VOL(3);                                                 \
+      LOAD_SEGS_FOR_VOL(3);                                                    \
+    }                                                                          \
+    if (do_trace[4]) {                                                         \
+      GET_POSITION_FOR_VOL(4);                                                 \
+      LOAD_SEGS_FOR_VOL(4);                                                    \
+    }                                                                          \
+    if (do_trace[5]) {                                                         \
+      GET_POSITION_FOR_VOL(5);                                                 \
+      LOAD_SEGS_FOR_VOL(5);                                                    \
+    }                                                                          \
+    if (do_trace[6]) {                                                         \
+      GET_POSITION_FOR_VOL(6);                                                 \
+      LOAD_SEGS_FOR_VOL(6);                                                    \
+    }                                                                          \
+    if (do_trace[7]) {                                                         \
+      GET_POSITION_FOR_VOL(7);                                                 \
+      LOAD_SEGS_FOR_VOL(7);                                                    \
+    }                                                                          \
+    if (do_trace[8]) {                                                         \
+      GET_POSITION_FOR_VOL(8);                                                 \
+      LOAD_SEGS_FOR_VOL(8);                                                    \
+    }                                                                          \
+    if (do_trace[9]) {                                                         \
+      GET_POSITION_FOR_VOL(9);                                                 \
+      LOAD_SEGS_FOR_VOL(9);                                                    \
+    }                                                                          \
+    if (do_trace[10]) {                                                        \
+      GET_POSITION_FOR_VOL(10);                                                \
+      LOAD_SEGS_FOR_VOL(10);                                                   \
+    }                                                                          \
+    if (do_trace[11]) {                                                        \
+      GET_POSITION_FOR_VOL(11);                                                \
+      LOAD_SEGS_FOR_VOL(11);                                                   \
+    }                                                                          \
+    if (do_trace[12]) {                                                        \
+      GET_POSITION_FOR_VOL(12);                                                \
+      LOAD_SEGS_FOR_VOL(12);                                                   \
+    }                                                                          \
+    if (do_trace[13]) {                                                        \
+      GET_POSITION_FOR_VOL(13);                                                \
+      LOAD_SEGS_FOR_VOL(13);                                                   \
+    }                                                                          \
+    if (do_trace[14]) {                                                        \
+      GET_POSITION_FOR_VOL(14);                                                \
+      LOAD_SEGS_FOR_VOL(14);                                                   \
+    }                                                                          \
+    if (do_trace[15]) {                                                        \
+      GET_POSITION_FOR_VOL(15);                                                \
+      LOAD_SEGS_FOR_VOL(15);                                                   \
+    }                                                                          \
+  } while (0)
+#elif NUM_VOLUMES == 17
+#define LOAD_SEGS_AT_ALPHA                                                     \
+  do {                                                                         \
+    if (do_trace[0]) {                                                         \
+      GET_POSITION_FOR_VOL(0);                                                 \
+      LOAD_SEGS_FOR_VOL(0);                                                    \
+    }                                                                          \
+    if (do_trace[1]) {                                                         \
+      GET_POSITION_FOR_VOL(1);                                                 \
+      LOAD_SEGS_FOR_VOL(1);                                                    \
+    }                                                                          \
+    if (do_trace[2]) {                                                         \
+      GET_POSITION_FOR_VOL(2);                                                 \
+      LOAD_SEGS_FOR_VOL(2);                                                    \
+    }                                                                          \
+    if (do_trace[3]) {                                                         \
+      GET_POSITION_FOR_VOL(3);                                                 \
+      LOAD_SEGS_FOR_VOL(3);                                                    \
+    }                                                                          \
+    if (do_trace[4]) {                                                         \
+      GET_POSITION_FOR_VOL(4);                                                 \
+      LOAD_SEGS_FOR_VOL(4);                                                    \
+    }                                                                          \
+    if (do_trace[5]) {                                                         \
+      GET_POSITION_FOR_VOL(5);                                                 \
+      LOAD_SEGS_FOR_VOL(5);                                                    \
+    }                                                                          \
+    if (do_trace[6]) {                                                         \
+      GET_POSITION_FOR_VOL(6);                                                 \
+      LOAD_SEGS_FOR_VOL(6);                                                    \
+    }                                                                          \
+    if (do_trace[7]) {                                                         \
+      GET_POSITION_FOR_VOL(7);                                                 \
+      LOAD_SEGS_FOR_VOL(7);                                                    \
+    }                                                                          \
+    if (do_trace[8]) {                                                         \
+      GET_POSITION_FOR_VOL(8);                                                 \
+      LOAD_SEGS_FOR_VOL(8);                                                    \
+    }                                                                          \
+    if (do_trace[9]) {                                                         \
+      GET_POSITION_FOR_VOL(9);                                                 \
+      LOAD_SEGS_FOR_VOL(9);                                                    \
+    }                                                                          \
+    if (do_trace[10]) {                                                        \
+      GET_POSITION_FOR_VOL(10);                                                \
+      LOAD_SEGS_FOR_VOL(10);                                                   \
+    }                                                                          \
+    if (do_trace[11]) {                                                        \
+      GET_POSITION_FOR_VOL(11);                                                \
+      LOAD_SEGS_FOR_VOL(11);                                                   \
+    }                                                                          \
+    if (do_trace[12]) {                                                        \
+      GET_POSITION_FOR_VOL(12);                                                \
+      LOAD_SEGS_FOR_VOL(12);                                                   \
+    }                                                                          \
+    if (do_trace[13]) {                                                        \
+      GET_POSITION_FOR_VOL(13);                                                \
+      LOAD_SEGS_FOR_VOL(13);                                                   \
+    }                                                                          \
+    if (do_trace[14]) {                                                        \
+      GET_POSITION_FOR_VOL(14);                                                \
+      LOAD_SEGS_FOR_VOL(14);                                                   \
+    }                                                                          \
+    if (do_trace[15]) {                                                        \
+      GET_POSITION_FOR_VOL(15);                                                \
+      LOAD_SEGS_FOR_VOL(15);                                                   \
+    }                                                                          \
+    if (do_trace[16]) {                                                        \
+      GET_POSITION_FOR_VOL(16);                                                \
+      LOAD_SEGS_FOR_VOL(16);                                                   \
+    }                                                                          \
+  } while (0)
+#elif NUM_VOLUMES == 18
+#define LOAD_SEGS_AT_ALPHA                                                     \
+  do {                                                                         \
+    if (do_trace[0]) {                                                         \
+      GET_POSITION_FOR_VOL(0);                                                 \
+      LOAD_SEGS_FOR_VOL(0);                                                    \
+    }                                                                          \
+    if (do_trace[1]) {                                                         \
+      GET_POSITION_FOR_VOL(1);                                                 \
+      LOAD_SEGS_FOR_VOL(1);                                                    \
+    }                                                                          \
+    if (do_trace[2]) {                                                         \
+      GET_POSITION_FOR_VOL(2);                                                 \
+      LOAD_SEGS_FOR_VOL(2);                                                    \
+    }                                                                          \
+    if (do_trace[3]) {                                                         \
+      GET_POSITION_FOR_VOL(3);                                                 \
+      LOAD_SEGS_FOR_VOL(3);                                                    \
+    }                                                                          \
+    if (do_trace[4]) {                                                         \
+      GET_POSITION_FOR_VOL(4);                                                 \
+      LOAD_SEGS_FOR_VOL(4);                                                    \
+    }                                                                          \
+    if (do_trace[5]) {                                                         \
+      GET_POSITION_FOR_VOL(5);                                                 \
+      LOAD_SEGS_FOR_VOL(5);                                                    \
+    }                                                                          \
+    if (do_trace[6]) {                                                         \
+      GET_POSITION_FOR_VOL(6);                                                 \
+      LOAD_SEGS_FOR_VOL(6);                                                    \
+    }                                                                          \
+    if (do_trace[7]) {                                                         \
+      GET_POSITION_FOR_VOL(7);                                                 \
+      LOAD_SEGS_FOR_VOL(7);                                                    \
+    }                                                                          \
+    if (do_trace[8]) {                                                         \
+      GET_POSITION_FOR_VOL(8);                                                 \
+      LOAD_SEGS_FOR_VOL(8);                                                    \
+    }                                                                          \
+    if (do_trace[9]) {                                                         \
+      GET_POSITION_FOR_VOL(9);                                                 \
+      LOAD_SEGS_FOR_VOL(9);                                                    \
+    }                                                                          \
+    if (do_trace[10]) {                                                        \
+      GET_POSITION_FOR_VOL(10);                                                \
+      LOAD_SEGS_FOR_VOL(10);                                                   \
+    }                                                                          \
+    if (do_trace[11]) {                                                        \
+      GET_POSITION_FOR_VOL(11);                                                \
+      LOAD_SEGS_FOR_VOL(11);                                                   \
+    }                                                                          \
+    if (do_trace[12]) {                                                        \
+      GET_POSITION_FOR_VOL(12);                                                \
+      LOAD_SEGS_FOR_VOL(12);                                                   \
+    }                                                                          \
+    if (do_trace[13]) {                                                        \
+      GET_POSITION_FOR_VOL(13);                                                \
+      LOAD_SEGS_FOR_VOL(13);                                                   \
+    }                                                                          \
+    if (do_trace[14]) {                                                        \
+      GET_POSITION_FOR_VOL(14);                                                \
+      LOAD_SEGS_FOR_VOL(14);                                                   \
+    }                                                                          \
+    if (do_trace[15]) {                                                        \
+      GET_POSITION_FOR_VOL(15);                                                \
+      LOAD_SEGS_FOR_VOL(15);                                                   \
+    }                                                                          \
+    if (do_trace[16]) {                                                        \
+      GET_POSITION_FOR_VOL(16);                                                \
+      LOAD_SEGS_FOR_VOL(16);                                                   \
+    }                                                                          \
+    if (do_trace[17]) {                                                        \
+      GET_POSITION_FOR_VOL(17);                                                \
+      LOAD_SEGS_FOR_VOL(17);                                                   \
+    }                                                                          \
+  } while (0)
+#elif NUM_VOLUMES == 19
+#define LOAD_SEGS_AT_ALPHA                                                     \
+  do {                                                                         \
+    if (do_trace[0]) {                                                         \
+      GET_POSITION_FOR_VOL(0);                                                 \
+      LOAD_SEGS_FOR_VOL(0);                                                    \
+    }                                                                          \
+    if (do_trace[1]) {                                                         \
+      GET_POSITION_FOR_VOL(1);                                                 \
+      LOAD_SEGS_FOR_VOL(1);                                                    \
+    }                                                                          \
+    if (do_trace[2]) {                                                         \
+      GET_POSITION_FOR_VOL(2);                                                 \
+      LOAD_SEGS_FOR_VOL(2);                                                    \
+    }                                                                          \
+    if (do_trace[3]) {                                                         \
+      GET_POSITION_FOR_VOL(3);                                                 \
+      LOAD_SEGS_FOR_VOL(3);                                                    \
+    }                                                                          \
+    if (do_trace[4]) {                                                         \
+      GET_POSITION_FOR_VOL(4);                                                 \
+      LOAD_SEGS_FOR_VOL(4);                                                    \
+    }                                                                          \
+    if (do_trace[5]) {                                                         \
+      GET_POSITION_FOR_VOL(5);                                                 \
+      LOAD_SEGS_FOR_VOL(5);                                                    \
+    }                                                                          \
+    if (do_trace[6]) {                                                         \
+      GET_POSITION_FOR_VOL(6);                                                 \
+      LOAD_SEGS_FOR_VOL(6);                                                    \
+    }                                                                          \
+    if (do_trace[7]) {                                                         \
+      GET_POSITION_FOR_VOL(7);                                                 \
+      LOAD_SEGS_FOR_VOL(7);                                                    \
+    }                                                                          \
+    if (do_trace[8]) {                                                         \
+      GET_POSITION_FOR_VOL(8);                                                 \
+      LOAD_SEGS_FOR_VOL(8);                                                    \
+    }                                                                          \
+    if (do_trace[9]) {                                                         \
+      GET_POSITION_FOR_VOL(9);                                                 \
+      LOAD_SEGS_FOR_VOL(9);                                                    \
+    }                                                                          \
+    if (do_trace[10]) {                                                        \
+      GET_POSITION_FOR_VOL(10);                                                \
+      LOAD_SEGS_FOR_VOL(10);                                                   \
+    }                                                                          \
+    if (do_trace[11]) {                                                        \
+      GET_POSITION_FOR_VOL(11);                                                \
+      LOAD_SEGS_FOR_VOL(11);                                                   \
+    }                                                                          \
+    if (do_trace[12]) {                                                        \
+      GET_POSITION_FOR_VOL(12);                                                \
+      LOAD_SEGS_FOR_VOL(12);                                                   \
+    }                                                                          \
+    if (do_trace[13]) {                                                        \
+      GET_POSITION_FOR_VOL(13);                                                \
+      LOAD_SEGS_FOR_VOL(13);                                                   \
+    }                                                                          \
+    if (do_trace[14]) {                                                        \
+      GET_POSITION_FOR_VOL(14);                                                \
+      LOAD_SEGS_FOR_VOL(14);                                                   \
+    }                                                                          \
+    if (do_trace[15]) {                                                        \
+      GET_POSITION_FOR_VOL(15);                                                \
+      LOAD_SEGS_FOR_VOL(15);                                                   \
+    }                                                                          \
+    if (do_trace[16]) {                                                        \
+      GET_POSITION_FOR_VOL(16);                                                \
+      LOAD_SEGS_FOR_VOL(16);                                                   \
+    }                                                                          \
+    if (do_trace[17]) {                                                        \
+      GET_POSITION_FOR_VOL(17);                                                \
+      LOAD_SEGS_FOR_VOL(17);                                                   \
+    }                                                                          \
+    if (do_trace[18]) {                                                        \
+      GET_POSITION_FOR_VOL(18);                                                \
+      LOAD_SEGS_FOR_VOL(18);                                                   \
+    }                                                                          \
+  } while (0)
+#elif NUM_VOLUMES == 20
+#define LOAD_SEGS_AT_ALPHA                                                     \
+  do {                                                                         \
+    if (do_trace[0]) {                                                         \
+      GET_POSITION_FOR_VOL(0);                                                 \
+      LOAD_SEGS_FOR_VOL(0);                                                    \
+    }                                                                          \
+    if (do_trace[1]) {                                                         \
+      GET_POSITION_FOR_VOL(1);                                                 \
+      LOAD_SEGS_FOR_VOL(1);                                                    \
+    }                                                                          \
+    if (do_trace[2]) {                                                         \
+      GET_POSITION_FOR_VOL(2);                                                 \
+      LOAD_SEGS_FOR_VOL(2);                                                    \
+    }                                                                          \
+    if (do_trace[3]) {                                                         \
+      GET_POSITION_FOR_VOL(3);                                                 \
+      LOAD_SEGS_FOR_VOL(3);                                                    \
+    }                                                                          \
+    if (do_trace[4]) {                                                         \
+      GET_POSITION_FOR_VOL(4);                                                 \
+      LOAD_SEGS_FOR_VOL(4);                                                    \
+    }                                                                          \
+    if (do_trace[5]) {                                                         \
+      GET_POSITION_FOR_VOL(5);                                                 \
+      LOAD_SEGS_FOR_VOL(5);                                                    \
+    }                                                                          \
+    if (do_trace[6]) {                                                         \
+      GET_POSITION_FOR_VOL(6);                                                 \
+      LOAD_SEGS_FOR_VOL(6);                                                    \
+    }                                                                          \
+    if (do_trace[7]) {                                                         \
+      GET_POSITION_FOR_VOL(7);                                                 \
+      LOAD_SEGS_FOR_VOL(7);                                                    \
+    }                                                                          \
+    if (do_trace[8]) {                                                         \
+      GET_POSITION_FOR_VOL(8);                                                 \
+      LOAD_SEGS_FOR_VOL(8);                                                    \
+    }                                                                          \
+    if (do_trace[9]) {                                                         \
+      GET_POSITION_FOR_VOL(9);                                                 \
+      LOAD_SEGS_FOR_VOL(9);                                                    \
+    }                                                                          \
+    if (do_trace[10]) {                                                        \
+      GET_POSITION_FOR_VOL(10);                                                \
+      LOAD_SEGS_FOR_VOL(10);                                                   \
+    }                                                                          \
+    if (do_trace[11]) {                                                        \
+      GET_POSITION_FOR_VOL(11);                                                \
+      LOAD_SEGS_FOR_VOL(11);                                                   \
+    }                                                                          \
+    if (do_trace[12]) {                                                        \
+      GET_POSITION_FOR_VOL(12);                                                \
+      LOAD_SEGS_FOR_VOL(12);                                                   \
+    }                                                                          \
+    if (do_trace[13]) {                                                        \
+      GET_POSITION_FOR_VOL(13);                                                \
+      LOAD_SEGS_FOR_VOL(13);                                                   \
+    }                                                                          \
+    if (do_trace[14]) {                                                        \
+      GET_POSITION_FOR_VOL(14);                                                \
+      LOAD_SEGS_FOR_VOL(14);                                                   \
+    }                                                                          \
+    if (do_trace[15]) {                                                        \
+      GET_POSITION_FOR_VOL(15);                                                \
+      LOAD_SEGS_FOR_VOL(15);                                                   \
+    }                                                                          \
+    if (do_trace[16]) {                                                        \
+      GET_POSITION_FOR_VOL(16);                                                \
+      LOAD_SEGS_FOR_VOL(16);                                                   \
+    }                                                                          \
+    if (do_trace[17]) {                                                        \
+      GET_POSITION_FOR_VOL(17);                                                \
+      LOAD_SEGS_FOR_VOL(17);                                                   \
+    }                                                                          \
+    if (do_trace[18]) {                                                        \
+      GET_POSITION_FOR_VOL(18);                                                \
+      LOAD_SEGS_FOR_VOL(18);                                                   \
+    }                                                                          \
+    if (do_trace[19]) {                                                        \
+      GET_POSITION_FOR_VOL(19);                                                \
+      LOAD_SEGS_FOR_VOL(19);                                                   \
+    }                                                                          \
+  } while (0)
+#else
+#error
 #endif
 
 #if NUM_MATERIALS == 1
@@ -626,10 +1280,7 @@
     UPDATE(multiplier, vol_id, 13);                                            \
   } while (0)
 #else
-#define INTERPOLATE_FOR_VOL(multiplier, vol_id)                                \
-  do {                                                                         \
-    printf("NUM_MATERIALS not in [1, 14]");                                    \
-  } while (0)
+#error
 #endif
 
 #if NUM_VOLUMES == 1
@@ -837,12 +1488,513 @@
       INTERPOLATE_FOR_VOL(multiplier, 9);                                      \
     }                                                                          \
   } while (0)
-#else
+#elif NUM_VOLUMES == 11
 #define INTERPOLATE(multiplier)                                                \
   do {                                                                         \
-    fprintf(stderr,                                                            \
-            "INTERPOLATE not supported for NUM_VOLUMES outside [1, 10]");      \
+    if (do_trace[0] && (priority[0] == curr_priority)) {                       \
+      INTERPOLATE_FOR_VOL(multiplier, 0);                                      \
+    }                                                                          \
+    if (do_trace[1] && (priority[1] == curr_priority)) {                       \
+      INTERPOLATE_FOR_VOL(multiplier, 1);                                      \
+    }                                                                          \
+    if (do_trace[2] && (priority[2] == curr_priority)) {                       \
+      INTERPOLATE_FOR_VOL(multiplier, 2);                                      \
+    }                                                                          \
+    if (do_trace[3] && (priority[3] == curr_priority)) {                       \
+      INTERPOLATE_FOR_VOL(multiplier, 3);                                      \
+    }                                                                          \
+    if (do_trace[4] && (priority[4] == curr_priority)) {                       \
+      INTERPOLATE_FOR_VOL(multiplier, 4);                                      \
+    }                                                                          \
+    if (do_trace[5] && (priority[5] == curr_priority)) {                       \
+      INTERPOLATE_FOR_VOL(multiplier, 5);                                      \
+    }                                                                          \
+    if (do_trace[6] && (priority[6] == curr_priority)) {                       \
+      INTERPOLATE_FOR_VOL(multiplier, 6);                                      \
+    }                                                                          \
+    if (do_trace[7] && (priority[7] == curr_priority)) {                       \
+      INTERPOLATE_FOR_VOL(multiplier, 7);                                      \
+    }                                                                          \
+    if (do_trace[8] && (priority[8] == curr_priority)) {                       \
+      INTERPOLATE_FOR_VOL(multiplier, 8);                                      \
+    }                                                                          \
+    if (do_trace[9] && (priority[9] == curr_priority)) {                       \
+      INTERPOLATE_FOR_VOL(multiplier, 9);                                      \
+    }                                                                          \
+    if (do_trace[10] && (priority[10] == curr_priority)) {                     \
+      INTERPOLATE_FOR_VOL(multiplier, 10);                                     \
+    }                                                                          \
   } while (0)
+#elif NUM_VOLUMES == 12
+#define INTERPOLATE(multiplier)                                                \
+  do {                                                                         \
+    if (do_trace[0] && (priority[0] == curr_priority)) {                       \
+      INTERPOLATE_FOR_VOL(multiplier, 0);                                      \
+    }                                                                          \
+    if (do_trace[1] && (priority[1] == curr_priority)) {                       \
+      INTERPOLATE_FOR_VOL(multiplier, 1);                                      \
+    }                                                                          \
+    if (do_trace[2] && (priority[2] == curr_priority)) {                       \
+      INTERPOLATE_FOR_VOL(multiplier, 2);                                      \
+    }                                                                          \
+    if (do_trace[3] && (priority[3] == curr_priority)) {                       \
+      INTERPOLATE_FOR_VOL(multiplier, 3);                                      \
+    }                                                                          \
+    if (do_trace[4] && (priority[4] == curr_priority)) {                       \
+      INTERPOLATE_FOR_VOL(multiplier, 4);                                      \
+    }                                                                          \
+    if (do_trace[5] && (priority[5] == curr_priority)) {                       \
+      INTERPOLATE_FOR_VOL(multiplier, 5);                                      \
+    }                                                                          \
+    if (do_trace[6] && (priority[6] == curr_priority)) {                       \
+      INTERPOLATE_FOR_VOL(multiplier, 6);                                      \
+    }                                                                          \
+    if (do_trace[7] && (priority[7] == curr_priority)) {                       \
+      INTERPOLATE_FOR_VOL(multiplier, 7);                                      \
+    }                                                                          \
+    if (do_trace[8] && (priority[8] == curr_priority)) {                       \
+      INTERPOLATE_FOR_VOL(multiplier, 8);                                      \
+    }                                                                          \
+    if (do_trace[9] && (priority[9] == curr_priority)) {                       \
+      INTERPOLATE_FOR_VOL(multiplier, 9);                                      \
+    }                                                                          \
+    if (do_trace[10] && (priority[10] == curr_priority)) {                     \
+      INTERPOLATE_FOR_VOL(multiplier, 10);                                     \
+    }                                                                          \
+    if (do_trace[11] && (priority[11] == curr_priority)) {                     \
+      INTERPOLATE_FOR_VOL(multiplier, 11);                                     \
+    }                                                                          \
+  } while (
+#elif NUM_VOLUMES == 13
+#define INTERPOLATE(multiplier)                                                \
+  do {                                                                         \
+    if (do_trace[0] && (priority[0] == curr_priority)) {                       \
+      INTERPOLATE_FOR_VOL(multiplier, 0);                                      \
+    }                                                                          \
+    if (do_trace[1] && (priority[1] == curr_priority)) {                       \
+      INTERPOLATE_FOR_VOL(multiplier, 1);                                      \
+    }                                                                          \
+    if (do_trace[2] && (priority[2] == curr_priority)) {                       \
+      INTERPOLATE_FOR_VOL(multiplier, 2);                                      \
+    }                                                                          \
+    if (do_trace[3] && (priority[3] == curr_priority)) {                       \
+      INTERPOLATE_FOR_VOL(multiplier, 3);                                      \
+    }                                                                          \
+    if (do_trace[4] && (priority[4] == curr_priority)) {                       \
+      INTERPOLATE_FOR_VOL(multiplier, 4);                                      \
+    }                                                                          \
+    if (do_trace[5] && (priority[5] == curr_priority)) {                       \
+      INTERPOLATE_FOR_VOL(multiplier, 5);                                      \
+    }                                                                          \
+    if (do_trace[6] && (priority[6] == curr_priority)) {                       \
+      INTERPOLATE_FOR_VOL(multiplier, 6);                                      \
+    }                                                                          \
+    if (do_trace[7] && (priority[7] == curr_priority)) {                       \
+      INTERPOLATE_FOR_VOL(multiplier, 7);                                      \
+    }                                                                          \
+    if (do_trace[8] && (priority[8] == curr_priority)) {                       \
+      INTERPOLATE_FOR_VOL(multiplier, 8);                                      \
+    }                                                                          \
+    if (do_trace[9] && (priority[9] == curr_priority)) {                       \
+      INTERPOLATE_FOR_VOL(multiplier, 9);                                      \
+    }                                                                          \
+    if (do_trace[10] && (priority[10] == curr_priority)) {                     \
+      INTERPOLATE_FOR_VOL(multiplier, 10);                                     \
+    }                                                                          \
+    if (do_trace[11] && (priority[11] == curr_priority)) {                     \
+      INTERPOLATE_FOR_VOL(multiplier, 11);                                     \
+    }                                                                          \
+    if (do_trace[12] && (priority[12] == curr_priority)) {                     \
+      INTERPOLATE_FOR_VOL(multiplier, 12);                                     \
+    }                                                                          \
+  } while (0)
+#elif NUM_VOLUMES == 14
+#define INTERPOLATE(multiplier)                                                \
+  do {                                                                         \
+    if (do_trace[0] && (priority[0] == curr_priority)) {                       \
+      INTERPOLATE_FOR_VOL(multiplier, 0);                                      \
+    }                                                                          \
+    if (do_trace[1] && (priority[1] == curr_priority)) {                       \
+      INTERPOLATE_FOR_VOL(multiplier, 1);                                      \
+    }                                                                          \
+    if (do_trace[2] && (priority[2] == curr_priority)) {                       \
+      INTERPOLATE_FOR_VOL(multiplier, 2);                                      \
+    }                                                                          \
+    if (do_trace[3] && (priority[3] == curr_priority)) {                       \
+      INTERPOLATE_FOR_VOL(multiplier, 3);                                      \
+    }                                                                          \
+    if (do_trace[4] && (priority[4] == curr_priority)) {                       \
+      INTERPOLATE_FOR_VOL(multiplier, 4);                                      \
+    }                                                                          \
+    if (do_trace[5] && (priority[5] == curr_priority)) {                       \
+      INTERPOLATE_FOR_VOL(multiplier, 5);                                      \
+    }                                                                          \
+    if (do_trace[6] && (priority[6] == curr_priority)) {                       \
+      INTERPOLATE_FOR_VOL(multiplier, 6);                                      \
+    }                                                                          \
+    if (do_trace[7] && (priority[7] == curr_priority)) {                       \
+      INTERPOLATE_FOR_VOL(multiplier, 7);                                      \
+    }                                                                          \
+    if (do_trace[8] && (priority[8] == curr_priority)) {                       \
+      INTERPOLATE_FOR_VOL(multiplier, 8);                                      \
+    }                                                                          \
+    if (do_trace[9] && (priority[9] == curr_priority)) {                       \
+      INTERPOLATE_FOR_VOL(multiplier, 9);                                      \
+    }                                                                          \
+    if (do_trace[10] && (priority[10] == curr_priority)) {                     \
+      INTERPOLATE_FOR_VOL(multiplier, 10);                                     \
+    }                                                                          \
+    if (do_trace[11] && (priority[11] == curr_priority)) {                     \
+      INTERPOLATE_FOR_VOL(multiplier, 11);                                     \
+    }                                                                          \
+    if (do_trace[12] && (priority[12] == curr_priority)) {                     \
+      INTERPOLATE_FOR_VOL(multiplier, 12);                                     \
+    }                                                                          \
+    if (do_trace[13] && (priority[13] == curr_priority)) {                     \
+      INTERPOLATE_FOR_VOL(multiplier, 13);                                     \
+    }                                                                          \
+  } while (0)
+#elif NUM_VOLUMES == 15
+#define INTERPOLATE(multiplier)                                                \
+  do {                                                                         \
+    if (do_trace[0] && (priority[0] == curr_priority)) {                       \
+      INTERPOLATE_FOR_VOL(multiplier, 0);                                      \
+    }                                                                          \
+    if (do_trace[1] && (priority[1] == curr_priority)) {                       \
+      INTERPOLATE_FOR_VOL(multiplier, 1);                                      \
+    }                                                                          \
+    if (do_trace[2] && (priority[2] == curr_priority)) {                       \
+      INTERPOLATE_FOR_VOL(multiplier, 2);                                      \
+    }                                                                          \
+    if (do_trace[3] && (priority[3] == curr_priority)) {                       \
+      INTERPOLATE_FOR_VOL(multiplier, 3);                                      \
+    }                                                                          \
+    if (do_trace[4] && (priority[4] == curr_priority)) {                       \
+      INTERPOLATE_FOR_VOL(multiplier, 4);                                      \
+    }                                                                          \
+    if (do_trace[5] && (priority[5] == curr_priority)) {                       \
+      INTERPOLATE_FOR_VOL(multiplier, 5);                                      \
+    }                                                                          \
+    if (do_trace[6] && (priority[6] == curr_priority)) {                       \
+      INTERPOLATE_FOR_VOL(multiplier, 6);                                      \
+    }                                                                          \
+    if (do_trace[7] && (priority[7] == curr_priority)) {                       \
+      INTERPOLATE_FOR_VOL(multiplier, 7);                                      \
+    }                                                                          \
+    if (do_trace[8] && (priority[8] == curr_priority)) {                       \
+      INTERPOLATE_FOR_VOL(multiplier, 8);                                      \
+    }                                                                          \
+    if (do_trace[9] && (priority[9] == curr_priority)) {                       \
+      INTERPOLATE_FOR_VOL(multiplier, 9);                                      \
+    }                                                                          \
+    if (do_trace[10] && (priority[10] == curr_priority)) {                     \
+      INTERPOLATE_FOR_VOL(multiplier, 10);                                     \
+    }                                                                          \
+    if (do_trace[11] && (priority[11] == curr_priority)) {                     \
+      INTERPOLATE_FOR_VOL(multiplier, 11);                                     \
+    }                                                                          \
+    if (do_trace[12] && (priority[12] == curr_priority)) {                     \
+      INTERPOLATE_FOR_VOL(multiplier, 12);                                     \
+    }                                                                          \
+    if (do_trace[13] && (priority[13] == curr_priority)) {                     \
+      INTERPOLATE_FOR_VOL(multiplier, 13);                                     \
+    }                                                                          \
+    if (do_trace[14] && (priority[14] == curr_priority)) {                     \
+      INTERPOLATE_FOR_VOL(multiplier, 14);                                     \
+    }                                                                          \
+  } while (0)
+#elif NUM_VOLUMES == 16
+#define INTERPOLATE(multiplier)                                                \
+  do {                                                                         \
+    if (do_trace[0] && (priority[0] == curr_priority)) {                       \
+      INTERPOLATE_FOR_VOL(multiplier, 0);                                      \
+    }                                                                          \
+    if (do_trace[1] && (priority[1] == curr_priority)) {                       \
+      INTERPOLATE_FOR_VOL(multiplier, 1);                                      \
+    }                                                                          \
+    if (do_trace[2] && (priority[2] == curr_priority)) {                       \
+      INTERPOLATE_FOR_VOL(multiplier, 2);                                      \
+    }                                                                          \
+    if (do_trace[3] && (priority[3] == curr_priority)) {                       \
+      INTERPOLATE_FOR_VOL(multiplier, 3);                                      \
+    }                                                                          \
+    if (do_trace[4] && (priority[4] == curr_priority)) {                       \
+      INTERPOLATE_FOR_VOL(multiplier, 4);                                      \
+    }                                                                          \
+    if (do_trace[5] && (priority[5] == curr_priority)) {                       \
+      INTERPOLATE_FOR_VOL(multiplier, 5);                                      \
+    }                                                                          \
+    if (do_trace[6] && (priority[6] == curr_priority)) {                       \
+      INTERPOLATE_FOR_VOL(multiplier, 6);                                      \
+    }                                                                          \
+    if (do_trace[7] && (priority[7] == curr_priority)) {                       \
+      INTERPOLATE_FOR_VOL(multiplier, 7);                                      \
+    }                                                                          \
+    if (do_trace[8] && (priority[8] == curr_priority)) {                       \
+      INTERPOLATE_FOR_VOL(multiplier, 8);                                      \
+    }                                                                          \
+    if (do_trace[9] && (priority[9] == curr_priority)) {                       \
+      INTERPOLATE_FOR_VOL(multiplier, 9);                                      \
+    }                                                                          \
+    if (do_trace[10] && (priority[10] == curr_priority)) {                     \
+      INTERPOLATE_FOR_VOL(multiplier, 10);                                     \
+    }                                                                          \
+    if (do_trace[11] && (priority[11] == curr_priority)) {                     \
+      INTERPOLATE_FOR_VOL(multiplier, 11);                                     \
+    }                                                                          \
+    if (do_trace[12] && (priority[12] == curr_priority)) {                     \
+      INTERPOLATE_FOR_VOL(multiplier, 12);                                     \
+    }                                                                          \
+    if (do_trace[13] && (priority[13] == curr_priority)) {                     \
+      INTERPOLATE_FOR_VOL(multiplier, 13);                                     \
+    }                                                                          \
+    if (do_trace[14] && (priority[14] == curr_priority)) {                     \
+      INTERPOLATE_FOR_VOL(multiplier, 14);                                     \
+    }                                                                          \
+    if (do_trace[15] && (priority[15] == curr_priority)) {                     \
+      INTERPOLATE_FOR_VOL(multiplier, 15);                                     \
+    }                                                                          \
+  } while (0)
+#elif NUM_VOLUMES == 17
+#define INTERPOLATE(multiplier)                                                \
+  do {                                                                         \
+    if (do_trace[0] && (priority[0] == curr_priority)) {                       \
+      INTERPOLATE_FOR_VOL(multiplier, 0);                                      \
+    }                                                                          \
+    if (do_trace[1] && (priority[1] == curr_priority)) {                       \
+      INTERPOLATE_FOR_VOL(multiplier, 1);                                      \
+    }                                                                          \
+    if (do_trace[2] && (priority[2] == curr_priority)) {                       \
+      INTERPOLATE_FOR_VOL(multiplier, 2);                                      \
+    }                                                                          \
+    if (do_trace[3] && (priority[3] == curr_priority)) {                       \
+      INTERPOLATE_FOR_VOL(multiplier, 3);                                      \
+    }                                                                          \
+    if (do_trace[4] && (priority[4] == curr_priority)) {                       \
+      INTERPOLATE_FOR_VOL(multiplier, 4);                                      \
+    }                                                                          \
+    if (do_trace[5] && (priority[5] == curr_priority)) {                       \
+      INTERPOLATE_FOR_VOL(multiplier, 5);                                      \
+    }                                                                          \
+    if (do_trace[6] && (priority[6] == curr_priority)) {                       \
+      INTERPOLATE_FOR_VOL(multiplier, 6);                                      \
+    }                                                                          \
+    if (do_trace[7] && (priority[7] == curr_priority)) {                       \
+      INTERPOLATE_FOR_VOL(multiplier, 7);                                      \
+    }                                                                          \
+    if (do_trace[8] && (priority[8] == curr_priority)) {                       \
+      INTERPOLATE_FOR_VOL(multiplier, 8);                                      \
+    }                                                                          \
+    if (do_trace[9] && (priority[9] == curr_priority)) {                       \
+      INTERPOLATE_FOR_VOL(multiplier, 9);                                      \
+    }                                                                          \
+    if (do_trace[10] && (priority[10] == curr_priority)) {                     \
+      INTERPOLATE_FOR_VOL(multiplier, 10);                                     \
+    }                                                                          \
+    if (do_trace[11] && (priority[11] == curr_priority)) {                     \
+      INTERPOLATE_FOR_VOL(multiplier, 11);                                     \
+    }                                                                          \
+    if (do_trace[12] && (priority[12] == curr_priority)) {                     \
+      INTERPOLATE_FOR_VOL(multiplier, 12);                                     \
+    }                                                                          \
+    if (do_trace[13] && (priority[13] == curr_priority)) {                     \
+      INTERPOLATE_FOR_VOL(multiplier, 13);                                     \
+    }                                                                          \
+    if (do_trace[14] && (priority[14] == curr_priority)) {                     \
+      INTERPOLATE_FOR_VOL(multiplier, 14);                                     \
+    }                                                                          \
+    if (do_trace[15] && (priority[15] == curr_priority)) {                     \
+      INTERPOLATE_FOR_VOL(multiplier, 15);                                     \
+    }                                                                          \
+    if (do_trace[16] && (priority[16] == curr_priority)) {                     \
+      INTERPOLATE_FOR_VOL(multiplier, 16);                                     \
+    }                                                                          \
+  } while (0)
+#elif NUM_VOLUMES == 18
+#define INTERPOLATE(multiplier)                                                \
+  do {                                                                         \
+    if (do_trace[0] && (priority[0] == curr_priority)) {                       \
+      INTERPOLATE_FOR_VOL(multiplier, 0);                                      \
+    }                                                                          \
+    if (do_trace[1] && (priority[1] == curr_priority)) {                       \
+      INTERPOLATE_FOR_VOL(multiplier, 1);                                      \
+    }                                                                          \
+    if (do_trace[2] && (priority[2] == curr_priority)) {                       \
+      INTERPOLATE_FOR_VOL(multiplier, 2);                                      \
+    }                                                                          \
+    if (do_trace[3] && (priority[3] == curr_priority)) {                       \
+      INTERPOLATE_FOR_VOL(multiplier, 3);                                      \
+    }                                                                          \
+    if (do_trace[4] && (priority[4] == curr_priority)) {                       \
+      INTERPOLATE_FOR_VOL(multiplier, 4);                                      \
+    }                                                                          \
+    if (do_trace[5] && (priority[5] == curr_priority)) {                       \
+      INTERPOLATE_FOR_VOL(multiplier, 5);                                      \
+    }                                                                          \
+    if (do_trace[6] && (priority[6] == curr_priority)) {                       \
+      INTERPOLATE_FOR_VOL(multiplier, 6);                                      \
+    }                                                                          \
+    if (do_trace[7] && (priority[7] == curr_priority)) {                       \
+      INTERPOLATE_FOR_VOL(multiplier, 7);                                      \
+    }                                                                          \
+    if (do_trace[8] && (priority[8] == curr_priority)) {                       \
+      INTERPOLATE_FOR_VOL(multiplier, 8);                                      \
+    }                                                                          \
+    if (do_trace[9] && (priority[9] == curr_priority)) {                       \
+      INTERPOLATE_FOR_VOL(multiplier, 9);                                      \
+    }                                                                          \
+    if (do_trace[10] && (priority[10] == curr_priority)) {                     \
+      INTERPOLATE_FOR_VOL(multiplier, 10);                                     \
+    }                                                                          \
+    if (do_trace[11] && (priority[11] == curr_priority)) {                     \
+      INTERPOLATE_FOR_VOL(multiplier, 11);                                     \
+    }                                                                          \
+    if (do_trace[12] && (priority[12] == curr_priority)) {                     \
+      INTERPOLATE_FOR_VOL(multiplier, 12);                                     \
+    }                                                                          \
+    if (do_trace[13] && (priority[13] == curr_priority)) {                     \
+      INTERPOLATE_FOR_VOL(multiplier, 13);                                     \
+    }                                                                          \
+    if (do_trace[14] && (priority[14] == curr_priority)) {                     \
+      INTERPOLATE_FOR_VOL(multiplier, 14);                                     \
+    }                                                                          \
+    if (do_trace[15] && (priority[15] == curr_priority)) {                     \
+      INTERPOLATE_FOR_VOL(multiplier, 15);                                     \
+    }                                                                          \
+    if (do_trace[16] && (priority[16] == curr_priority)) {                     \
+      INTERPOLATE_FOR_VOL(multiplier, 16);                                     \
+    }                                                                          \
+    if (do_trace[17] && (priority[17] == curr_priority)) {                     \
+      INTERPOLATE_FOR_VOL(multiplier, 17);                                     \
+    }                                                                          \
+  } while (0)
+#elif NUM_VOLUMES == 19
+#define INTERPOLATE(multiplier)                                                \
+  do {                                                                         \
+    if (do_trace[0] && (priority[0] == curr_priority)) {                       \
+      INTERPOLATE_FOR_VOL(multiplier, 0);                                      \
+    }                                                                          \
+    if (do_trace[1] && (priority[1] == curr_priority)) {                       \
+      INTERPOLATE_FOR_VOL(multiplier, 1);                                      \
+    }                                                                          \
+    if (do_trace[2] && (priority[2] == curr_priority)) {                       \
+      INTERPOLATE_FOR_VOL(multiplier, 2);                                      \
+    }                                                                          \
+    if (do_trace[3] && (priority[3] == curr_priority)) {                       \
+      INTERPOLATE_FOR_VOL(multiplier, 3);                                      \
+    }                                                                          \
+    if (do_trace[4] && (priority[4] == curr_priority)) {                       \
+      INTERPOLATE_FOR_VOL(multiplier, 4);                                      \
+    }                                                                          \
+    if (do_trace[5] && (priority[5] == curr_priority)) {                       \
+      INTERPOLATE_FOR_VOL(multiplier, 5);                                      \
+    }                                                                          \
+    if (do_trace[6] && (priority[6] == curr_priority)) {                       \
+      INTERPOLATE_FOR_VOL(multiplier, 6);                                      \
+    }                                                                          \
+    if (do_trace[7] && (priority[7] == curr_priority)) {                       \
+      INTERPOLATE_FOR_VOL(multiplier, 7);                                      \
+    }                                                                          \
+    if (do_trace[8] && (priority[8] == curr_priority)) {                       \
+      INTERPOLATE_FOR_VOL(multiplier, 8);                                      \
+    }                                                                          \
+    if (do_trace[9] && (priority[9] == curr_priority)) {                       \
+      INTERPOLATE_FOR_VOL(multiplier, 9);                                      \
+    }                                                                          \
+    if (do_trace[10] && (priority[10] == curr_priority)) {                     \
+      INTERPOLATE_FOR_VOL(multiplier, 10);                                     \
+    }                                                                          \
+    if (do_trace[11] && (priority[11] == curr_priority)) {                     \
+      INTERPOLATE_FOR_VOL(multiplier, 11);                                     \
+    }                                                                          \
+    if (do_trace[12] && (priority[12] == curr_priority)) {                     \
+      INTERPOLATE_FOR_VOL(multiplier, 12);                                     \
+    }                                                                          \
+    if (do_trace[13] && (priority[13] == curr_priority)) {                     \
+      INTERPOLATE_FOR_VOL(multiplier, 13);                                     \
+    }                                                                          \
+    if (do_trace[14] && (priority[14] == curr_priority)) {                     \
+      INTERPOLATE_FOR_VOL(multiplier, 14);                                     \
+    }                                                                          \
+    if (do_trace[15] && (priority[15] == curr_priority)) {                     \
+      INTERPOLATE_FOR_VOL(multiplier, 15);                                     \
+    }                                                                          \
+    if (do_trace[16] && (priority[16] == curr_priority)) {                     \
+      INTERPOLATE_FOR_VOL(multiplier, 16);                                     \
+    }                                                                          \
+    if (do_trace[17] && (priority[17] == curr_priority)) {                     \
+      INTERPOLATE_FOR_VOL(multiplier, 17);                                     \
+    }                                                                          \
+    if (do_trace[18] && (priority[18] == curr_priority)) {                     \
+      INTERPOLATE_FOR_VOL(multiplier, 18);                                     \
+    }                                                                          \
+  } while (0)
+#elif NUM_VOLUMES == 20
+#define INTERPOLATE(multiplier)                                                \
+  do {                                                                         \
+    if (do_trace[0] && (priority[0] == curr_priority)) {                       \
+      INTERPOLATE_FOR_VOL(multiplier, 0);                                      \
+    }                                                                          \
+    if (do_trace[1] && (priority[1] == curr_priority)) {                       \
+      INTERPOLATE_FOR_VOL(multiplier, 1);                                      \
+    }                                                                          \
+    if (do_trace[2] && (priority[2] == curr_priority)) {                       \
+      INTERPOLATE_FOR_VOL(multiplier, 2);                                      \
+    }                                                                          \
+    if (do_trace[3] && (priority[3] == curr_priority)) {                       \
+      INTERPOLATE_FOR_VOL(multiplier, 3);                                      \
+    }                                                                          \
+    if (do_trace[4] && (priority[4] == curr_priority)) {                       \
+      INTERPOLATE_FOR_VOL(multiplier, 4);                                      \
+    }                                                                          \
+    if (do_trace[5] && (priority[5] == curr_priority)) {                       \
+      INTERPOLATE_FOR_VOL(multiplier, 5);                                      \
+    }                                                                          \
+    if (do_trace[6] && (priority[6] == curr_priority)) {                       \
+      INTERPOLATE_FOR_VOL(multiplier, 6);                                      \
+    }                                                                          \
+    if (do_trace[7] && (priority[7] == curr_priority)) {                       \
+      INTERPOLATE_FOR_VOL(multiplier, 7);                                      \
+    }                                                                          \
+    if (do_trace[8] && (priority[8] == curr_priority)) {                       \
+      INTERPOLATE_FOR_VOL(multiplier, 8);                                      \
+    }                                                                          \
+    if (do_trace[9] && (priority[9] == curr_priority)) {                       \
+      INTERPOLATE_FOR_VOL(multiplier, 9);                                      \
+    }                                                                          \
+    if (do_trace[10] && (priority[10] == curr_priority)) {                     \
+      INTERPOLATE_FOR_VOL(multiplier, 10);                                     \
+    }                                                                          \
+    if (do_trace[11] && (priority[11] == curr_priority)) {                     \
+      INTERPOLATE_FOR_VOL(multiplier, 11);                                     \
+    }                                                                          \
+    if (do_trace[12] && (priority[12] == curr_priority)) {                     \
+      INTERPOLATE_FOR_VOL(multiplier, 12);                                     \
+    }                                                                          \
+    if (do_trace[13] && (priority[13] == curr_priority)) {                     \
+      INTERPOLATE_FOR_VOL(multiplier, 13);                                     \
+    }                                                                          \
+    if (do_trace[14] && (priority[14] == curr_priority)) {                     \
+      INTERPOLATE_FOR_VOL(multiplier, 14);                                     \
+    }                                                                          \
+    if (do_trace[15] && (priority[15] == curr_priority)) {                     \
+      INTERPOLATE_FOR_VOL(multiplier, 15);                                     \
+    }                                                                          \
+    if (do_trace[16] && (priority[16] == curr_priority)) {                     \
+      INTERPOLATE_FOR_VOL(multiplier, 16);                                     \
+    }                                                                          \
+    if (do_trace[17] && (priority[17] == curr_priority)) {                     \
+      INTERPOLATE_FOR_VOL(multiplier, 17);                                     \
+    }                                                                          \
+    if (do_trace[18] && (priority[18] == curr_priority)) {                     \
+      INTERPOLATE_FOR_VOL(multiplier, 18);                                     \
+    }                                                                          \
+    if (do_trace[19] && (priority[19] == curr_priority)) {                     \
+      INTERPOLATE_FOR_VOL(multiplier, 19);                                     \
+    }                                                                          \
+  } while (0)
+#else
+#error
 #endif
 
 #define PI_FLOAT 3.14159265358979323846f
@@ -873,7 +2025,8 @@ __device__ static void calculate_solid_angle(
    * tan(\Omega / 2) = NUMERATOR / DENOMINATOR, with
    *
    * NUMERATOR = \vec{a} \cdot (\vec{b} \times \vec{c})
-   * DENOMINATOR = abc + (\vec{a} \cdot \vec{b}) c + (\vec{a} \cdot \vec{c}) b +
+   * DENOMINATOR = abc + (\vec{a} \cdot \vec{b}) c + (\vec{a} \cdot \vec{c}) b
+   * +
    * (\vec{b} \cdot \vec{c}) a
    *
    * where a,b,c are the magnitudes of their respective vectors.
@@ -881,8 +2034,8 @@ __device__ static void calculate_solid_angle(
    * There are two potential pitfalls with the above formula.
    * 1. The NUMERATOR (a scalar triple product) can be negative if \vec{a},
    * \vec{b}, \vec{c} have the wrong winding.  Since no other portion of the
-   * formula depends on the winding, computing the absolute value of the scalar
-   * triple product is sufficient.
+   * formula depends on the winding, computing the absolute value of the
+   * scalar triple product is sufficient.
    * 2. If the NUMERATOR is positive but the DENOMINATOR is negative, the
    * formula returns a negative value that must be increased by \pi.
    */
@@ -980,8 +2133,8 @@ __global__ void projectKernel(
     int out_width,  // width of the output image
     int out_height, // height of the output image
     float step,     // step size (TODO: in world)
-    int *priority, // volumes with smaller priority-ID have higher priority when
-                   // determining which volume we are in
+    int *priority,  // volumes with smaller priority-ID have higher priority
+                    // when determining which volume we are in
     float *gVolumeEdgeMinPointX, // These give a bounding box in world-space
                                  // around each volume.
     float *gVolumeEdgeMinPointY, float *gVolumeEdgeMinPointZ,
@@ -992,13 +2145,13 @@ __global__ void projectKernel(
     float sx,      // x-coordinate of source point for rays in world-space
     float sy,      // y-coordinate of source point for rays in world-space
     float sz,      // z-coordinate of source point for rays in world-space
-    float *sx_ijk, // x-coordinate of source point in IJK space for each volume
-                   // (NUM_VOLUMES,)
-    float *sy_ijk, // y-coordinate of source point in IJK space for each volume
-                   // (NUM_VOLUMES,)
-    float *sz_ijk, // z-coordinate of source point in IJK space for each volume
-                   // (NUM_VOLUMES,) (passed in to avoid re-computing on every
-                   // thread)
+    float *sx_ijk, // x-coordinate of source point in IJK space for each
+                   // volume (NUM_VOLUMES,)
+    float *sy_ijk, // y-coordinate of source point in IJK space for each
+                   // volume (NUM_VOLUMES,)
+    float *sz_ijk, // z-coordinate of source point in IJK space for each
+                   // volume (NUM_VOLUMES,) (passed in to avoid re-computing
+                   // on every thread)
     float max_ray_length,    // max distance a ray can travel
     float *world_from_index, // (3, 3) array giving the world_from_index ray
                              // transform for the camera
@@ -1008,13 +2161,13 @@ __global__ void projectKernel(
     float *energies,       // 1-D array -- size is the n_bins. Units: [keV]
     float *pdf, // 1-D array -- probability density function over the energies
     float *absorb_coef_table, // flat [n_bins x NUM_MATERIALS] table that
-                              // represents the precomputed get_absorption_coef
-                              // values. index into the table as: table[bin *
-                              // NUM_MATERIALS + mat]
+                              // represents the precomputed
+                              // get_absorption_coef values. index into the
+                              // table as: table[bin * NUM_MATERIALS + mat]
     float *intensity,         // flat array, with shape (out_height, out_width).
     float *photon_prob,       // flat array, with shape (out_height, out_width).
-    float *solid_angle, // flat array, with shape (out_height, out_width). Could
-                        // be NULL pointer
+    float *solid_angle,       // flat array, with shape (out_height, out_width).
+                              // Could be NULL pointer
     int offsetW, int offsetH) {
   // The output image has the following coordinate system, with cell-centered
   // sampling. y is along the fast axis (columns), x along the slow (rows).
@@ -1054,12 +2207,13 @@ __global__ void projectKernel(
     calculate_solid_angle(world_from_index, solid_angle, udx, vdx, img_dx);
   }
 
-  // cell-centered sampling point corresponding to pixel index, in index-space.
+  // cell-centered sampling point corresponding to pixel index, in
+  // index-space.
   float u = (float)udx + 0.5;
   float v = (float)vdx + 0.5;
 
-  // Vector in world-space along ray from source-point to pixel at [u,v] on the
-  // detector plane.
+  // Vector in world-space along ray from source-point to pixel at [u,v] on
+  // the detector plane.
   float rx =
       u * world_from_index[0] + v * world_from_index[1] + world_from_index[2];
   float ry =
@@ -1076,9 +2230,10 @@ __global__ void projectKernel(
 
   // calculate projections
   // Part 1: compute alpha value at entry and exit point of all volumes on
-  // either side of the ray, in world-space. minAlpha: the distance from source
-  // point to all-volumes entry point of the ray, in world-space. maxAlpha: the
-  // distance from source point to all-volumes exit point of the ray.
+  // either side of the ray, in world-space. minAlpha: the distance from
+  // source point to all-volumes entry point of the ray, in world-space.
+  // maxAlpha: the distance from source point to all-volumes exit point of the
+  // ray.
   float minAlpha = INFINITY; // the furthest along the ray we want to consider
                              // is the start point.
   float maxAlpha = 0;        // closest point to consider is at the detector
@@ -1186,7 +2341,8 @@ __global__ void projectKernel(
 
   // trace (if doing the last segment separately, need to use num_steps - 1
   for (int t = 0; t < num_steps; t++) {
-    LOAD_SEGS_AT_ALPHA; // initializes p{x,y,z}[...] and seg_at_alpha[...][...]
+    LOAD_SEGS_AT_ALPHA; // initializes p{x,y,z}[...] and
+                        // seg_at_alpha[...][...]
     // if (debug) printf("  loaded segs\n"); // This is the one that seems to
     // take a half a second.
     //
@@ -1218,8 +2374,8 @@ __global__ void projectKernel(
       }
     }
 
-    // if (debug) printf("  got priority at alpha, num vols\n"); // This is the
-    // one that seems to take a half a second.
+    // if (debug) printf("  got priority at alpha, num vols\n"); // This is
+    // the one that seems to take a half a second.
     if (0 == n_vols_at_curr_priority) {
       // Outside the bounds of all volumes to trace. Use the default
       // AIR_DENSITY.
@@ -1231,9 +2387,9 @@ __global__ void projectKernel(
 
       // For the entry boundary, multiply by 0.5. That is, for the initial
       // interpolated value, only a half step-size is considered in the
-      // computation. For the second-to-last interpolation point, also multiply
-      // by 0.5, since there will be a final step at the globalMaxAlpha
-      // boundary.
+      // computation. For the second-to-last interpolation point, also
+      // multiply by 0.5, since there will be a final step at the
+      // globalMaxAlpha boundary.
       weight *= (0 == t || num_steps - 1 == t) ? 0.5f : 1.0f;
 
       INTERPOLATE(weight);
@@ -1270,41 +2426,42 @@ __global__ void projectKernel(
   /**
    * EXPLANATION OF THE PHYSICS/MATHEMATICS
    *
-   *      The mass attenuation coefficient (found in absorb_coef_table) is: \mu
-   * / \rho, where \mu is the linear attenuation coefficient, and \rho is the
-   * mass density.  \mu has units of inverse length, and \rho has units of
+   *      The mass attenuation coefficient (found in absorb_coef_table) is:
+   * \mu / \rho, where \mu is the linear attenuation coefficient, and \rho is
+   * the mass density.  \mu has units of inverse length, and \rho has units of
    * mass/volume, so the mass attenuation coefficient has units of [cm^2 / g]
-   *      area_density[m] is the product of [linear distance of the ray through
-   * material 'm'] and [density of the material].  Accordingly, area_density[m]
-   * has units of [g / cm^2].
+   *      area_density[m] is the product of [linear distance of the ray
+   * through material 'm'] and [density of the material].  Accordingly,
+   * area_density[m] has units of [g / cm^2].
    *
    * The mass attenuation code uses the Beer-Lambert law:
    *
    *      I = I_{0} exp[-(\mu / \rho) * \rho * d]
    *
-   * where I_{0} is the initial intensity, (\mu / \rho) is the mass attenuation
-   * coefficient, \rho is the density, and d is the length of the ray passing
-   * through the material.  Note that the product (\rho * d), also known as the
-   * 'area density' is the quantity area_density[m]. Because we are attenuating
-   * multiple materials, the exponent that we use for the Beer-Lambert law is
-   * the sum of the (\mu_{mat} / \rho_{mat}) * (\rho_{mat} * d_{mat}) for each
-   * material 'mat'.
+   * where I_{0} is the initial intensity, (\mu / \rho) is the mass
+   * attenuation coefficient, \rho is the density, and d is the length of the
+   * ray passing through the material.  Note that the product (\rho * d), also
+   * known as the 'area density' is the quantity area_density[m]. Because we
+   * are attenuating multiple materials, the exponent that we use for the
+   * Beer-Lambert law is the sum of the (\mu_{mat} / \rho_{mat}) * (\rho_{mat}
+   * * d_{mat}) for each material 'mat'.
    *
    *      The above explains the calculation up to and including
    *              '____ = expf(-1 * beer_lambert_exp)',
    * but does not yet explain the remaining calculation.  The remaining
-   * calculation serves to approximate the workings of a pixel in the dectector:
+   * calculation serves to approximate the workings of a pixel in the
+   * dectector:
    *
    *      pixelReading = \sum_{E} attenuatedBeamStrength[E] * E * p(E)
    *
    * where attenuatedBeamStrength follows the Beer-Lambert law as above, E is
    * the energies of the spectrum, and p(E) is the PDF of the spectrum. Note
    * also that the Beer-Lambert law deals with the quantity 'intensity', which
-   * is related to the power transmitted through [unit area perpendicular to the
-   * direction of travel]. Since the intensities mentioned in the Beer-Lambert
-   * law are proportional to 1/[unit area], we can replace the "intensity"
-   * calcuation with simply the energies involved.  Later conversion to other
-   * physical quanities can be done outside of the kernel.
+   * is related to the power transmitted through [unit area perpendicular to
+   * the direction of travel]. Since the intensities mentioned in the
+   * Beer-Lambert law are proportional to 1/[unit area], we can replace the
+   * "intensity" calcuation with simply the energies involved.  Later
+   * conversion to other physical quanities can be done outside of the kernel.
    */
   // if (debug)  printf("attenuation\n");
 
@@ -1538,8 +2695,9 @@ __global__ void resample_megavolume(
    * Sample in voxel centers.
    *
    * Loop keeps track of {x,y,z} position in world coord.s as well as IJK
-   * indices for megavolume voxels. The first voxel has IJK indices (0,0,0) and
-   * is centered at (minX + 0.5 * voxX, minY + 0.5 * voxY, minZ + 0.5 * voxZ)
+   * indices for megavolume voxels. The first voxel has IJK indices (0,0,0)
+   * and is centered at (minX + 0.5 * voxX, minY + 0.5 * voxY, minZ + 0.5 *
+   * voxZ)
    *
    * The upper bound of the loop checking for:
    *       {x,y,z} <= megaMax{X,Y,Z}
@@ -1548,8 +2706,8 @@ __global__ void resample_megavolume(
    */
 
   // local storage to store the results of the tex3D calls.
-  // As a switch, we rely on the fact that the results of the tex3D calls should
-  // never be negative
+  // As a switch, we rely on the fact that the results of the tex3D calls
+  // should never be negative
   float density_sample[NUM_VOLUMES];
   // local storage to store the results of the cubicTex3D calls
   float mat_sample[NUM_VOLUMES][NUM_MATERIALS];
@@ -1580,16 +2738,15 @@ __global__ void resample_megavolume(
         for (int i = 0; i < NUM_VOLUMES; i++) {
           density_sample[i] = -1.0f; // "reset" this volume's sample
 
-          int offset =
-              3 * 4 *
-              i; // TODO: check that this matrix multiplication is done properly
+          int offset = 3 * 4 * i; // TODO: check that this matrix
+                                  // multiplication is done properly
           float inp_x = (inp_ijk_from_world[offset + 0] * x) +
                         (inp_ijk_from_world[offset + 1] * y) +
                         (inp_ijk_from_world[offset + 2] * z) +
                         inp_ijk_from_world[offset + 3];
           if ((inp_x < 0.0) || (inp_x >= inp_voxelBoundX[i]))
-            continue; // TODO: make sure this behavior agrees with the behavior
-                      // of ijk_from_world transforms
+            continue; // TODO: make sure this behavior agrees with the
+                      // behavior of ijk_from_world transforms
 
           float inp_y = (inp_ijk_from_world[offset + 4] * x) +
                         (inp_ijk_from_world[offset + 5] * y) +
@@ -1659,6 +2816,58 @@ __global__ void resample_megavolume(
             RESAMPLE_TEXTURES(9);
           }
 #endif
+#if NUM_VOLUMES > 10
+          else if (10 == i) {
+            RESAMPLE_TEXTURES(10);
+          }
+#endif
+#if NUM_VOLUMES > 11
+          else if (11 == i) {
+            RESAMPLE_TEXTURES(11);
+          }
+#endif
+#if NUM_VOLUMES > 12
+          else if (12 == i) {
+            RESAMPLE_TEXTURES(12);
+          }
+#endif
+#if NUM_VOLUMES > 13
+          else if (13 == i) {
+            RESAMPLE_TEXTURES(13);
+          }
+#endif
+#if NUM_VOLUMES > 14
+          else if (14 == i) {
+            RESAMPLE_TEXTURES(14);
+          }
+#endif
+#if NUM_VOLUMES > 15
+          else if (15 == i) {
+            RESAMPLE_TEXTURES(15);
+          }
+#endif
+#if NUM_VOLUMES > 16
+          else if (16 == i) {
+            RESAMPLE_TEXTURES(16);
+          }
+#endif
+#if NUM_VOLUMES > 17
+          else if (17 == i) {
+            RESAMPLE_TEXTURES(17);
+          }
+#endif
+#if NUM_VOLUMES > 18
+          else if (18 == i) {
+            RESAMPLE_TEXTURES(18);
+          }
+#endif
+#if NUM_VOLUMES > 19
+          else if (19 == i) {
+            RESAMPLE_TEXTURES(19);
+          }
+#endif
+#if NUM_VOLUMES > 20
+#error
           // Maximum supported value of NUM_VOLUMES is 10
         }
 
