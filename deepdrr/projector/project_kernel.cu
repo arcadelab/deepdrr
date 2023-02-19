@@ -192,9 +192,13 @@
     LOAG_SEGS_FOR_VOL_MAT(vol_id, 13);                                         \
   } while (0)
 #else
-#error
+#define LOAD_SEGS_FOR_VOL(vol_id)                                              \
+  do {                                                                         \
+    printf("NUM_MATERIALS not in [1, 14]");                                    \
+  } while (0)
 #endif
 
+#if NUM_VOLUMES == 1
 #define LOAD_SEGS_AT_ALPHA                                                     \
   do {                                                                         \
     if (do_trace[0]) {                                                         \
@@ -1115,7 +1119,11 @@
     }                                                                          \
   } while (0)
 #else
-#error
+#define LOAD_SEGS_AT_ALPHA                                                     \
+  do {                                                                         \
+    printf(                                                                    \
+        "LOAD_SEGS_AT_ALPHA not supported for NUM_VOLUMES outside [1, 20]");   \
+  } while (0)
 #endif
 
 #if NUM_MATERIALS == 1
@@ -1280,7 +1288,10 @@
     UPDATE(multiplier, vol_id, 13);                                            \
   } while (0)
 #else
-#error
+#define INTERPOLATE_FOR_VOL(multiplier, vol_id)                                \
+  do {                                                                         \
+    printf("NUM_MATERIALS not in [1, 14]");                                    \
+  } while (0)
 #endif
 
 #if NUM_VOLUMES == 1
@@ -1994,7 +2005,10 @@
     }                                                                          \
   } while (0)
 #else
-#error
+#define INTERPOLATE(multiplier)                                                \
+  do {                                                                         \
+    printf("INTERPOLATE not supported for NUM_VOLUMES outside [1, 10]");       \
+  } while (0)
 #endif
 
 #define PI_FLOAT 3.14159265358979323846f
@@ -2867,7 +2881,11 @@ __global__ void resample_megavolume(
           }
 #endif
 #if NUM_VOLUMES > 20
-#error
+#define INTERPOLATE(multiplier)                                                \
+  do {                                                                         \
+    printf("INTERPOLATE not supported for NUM_VOLUMES outside [1, 10]");       \
+  } while (0)
+#endif
           // Maximum supported value of NUM_VOLUMES is 10
         }
 
