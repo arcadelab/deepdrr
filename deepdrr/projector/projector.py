@@ -146,6 +146,7 @@ class Projector(object):
         collected_energy: bool = False,
         neglog: bool = True,
         intensity_upper_bound: Optional[float] = None,
+        source_to_detector_distance: Optional[float] = None
     ) -> None:
         """Create the projector, which has info for simulating the DRR.
 
@@ -201,14 +202,11 @@ class Projector(object):
         assert len(self.volumes) == len(self.priorities)
 
         self.camera_intrinsics = camera_intrinsics
+        self.source_to_detector_distance = source_to_detector_distance
         if carm is not None:
             self.source_to_detector_distance = carm.source_to_detector_distance
-        elif scatter_num ==0 and not collected_energy: # Don't need source_to_detector_distance in this case
-            self.source_to_detector_distance = None
-            log.warning(
-                "No way to specify source-to-detector distance without a MobileCArm parameter"
-            )
-        else:
+
+        if scatter_num !=0 or collected_energy and self.source_to_detector_distance is None:
             raise ValueError("No source_to_detector_distance")
         self.carm = carm
         self.step = step
