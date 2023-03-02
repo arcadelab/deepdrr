@@ -153,7 +153,6 @@ class Projector(object):
         self,
         volume: Union[vol.Volume, List[vol.Volume]],
         priorities: Optional[List[int]] = None,
-        camera_intrinsics: Optional[geo.CameraIntrinsicTransform] = None,
         device: Optional[Device] = None,
         step: float = 0.1,
         mode: str = "linear",
@@ -169,6 +168,7 @@ class Projector(object):
         intensity_upper_bound: Optional[float] = None,
         attenuate_outside_volume: bool = False,
         carm: Optional[Device] = None,
+        source_to_detector_distance: Optional[float] = None
     ) -> None:
         """Create the projector, which has info for simulating the DRR.
 
@@ -185,7 +185,6 @@ class Projector(object):
                                 as they have a non-null segmentation at that location. Valid ranks are in the range [0, NUM_VOLUMES), with rank 0 having precedence over other ranks. Note that multiple volumes can share a
                                 rank. If a list of ranks is provided, the ranks are associated in-order to the provided volumes.  If no list is provided (the default), the volumes are assumed to have distinct ranks, and
                                 each volume has precedence over the preceding volumes. (This behavior is equivalent to passing in the list: [NUM_VOLUMES - 1, ..., 1, 0].)
-            camera_intrinsics (CameraIntrinsicTransform): intrinsics of the projector's camera. (used for sensor size). If None, the CArm object must be provided and have a camera_intrinsics attribute. Defaults to None.
             device (Device, optional): Optional X-ray device object to use, which can provide a mapping from real C-arms to camera poses. If not provided, camera pose must be defined by user. Defaults to None.
             step (float, optional): size of the step along projection ray in voxels. Defaults to 0.1.
             mode (str): Interpolation mode for the kernel. Defaults to "linear".
@@ -254,6 +253,7 @@ class Projector(object):
         self.collected_energy = collected_energy
         self.neglog = neglog
         self.intensity_upper_bound = intensity_upper_bound
+        self.source_to_detector_distance = source_to_detector_distance
         # TODO (mjudish): handle intensity_upper_bound when [collected_energy is True]
         # Might want to disallow using intensity_upper_bound, due to nonsensicalness
 
@@ -313,7 +313,9 @@ class Projector(object):
 
     @property
     def source_to_detector_distance(self) -> float:
-        if self.device is not None:
+        if self.source_to_detector_distance is not None:
+            return self.source_to_detector_distance
+        elif self.device is not None:
             return self.device.source_to_detector_distance
         else:
             raise RuntimeError(
