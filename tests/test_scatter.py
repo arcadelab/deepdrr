@@ -1,10 +1,13 @@
 import logging
+import os
+
 import deepdrr
 import numpy as np
 from deepdrr import geo, vis
 from deepdrr.utils import image_utils, test_utils
 from PIL import Image
 
+os.environ['PATH'] = '/usr/local/cuda/bin:' + os.environ['PATH']
 
 log = logging.getLogger(__name__)
 
@@ -29,7 +32,7 @@ def test_scatter_single_volume_aligned():
         image = projector.project()
 
     image = (image * 255).astype(np.uint8)
-    Image.fromarray(image).save("output/test_scatter.png")
+    Image.fromarray(image).save("test_scatter.png")
     
     output_dir = test_utils.get_output_dir()
 
