@@ -168,7 +168,8 @@ class Projector(object):
         intensity_upper_bound: Optional[float] = None,
         attenuate_outside_volume: bool = False,
         carm: Optional[Device] = None,
-        source_to_detector_distance: Optional[float] = None
+        source_to_detector_distance: Optional[float] = None,
+        camera_intrinsics: Optional[geo.CameraIntrinsicTransform] = None
     ) -> None:
         """Create the projector, which has info for simulating the DRR.
 
@@ -232,6 +233,8 @@ class Projector(object):
         self.step = float(step)
         self.mode = mode
         self.spectrum = _get_spectrum(spectrum)
+        self._source_to_detector_distance = source_to_detector_distance
+        self._camera_intrinsics = camera_intrinsics
 
         if add_scatter is not None:
             log.warning("add_scatter is deprecated. Set scatter_num instead.")
@@ -243,7 +246,7 @@ class Projector(object):
         else:
             self.scatter_num = scatter_num
 
-        if self.scatter_num > 0 and self.device is None:
+        if self.scatter_num > 0 and self.source_to_detector_distance is None:
             raise ValueError("Must provide device to simulate scatter.")
 
         self.add_noise = add_noise
@@ -253,7 +256,6 @@ class Projector(object):
         self.collected_energy = collected_energy
         self.neglog = neglog
         self.intensity_upper_bound = intensity_upper_bound
-        self.source_to_detector_distance = source_to_detector_distance
         # TODO (mjudish): handle intensity_upper_bound when [collected_energy is True]
         # Might want to disallow using intensity_upper_bound, due to nonsensicalness
 
@@ -313,8 +315,8 @@ class Projector(object):
 
     @property
     def source_to_detector_distance(self) -> float:
-        if self.source_to_detector_distance is not None:
-            return self.source_to_detector_distance
+        if self._source_to_detector_distance is not None:
+            return self._source_to_detector_distance
         elif self.device is not None:
             return self.device.source_to_detector_distance
         else:
@@ -324,7 +326,9 @@ class Projector(object):
 
     @property
     def camera_intrinsics(self) -> geo.CameraIntrinsicTransform:
-        if self.device is not None:
+        if self._camera_intrinsics is not None:
+            return self._camera_intrinsics
+        elif self.device is not None:
             return self.device.camera_intrinsics
         else:
             raise RuntimeError(
