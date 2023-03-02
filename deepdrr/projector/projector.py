@@ -206,7 +206,7 @@ class Projector(object):
         if carm is not None:
             self.source_to_detector_distance = carm.source_to_detector_distance
 
-        if scatter_num !=0 or collected_energy and self.source_to_detector_distance is None:
+        if (scatter_num !=0 or collected_energy) and self.source_to_detector_distance is None:
             raise ValueError("No source_to_detector_distance")
         self.carm = carm
         self.step = step
