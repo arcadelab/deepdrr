@@ -40,9 +40,9 @@ DeepDRR requires an NVIDIA GPU, preferably with >11 GB of memory.
 conda install -c conda-forge pycuda
 ```
 
-to install it in your environment. 
+to install it in your environment.
 
-4. You may also wish to [install PyTorch](https://pytorch.org/get-started/locally/) separately, depending on your setup. 
+4. You may also wish to [install PyTorch](https://pytorch.org/get-started/locally/) separately, depending on your setup.
 5. Install from `PyPI`
 
 ```bash
@@ -116,7 +116,7 @@ DeepDRR combines machine learning models for material decomposition and scatter 
 
 ![DeepDRR Pipeline](https://raw.githubusercontent.com/arcadelab/deepdrr/master/images/deepdrr_workflow.png)
 
-Further details can be found in our MICCAI 2018 paper "DeepDRR: A Catalyst for Machine Learning in Fluoroscopy-guided Procedures" and the subsequent Invited Journal Article in the IJCARS Special Issue of MICCAI "Enabling Machine Learning in X-ray-based Procedures via Realistic Simulation of Image Formation". The conference preprint can be accessed on arXiv here: https://arxiv.org/abs/1803.08606.
+Further details can be found in our MICCAI 2018 paper "DeepDRR: A Catalyst for Machine Learning in Fluoroscopy-guided Procedures" and the subsequent Invited Journal Article in the IJCARS Special Issue of MICCAI "Enabling Machine Learning in X-ray-based Procedures via Realistic Simulation of Image Formation". The conference preprint can be accessed on arXiv here: <https://arxiv.org/abs/1803.08606>.
 
 ### Representative Results
 
@@ -126,13 +126,13 @@ The figure below shows representative radiographs generated using DeepDRR from C
 
 ### Applications - Pelvis Landmark Detection
 
-We have applied DeepDRR to anatomical landmark detection in pelvic X-ray: "X-ray-transform Invariant Anatomical Landmark Detection for Pelvic Trauma Surgery", also early-accepted at MICCAI'18: https://arxiv.org/abs/1803.08608 and now with quantitative evaluation in the IJCARS Special Issue on MICCAI'18: https://link.springer.com/article/10.1007/s11548-019-01975-5. The ConvNet for prediction was trained on DeepDRRs of 18 CT scans of the NIH Cancer Imaging Archive and then applied to ex vivo data acquired with a Siemens Cios Fusion C-arm machine equipped with a flat panel detector (Siemens Healthineers, Forchheim, Germany). Some representative results on the ex vivo data are shown below.
+We have applied DeepDRR to anatomical landmark detection in pelvic X-ray: "X-ray-transform Invariant Anatomical Landmark Detection for Pelvic Trauma Surgery", also early-accepted at MICCAI'18: <https://arxiv.org/abs/1803.08608> and now with quantitative evaluation in the IJCARS Special Issue on MICCAI'18: <https://link.springer.com/article/10.1007/s11548-019-01975-5>. The ConvNet for prediction was trained on DeepDRRs of 18 CT scans of the NIH Cancer Imaging Archive and then applied to ex vivo data acquired with a Siemens Cios Fusion C-arm machine equipped with a flat panel detector (Siemens Healthineers, Forchheim, Germany). Some representative results on the ex vivo data are shown below.
 
 ![Prediction Performance](https://raw.githubusercontent.com/arcadelab/deepdrr/master/images/landmark_performance_real_data.PNG)
 
 ### Applications - Metal Tool Insertion
 
-DeepDRR has also been applied to simulate X-rays of the femur during insertion of dexterous manipulaters in orthopedic surgery: "Localizing dexterous surgical tools in X-ray for image-based navigation", which has been accepted at IPCAI'19: https://arxiv.org/abs/1901.06672. Simulated images are used to train a concurrent segmentation and localization network for tool detection. We found consistent performance on both synthetic and real X-rays of ex vivo specimens. The tool model, simulation image and detection results are shown below.
+DeepDRR has also been applied to simulate X-rays of the femur during insertion of dexterous manipulaters in orthopedic surgery: "Localizing dexterous surgical tools in X-ray for image-based navigation", which has been accepted at IPCAI'19: <https://arxiv.org/abs/1901.06672>. Simulated images are used to train a concurrent segmentation and localization network for tool detection. We found consistent performance on both synthetic and real X-rays of ex vivo specimens. The tool model, simulation image and detection results are shown below.
 
 This capability has not been tested in version 1.0. For tool insertion, we recommend working with [Version 0.1](https://github.com/arcadelab/deepdrr/releases/tag/0.1) for the time being.
 
@@ -223,18 +223,18 @@ For the original DeepDRR, released alongside our 2018 paper, please see the [Ver
 ## Acknowledgments
 
 CUDA Cubic B-Spline Interpolation (CI) used in the projector:  
-https://github.com/DannyRuijters/CubicInterpolationCUDA  
+<https://github.com/DannyRuijters/CubicInterpolationCUDA>  
 D. Ruijters, B. M. ter Haar Romeny, and P. Suetens. Efficient GPU-Based Texture Interpolation using Uniform B-Splines. Journal of Graphics Tools, vol. 13, no. 4, pp. 61-69, 2008.
 
 The projector is a heavily modified and ported version of the implementation in CONRAD:  
-https://github.com/akmaier/CONRAD  
+<https://github.com/akmaier/CONRAD>  
 A. Maier, H. G. Hofmann, M. Berger, P. Fischer, C. Schwemmer, H. Wu, K. Müller, J. Hornegger, J. H. Choi, C. Riess, A. Keil, and R. Fahrig. CONRAD—A software framework for cone-beam imaging in radiology. Medical Physics 40(11):111914-1-8. 2013.
 
 Spectra are taken from MCGPU:  
 A. Badal, A. Badano, Accelerating Monte Carlo simulations of photon transport in a voxelized geometry using a massively parallel graphics processing unit. Med Phys. 2009 Nov;36(11): 4878–80.
 
 The segmentation pipeline is based on the Vnet architecture:  
-https://github.com/mattmacy/vnet.pytorch  
+<https://github.com/mattmacy/vnet.pytorch>  
 F. Milletari, N. Navab, S-A. Ahmadi. V-Net: Fully Convolutional Neural Networks for Volumetric Medical Image Segmentation. arXiv:160604797. 2016.
 
 We gratefully acknowledge the support of the NVIDIA Corporation with the donation of the GPUs used for this research.
