@@ -6,6 +6,7 @@ from pathlib import Path
 import cv2
 import matplotlib.pyplot as plt
 from typing import Optional
+import seaborn as sns
 
 from .. import geo
 
@@ -28,6 +29,27 @@ def as_uint8(image: np.ndarray) -> np.ndarray:
     elif image.dtype != np.uint8:
         logging.warning(f"Unknown image type {image.dtype}. Converting to uint8.")
         image = image.astype(np.uint8)
+    return image
+
+
+def as_float32(image: np.ndarray) -> np.ndarray:
+    """Convert the image to float32.
+
+    Args:
+        image (np.ndarray): the image to convert.
+
+    Returns:
+        np.ndarray: the converted image.
+    """
+    if image.dtype in [np.float16, np.float32, np.float64]:
+        image = image.astype(np.float32)
+    elif image.dtype == bool:
+        image = image.astype(np.float32)
+    elif image.dtype != np.uint8:
+        logging.warning(f"Unknown image type {image.dtype}. Converting to float32.")
+        image = image.astype(np.float32)
+    else:
+        image = image.astype(np.float32) / 255
     return image
 
 
@@ -173,4 +195,57 @@ def draw_circles(
         if radius is not None:
             r = radius
         image = cv2.circle(image, (int(x), int(y)), int(r), color, thickness)
+    return image
+
+
+def blend_heatmaps(
+    image: np.ndarray, heatmaps: np.ndarray, alpha: float = 0.5, color=(255, 0, 0)
+) -> np.ndarray:
+    """Visualize heatmaps on top of an image.
+
+    Args:
+        image (np.ndarray): (H, W, C) Image to visualize heatmaps on top of. If float, in range [0, 1], will be converted to uint8.
+        heatmaps (np.ndarray): (H, W, num_heatmaps) Heatmaps to visualize. If float, in range [0, 1], will be converted to uint8.
+        alpha (float, optional): Alpha value for the heatmaps. Defaults to 0.5.
+
+    Returns:
+        np.ndarray: Image with heatmaps visualized, as a uint8 image.
+
+    """
+    color = np.array(color, dtype=np.float32)
+    if np.any(color > 1):
+        color = color / 255
+    color = color[:3]
+
+    image = ensure_cdim(as_float32(image), 3)
+    heatmaps = as_float32(heatmaps)
+    if heatmaps.ndim == 2:
+        heatmaps = heatmaps[:, :, np.newaxis]
+    elif heatmaps.ndim == 3:
+        heatmaps = heatmaps.sum(axis=2, keepdims=True)
+    else:
+        raise ValueError(f"bad heatmaps shape: {heatmaps.shape}")
+
+    return as_uint8(
+        (1 - alpha) * image + alpha * heatmaps * color[np.newaxis, np.newaxis, :]
+    )
+
+
+def draw_masks(image: np.ndarray, masks: np.ndarray) -> np.ndarray:
+    """Draw contours of masks on an image.
+
+    Args:
+        image (np.ndarray): the image to draw on.
+        masks (np.ndarray): the masks to draw. [H, W, num_masks] array of masks.
+    """
+    image = as_uint8(image)
+    num_classes = masks.shape[2]
+    palette = sns.color_palette("husl", num_classes)
+
+    for i in range(num_classes):
+        mask = (masks[:, :, i, None] > 0.5).astype(np.uint8)
+        contours, _ = cv2.findContours(mask, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
+        color = (np.array(palette[i]) * 255).astype(int).tolist()
+        image = cv2.drawContours(image.copy(), contours, -1, color, 1)
+
     return image
