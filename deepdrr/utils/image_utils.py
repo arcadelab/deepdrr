@@ -241,8 +241,6 @@ def draw_masks(image: np.ndarray, masks: np.ndarray, alpha: float = 0.3) -> np.n
 
     image = as_float32(image)
     masks = masks.transpose(2, 0, 1)
-    log.info(f"masks min/max/mean: {masks.min()}/{masks.max()}/{masks.mean()}")
-    log.info(f"masks shape: {[(m > 0.5).sum() for m in masks]}")
     palette = np.array(sns.color_palette("husl", masks.shape[0]))
     image *= 1 - alpha
     for i, mask in enumerate(masks):
