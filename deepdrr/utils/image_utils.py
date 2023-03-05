@@ -105,7 +105,7 @@ def ensure_cdim(x: np.ndarray, c: int = 3) -> np.ndarray:
     elif x.shape[2] == c:
         return x
     else:
-        raise ValueError
+        raise ValueError(f"bad input shape: {x.shape}")
 
 
 def draw_line(
@@ -231,21 +231,20 @@ def blend_heatmaps(
     )
 
 
-def draw_masks(image: np.ndarray, masks: np.ndarray) -> np.ndarray:
+def draw_masks(image: np.ndarray, masks: np.ndarray, alpha: float = 0.3) -> np.ndarray:
     """Draw contours of masks on an image.
 
     Args:
         image (np.ndarray): the image to draw on.
         masks (np.ndarray): the masks to draw. [H, W, num_masks] array of masks.
     """
-    image = as_uint8(image)
-    num_classes = masks.shape[2]
-    palette = sns.color_palette("husl", num_classes)
 
-    for i in range(num_classes):
-        mask = (masks[:, :, i, None] > 0.5).astype(np.uint8)
-        contours, _ = cv2.findContours(mask, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
-        color = (np.array(palette[i]) * 255).astype(int).tolist()
-        image = cv2.drawContours(image.copy(), contours, -1, color, 1)
-
-    return image
+    image = as_float32(image)
+    masks = masks.transpose(2, 0, 1)
+    log.info(f"masks min/max/mean: {masks.min()}/{masks.max()}/{masks.mean()}")
+    log.info(f"masks shape: {[(m > 0.5).sum() for m in masks]}")
+    palette = np.array(sns.color_palette("husl", masks.shape[0]))
+    image *= 1 - alpha
+    for i, mask in enumerate(masks):
+        image[mask > 0.5] = palette[i] * alpha + image[mask > 0.5] * (1 - alpha)
+    return (image * 255).astype(np.uint8)
