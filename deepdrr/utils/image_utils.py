@@ -8,6 +8,7 @@ import matplotlib.pyplot as plt
 from typing import Optional
 import seaborn as sns
 
+from . import heatmap_utils
 from .. import geo
 
 log = logging.getLogger(__name__)
@@ -199,7 +200,11 @@ def draw_circles(
 
 
 def blend_heatmaps(
-    image: np.ndarray, heatmaps: np.ndarray, alpha: float = 0.5, color=(255, 0, 0)
+    image: np.ndarray,
+    heatmaps: np.ndarray,
+    alpha: float = 0.5,
+    seed: Optional[int] = 0,
+    palette: str = "Spectral",
 ) -> np.ndarray:
     """Visualize heatmaps on top of an image.
 
@@ -212,26 +217,55 @@ def blend_heatmaps(
         np.ndarray: Image with heatmaps visualized, as a uint8 image.
 
     """
-    color = np.array(color, dtype=np.float32)
-    if np.any(color > 1):
-        color = color / 255
-    color = color[:3]
+    image = as_float32(image)
+    heatmaps = heatmaps.transpose(2, 0, 1)
+    colors = np.array(sns.color_palette(palette, heatmaps.shape[0]))
+    if seed is not None:
+        np.random.seed(seed)
+    colors = colors[np.random.permutation(colors.shape[0])]
+    image *= 1 - alpha
+    for i, h in enumerate(heatmaps):
+        threshold = heatmap_utils.get_threshold(h)
+        bool_mask = h > threshold
+        image[bool_mask] = colors[i] * alpha + image[bool_mask] * (1 - alpha)
 
-    image = ensure_cdim(as_float32(image), 3)
-    heatmaps = as_float32(heatmaps)
-    if heatmaps.ndim == 2:
-        heatmaps = heatmaps[:, :, np.newaxis]
-    elif heatmaps.ndim == 3:
-        heatmaps = heatmaps.sum(axis=2, keepdims=True)
-    else:
-        raise ValueError(f"bad heatmaps shape: {heatmaps.shape}")
+        contours, _ = cv2.findContours(
+            bool_mask.astype(np.uint8), cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE
+        )
+        image = as_float32(
+            cv2.drawContours(
+                as_uint8(image), contours, -1, (255 * colors[i]).tolist(), 1
+            )
+        )
+    return (image * 255).astype(np.uint8)
 
-    return as_uint8(
-        (1 - alpha) * image + alpha * heatmaps * color[np.newaxis, np.newaxis, :]
-    )
+    # color = np.array(color, dtype=np.float32)
+    # if np.any(color > 1):
+    #     color = color / 255
+    # color = color[:3]
+
+    # image = ensure_cdim(as_float32(image), 3)
+    # heatmaps = as_float32(heatmaps)
+    # if heatmaps.ndim == 2:
+    #     heatmaps = heatmaps[:, :, np.newaxis]
+    # elif heatmaps.ndim == 3:
+    #     heatmaps = heatmaps.sum(axis=2, keepdims=True)
+    # else:
+    #     raise ValueError(f"bad heatmaps shape: {heatmaps.shape}")
+
+    # return as_uint8(
+    #     (1 - alpha) * image + alpha * heatmaps * color[np.newaxis, np.newaxis, :]
+    # )
 
 
-def draw_masks(image: np.ndarray, masks: np.ndarray, alpha: float = 0.3) -> np.ndarray:
+def draw_masks(
+    image: np.ndarray,
+    masks: np.ndarray,
+    alpha: float = 0.3,
+    palette: str = "Spectral",
+    threshold: float = 0.5,
+    seed: Optional[int] = 0,
+) -> np.ndarray:
     """Draw contours of masks on an image.
 
     Args:
@@ -241,8 +275,21 @@ def draw_masks(image: np.ndarray, masks: np.ndarray, alpha: float = 0.3) -> np.n
 
     image = as_float32(image)
     masks = masks.transpose(2, 0, 1)
-    palette = np.array(sns.color_palette("husl", masks.shape[0]))
+    colors = np.array(sns.color_palette(palette, masks.shape[0]))
+    if seed is not None:
+        np.random.seed(seed)
+    colors = colors[np.random.permutation(colors.shape[0])]
     image *= 1 - alpha
     for i, mask in enumerate(masks):
-        image[mask > 0.5] = palette[i] * alpha + image[mask > 0.5] * (1 - alpha)
+        bool_mask = mask > threshold
+        image[bool_mask] = colors[i] * alpha + image[bool_mask] * (1 - alpha)
+
+        contours, _ = cv2.findContours(
+            bool_mask.astype(np.uint8), cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE
+        )
+        image = as_float32(
+            cv2.drawContours(
+                as_uint8(image), contours, -1, (255 * colors[i]).tolist(), 1
+            )
+        )
     return (image * 255).astype(np.uint8)
