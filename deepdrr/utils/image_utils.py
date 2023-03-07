@@ -218,44 +218,26 @@ def blend_heatmaps(
 
     """
     image = as_float32(image)
-    heatmaps = heatmaps.transpose(2, 0, 1)
-    colors = np.array(sns.color_palette(palette, heatmaps.shape[0]))
+    if image.min() < 0 or image.max() > 1:
+        log.error(
+            f"image min: {image.min()}, max: {image.max()}. Expected in range [0, 1]"
+        )
+    num_heatmaps = heatmaps.shape[2]
+    colors = np.array(sns.color_palette(palette, num_heatmaps))
     if seed is not None:
         np.random.seed(seed)
-    colors = colors[np.random.permutation(colors.shape[0])]
-    image *= 1 - alpha
-    for i, h in enumerate(heatmaps):
-        threshold = heatmap_utils.get_threshold(h)
-        bool_mask = h > threshold
-        image[bool_mask] = colors[i] * alpha + image[bool_mask] * (1 - alpha)
+    colors = colors[np.random.permutation(colors.shape[0])]  # (num_heatmaps, 3)
+    combined_heatmap = (
+        heatmaps[:, :, :, None] * colors[None, None, :, :]
+    )  # (H, W, num_heatmaps, 3)
+    combined_heatmap = np.max(combined_heatmap, axis=2)  # (H, W, 3)
+    hmin = np.min(combined_heatmap)
+    hmax = np.max(combined_heatmap)
+    combined_heatmap = (combined_heatmap - hmin) / (hmax - hmin + 1e-8)
 
-        contours, _ = cv2.findContours(
-            bool_mask.astype(np.uint8), cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE
-        )
-        image = as_float32(
-            cv2.drawContours(
-                as_uint8(image), contours, -1, (255 * colors[i]).tolist(), 1
-            )
-        )
+    # Blend the heatmaps with the image using alpha blending
+    image = image * (1 - alpha) + combined_heatmap * alpha
     return (image * 255).astype(np.uint8)
-
-    # color = np.array(color, dtype=np.float32)
-    # if np.any(color > 1):
-    #     color = color / 255
-    # color = color[:3]
-
-    # image = ensure_cdim(as_float32(image), 3)
-    # heatmaps = as_float32(heatmaps)
-    # if heatmaps.ndim == 2:
-    #     heatmaps = heatmaps[:, :, np.newaxis]
-    # elif heatmaps.ndim == 3:
-    #     heatmaps = heatmaps.sum(axis=2, keepdims=True)
-    # else:
-    #     raise ValueError(f"bad heatmaps shape: {heatmaps.shape}")
-
-    # return as_uint8(
-    #     (1 - alpha) * image + alpha * heatmaps * color[np.newaxis, np.newaxis, :]
-    # )
 
 
 def draw_masks(
