@@ -1060,6 +1060,7 @@ class Volume(object):
         node_centered: bool = True,
         smooth: bool = True,
         decimation: float = 0.01,
+        decimation_points: Optional[int] = None,
         smooth_iter: int = 30,
         relaxation_factor: float = 0.25,
         convert_to_LPS: bool = False,
@@ -1096,6 +1097,9 @@ class Volume(object):
 
         if self.anatomical_coordinate_system == "RAS" and convert_to_LPS:
             surface.transform(geo.get_data(geo.RAS_from_LPS), inplace=True)
+
+        if decimation_points is not None and surface.n_points > decimation_points:
+            surface = surface.decimate(1 - decimation_points / surface.n_points)
 
         return surface
 

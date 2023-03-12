@@ -1,4 +1,5 @@
 from datetime import datetime
+from typing import List
 import logging
 import numpy as np
 from PIL import Image
@@ -167,7 +168,7 @@ def draw_segment(
 def draw_circles(
     image: np.ndarray,
     circles: np.ndarray,
-    color: list[int] = [255, 0, 0],
+    color: List[int] = [255, 0, 0],
     thickness: int = 2,
     radius: Optional[int] = None,
 ) -> np.ndarray:

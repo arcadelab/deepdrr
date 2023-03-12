@@ -132,7 +132,7 @@ def save_fcsv(
         file.writelines(lines)
 
 
-def load_fcsv(path: str) -> Tuple[np.ndarray, np.ndarray[str]]:
+def load_fcsv(path: str) -> Tuple[np.ndarray, np.ndarray]:
     """Load a fcsv file.
 
     Args:

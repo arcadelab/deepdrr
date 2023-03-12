@@ -5,7 +5,7 @@ import PIL.Image as Image
 import numpy as np
 import os
 import logging
-from typing import Optional, TypeVar, Any, Tuple, Union, List, overload
+from typing import Optional, TypeVar, Any, Tuple, Union, List, overload, Dict
 import math
 
 from .data_utils import jsonable
@@ -127,12 +127,12 @@ def radians(t: np.ndarray, degrees: bool) -> np.ndarray:
 
 
 @overload
-def radians(ts: list[T], degrees: bool) -> list[T]:
+def radians(ts: List[T], degrees: bool) -> List[T]:
     ...
 
 
 @overload
-def radians(ts: dict[S, T], degrees: bool) -> dict[S, T]:
+def radians(ts: Dict[S, T], degrees: bool) -> Dict[S, T]:
     ...
 
 
