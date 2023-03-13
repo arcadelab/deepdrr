@@ -8,6 +8,10 @@ from .. import geo
 class Device(ABC):
     """A parent class representing X-ray device interfaces in DeepDRR.
 
+    To implement a sub class, the following methods/attributes must be implemented:
+        - device_from_camera3d
+
+
     Attributes:
         sensor_height (int): the height of the sensor in pixels.
         sensor_width (int): the width of the sensor in pixels.
@@ -22,6 +26,16 @@ class Device(ABC):
     camera_intrinsics: geo.CameraIntrinsicTransform
     source_to_detector_distance: float
     world_from_device: geo.FrameTransform
+
+    @property
+    def detector_height(self) -> float:
+        """Height of the detector in mm."""
+        return self.sensor_height * self.pixel_size
+
+    @property
+    def detector_width(self) -> float:
+        """Width of the detector in mm."""
+        return self.sensor_width * self.pixel_size
 
     @property
     def device_from_world(self) -> geo.FrameTransform:
@@ -75,6 +89,21 @@ class Device(ABC):
         """
         return self.camera3d_from_device @ self.device_from_world
 
+    @property
+    def index_from_camera3d(self) -> geo.CameraProjection:
+        """Get the CameraIntrinsicTransform for the device's camera3d_from_index frame (in the current pose).
+
+        Returns:
+            CameraIntrinsicTransform: the "index_from_camera3d" frame transformation for the device.
+        """
+        return geo.CameraProjection(
+            self.camera_intrinsics, geo.FrameTransform.identity()
+        )
+
+    @property
+    def camera3d_from_index(self) -> geo.Transform:
+        return self.index_from_camera3d.inv
+
     def get_camera_projection(self) -> geo.CameraProjection:
         """Get the camera projection for the device in the current pose.
 
@@ -93,18 +122,29 @@ class Device(ABC):
         return self.get_camera_projection()
 
     @property
-    @abstractmethod
+    def world_from_index(self) -> geo.Transform:
+        """Get the world_from_index transform for the device in the current pose.
+
+        Returns:
+            Transform: the "world_from_index" transform for the device.
+        """
+        return self.index_from_world.inv
+
+    @property
     def principle_ray(self) -> geo.Vector3D:
         """Get the principle ray for the device in the current pose in the device frame.
 
         The principle ray is the direction of the ray that passes through the center of the
         image. It points from the source toward the detector.
 
+        By default, this is just the z axis, but this can be overridden by sub classes.
+
         Returns:
             Vector3D: the principle ray for the device as a unit vector.
 
         """
-        pass
+        principle_ray_in_camera3d = geo.v(0, 0, 1)
+        return self.device_from_camera3d @ principle_ray_in_camera3d
 
     @property
     def principle_ray_in_world(self) -> geo.Vector3D:

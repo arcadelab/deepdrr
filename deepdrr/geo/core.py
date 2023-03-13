@@ -3,13 +3,13 @@
 
 """Homogeneous geometry library. 
 
-Copyright (c) 2021, Benjamin D. Killeen. MIT License.
+Copyright (c) 2022, Benjamin D. Killeen. MIT License.
 
 KNOWN ISSUES: 
 
 - When multiplying vectors by scalars it is safer to put the vector on the left. This is because
   your float or int may actually by a numpy scalar, in which case numpy will greedily convert the
-  vector (which has an __array__ methodz) to a numpy array, so the multiplication will return an
+  vector (which has an __array__ method) to a numpy array, so the multiplication will return an
   np.ndarray and not a geo.Vector. It will still be the *correct* result, just the wrong type (and
   no longer homogeneous).
 
@@ -17,10 +17,12 @@ KNOWN ISSUES:
 """
 
 from __future__ import annotations
+from pathlib import Path
 import traceback
 
 from typing import (
     Any,
+    Iterator,
     Union,
     Tuple,
     Optional,
@@ -35,57 +37,32 @@ from abc import ABC, abstractmethod
 from typing_extensions import Self
 import numpy as np
 import scipy.spatial.distance
+from scipy.spatial import cKDTree
 from scipy.spatial.transform import Rotation
+from copy import deepcopy
+import math
+import math
+
+from .utils import _array, _to_homogeneous, _from_homogeneous
+from .exceptions import MeetError, JoinError
+from .. import utils
 
 if TYPE_CHECKING:
-    from .camera_projection import CameraProjection
-
-from .exceptions import *
-
-PV = TypeVar("PV", bound="PointOrVector")
-P = TypeVar("P", bound="Point")
-V = TypeVar("V", bound="Vector")
-L = TypeVar("L", bound="Line")
-PL = TypeVar("PL", bound="Plane")
+    from ..vol import Volume
+    from .typing import P, V, R, S, L, Pl, PV, Pr
+    from .hyperplane import Plane, Line, Line2D, Line3D
+    from .segment import Segment, Segment2D, Segment3D
+    from .ray import Ray, Ray2D, Ray3D
 
 
 log = logging.getLogger(__name__)
 
 
-def _to_homogeneous(x: np.ndarray, is_point: bool = True) -> np.ndarray:
-    """Convert an array to homogeneous points or vectors.
-
-    Args:
-        x (np.ndarray): array with objects on the last axis.
-        is_point (bool, optional): if True, the array represents a point, otherwise it represents a vector. Defaults to True.
-
-    Returns:
-        np.ndarray: array containing the homogeneous point/vector(s).
-    """
-    if is_point:
-        return np.concatenate([x, np.ones_like(x[..., -1:])], axis=-1)
-    else:
-        return np.concatenate([x, np.zeros_like(x[..., -1:])], axis=-1)
-
-
-def _from_homogeneous(x: np.ndarray, is_point: bool = True) -> np.ndarray:
-    """Convert array containing homogeneous data to raw form.
-
-    Args:
-        x (np.ndarray): array containing homogenous
-        is_point (bool, optional): whether the objects are points (true) or vectors (False). Defaults to True.
-
-    Returns:
-        np.ndarray: the raw data representing the point/vector(s).
-    """
-    if is_point:
-        return (x / x[..., -1:])[..., :-1]
-    else:
-        assert np.all(np.isclose(x[..., -1], 0)), f"not a homogeneous vector: {x}"
-        return x[..., :-1]
-
-
 T = TypeVar("T")
+
+
+# TODO: make everything generic over the dimension of the space (2D or 3D).
+# Enables better type hints.
 
 
 class HomogeneousObject(ABC):
@@ -136,10 +113,13 @@ class HomogeneousObject(ABC):
         return np.array(self.data, *args, **kwargs)
 
     def __str__(self):
-        return f"{self.__class__.__name__[0]}{np.array_str(self.data, suppress_small=True)}"
+        if self.data.ndim < 2:
+            return f"{self.__class__.__name__[0]}{np.array_str(self.data, suppress_small=True)}"
+        else:
+            return f"{self.__class__.__name__[0]}(\n{np.array_str(self.data, suppress_small=True)}\n)"
 
     def __repr__(self):
-        if self.data.ndim == 1:
+        if self.data.ndim < 2:
             s = np.array_str(self.data, suppress_small=True)
             return f"{self.__class__.__name__}({s})"
         else:
@@ -163,6 +143,13 @@ class HomogeneousObject(ABC):
     @property
     def shape(self) -> Tuple[int, ...]:
         return self.data.shape
+
+    def get_config(self) -> dict:
+        """Get a config dict with the data in this object."""
+        return {"data": self.data.tolist()}
+
+    def copy(self) -> Self:
+        return self.__class__(**self.get_config())
 
 
 def get_data(x: Union[HomogeneousObject, List[HomogeneousObject]]) -> np.ndarray:
@@ -216,6 +203,128 @@ class Meetable(ABC):
 
         Returns:
             Primitive: the intersection of `self` and `other`.
+
+        Raises:
+            MeetError: if the objects cannot be intersected.
+        """
+        pass
+
+    def intersects(self, other: Meetable) -> bool:
+        """Check if two objects intersect.
+
+        Args:
+            other (Primitive): the other primitive.
+
+        Returns:
+            bool: True if the objects intersect, False otherwise.
+        """
+        try:
+            self.meet(other)
+            return True
+        except MeetError:
+            return False
+
+
+class HasLocation(Primitive):
+    @abstractmethod
+    def get_point(self) -> Point:
+        """Get the location of the object.
+
+        Returns:
+            Point: the location of the object.
+        """
+        pass
+
+
+class HasDirection(Primitive):
+    @abstractmethod
+    def get_direction(self) -> Vector:
+        """Get the direction associated with the object.
+
+        Returns:
+            Vector: the direction of the object.
+        """
+        pass
+
+    def angle(self, other: HasDirection) -> float:
+        """Get the angle between self and other in radians.
+
+        Args:
+            other (Vector): the other vector.
+
+        Returns:
+            float: the angle between self and other in radians.
+
+        """
+        v = self.get_direction()
+        w = other.get_direction()
+        num = v.dot(w)
+        den = v.norm() * w.norm()
+        cos_theta = num / den
+        if np.isclose(cos_theta, 1):
+            return 0
+        else:
+            return math.acos(cos_theta)
+
+    def rotfrom(self, other: HasDirection) -> FrameTransform:
+        """Get the rotation such that `self = self.rotfrom(other) @ other`.
+
+        NOTE: not tested with 2D vectors.
+
+        Args:
+            other (Vector): the vector to rotate to.
+
+        Returns:
+            FrameTransform: the rotation that rotates other to self.
+        """
+        u = self.get_direction()
+        w = other.get_direction()
+
+        v = w.cross(u)
+        if np.isclose(v.norm(), 0):
+            # TODO: edge case when parallel but in opposite directions?
+            return FrameTransform.identity(self.dim)
+        v = v.hat()
+        theta = self.angle(other)
+        rot = Rotation.from_rotvec(v * theta)
+        return FrameTransform.from_rotation(rot)
+
+    def cosine_distance(self, other: Vector) -> float:
+        """Get the cosine distance between the angles.
+
+        Args:
+            other (Vector): the other vector.
+
+        Returns:
+            float: `1 - cos(angle)`, where `angle` is between self and other.
+        """
+        return float(scipy.spatial.distance.cosine(np.array(self), np.array(other)))
+
+
+class HasLocationAndDirection(HasLocation, HasDirection):
+    @classmethod
+    @abstractmethod
+    def from_point_direction(cls, point: Point, direction: Vector) -> Self:
+        """Create an object from a point and a direction.
+
+        Args:
+            point (Point): the point.
+            direction (Vector): the direction.
+
+        Returns:
+            Self: the object.
+        """
+        pass
+
+
+class HasProjection(ABC):
+    @classmethod
+    @abstractmethod
+    def projection_type(cls) -> Type[Primitive]:
+        """Get the type of the projection of the object.
+
+        Returns:
+            Type[Primitive]: the type of the projection of the object.
         """
         pass
 
@@ -252,26 +361,30 @@ class PointOrVector(Primitive):
     def __div__(self, other: float) -> Self:
         return self * (1 / other)
 
+    def __truediv__(self, other: float) -> Self:
+        return self * (1 / other)
+
     @property
-    def x(self):
+    def x(self) -> float:
         return self.data[0]
 
     @property
-    def y(self):
+    def y(self) -> float:
         assert self.dim >= 2
-        return self.data[1]
+        return float(self.data[1])
 
     @property
-    def z(self):
+    def z(self) -> float:
         assert self.dim >= 3
-        return self.data[2]
+        return float(self.data[2])
 
     @property
-    def w(self):
-        return self.data[-1]
+    def w(self) -> float:
+        # Should always be 1 or 0.
+        return float(self.data[-1])
 
 
-class Point(PointOrVector, Joinable):
+class Point(PointOrVector, Joinable, HasLocation):
     def __init__(self, data: np.ndarray) -> None:
         assert not np.isclose(data[-1], 0), "cannot create a point with 0 for w"
         if data[-1] != 1:
@@ -293,7 +406,7 @@ class Point(PointOrVector, Joinable):
 
     @classmethod
     def from_any(
-        cls: Type[T],
+        cls: Type[Point],
         other: Union[np.ndarray, Point],
     ):
         """If other is not a point, make it one."""
@@ -347,7 +460,7 @@ class Point(PointOrVector, Joinable):
                 f"ambiguous subtraction of {self} and {other}. Can't determine if point or vector."
             )
         else:
-            raise TypeError(f"cannot subtract {type(other)} {other} from a point")
+            raise TypeError(f"cannot do {other} - {self}")
 
     def __rsub__(self, other):
         """Means other - self was called."""
@@ -409,8 +522,12 @@ class Point(PointOrVector, Joinable):
         """Get the vector with the same numerical representation as this point."""
         return vector(np.array(self))
 
+    def get_point(self: Self) -> Self:
+        """Get the point with the same numerical representation as this point."""
+        return self.copy()
 
-class Vector(PointOrVector):
+
+class Vector(PointOrVector, HasDirection):
     def __init__(self, data: np.ndarray) -> None:
         if np.isclose(data[-1], 0):
             data[-1] = 0
@@ -419,7 +536,7 @@ class Vector(PointOrVector):
 
     @classmethod
     def from_array(
-        cls: Type[T],
+        cls: Type[Vector],
         v: np.ndarray,
     ) -> T:
         v = np.array(v).astype(cls.dtype)
@@ -428,7 +545,7 @@ class Vector(PointOrVector):
 
     @classmethod
     def from_any(
-        cls: Type[T],
+        cls: Type[Vector],
         other: Union[np.ndarray, Vector],
     ):
         """If other is not a Vector, make it one."""
@@ -437,7 +554,9 @@ class Vector(PointOrVector):
     def __mul__(self, other: Union[int, float]) -> Self:
         """Vectors can be multiplied by scalars."""
         if isinstance(other, (int, float, np.number)) or np.isscalar(other):
-            return type(self)(float(other) * self.data)
+            data = self.data.copy()
+            data[:-1] *= float(other)
+            return type(self)(data)
         else:
             return NotImplemented
 
@@ -477,7 +596,8 @@ class Vector(PointOrVector):
     def normalized(self) -> Self:
         return self * (1 / self.norm())
 
-    hat = normalized
+    def hat(self) -> Self:
+        return self.normalized()
 
     def dot(self, other) -> float:
         if isinstance(other, Vector) and self.dim == other.dim:
@@ -486,10 +606,148 @@ class Vector(PointOrVector):
             return NotImplemented
 
     def cross(self, other: Vector) -> Vector3D:
-        if isinstance(other, Vector) and self.dim == other.dim:
-            return vector(np.cross(self, other))
+        if isinstance(self, Vector2D) and isinstance(other, Vector2D):
+            return vector(np.cross([self.x, self.y, 0], [other.x, other.y, 0]))
+        elif isinstance(self, Vector3D) and isinstance(other, Vector3D):
+            return vector(
+                np.cross([self.x, self.y, self.z], [other.x, other.y, other.z])
+            )
         else:
             raise TypeError(f"unrecognized type for cross product: {type(other)}")
+
+    def as_point(self) -> Point:
+        """Gets the point with the same numerical representation as this vector."""
+        return point(np.array(self))
+
+    def get_direction(self: Self) -> Self:
+        """Gets the vector with the same numerical representation as this vector."""
+        return self.copy()
+
+
+class Point2D(Point):
+    """Homogeneous point in 2D, represented as an array with [x, y, 1]"""
+
+    dim = 2
+
+    @overload
+    def join(self, other: Point2D) -> Line2D:
+        ...
+
+    @overload
+    def join(self, other: Line2D) -> Vector2D:
+        ...
+
+    def join(self, other):
+        if isinstance(other, Point2D):
+            # Avoids circular import
+            from .hyperplane import Line2D
+
+            return Line2D(np.cross(self.data, other.data))
+        elif isinstance(other, Line2D):
+            raise NotImplementedError("TODO: get vector from point to line")
+        else:
+            raise TypeError(f"unrecognized type for join: {type(other)}")
+
+    def backproject(self, index_from_world: CameraProjection) -> Line3D:
+        """Backproject this point into a line.
+
+        Args:
+            index_from_world (Transform): The transform from the world to the index.
+
+        Returns:
+            Line3D: The line in 3D space through the source of `index_from_world` and self.
+
+        """
+        s = index_from_world.get_center()
+        v = index_from_world.inv @ self
+        return s.join(s + v)
+
+
+class Vector2D(Vector):
+    """Homogeneous vector in 2D, represented as an array with [x, y, 0]"""
+
+    dim = 2
+
+    def perpendicular(self, random: bool = False) -> Vector2D:
+        """Find an arbitrary perpendicular vector to self.
+
+        Args:
+            random: Whether to randomize the vector's direction in
+                the perpendicular plane, drawing from [0, 2pi).
+                Defaults to False.
+
+        Returns:
+            Vector3D: A vector in 3D space, perpendicular
+                to the original.
+
+        """
+        # TODO: if the vector is 2D, return one of the other vectors in the plane, to keep it 2D.
+
+        v = vector(-self.y, self.x)
+        if random and np.random.rand() < 0.5:
+            v = -v
+        return v
+
+
+class Point3D(Point):
+    """Homogeneous point in 3D, represented as an array with [x, y, z, 1]"""
+
+    dim = 3
+
+    @classmethod
+    def projection_type(cls) -> Type[Point2D]:
+        return Point2D
+
+    @overload
+    def join(self, other: Point3D) -> Line3D:
+        ...
+
+    @overload
+    def join(self, other: Line3D) -> Plane:
+        ...
+
+    def join(self, other):
+        if isinstance(other, Point3D):
+            from .hyperplane import Line3D
+
+            # Line joining two points in P^3.
+            ax, ay, az, aw = self.data
+            bx, by, bz, bw = other.data
+            l = np.array(
+                [
+                    az * bw - aw * bz,  # p
+                    ay * bw - aw * by,  # q
+                    ay * bz - az * by,  # r
+                    ax * bw - aw * bx,  # s
+                    ax * bz - az * bx,  # t
+                    ax * by - ay * bx,  # u
+                ]
+            )
+            return Line3D(l)
+        elif isinstance(other, Line3D):
+            from .hyperplane import Plane
+
+            return Plane(self.data.T @ other.L)
+        elif isinstance(other, Plane):
+            raise NotImplementedError("TODO: get vector from point to plane")
+        else:
+            raise TypeError(f"unrecognized type for join: {type(other)}")
+
+
+class Vector3D(Vector):
+    """Homogeneous vector in 3D, represented as an array with [x, y, z, 0].
+
+    A 3d vector still cannot be projected by a camera, because it doesn't have a location.
+
+    """
+
+    dim = 3
+
+    def as_plane(self) -> Plane:
+        """Get the plane through the origin with this vector as its normal."""
+        from .hyperplane import Plane
+
+        return Plane(self.data)
 
     def perpendicular(self, random: bool = False) -> Vector3D:
         """Find an arbitrary perpendicular vector to self.
@@ -530,528 +788,37 @@ class Vector(PointOrVector):
 
         return v
 
-    def angle(self, other: Vector) -> float:
-        """Get the angle between self and other in radians."""
-        other = vector(other)
-        num = self.dot(other)
-        den = self.norm() * other.norm()
-        cos_theta = num / den
-        if np.isclose(cos_theta, 1):
-            return 0
-        else:
-            return np.arccos(cos_theta)
-
-    def rotation(self, other: Vector) -> FrameTransform:
-        """Get the rotation F such that `self || F @ other`.
-
-        NOTE: not tested with 2D vectors.
-
-        Args:
-            other (Vector): the vector to rotate to.
-
-        Returns:
-            FrameTransform: the rotation that rotates other to self.
-        """
+    def rotvec_to(self, other: Vector3D) -> Vector3D:
+        """Get the rotvec that rotates self to other."""
         v = self.cross(other)
         if np.isclose(v.norm(), 0):
-            return FrameTransform.identity(self.dim)
+            return vector([0, 0, 0])
         v = v.hat()
         theta = self.angle(other)
-        rot = Rotation.from_rotvec(v * theta)
-        return FrameTransform.from_rotation(rot)
+        return v * theta
 
-    def cosine_distance(self, other: Vector) -> float:
-        """Get the cosine distance between the angles.
-
-        Args:
-            other (Vector): the other vector.
-
-        Returns:
-            float: `1 - cos(angle)`, where `angle` is between self and other.
-        """
-        return float(scipy.spatial.distance.cosine(np.array(self), np.array(other)))
-
-    def as_point(self) -> Point:
-        """Gets the point with the same numerical representation as this vector."""
-        return point(np.array(self))
-
-
-class Point2D(Point):
-    """Homogeneous point in 2D, represented as an array with [x, y, 1]"""
-
-    dim = 2
-
-    @overload
-    def join(self, other: Point2D) -> Line2D:
-        ...
-
-    @overload
-    def join(self, other: Line2D) -> Vector2D:
-        ...
-
-    def join(self, other):
-        if isinstance(other, Point2D):
-            return Line2D(np.cross(self.data, other.data))
-        elif isinstance(other, Line2D):
-            raise NotImplementedError("TODO: get vector from point to line")
-        else:
-            raise TypeError(f"unrecognized type for join: {type(other)}")
-
-    def backproject(self, index_from_world: CameraProjection) -> Line3D:
-        """Backproject this point into a line.
+    def rotate(self, n: Vector3D, theta: Optional[float] = None) -> Vector3D:
+        """Rotate self by the given vector.
 
         Args:
-            index_from_world (Transform): The transform from the world to the index.
+            n (Vector): the axis of rotation. If theta is None, the magnitude of this vector is
+                used. Otherwise, it is ignored.
+            theta (float, optional): the angle of rotation. Defaults to None.
 
         Returns:
-            Line3D: The line in 3D space through the source of `index_from_world` and self.
-
+            Vector: the rotated vector.
         """
-        s = index_from_world.get_center()
-        v = index_from_world.inv @ self
-        return line(s, v)
+        if theta is None:
+            theta = n.norm()
 
+        if np.isclose(theta, 0):
+            return self
 
-class Vector2D(Vector):
-    """Homogeneous vector in 2D, represented as an array with [x, y, 0]"""
-
-    dim = 2
-
-
-class Point3D(Point):
-    """Homogeneous point in 3D, represented as an array with [x, y, z, 1]"""
-
-    dim = 3
-
-    @overload
-    def join(self, other: Point3D) -> Line3D:
-        ...
-
-    @overload
-    def join(self, other: Line3D) -> Plane:
-        ...
-
-    def join(self, other):
-        if isinstance(other, Point3D):
-            # Line joining two points in P^3.
-            ax, ay, az, aw = self.data
-            bx, by, bz, bw = other.data
-            l = np.array(
-                [
-                    az * bw - aw * bz,  # p
-                    ay * bw - aw * by,  # q
-                    ay * bz - az * by,  # r
-                    ax * bw - aw * bx,  # s
-                    ax * bz - az * bx,  # t
-                    ax * by - ay * bx,  # u
-                ]
-            )
-            return Line3D(l)
-        elif isinstance(other, Line3D):
-            return Plane(self.data.T @ other.L)
-        elif isinstance(other, Plane):
-            raise NotImplementedError("TODO: get vector from point to plane")
-        else:
-            raise TypeError(f"unrecognized type for join: {type(other)}")
-
-
-class Vector3D(Vector):
-    """Homogeneous vector in 3D, represented as an array with [x, y, z, 0]"""
-
-    dim = 3
-
-    def as_plane(self) -> Plane:
-        """Get the plane through the origin with this vector as its normal."""
-        return Plane(self.data)
-
-
-class HyperPlane(Primitive, Meetable):
-    """Represents a hyperplane in 2D (a line) or 3D (a plane).
-
-    Hyperplanes can be intersected with other hyperplanes or lower dimensional objects, but they are
-    not joinable.
-
-    """
-
-    def __init__(self, data: np.ndarray) -> None:
-        assert len(data) == self.dim + 1, f"data has shape {data.shape}"
-        super().__init__(data)
-
-    @property
-    def a(self) -> float:
-        """Get the coefficient of the first variable.
-
-        Returns:
-            float: The coefficient of the first variable.
-
-        """
-        return self.data[0]
-
-    @property
-    def b(self) -> float:
-        """Get the coefficient of the second variable.
-
-        Returns:
-            float: The coefficient of the second variable.
-
-        """
-        return self.data[1]
-
-    @property
-    def c(self) -> float:
-        """Get the coefficient of the third variable.
-
-        Returns:
-            float: The coefficient of the third variable.
-
-        """
-        return self.data[2]
-
-    @property
-    def d(self) -> float:
-        """Get the constant term.
-
-        Returns:
-            float: The constant term.
-
-        """
-        if self.dim < 3:
-            raise ValueError("2D lines have no constant term")
-        return self.data[3]
-
-
-class Line(Primitive, Meetable):
-    """Abstract parent class for lines."""
-
-    @abstractmethod
-    def get_direction(self) -> Vector:
-        """Get the direction of the line.
-
-        Returns:
-            Vector: The unit-length direction of the line.
-
-        """
-        pass
-
-    @abstractmethod
-    def get_point(self) -> Point:
-        """Get an arbitrary point on the line.
-
-        Returns:
-            Point: A point on the line.
-
-        """
-        pass
-
-    @overload
-    def project(self: Line2D, other: Point2D) -> Point2D:
-        ...
-
-    @overload
-    def project(self: Line3D, other: Point3D) -> Point3D:
-        ...
-
-    def project(self, other):
-        """Get the closest point on the line to another point.
-
-        Args:
-            other (Point): The point to which the closest point is sought.
-
-        Returns:
-            Point: The closest point on the line to the other point.
-
-        """
-        p = self.get_point()
-        v = self.get_direction()
-        other = point(other)
-        d = other - p
-        return p + v.dot(d) * v
-
-    def distance(self, other: Point) -> float:
-        """Get the distance from the line to another point.
-
-        Args:
-            other (Point): The point to which the distance is sought.
-
-        Returns:
-            float: The distance from the line to the other point.
-
-        """
-        p = self.get_point()
-        v = self.get_direction()
-        diff = other - p
-        return (diff - v.dot(diff) * v).norm()
-
-    def angle(self, other: Union[Line, Vector]) -> float:
-        """Get the acute angle between the two lines."""
-        assert other.dim == self.dim
-        d1 = self.get_direction()
-        if isinstance(other, Vector):
-            d2 = other
-        elif isinstance(other, Line):
-            d2 = other.get_direction()
-        else:
-            TypeError
-
-        if d1.dot(d2) < 0:
-            d2 = -d2
-        return d1.angle(d2)
-
-
-class Line2D(Line, HyperPlane):
-    """Represents a line in 2D.
-
-    Consists of a 3-vector :math:`\mathbf{p} = [a, b, c]` such that the line is all the points (x,y)
-    such that :math:`ax + by + c = 0` or, alternatively, all the homogeneous points
-    :math:`\mathbf{x} = [x,y,w]` such that :math:`p^T x = 0`.
-
-    """
-
-    dim = 2
-
-    @overload
-    def meet(self, other: Line2D) -> Point2D:
-        ...
-
-    def meet(self, other):
-        if isinstance(other, Line2D):
-            return Point2D(np.cross(self.data, other.data))
-        else:
-            raise TypeError(f"unrecognized type for meet: {type(other)}")
-
-    def backproject(self, index_from_world: CameraProjection) -> Plane:
-        """Get the plane containing all the points that `P` projects onto this line.
-
-        Args:
-            P (Transform): A so-called `index_from_world` projection transform.
-
-        Returns:
-            Plane:
-        """
-        assert index_from_world.shape == (3, 4), "P is not a projective transformation"
-        return Plane(index_from_world.data.T @ self.data)
-
-    def get_direction(self) -> Vector2D:
-        """Get the direction of the line.
-
-        Returns:
-            Vector2D: The unit-length direction of the line.
-
-        """
-        # If a x + b y + c = 0, then for all w,
-        # a (x + wb) + b (y - wa) + c = ax + awb + by - bwa + c = 0
-        return vector(self.b, -self.a).hat()
-
-    def get_point(self) -> Point:
-        """Get an arbitrary point on the line.
-
-        Returns:
-            Point: A point on the line.
-
-        """
-        return Point2D([0, -self.c / self.b, 1])
-
-
-class Plane(HyperPlane):
-    """Represents a plane in 3D"""
-
-    dim = 3
-
-    @classmethod
-    def from_point_normal(cls, r: Point3D, n: Vector3D):
-        """Make a plane from a point and a normal vector.
-
-        Args:
-            r (Point3D): The point on the plane.
-            n (Vector3D): The normal vector of the plane.
-
-        Returns:
-            Plane: The plane.
-        """
-        r = point(r)
-        n = vector(n)
-        a, b, c = n
-        d = -(a * r.x + b * r.y + c * r.z)
-        return cls(np.array([a, b, c, d]))
-
-    @classmethod
-    def from_points(cls, a: Point3D, b: Point3D, c: Point3D) -> None:
-        """Initialize the plane containing three points.
-
-        Args:
-            a (Point3D): a point on the plane.
-            b (Point3D): a point on the plane.
-            c (Point3D): a point on the plane.
-
-        Returns:
-            Plane: The plane.
-        """
-        a = point(a)
-        b = point(b)
-        c = point(c)
-
-        assert a.dim == 3 and b.dim == 3 and c.dim == 3, "points must be 3D"
-
-        return a.join(b).join(c)
-
-    @property
-    def normal(self) -> Vector3D:
-        return vector(self.data[:3])
-
-    @overload
-    def meet(self, other: Plane) -> Line3D:
-        ...
-
-    @overload
-    def meet(self, other: Line3D) -> Point3D:
-        ...
-
-    def meet(self, other):
-        if isinstance(other, Plane):
-            # Intersection of two planes in P^3.
-            a1, b1, c1, d1 = self.data
-            a2, b2, c2, d2 = other.data
-            l = np.array(
-                [
-                    -(a1 * b2 - a2 * b1),  # p
-                    a1 * c2 - a2 * c1,  # q
-                    -(a1 * d2 - a2 * d1),  # r
-                    -(b1 * c2 - b2 * c1),  # s
-                    b1 * d2 - b2 * d1,  # t
-                    -(c1 * d2 - c2 * d1),  # u
-                ]
-            )
-            return Line3D(l)
-        elif isinstance(other, Line3D):
-            p = other.K @ self
-            if np.all(np.isclose(p, 0)):
-                raise MeetError("Plane and line are parallel")
-            return Point3D(p)
-        else:
-            raise TypeError(f"unrecognized type for meet: {type(other)}")
-
-
-class Line3D(Line, Primitive, Joinable, Meetable):
-    """Represents a line in 3D as a 6-vector (p,q,r,s,t,u).
-
-    Based on https://dl.acm.org/doi/pdf/10.1145/965141.563900.
-
-    """
-
-    dim = 3
-
-    def __init__(self, data: np.ndarray) -> None:
-        assert data.shape == (6,)
-        # TODO: assert the necessary line conditions
-        super().__init__(data)
-
-    @classmethod
-    def from_primal(cls, lp: np.ndarray) -> Line3D:
-        assert lp.shape == (4, 4)
-        data = np.array([lp[0, 1], -lp[0, 2], lp[0, 3], lp[1, 2], -lp[1, 3], lp[2, 3]])
-        return cls(data)
-
-    @classmethod
-    def from_dual(cls, lk: np.ndarray) -> Line3D:
-        assert lk.shape == (4, 4)
-        data = np.array([lk[3, 2], lk[3, 1], lk[2, 1], lk[3, 0], lk[2, 0], lk[1, 0]])
-        return cls(data)
-
-    def primal(self) -> np.ndarray:
-        """Get the primal matrix of the line."""
-        p, q, r, s, t, u = self.data
-
-        return np.array(
-            [
-                [0, p, -q, r],
-                [-p, 0, s, -t],
-                [q, -s, 0, u],
-                [-r, t, -u, 0],
-            ]
-        )
-
-    @property
-    def L(self) -> np.ndarray:
-        """Get the primal matrix of the line."""
-        return self.primal()
-
-    def dual(self) -> np.ndarray:
-        """Get the dual form of the line."""
-        p, q, r, s, t, u = self
-
-        return np.array(
-            [
-                [0, -u, -t, -s],
-                [u, 0, -r, -q],
-                [t, r, 0, -p],
-                [s, q, p, 0],
-            ]
-        )
-
-    @property
-    def K(self) -> np.ndarray:
-        """Get the dual form of the line."""
-        return self.dual()
-
-    @property
-    def p(self) -> float:
-        """Get the first parameter of the line."""
-        return self.data[0]
-
-    @property
-    def q(self) -> float:
-        """Get the second parameter of the line."""
-        return self.data[1]
-
-    @property
-    def r(self) -> float:
-        """Get the third parameter of the line."""
-        return self.data[2]
-
-    @property
-    def s(self) -> float:
-        """Get the fourth parameter of the line."""
-        return self.data[3]
-
-    @property
-    def t(self) -> float:
-        """Get the fifth parameter of the line."""
-        return self.data[4]
-
-    @property
-    def u(self) -> float:
-        """Get the sixth parameter of the line."""
-        return self.data[5]
-
-    def join(self, other: Point3D) -> Plane:
-        return other.join(self)
-
-    def meet(self, other: Plane) -> Point3D:
-        return other.meet(self)
-
-    def get_direction(self) -> Vector3D:
-        """Get the direction of the line."""
-        d = vector(self.s, self.q, self.p)
-        return d.hat()
-
-    def get_point(self) -> Point3D:
-        """Get a point on the line."""
-        d = self.get_direction()
-        return d.as_plane().meet(self)
+        rot = Rotation.from_rotvec(n.hat() * theta)
+        return vector(rot.apply(self))
 
 
 ### convenience functions for instantiating primitive objects ###
-
-
-def _array(x: Union[List[np.ndarray], List[float]]) -> np.ndarray:
-    # TODO: this is a little sketchy
-    if len(x) == 1:
-        return np.array(x[0])
-    else:
-        if isinstance(x[0], np.ndarray):
-            log.warning(f"got unusual args for array: {x}")
-            traceback.print_stack()
-        return np.array(x)
 
 
 @overload
@@ -1085,6 +852,11 @@ def point(x: np.ndarray) -> Point:
 
 
 @overload
+def point(x: HasLocation) -> Point:
+    ...
+
+
+@overload
 def point(*args: Any) -> Point:
     ...
 
@@ -1107,6 +879,15 @@ def point(*args):
     """
     if len(args) == 1 and isinstance(args[0], Point):
         return args[0]
+    elif len(args) == 1 and isinstance(args[0], HasLocation):
+        return args[0].get_point()
+    elif len(args) == 1 and isinstance(args[0], dict) and "data" in args[0]:
+        if len(args[0]["data"]) == 3:
+            return Point2D(args[0]["data"])
+        elif len(args[0]["data"]) == 4:
+            return Point3D(args[0]["data"])
+        else:
+            raise ValueError(f"invalid data for point: {args[0]['data']}")
 
     x = _array(args)
     if x.shape == (2,):
@@ -1148,6 +929,11 @@ def vector(x: np.ndarray) -> Vector:
 
 
 @overload
+def vector(v: HasDirection) -> Vector:
+    ...
+
+
+@overload
 def vector(*args: Any) -> Vector:
     ...
 
@@ -1172,6 +958,15 @@ def vector(*args):
     """
     if len(args) == 1 and isinstance(args[0], Vector):
         return args[0]
+    elif len(args) == 1 and isinstance(args[0], HasDirection):
+        return args[0].get_direction()
+    elif len(args) == 1 and isinstance(args[0], dict) and "data" in args[0]:
+        if len(args[0]["data"]) == 3:
+            return Vector2D(args[0]["data"])
+        elif len(args[0]["data"]) == 4:
+            return Vector3D(args[0]["data"])
+        else:
+            raise ValueError(f"invalid data for vector: {args[0]['data']}")
 
     v = _array(args)
     if v.shape == (2,):
@@ -1180,144 +975,6 @@ def vector(*args):
         return Vector3D.from_array(v)
     else:
         raise ValueError(f"invalid data for vector: {v}")
-
-
-@overload
-def line(l: Line2D) -> Line2D:
-    ...
-
-
-@overload
-def line(l: Line3D) -> Line3D:
-    ...
-
-
-@overload
-def line(a: float, b: float, c: float) -> Line2D:
-    ...
-
-
-@overload
-def line(l: np.ndarray) -> Line:
-    ...
-
-
-@overload
-def line(p: float, q: float, r: float, s: float, t: float, u: float) -> Line3D:
-    ...
-
-
-@overload
-def line(x: Point2D, y: Point2D) -> Line2D:
-    ...
-
-
-@overload
-def line(x: Point3D, y: Point3D) -> Line3D:
-    ...
-
-
-@overload
-def line(a: Plane, b: Plane) -> Line3D:
-    ...
-
-
-@overload
-def line(x: Point2D, v: Vector2D) -> Line2D:
-    ...
-
-
-@overload
-def line(x: Point3D, v: Vector3D) -> Line3D:
-    ...
-
-
-@overload
-def line(*args: Any) -> Line:
-    ...
-
-
-def line(*args):
-    """The preferred method for creating a line.
-
-    Can create a line using one of the following methods:
-    - Pass the coordinates as separate arguments. For instance, `line(1, 2, 3)` returns the 2D homogeneous line `1x + 2y + 3 = 0`.
-    - Pass a numpy array with the homogeneous coordinates (NOTE THE DIFFERENCE WITH `point` and `vector`).
-    - Pass a Line2D or Line3D instance, in which case `line()` is a no-op.
-    - Pass two points of the same dimension, in which case `line()` returns the line through the points.
-    - Pass two planes, in which case `line()` returns the line of intersection of the planes.
-
-    """
-
-    if len(args) == 1 and isinstance(args[0], Line):
-        return args[0]
-    elif len(args) == 2 and isinstance(args[0], Point) and isinstance(args[1], Point):
-        return args[0].join(args[1])
-    elif len(args) == 2 and isinstance(args[0], Plane) and isinstance(args[1], Plane):
-        return args[0].meet(args[1])
-    elif len(args) == 2 and isinstance(args[0], Point) and isinstance(args[1], Vector):
-        x: Point = args[0]
-        v: Vector = args[1]
-        return x.join(x + v)
-
-    l = _array(args)
-    if l.shape == (3,):
-        return Line2D(l)
-    elif l.shape == (6,):
-        return Line3D(l)
-    elif l.shape == (4, 4):
-        raise ValueError(
-            f"cannot create line from matrix form. Use Line3D.from_dual() or Line3D.from_primal() instead."
-        )
-    else:
-        raise ValueError(f"invalid data for line: {l}")
-
-
-@overload
-def plane(p: Plane) -> Plane:
-    ...
-
-
-@overload
-def plane(a: float, b: float, c: float, d: float) -> Plane:
-    ...
-
-
-@overload
-def plane(x: np.ndarray) -> Plane:
-    ...
-
-
-@overload
-def plane(r: Point3D, n: Vector3D) -> Plane:
-    ...
-
-
-def plane(*args):
-    """The preferred method for creating a plane.
-
-    Can create a plane using one of the following methods:
-    - Pass the coordinates as separate arguments. For instance, `plane(1, 2, 3, 4)` returns the 2D homogeneous plane `1x + 2y + 3z + 4 = 0`.
-    - Pass a numpy array with the homogeneous coordinates.
-    - Pass a Plane instance, in which case `plane()` is a no-op.
-    - Pass a Point3D and Vector3D instance, in which case `plane(r, n)` returns the plane corresponding to
-    """
-    if len(args) == 1 and isinstance(args[0], Plane):
-        return args[0]
-    elif (
-        len(args) == 2
-        and isinstance(args[0], Point3D)
-        and isinstance(args[1], Vector3D)
-    ):
-        r: Point3D = args[0]
-        n: Vector3D = args[1]
-        return Plane.from_point_normal(r, n)
-
-    p = _array(args)
-    if p.shape == (4,):
-        return Plane(p)
-    else:
-        raise ValueError(f"invalid data for plane: {p}")
 
 
 def _point_or_vector(data: np.ndarray):
@@ -1330,10 +987,12 @@ def _point_or_vector(data: np.ndarray):
 
 
 ### aliases ###
-p = point
-v = vector
-l = line
-pl = plane
+def p(*args):
+    return point(*args)
+
+
+def v(*args):
+    return vector(*args)
 
 
 """
@@ -1367,7 +1026,7 @@ class Transform(HomogeneousObject):
             np.ndarray: the non-homogeneous array
         """
 
-        return np.array(self.data[:-1, :], *args, **kwargs)
+        return np.array(self.data, *args, **kwargs)
 
     @classmethod
     def from_array(cls, array: np.ndarray) -> Transform:
@@ -1381,9 +1040,9 @@ class Transform(HomogeneousObject):
         Returns:
             Transform: the transform.
         """
-        data = np.concatenate(
-            [array, np.array([0 for _ in range(array.shape[1] - 1)] + [1])], axis=0
-        )
+        bottom_row = np.zeros((1, array.shape[1]))
+        bottom_row[0, -1] = 1
+        data = np.concatenate([array, bottom_row], axis=0)
         return cls(data)
 
     @overload
@@ -1395,19 +1054,57 @@ class Transform(HomogeneousObject):
         ...
 
     @overload
+    def __matmul__(self: FrameTransform, other: List[Pr]) -> List[Pr]:
+        ...
+
+    @overload
+    def __matmul__(self: FrameTransform, other: L) -> L:
+        ...
+
+    @overload
+    def __matmul__(self: FrameTransform, other: R) -> R:
+        ...
+
+    @overload
+    def __matmul__(self: FrameTransform, other: S) -> S:
+        ...
+
+    @overload
+    def __matmul__(self: FrameTransform, other: Plane) -> Plane:
+        ...
+
+    @overload
+    def __matmul__(
+        self: FrameTransform, other: CameraIntrinsicTransform
+    ) -> CameraIntrinsicTransform:
+        ...
+
+    @overload
+    def __matmul__(self: FrameTransform, other: CameraProjection) -> CameraProjection:
+        ...
+
+    @overload
+    def __matmul__(self: CameraProjection, other: FrameTransform) -> CameraProjection:
+        ...
+
+    @overload
     def __matmul__(self: CameraProjection, other: Point3D) -> Point2D:
         ...
 
     @overload
-    def __matmul__(self: CameraProjection, other: Vector3D) -> Vector2D:
+    def __matmul__(self: CameraProjection, other: List[Point3D]) -> List[Point2D]:
         ...
 
     @overload
-    def __matmul__(self: CameraProjection, other: Line3D) -> Point2D:
+    def __matmul__(self: CameraProjection, other: Line3D) -> Line2D:
         ...
 
     @overload
-    def __matmul__(self: CameraProjection, other: Plane) -> Line2D:
+    def __matmul__(self: CameraProjection, other: Ray3D) -> Ray2D:
+        ...
+
+    @overload
+    def __matmul__(self: CameraProjection, other: Segment3D) -> Segment2D:
         ...
 
     @overload
@@ -1418,30 +1115,82 @@ class Transform(HomogeneousObject):
         self,
         other: Union[Transform, PointOrVector],
     ) -> Union[Transform, PointOrVector]:
-        if isinstance(other, PointOrVector):
+        def check_dim():
             assert (
                 self.input_dim == other.dim
-            ), f"dimensions must match between other ({other.dim}) and self ({self.input_dim})"
+            ), f"dimensions must match. Got {self.input_dim} and {other.dim}"
+
+        if isinstance(other, PointOrVector):
+            check_dim()
             out = self.data @ other.data
-            # log.debug(f"{self.shape} @ {other.shape} = {out.shape}")
-            # log.debug(f"out: {out}")
             return _point_or_vector(self.data @ other.data)
-        elif isinstance(other, Line2D):
-            raise NotImplementedError
-        elif isinstance(other, (Line2D, Line3D, Plane)):
-            raise NotImplementedError()
+        # elif isinstance(self, FrameTransform) and isinstance(other, Line2D):
+        #     check_dim()
+        #     l0, l1, l2 = other.data
+        #     r00, r01, r10, r11 = self.R.flat
+        #     p0, p1 = self.t
+        #     l0_ = r11 * l0 - r10 * l1
+        #     l1_ = -r01 * l0 + r00 * l1
+        #     l2_ = np.linalg.det([[l0, l1, l2], [r00, r01, p0], [r10, r11, p1]])
+        #     return line(l0_, l1_, l2_)
+        elif isinstance(self, (FrameTransform, CameraProjection)) and isinstance(
+            other, list
+        ):
+            # TODO: handle fiducials elegantly, so the transform just affects their
+            # world_from_anatomical. It think we need to change the design so that matmul is
+            # implemented by the right side object as well, because this function is getting quite
+            # bulky.
+            return [self @ x for x in other]
+        elif isinstance(self, FrameTransform):
+            if isinstance(other, FrameTransform):
+                return FrameTransform(self.data @ other.data)
+            elif isinstance(other, HasLocationAndDirection):
+                p = other.get_point()
+                v = other.get_direction()
+                p_ = self @ p
+                v_ = self @ v
+                return type(other).from_point_direction(p_, v_)
+            elif isinstance(other, CameraIntrinsicTransform):
+                return CameraIntrinsicTransform(
+                    self.data @ other.data, other._sensor_height, other._sensor_width
+                )
+            elif isinstance(other, CameraProjection):
+                return CameraProjection(self @ other.intrinsic, other.extrinsic.copy())
+            elif isinstance(other, Primitive):
+                # Catches other primitives, which are parameterized by columns of points or vectors.
+                return type(other)(self.data @ other.data)
+            elif isinstance(other, Transform):
+                # if other is a Transform, then compose their inverses as well to store that.
+                check_dim()
+                _inv = other.inv.data @ self.inv.data
+                return Transform(self.data @ other.data, _inv=_inv)
+            else:
+                return NotImplemented
+        elif isinstance(self, CameraProjection):
+            if (
+                isinstance(other, HasProjection)
+                and isinstance(other, HasLocationAndDirection)
+                and issubclass(
+                    projection_type := type(other).projection_type(),
+                    HasLocationAndDirection,
+                )
+            ):
+                p = other.get_point()
+                v = other.get_direction()
+                q = p + v
+                p_ = self @ p
+                q_ = self @ q
+                v_ = q_ - p_
+                return projection_type.from_point_direction(p_, v_)
+            elif isinstance(other, FrameTransform):
+                return CameraProjection(self.intrinsic.copy(), self.extrinsic @ other)
+            else:
+                return NotImplemented
         elif isinstance(other, Transform):
             # if other is a Transform, then compose their inverses as well to store that.
-            assert (
-                self.input_dim == other.dim
-            ), f"dimensions must match between other ({other.dim}) and self ({self.input_dim})"
+            check_dim()
             _inv = other.inv.data @ self.inv.data
-
-            if isinstance(self, FrameTransform) and isinstance(other, FrameTransform):
-                # very common case of composing FrameTransforms.
-                return FrameTransform(self.data @ other.data)
-            else:
-                return Transform(self.data @ other.data, _inv=_inv)
+            return Transform(self.data @ other.data, _inv=_inv)
         else:
             return NotImplemented
 
@@ -1462,7 +1211,7 @@ class Transform(HomogeneousObject):
         return self @ other
 
     @property
-    def inv(self) -> Transform:
+    def inv(self) -> Self:
         """Get the inverse of the Transform.
 
         Returns:
@@ -1478,7 +1227,15 @@ class Transform(HomogeneousObject):
 
         return Transform(self._inv, _inv=self.data)
 
-    def inverse(self) -> Transform:
+    @overload
+    def inverse(self: FrameTransform) -> FrameTransform:
+        ...
+
+    @overload
+    def inverse(self: Transform) -> Transform:
+        ...
+
+    def inverse(self):
         """Get the inverse of the Transform.
 
         Returns:
@@ -1502,18 +1259,20 @@ class Transform(HomogeneousObject):
         if self.shape != (3, 4):
             raise ValueError("transform must be a projection")
 
+        from .hyperplane import plane
+
         p1 = plane(self.data[0, :])
         p2 = plane(self.data[1, :])
         p3 = plane(self.data[2, :])
         return p1.meet(p2).meet(p3)
 
 
-class FrameTransform(Transform):
+class FrameTransform(Transform, HasLocation):
     def __init__(
         self,
         data: np.ndarray,  # the homogeneous frame transformation matrix
     ) -> None:
-        """Defines a rigid (affine) transformation from one frame to another.
+        """Defines an affine transformation from one frame to another.
 
         So that, for a point `x` in world-coordinates `F(x)` (or `F @ x`) is the same point in `F`'s
         coordinates. Note that if `x` is a numpy array, it is assumed to be a point.
@@ -1551,7 +1310,7 @@ class FrameTransform(Transform):
     def from_rt(
         cls,
         rotation: Optional[Union[Rotation, np.ndarray]] = None,
-        translation: Optional[Union[Point3D, np.ndarray]] = None,
+        translation: Optional[Union[Point3D, Vector3D, np.ndarray]] = None,
         dim: Optional[int] = None,
     ) -> FrameTransform:
         """Make a frame translation from a rotation and translation, as [R,t], where x' = Rx + t.
@@ -1566,8 +1325,11 @@ class FrameTransform(Transform):
         Returns:
             FrameTransform: The transformation `F` such that `F(x) = rotation @ x + translation`
         """
+        # Process weird rotation shapes
         if isinstance(rotation, Rotation):
             rotation = rotation.as_matrix()
+        elif isinstance(rotation, np.ndarray) and rotation.shape == (4,):
+            rotation = Rotation.from_quat(rotation).as_matrix()
 
         if rotation is not None:
             dim = np.array(rotation).shape[0]
@@ -1592,24 +1354,101 @@ class FrameTransform(Transform):
 
         return cls(data)
 
+    def save_txt(self, path: Union[str, Path]) -> None:
+        """Save the transform to a text file.
+
+        Args:
+            path (Union[str, Path]): path to save the transform to.
+
+        """
+
+        r = self.R.T.reshape(-1)
+        t = self.t.reshape(-1)
+        rt = (
+            np.array2string(
+                np.concatenate([r, t]),
+                separator=" ",
+                max_line_width=1000,
+                formatter={"float_kind": lambda x: "%.8f" % x},
+            )
+            .replace("[", "")
+            .replace("]", "")
+        )
+        content = f"""#Insight Transform File V1.0
+#Transform 0
+Transform: AffineTransform_double_3_3
+Parameters: {rt}
+FixedParameters: 0 0 0
+"""
+        with open(path, "w") as f:
+            f.write(content)
+
+    @classmethod
+    def load_txt(cls, path: Union[str, Path]) -> FrameTransform:
+        """Load a transform from a text file.
+
+        Args:
+            path (Union[str, Path]): path to load the transform from.
+
+        Returns:
+            FrameTransform: the loaded transform.
+
+        """
+        with open(path, "r") as f:
+            lines = f.readlines()
+
+        params = lines[3].split(":")[1].strip().split(" ")
+        params = np.array([float(p) for p in params])
+        dim = int(np.sqrt(len(params) - 1))
+        R = params[: dim**2].reshape((dim, dim))
+        t = params[dim**2 :]
+        return cls.from_rt(R, t, dim)
+
+    def save(self, path: Union[str, Path]) -> None:
+        """Save the transform to a file.
+
+        Args:
+            path (Union[str, Path]): path to save the transform to.
+
+        """
+        path = Path(path)
+        if path.suffix == ".txt":
+            self.save_txt(path)
+        else:
+            raise NotImplementedError(f"Invalid suffix {path.suffix}")
+
+    @classmethod
+    def load(cls, path: Union[str, Path]) -> None:
+        """Load the transform from a file.
+
+        Args:
+            path (Union[str, Path]): path to load the transform from.
+
+        """
+        path = Path(path)
+        if path.suffix == ".txt":
+            cls.load_txt(path)
+        else:
+            raise NotImplementedError(f"Invalid suffix {path.suffix}")
+
     @classmethod
     def from_scaling(
         cls: Type[FrameTransform],
-        scaling: Union[int, float, np.ndarray],
-        translation: Optional[Union[Point3D, np.ndarray]] = None,
+        scaling: Union[int, float],
+        dim: int = 3,
     ) -> FrameTransform:
-        """Create a frame based on scaling dimensions. Assumes dim = 3.
+        """Create a frame based on scaling dimensions uniformly.
 
         Args:
             cls (Type[FrameTransform]): the class.
-            scaling (Union[int, float, np.ndarray]): coefficient to scale by, or one for each dimension.
+            dim (int, optional): the dimension of the frame. Defaults to 3.
 
         Returns:
             FrameTransform:
         """
-        scaling = np.array(scaling) * np.ones(3)
-        translation = np.zeros(3) if translation is None else translation
-        return cls.from_rt(np.diag(scaling), translation)
+        F = np.eye(dim + 1)
+        F[dim, dim] = 1 / scaling
+        return cls(F)
 
     @classmethod
     def from_translation(
@@ -1709,6 +1548,45 @@ class FrameTransform(Transform):
         return cls.from_rt(rotation=R, translation=t)
 
     @classmethod
+    def from_points(
+        cls: Type[FrameTransform],
+        points_B: Union[List[Point3D], np.ndarray],
+        points_A: Union[List[Point3D], np.ndarray],
+        max_iterations: int = 1000,
+    ):
+        """Create a (rigid) frame transform from ICP between the two point clouds.
+
+        Args:
+            points_B: a list of M points in the B frame.
+            points_A: a list of N points in the A frame, corresponding to the same shape as `points_B`.
+
+        Returns:
+            FrameTransform: the `B_from_A` transform that minimizes the mean squared distance
+                between matching points.
+
+        """
+        points_B = np.array(points_B)
+        points_A = np.array(points_A)
+        prev_cost = np.inf
+        B_from_A = cls.identity(3)
+        tree_B = cKDTree(points_B)
+
+        # TODO: either generalize this to not require correspondence, or do `from_pointclouds`
+        for _ in range(max_iterations):
+            points_A_in_B = B_from_A.transform_points(points_A)
+
+            # [m_B, m_A]
+            distances, indices = tree_B.query(points_A_in_B, k=1)
+            cost = np.mean(distances)
+            log.debug(f"ICP cost: {cost}")
+            if np.isclose(cost, prev_cost):
+                break
+            prev_cost = cost
+            B_from_A = cls.from_point_correspondence(points_B[indices], points_A)
+
+        return B_from_A
+
+    @classmethod
     def from_line_segments(
         cls,
         x_B: Point3D,
@@ -1717,6 +1595,8 @@ class FrameTransform(Transform):
         y_A: Point3D,
     ) -> FrameTransform:
         """Get the `B_from_A` frame transform that aligns the line segments, given by endpoints.
+
+        Perfectly aligns the two line segments, so there is possibly some scaling.
 
         Args:
             x_B (Point3D): The first endpoint, in frame B.
@@ -1749,6 +1629,41 @@ class FrameTransform(Transform):
             @ cls.from_translation(-x_A.as_vector())
         )
 
+    @classmethod
+    def from_pd(
+        cls: Type[FrameTransform],
+        origin: Point3D,
+        direction: Vector3D,
+        axis: Union[str, Vector3D] = "z",
+    ) -> FrameTransform:
+        """Get the pose of the coordinate frame given its origin and direction of the given axis.
+
+        Args:
+            origin (Point3D): The origin of the frame.
+            direction (Vector3D): The direction of the axis.
+            axis (Union[str, Vector3D], optional): The axis to align with the direction. Defaults to "z".
+
+        """
+        ax = (
+            dict(x=vector(1, 0, 0), y=vector(0, 1, 0), z=vector(0, 0, 1))[axis.lower()]
+            if isinstance(axis, str)
+            else vector(axis)
+        )
+
+        rotvec = ax.cross(direction).hat()
+        rotvec = rotvec * ax.angle(direction)
+        rot = Rotation.from_rotvec(np.array(rotvec))
+        return cls.from_rt(rotation=rot, translation=origin)
+
+    @classmethod
+    def from_pointdir(
+        cls: Type[FrameTransform],
+        *args,
+        **kwargs,
+    ) -> FrameTransform:
+        """Alias for `from_pd`."""
+        return cls.from_pd(*args, **kwargs)
+
     @property
     def R(self):
         return self.data[0 : self.dim, 0 : self.dim]
@@ -1766,13 +1681,104 @@ class FrameTransform(Transform):
         self.data[0 : self.dim, self.dim] = t
 
     @property
+    def i(self) -> Vector:
+        return vector(self.data[0 : self.dim, 0])
+
+    @property
+    def j(self) -> Vector:
+        return vector(self.data[0 : self.dim, 1])
+
+    @property
+    def k(self) -> Vector:
+        return vector(self.data[0 : self.dim, 2])
+
+    @property
     def inv(self):
+        # This is necessary because we use FrameTransform to represent affine as well as rigid transforms.
+        # TODO: separate?
         R_inv = np.linalg.inv(self.R)
         return FrameTransform.from_rt(R_inv, -(R_inv @ self.t))
 
+    @property
+    def o(self):
+        """If this is the A_from_B transform, return the origin of frame B in frame A."""
+        return point(self.t)
+
+    def tostring(self):
+        formatter = {"float_kind": lambda x: "%.8f" % x}
+        lines = [
+            np.array2string(self.data[i], separator=" ", formatter=formatter)[1:-1]
+            for i in range(self.data.shape[0])
+        ]
+        return "\n".join(lines)
+
+    def transform_points(self, points: np.ndarray) -> np.ndarray:
+        """Transform a set of points.
+
+        Args:
+            points (np.ndarray): [N, D] array of nonhomogeneous points.
+
+        Returns:
+            np.ndarray: The transformed points.
+
+        """
+        return (self.R @ points.T).T + self.t
+
+    def toarray(self):
+        """Return the transform as a 3x4 numpy array.
+
+        This is different from calling np.array() on the transform, which returns a 4x4 array.
+
+        """
+        data = self.data[:-1, :] / self.data[-1, -1]
+        return data.astype(np.float32).copy()
+
+    def as_quatpos(self) -> np.ndarray:
+        """Return the transform as a quaternion and position.
+
+        Returns:
+            np.ndarray: A 7-element array, with the first 4 elements being the quaternion, and the last 3 being the position.
+
+        """
+        return np.array([*Rotation.from_matrix(self.R).as_quat(), *self.t])
+
+    @classmethod
+    def from_quatpos(cls, quatpos: np.ndarray) -> FrameTransform:
+        """Create a transform from a quaternion and position.
+
+        Args:
+            quatpos (np.ndarray): A 7-element array, with the first 4 elements being the quaternion, and the last 3 being the position.
+
+        Returns:
+            FrameTransform: The transform.
+
+        """
+        return cls.from_rt(
+            Rotation.from_quat(quatpos[:4]).as_matrix(),
+            quatpos[4:],
+        )
+
+    def get_point(self, point: Point) -> Point:
+        """Transform a point.
+
+        Args:
+            point (Point): The point to transform.
+
+        Returns:
+            Point: The transformed point.
+
+        """
+        return point(self.transform_points(point.as_vector()))
+
+
+class F(FrameTransform):
+    """Alias for FrameTransform."""
+
+    pass
+
 
 def frame_transform(*args) -> FrameTransform:
-    """Convenience function for creating a frame transform.
+    """Convenience function for creating a 3D frame transform.
 
     The output depends on how the function is called:
     frame_transform() -> 3D identity transform
@@ -1784,12 +1790,22 @@ def frame_transform(*args) -> FrameTransform:
     frame_transform(t: Point | np.ndarray[3]) -> FrameTransform.from_translation(t)
     frame_transform((R, t)) -> FrameTransform.from_rt(R, t)
     frame_transform(R, t) -> FrameTransform.from_rt(R, t)
+    frame_transform([a00, a10, a20, a01, a11, a21, a02, a12, a22, a03, a13, a23]) -> FrameTransform([
+        [a00, a01, a02, a03],
+        [a10, a11, a12, a13],
+        [a20, a21, a22, a23],
+        [0, 0, 0, 1]]
+    )
 
     R maybe be given as a (3,3) matrix or as a 9-vector. If provided as a 9-vector, column major order is assumed,
-    such that (a11, a21, a31, a12, a22, a32, a13, a23, a33) corresponds to
+    such that (a11, a21, a31, a12, a22, a32, a13, a23, a33) is the rotation matrix.
     [[a11, a12, a13],
      [a21, a22, a23],
      [a31, a32, a33]]
+
+    [R | t] may be given as a (12,) array-like, where the first 9 elements are the rotation in column major order,  and the last 3 are the translation.
+
+    If a string provided, it is converted to an array with whitespace separator.
 
     Returns:
         FrameTransform: [description]
@@ -1814,12 +1830,36 @@ def frame_transform(*args) -> FrameTransform:
                 return FrameTransform(a)
             elif a.shape == (3, 3):
                 return FrameTransform.from_rt(rotation=a)
+            elif a.shape == (3, 4):
+                return FrameTransform.from_array(a)
             elif a.shape == (3,) or a.shape == (1, 3):
                 return FrameTransform.from_rt(translation=a)
+            elif a.shape == (12,):
+                # ITK-style transform, column-major order
+                r = a[:9].reshape((3, 3)).T
+                t = a[9:].reshape((3,))
+                return FrameTransform.from_rt(r, t)
+            elif a.shape == (16,):
+                # Assumed to be row-major order
+                return FrameTransform(a.reshape((4, 4)))
+            elif a.shape == (7,):
+                # Quaternion position
+                return FrameTransform.from_quatpos(a)
             else:
                 raise TypeError(f"couldn't convert numpy array to FrameTransform: {a}")
-        elif isinstance(a, (tuple, list)) and len(a) == 2:
-            return frame_transform(a[0], a[1])
+        elif isinstance(a, (tuple, list)):
+            if len(a) == 2:
+                return frame_transform(a[0], a[1])
+            else:
+                return frame_transform(np.array(a))
+        elif isinstance(a, str):
+            return frame_transform(np.fromstring(a, sep=" "))
+        elif isinstance(a, dict) and "data" in a:
+            return frame_transform(a["data"])
+        elif isinstance(a, dict) and "R" in a and "t" in a:
+            return frame_transform(a["R"], a["t"])
+        elif isinstance(a, dict):
+            raise TypeError(f"couldn't convert dict to FrameTransform: {a}")
         else:
             raise TypeError(f"couldn't convert to FrameTransform: {a}")
     elif len(args) == 2:
@@ -1850,6 +1890,8 @@ def frame_transform(*args) -> FrameTransform:
         raise TypeError(f"too many arguments: {args}")
 
 
+f = frame_transform
+
 RAS_from_LPS = FrameTransform(
     np.array([[-1, 0, 0, 0], [0, -1, 0, 0], [0, 0, 1, 0], [0, 0, 0, 1]])
 )
@@ -1861,3 +1903,387 @@ cm_from_m = FrameTransform.from_scaling(1e2)
 m_from_cm = FrameTransform.from_scaling(1e-2)
 mm_from_cm = FrameTransform.from_scaling(1e1)
 cm_from_mm = FrameTransform.from_scaling(1e-1)
+
+# Slicer coordinates are annoying. You flip the Z axis and convert to meters.
+unity_from_slicer = frame_transform(
+    """
+1 0 0 0
+0 1 0 0
+0 0 -1 0
+0 0 0 1000
+"""
+)
+slicer_from_unity = unity_from_slicer.inv
+
+
+# TODO: reorganize geo so you have primitives.py and transforms.py. Have separate classes for each type of transform?
+
+
+class CameraIntrinsicTransform(FrameTransform):
+    dim: int = 2
+    input_dim: int = 2
+
+    """The intrinsic camera transform.
+    
+    It should be scaled such that the units of the matrix (including the focal length) are in pixels
+    """
+
+    def __init__(
+        self,
+        data: np.ndarray,
+        sensor_height: Optional[int] = None,
+        sensor_width: Optional[int] = None,
+    ) -> None:
+        super().__init__(data)
+        assert self.data.shape == (3, 3), f"unrecognized shape: {self.data.shape}"
+        self._sensor_height = sensor_height
+        self._sensor_width = sensor_width
+
+    def get_config(self):
+        return {
+            "data": self.data.tolist(),
+            "sensor_height": self.sensor_height,
+            "sensor_width": self.sensor_width,
+        }
+
+    @classmethod
+    def from_parameters(
+        cls,
+        optical_center: Point2D,
+        focal_length: Union[float, Tuple[float, float]] = 1,
+        shear: float = 0,
+        aspect_ratio: Optional[float] = None,
+    ) -> CameraIntrinsicTransform:
+        """The camera intrinsic matrix.
+
+        The intrinsic matrix is fundamentally a FrameTransform in 2D, namely `index_from_camera2d`.
+        It transforms to the index-space of the image (as mapped on the sensor)
+        from the index-space centered on the principle ray.
+
+        Note:
+            Focal lengths are usually measured in world units (e.g. millimeters.). This function handles the conversion.
+
+        Useful references include Szeliski's "Computer Vision"
+        - https://ksimek.github.io/2013/08/13/intrinsic/
+
+        Args:
+            optical_center (Point2D): the index-space point where the isocenter (or pinhole) is centered.
+            focal_length (Union[float, Tuple[float, float]]): the focal length in index units. Can be a tubple (f_x, f_y),
+                or a scalar used for both, or a scalar modified by aspect_ratio, in index units.
+            shear (float): the shear `s` of the camera.
+            aspect_ratio (Optional[float], optional): the aspect ratio `a` (for use with one focal length). If not provided, aspect
+                ratio is 1. Defaults to None.
+
+        Returns:
+            CameraIntrinsicTransform: The camera intrinsic matrix.
+
+        """
+        optical_center = point(optical_center)
+        assert optical_center.dim == 2, "center point not in 2D"
+
+        cx, cy = np.array(optical_center)
+
+        if aspect_ratio is None:
+            fx, fy = utils.tuplify(focal_length, 2)
+        else:
+            assert isinstance(
+                focal_length, (float, int)
+            ), "cannot use aspect ratio if both focal lengths provided"
+            fx, fy = (focal_length, aspect_ratio * focal_length)
+
+        data = np.array([[fx, shear, cx], [0, fy, cy], [0, 0, 1]]).astype(np.float32)
+
+        return cls(data)
+
+    @classmethod
+    def from_sizes(
+        cls,
+        sensor_size: Union[int, Tuple[int, int]],
+        pixel_size: Union[float, Tuple[float, float]],
+        source_to_detector_distance: float,
+    ) -> CameraIntrinsicTransform:
+        """Generate the camera from human-readable parameters.
+
+        This is the recommended way to create the camera. Note that although pixel_size and source_to_detector distance are measured in world units,
+        the camera intrinsic matrix contains no information about the world, as these are merely used to compute the focal length in pixels.
+
+        Args:
+            sensor_size (Union[float, Tuple[float, float]]): (width, height) of the sensor, or a single value for both, in pixels.
+            pixel_size (Union[float, Tuple[float, float]]): (width, height) of a pixel, or a single value for both, in world units (e.g. mm).
+            source_to_detector_distance (float): distance from source to detector in world units.
+
+        Returns:
+
+        """
+        sensor_size = utils.tuplify(sensor_size, 2)
+        pixel_size = utils.tuplify(pixel_size, 2)
+        fx = source_to_detector_distance / pixel_size[0]
+        fy = source_to_detector_distance / pixel_size[1]
+        optical_center = point(sensor_size[0] / 2, sensor_size[1] / 2)
+        return cls.from_parameters(optical_center=optical_center, focal_length=(fx, fy))
+
+    @property
+    def optical_center(self) -> Point2D:
+        return Point2D(self.data[:, 2])
+
+    @property
+    def cx(self) -> float:
+        return self.data[0, 2]
+
+    @property
+    def cy(self) -> float:
+        return self.data[1, 2]
+
+    @property
+    def fx(self) -> float:
+        return self.data[0, 0]
+
+    @property
+    def fy(self) -> float:
+        return self.data[1, 1]
+
+    @property
+    def aspect_ratio(self) -> float:
+        """Image aspect ratio."""
+        return self.fy / self.fx
+
+    @property
+    def focal_length(self) -> float:
+        """Focal length in the matrix units."""
+        return abs(self.fx)
+
+    @property
+    def sensor_width(self) -> int:
+        """Get the sensor width in the matrix units.
+
+        Assumes optical center is at the center of the sensor.
+
+        Based on the convention of origin in top left, with x pointing to the right and y pointing down.
+        """
+        if self._sensor_width is None:
+            return int(np.ceil(2 * self.data[0, 2]))
+        else:
+            return self._sensor_width
+
+    @sensor_width.setter
+    def sensor_width(self, value: int):
+        self._sensor_width = value
+
+    @property
+    def sensor_height(self) -> int:
+        """Get the sensor height in pixels.
+
+        Assumes optical center is at the center of the sensor.
+
+        Based on the convention of origin in top left, with x pointing to the right and y pointing down.
+        """
+        if self._sensor_height is None:
+            return int(np.ceil(2 * self.data[1, 2]))
+        else:
+            return self._sensor_height
+
+    @sensor_height.setter
+    def sensor_height(self, value: int):
+        self._sensor_height = value
+
+    @property
+    def sensor_size(self) -> Tuple[int, int]:
+        """Tuple with the (width, height) of the sense/image, in matrix units."""
+        return (self.sensor_width, self.sensor_height)
+
+
+class CameraProjection(Transform):
+    dim = 3
+    index_from_camera2d: CameraIntrinsicTransform
+    camera3d_from_world: FrameTransform
+
+    def __init__(
+        self,
+        intrinsic: Union[CameraIntrinsicTransform, np.ndarray],
+        extrinsic: Union[FrameTransform, np.ndarray],
+    ) -> None:
+        """A class for instantiating camera projections.
+
+        The object itself contains the "index_from_world" transform, or P = K[R|t].
+
+        A helpful resource for this is:
+        - http://wwwmayr.in.tum.de/konferenzen/MB-Jass2006/courses/1/slides/h-1-5.pdf
+            which specifically Taylors the discussion toward C arms.
+
+        TODO: RQ decomposition of projection matrix to get K, R, t as another constructor.
+
+        Args:
+            intrinsic (CameraIntrinsicTransform): the camera intrinsic matrix, or a mapping to 2D image index coordinates
+                from camera coordinates, i.e. index_from_camera2d, usually denoted as :math:`K`.
+            extrinsic (FrameTransform): the camera extrinsic matrix, or simply a FrameTransform to camera coordinates
+                 from world coordinates, i.e. camera3d_from_world, usually denoted :math:`[R | t]`.
+
+        """
+        self.index_from_camera2d = (
+            intrinsic
+            if isinstance(intrinsic, CameraIntrinsicTransform)
+            else CameraIntrinsicTransform(intrinsic)
+        )
+        self.camera3d_from_world = frame_transform(extrinsic)
+        index_from_world = self.index_from_camera3d @ self.camera3d_from_world
+
+        # TODO: adding _inv here causes the inverse projection to be different, WHY?
+        super().__init__(
+            get_data(index_from_world), _inv=get_data(index_from_world.inv)
+        )
+
+    def get_config(self) -> dict[str, Any]:
+        """Get the configuration of the camera projection.
+
+        Returns:
+            dict[str, Any]: the configuration of the camera projection.
+        """
+        return {
+            "intrinsic": self.index_from_camera2d,
+            "extrinsic": self.camera3d_from_world,
+        }
+
+    @property
+    def index_from_world(self) -> Transform:
+        return self
+
+    @classmethod
+    def from_krt(
+        cls, K: np.ndarray, R: np.ndarray, t: np.ndarray
+    ) -> "CameraProjection":
+        """Create a CameraProjection from a camera intrinsic matrix and extrinsic matrix.
+
+        Args:
+            K (np.ndarray): the camera intrinsic matrix.
+            R (np.ndarray): the camera extrinsic matrix.
+            t (np.ndarray): the camera extrinsic translation vector.
+
+        Returns:
+            CameraProjection: the camera projection.
+        """
+        return cls(intrinsic=K, extrinsic=FrameTransform.from_rt(K, R, t))
+
+    @classmethod
+    def from_rtk(
+        cls,
+        R: np.ndarray,
+        t: Point3D,
+        K: Union[CameraIntrinsicTransform, np.ndarray],
+    ):
+        return cls(intrinsic=K, extrinsic=FrameTransform.from_rt(R, t))
+
+    @property
+    def K(self):
+        return self.index_from_camera2d
+
+    @property
+    def R(self):
+        return self.camera3d_from_world.R
+
+    @property
+    def t(self):
+        return self.camera3d_from_world.t
+
+    @property
+    def intrinsic(self) -> CameraIntrinsicTransform:
+        return self.index_from_camera2d
+
+    @property
+    def extrinsic(self) -> FrameTransform:
+        return self.camera3d_from_world
+
+    @property
+    def index_from_camera3d(self) -> Transform:
+        proj = np.concatenate([np.eye(3), np.zeros((3, 1))], axis=1)
+        camera2d_from_camera3d = Transform(proj, _inv=proj.T)
+        return self.index_from_camera2d @ camera2d_from_camera3d
+
+    @property
+    def camera3d_from_index(self) -> Transform:
+        return self.index_from_camera3d.inv
+
+    @property
+    def world_from_index(self) -> Transform:
+        """Gets the world-space vector between the source in world and the given point in index space."""
+        return self.index_from_world.inv
+
+    @property
+    def world_from_index_on_image_plane(self) -> FrameTransform:
+        """Get the transform to points in world on the image (detector) plane from image indices.
+
+        The point input point should still be 3D, with a 0 in the z coordinate.
+
+        """
+        proj = np.array([[1, 0, 0], [0, 1, 0], [0, 0, 0], [0, 0, 1]])
+        proj = Transform(proj, _inv=proj.T)
+        index_from_world_3d = proj @ self.index_from_world
+        return FrameTransform(data=get_data(index_from_world_3d.inv))
+
+    @property
+    def sensor_width(self) -> int:
+        return self.intrinsic.sensor_width
+
+    @property
+    def sensor_height(self) -> int:
+        return self.intrinsic.sensor_height
+
+    @property
+    def world_from_camera3d(self) -> FrameTransform:
+        return self.camera3d_from_world.inv
+
+    @property
+    def principle_ray_in_world(self) -> Vector3D:
+        """Get the principle ray in world coordinates."""
+        return self.world_from_camera3d @ vector(0, 0, 1)
+
+    def get_center_in_world(self) -> Point3D:
+        """Get the center of the camera (origin of camera3d frame) in world coordinates.
+
+        That is, get the translation vector of the world_from_camera3d FrameTransform
+
+        This is comparable to the function get_camera_center() in DeepDRR.
+
+        Returns:
+            Point3D: the center of the camera in center.
+        """
+
+        # TODO: can also get the center from the intersection of three planes formed
+        # by self.data.
+
+        world_from_camera3d = self.camera3d_from_world.inv
+        return world_from_camera3d(point(0, 0, 0))
+
+    @property
+    def center_in_world(self) -> Point3D:
+        return self.get_center_in_world()
+
+    def get_center_in_volume(self, volume: Volume) -> Point3D:
+        """Get the camera center in IJK-space.
+
+        In original deepdrr, this is the `source_point` of `get_canonical_proj_matrix()`
+
+        Args:
+            volume (AnyVolume): the volume to get the camera center in.
+
+        Returns:
+            Point3D: the camera center in the volume's IJK-space.
+        """
+        return volume.ijk_from_world @ self.center_in_world
+
+    def get_ray_transform(self, volume: Volume) -> Transform:
+        """Get the ray transform for the camera, in IJK-space.
+
+        ijk_from_index transformation that goes from Point2D to Vector3D, with the vector in the
+        Point2D frame.
+
+        The ray transform takes a Point2D and converts it to a Vector3D. This is the vector in
+        the direction pointing between the camera center (or source) and a given index-space
+        point on the detector.
+
+        Args:
+            volume (AnyVolume): the volume to get get the ray transfrom through.
+
+        Returns:
+            Transform: the `ijk_from_index` transform.
+        """
+        return volume.ijk_from_world @ self.world_from_index

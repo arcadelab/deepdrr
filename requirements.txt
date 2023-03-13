@@ -10,6 +10,8 @@ pyvista
 pycuda
 pynrrd
 rich
+opencv-python
+seaborn
 
 # development requirements
 black # proper python style

@@ -8,6 +8,7 @@ from typing import Any, Dict, List, Optional, Tuple, Union
 import os
 import warnings
 
+import math
 import torch
 import numpy as np
 
@@ -37,6 +38,19 @@ try:
     from pycuda.compiler import SourceModule
 except ImportError:
     log.warning(f"Running without pycuda: projector operations will fail.")
+
+
+def import_pycuda():
+    """Import pycuda and return the context.
+
+    Returns:
+        pycuda.autoinit.context: The pycuda context.
+    """
+    if "pycuda" not in globals():
+        import pycuda.autoprimaryctx
+        import pycuda.driver as cuda
+        import pycuda.autoinit
+        import pycuda.compiler
 
 
 NUMBYTES_INT8 = 1
@@ -149,6 +163,8 @@ def _get_kernel_scatter_module(num_materials) -> SourceModule:
 
 
 class Projector(object):
+    volumes: List[vol.Volume]
+
     def __init__(
         self,
         volume: Union[vol.Volume, List[vol.Volume]],
@@ -168,6 +184,7 @@ class Projector(object):
         neglog: bool = True,
         intensity_upper_bound: Optional[float] = None,
         attenuate_outside_volume: bool = False,
+        source_to_detector_distance: float = -1,
         carm: Optional[Device] = None,
     ) -> None:
         """Create the projector, which has info for simulating the DRR.
@@ -199,8 +216,10 @@ class Projector(object):
             collected_energy (bool, optional): Whether to return data of "intensity" (energy deposited per photon, [keV]) or "collected energy" (energy deposited on pixel, [keV / mm^2]). Defaults to False ("intensity").
             neglog (bool, optional): whether to apply negative log transform to intensity images. If True, outputs are in range [0, 1]. Recommended for easy viewing. Defaults to False.
             intensity_upper_bound (float, optional): Maximum intensity, clipped before neglog, after noise and scatter. A good value is 40 keV / photon. Defaults to None.
+            source_to_detector_distance (float, optional): If `device` is not provided, this is the distance from the source to the detector. This limits the lenght rays are traced for. Defaults to -1 (no limit).
             carm (MobileCArm, optional): Deprecated alias for `device`. See `device`.
         """
+
         # set variables
         volume = utils.listify(volume)
         self.volumes = []
@@ -208,6 +227,9 @@ class Projector(object):
         for _vol in volume:
             assert isinstance(_vol, vol.Volume)
             self.volumes.append(_vol)
+
+        if len(self.volumes) > 20:
+            raise ValueError("Only up to 20 volumes are supported")
 
         if priorities is None:
             self.priorities = [
@@ -230,9 +252,12 @@ class Projector(object):
         else:
             self.device = device
 
+        self._camera_intrinsics = camera_intrinsics
+
         self.step = float(step)
         self.mode = mode
         self.spectrum = _get_spectrum(spectrum)
+        self._source_to_detector_distance = source_to_detector_distance
 
         if add_scatter is not None:
             log.warning("add_scatter is deprecated. Set scatter_num instead.")
@@ -309,6 +334,9 @@ class Projector(object):
         for mat in self.all_materials:
             assert mat in material_coefficients, f"unrecognized material: {mat}"
 
+        # initialized when arrays are allocated.
+        self.output_shape = None
+
         self.initialized = False
 
     @property
@@ -316,14 +344,14 @@ class Projector(object):
         if self.device is not None:
             return self.device.source_to_detector_distance
         else:
-            raise RuntimeError(
-                "No device provided. Set the device attribute by passing `device=<device>` to the constructor."
-            )
+            return self._source_to_detector_distance
 
     @property
     def camera_intrinsics(self) -> geo.CameraIntrinsicTransform:
         if self.device is not None:
             return self.device.camera_intrinsics
+        elif self._camera_intrinsics is not None:
+            return self._camera_intrinsics
         else:
             raise RuntimeError(
                 "No device provided. Set the device attribute by passing `device=<device>` to the constructor."
@@ -336,10 +364,6 @@ class Projector(object):
                 f"projector contains multiple volumes. Access them with `projector.volumes[i]`"
             )
         return self.volumes[0]
-
-    @property
-    def output_shape(self) -> Tuple[int, int]:
-        return self.camera_intrinsics.sensor_size
 
     @property
     def output_size(self) -> int:
@@ -372,6 +396,13 @@ class Projector(object):
             log.debug(
                 f"projecting with source at {camera_projections[0].center_in_world}, pointing in {self.device.principle_ray_in_world}..."
             )
+            max_ray_length = math.sqrt(
+                self.device.source_to_detector_distance**2
+                + self.device.detector_height**2
+                + self.device.detector_width**2
+            )
+        else:
+            max_ray_length = -1
 
         assert isinstance(self.spectrum, np.ndarray)
 
@@ -386,16 +417,20 @@ class Projector(object):
                 f"Projecting and attenuating camera position {i+1} / {len(camera_projections)}"
             )
 
+            # Only re-allocate if the output shape has changed.
+            self.initialize_output_arrays(proj.intrinsic.sensor_size)
+
             # Get the volume min/max points in world coordinates.
             sx, sy, sz = proj.get_center_in_world()
-            world_from_index = np.array(proj.world_from_index).astype(np.float32)
+            world_from_index = np.array(proj.world_from_index[:-1, :]).astype(
+                np.float32
+            )
             cuda.memcpy_htod(self.world_from_index_gpu, world_from_index)
 
             for vol_id, _vol in enumerate(self.volumes):
-                source_ijk = np.array(proj.get_center_in_volume(_vol)).astype(
-                    np.float32
-                )
-                log.debug(f"source point for volume #{vol_id}: {source_ijk}")
+                source_ijk = np.array(
+                    _vol.IJK_from_world @ proj.center_in_world
+                ).astype(np.float32)
                 cuda.memcpy_htod(
                     int(self.sourceX_gpu) + int(NUMBYTES_INT32 * vol_id),
                     np.array([source_ijk[0]]),
@@ -409,11 +444,12 @@ class Projector(object):
                     np.array([source_ijk[2]]),
                 )
 
-                ijk_from_world = np.array(_vol.ijk_from_world).astype(np.float32)
+                # TODO: prefer toarray() to get transform throughout
+                IJK_from_world = _vol.IJK_from_world.toarray()
                 cuda.memcpy_htod(
                     int(self.ijk_from_world_gpu)
-                    + (ijk_from_world.size * NUMBYTES_FLOAT32) * vol_id,
-                    ijk_from_world,
+                    + (IJK_from_world.size * NUMBYTES_FLOAT32) * vol_id,
+                    IJK_from_world,
                 )
 
             args = [
@@ -436,6 +472,7 @@ class Projector(object):
                 self.sourceX_gpu,  # sx_ijk
                 self.sourceY_gpu,  # sy_ijk
                 self.sourceZ_gpu,  # sz_ijk
+                np.float32(max_ray_length),  # max_ray_length
                 self.world_from_index_gpu,  # world_from_index
                 self.ijk_from_world_gpu,  # ijk_from_world
                 np.int32(self.spectrum.shape[0]),  # n_bins
@@ -484,14 +521,14 @@ class Projector(object):
                 f"projection #{i}: time elapsed after call to project_kernel: {project_tock - project_tick}"
             )
 
-            intensity = np.empty(self.output_shape, dtype=np.float32)
+            intensity = np.zeros(self.output_shape, dtype=np.float32)
             cuda.memcpy_dtoh(intensity, self.intensity_gpu)
             # transpose the axes, which previously have width on the slow dimension
             log.debug("copied intensity from gpu")
             intensity = np.swapaxes(intensity, 0, 1).copy()
             log.debug("swapped intensity")
 
-            photon_prob = np.empty(self.output_shape, dtype=np.float32)
+            photon_prob = np.zeros(self.output_shape, dtype=np.float32)
             cuda.memcpy_dtoh(photon_prob, self.photon_prob_gpu)
             log.debug("copied photon_prob")
             photon_prob = np.swapaxes(photon_prob, 0, 1).copy()
@@ -580,11 +617,11 @@ class Projector(object):
                     )
                     print(f"\t{corner}")
 
-                world_from_ijk_arr = np.array(self.megavol_ijk_from_world.inv)
+                world_from_ijk_arr = np.array(self.megavol_ijk_from_world.inv)[:-1]
                 cuda.memcpy_htod(self.world_from_ijk_gpu, world_from_ijk_arr)
                 # print(f"world_from_ijk_arr:\n{world_from_ijk_arr}")
 
-                ijk_from_world_arr = np.array(self.megavol_ijk_from_world)
+                ijk_from_world_arr = np.array(self.megavol_ijk_from_world)[:-1]
                 cuda.memcpy_htod(self.ijk_from_world_gpu, ijk_from_world_arr)
                 # print(f"ijk_from_world_arr:\n{ijk_from_world_arr}")
 
@@ -656,16 +693,16 @@ class Projector(object):
                         context.synchronize()
 
                 # Copy results from the GPU
-                scatter_intensity = np.empty(self.output_shape, dtype=np.float32)
+                scatter_intensity = np.zeros(self.output_shape, dtype=np.float32)
                 cuda.memcpy_dtoh(scatter_intensity, self.scatter_deposits_gpu)
                 scatter_intensity = np.swapaxes(scatter_intensity, 0, 1).copy()
                 # Here, scatter_intensity is just the recorded deposited_energy. Will need to adjust later
 
-                n_sc = np.empty(self.output_shape, dtype=np.int32)
+                n_sc = np.zeros(self.output_shape, dtype=np.int32)
                 cuda.memcpy_dtoh(n_sc, self.num_scattered_hits_gpu)
                 n_sc = np.swapaxes(n_sc, 0, 1).copy()
 
-                n_pri = np.empty(self.output_shape, dtype=np.int32)
+                n_pri = np.zeros(self.output_shape, dtype=np.int32)
                 cuda.memcpy_dtoh(n_pri, self.num_unscattered_hits_gpu)
                 n_pri = np.swapaxes(n_pri, 0, 1).copy()
 
@@ -715,7 +752,7 @@ class Projector(object):
             # transform to collected energy in keV per cm^2 (or keV per mm^2)
             if self.collected_energy:
                 assert np.int32(0) != self.solid_angle_gpu
-                solid_angle = np.empty(self.output_shape, dtype=np.float32)
+                solid_angle = np.zeros(self.output_shape, dtype=np.float32)
                 cuda.memcpy_dtoh(solid_angle, self.solid_angle_gpu)
                 solid_angle = np.swapaxes(solid_angle, 0, 1).copy()
 
@@ -781,13 +818,16 @@ class Projector(object):
         if self.device is None:
             raise RuntimeError("must provide carm device to projector")
 
+        if not isinstance(self.device, CArm):
+            raise TypeError("device must be a CArm")
+
         camera_projections = []
         phis, thetas = utils.generate_uniform_angles(phi_range, theta_range)
         for phi, theta in zip(phis, thetas):
             extrinsic = self.device.get_camera3d_from_world(
                 self.device.isocenter,
-                phi=phi,
-                theta=theta,
+                phi,
+                theta,
                 degrees=degrees,
             )
 
@@ -796,6 +836,48 @@ class Projector(object):
             )
 
         return self.project(*camera_projections)
+
+    def initialize_output_arrays(self, sensor_size: Tuple[int, int]) -> None:
+        """Allocate arrays dependent on the output size. Frees previously allocated arrays.
+
+        This may have to be called multiple times if the output size changes.
+
+        """
+        # TODO: only allocate if the size grows. Otherwise, reuse the existing arrays.
+
+        if self.initialized and self.output_shape == sensor_size:
+            return
+
+        if self.initialized:
+            self.intensity_gpu.free()
+            self.photon_prob_gpu.free()
+            if self.collected_energy:
+                self.solid_angle_gpu.free()
+
+        # Changes the output size as well
+        self.output_shape = sensor_size
+
+        # allocate intensity array on GPU (4 bytes to a float32)
+        self.intensity_gpu = cuda.mem_alloc(self.output_size * NUMBYTES_FLOAT32)
+        log.debug(
+            f"bytes alloc'd for {self.output_shape} self.intensity_gpu: {self.output_size * NUMBYTES_FLOAT32}"
+        )
+
+        # allocate photon_prob array on GPU (4 bytes to a float32)
+        self.photon_prob_gpu = cuda.mem_alloc(self.output_size * NUMBYTES_FLOAT32)
+        log.debug(
+            f"bytes alloc'd for {self.output_shape} self.photon_prob_gpu: {self.output_size * NUMBYTES_FLOAT32}"
+        )
+
+        # allocate solid_angle array on GPU as needed (4 bytes to a float32)
+        if self.collected_energy:
+            self.solid_angle_gpu = cuda.mem_alloc(self.output_size * NUMBYTES_FLOAT32)
+            log.debug(
+                f"bytes alloc'd for {self.output_shape} self.solid_angle_gpu: {self.output_size * NUMBYTES_FLOAT32}"
+            )
+        else:
+            # NULL. Don't need to do solid angle calculation
+            self.solid_angle_gpu = np.int32(0)
 
     def initialize(self):
         """Allocate GPU memory and transfer the volume, segmentations to GPU."""
@@ -928,7 +1010,7 @@ class Projector(object):
             f"time elapsed after intializing multivolume stuff: {init_tock - init_tick}"
         )
 
-        # allocate ijk_from_index matrix array on GPU (3x3 array x 4 bytes per float32)
+        # allocate world_from_index matrix array on GPU (3x3 array x 4 bytes per float32)
         self.world_from_index_gpu = cuda.mem_alloc(3 * 3 * NUMBYTES_FLOAT32)
 
         # allocate ijk_from_world for each volume.
@@ -936,27 +1018,8 @@ class Projector(object):
             len(self.volumes) * 3 * 4 * NUMBYTES_FLOAT32
         )
 
-        # allocate intensity array on GPU (4 bytes to a float32)
-        self.intensity_gpu = cuda.mem_alloc(self.output_size * NUMBYTES_FLOAT32)
-        log.debug(
-            f"bytes alloc'd for self.intensity_gpu: {self.output_size * NUMBYTES_FLOAT32}"
-        )
-
-        # allocate photon_prob array on GPU (4 bytes to a float32)
-        self.photon_prob_gpu = cuda.mem_alloc(self.output_size * NUMBYTES_FLOAT32)
-        log.debug(
-            f"bytes alloc'd for self.photon_prob_gpu: {self.output_size * NUMBYTES_FLOAT32}"
-        )
-
-        # allocate solid_angle array on GPU as needed (4 bytes to a float32)
-        if self.collected_energy:
-            self.solid_angle_gpu = cuda.mem_alloc(self.output_size * NUMBYTES_FLOAT32)
-            log.debug(
-                f"bytes alloc'd for self.solid_angle_gpu: {self.output_size * NUMBYTES_FLOAT32}"
-            )
-        else:
-            # NULL. Don't need to do solid angle calculation
-            self.solid_angle_gpu = np.int32(0)
+        # Initializes the output_shape as well.
+        self.initialize_output_arrays(self.camera_intrinsics.sensor_size)
 
         # allocate and transfer spectrum energies (4 bytes to a float32)
         assert isinstance(self.spectrum, np.ndarray)
@@ -977,7 +1040,7 @@ class Projector(object):
         log.debug(f"bytes alloc'd for self.pdf_gpu {n_bins * NUMBYTES_FLOAT32}")
 
         # precompute, allocate, and transfer the get_absorption_coef(energy, material) table (4 bytes to a float32)
-        absorption_coef_table = np.empty(n_bins * len(self.all_materials)).astype(
+        absorption_coef_table = np.zeros(n_bins * len(self.all_materials)).astype(
             np.float32
         )
         for bin in range(n_bins):  # , energy in enumerate(energies):
@@ -1091,9 +1154,13 @@ class Projector(object):
                 # We assume that megavol.world_from_anatomical is the identity transform
                 # We assume that the origin for the maegvol is voxel (0,0,0)
                 # Reference the Volume class for calculation of anatomical_from_ijk
-                megavol_world_from_ijk = geo.FrameTransform.from_scaling(
-                    scaling=self.megavol_spacing
-                )
+                log.warning("TODO: check from_scaling is correct")
+
+                f = np.eye(4)
+                f[0, 0] = self.megavol_spacing[0]
+                f[1, 1] = self.megavol_spacing[1]
+                f[2, 2] = self.megavol_spacing[2]
+                megavol_world_from_ijk = geo.FrameTransform(f)
                 self.megavol_ijk_from_world = megavol_world_from_ijk.inv
 
                 log.info(f"max_world_point: {max_world_point}")

@@ -1,4 +1,4 @@
-from typing import Optional, Any
+from typing import List, Optional, Any, Tuple
 import os
 import logging
 import numpy as np
@@ -8,7 +8,27 @@ import urllib
 import subprocess
 import json
 
-logger = logging.getLogger(__name__)
+log = logging.getLogger(__name__)
+
+
+def deepdrr_data_dir() -> Path:
+    """Get the data directory for DeepDRR.
+
+    The data directory is determined by the environment variable `DEEPDRR_DATA_DIR` if it exists.
+    Otherwise, it is `~/datasets/DeepDRR`. If the directory does not exist, it is created.
+
+    Returns:
+        Path: The data directory.
+    """
+    if os.environ.get("DEEPDRR_DATA_DIR") is not None:
+        root = Path(os.environ.get("DEEPDRR_DATA_DIR")).expanduser()
+    else:
+        root = Path.home() / "datasets" / "DeepDRR_DATA"
+
+    if not root.exists():
+        root.mkdir(parents=True)
+
+    return root
 
 
 def download(
@@ -30,14 +50,7 @@ def download(
     Returns:
         Path: The path of the downloaded file, or the extracted directory.
     """
-    if root is None and os.environ.get("DEEPDRR_DATA_DIR") is not None:
-        root = os.environ["DEEPDRR_DATA_DIR"]
-    elif root is None:
-        root = "~/datasets/DeepDRR_Data"
-
-    root = Path(root).expanduser()
-    if not root.exists():
-        root.mkdir(parents=True)
+    root = deepdrr_data_dir()
 
     if filename is None:
         filename = os.path.basename(url)
@@ -45,20 +58,20 @@ def download(
     try:
         download_url(url, root, filename=filename, md5=md5)
     except urllib.error.HTTPError:
-        logger.warning(f"Pretty download failed. Attempting with wget...")
+        log.warning(f"Pretty download failed. Attempting with wget...")
         subprocess.call(["wget", "-O", str(root / filename), url])
     except FileNotFoundError:
-        logger.warning(
+        log.warning(
             f"Download failed. Try installing wget. This is probably because you are on windows."
         )
         exit()
     except Exception as e:
-        logger.error(f"Download failed: {e}")
+        log.error(f"Download failed: {e}")
         exit()
 
     path = root / filename
     if extract_name is not None:
-        extract_archive(path, root / extract_name, remove_finished=True)
+        extract_archive(path, root, remove_finished=True)
         path = root / extract_name
 
     return path
@@ -93,7 +106,66 @@ def save_json(path: str, obj: Any):
         json.dump(obj, file, indent=4, sort_keys=True)
 
 
-def load_json(path: str):
+def load_json(path: str) -> Any:
     with open(path, "r") as file:
         out = json.load(file)
     return out
+
+
+def save_fcsv(
+    path: str,
+    points: np.ndarray,
+    names: Optional[List[str]] = None,
+    coordinate_system: str = "LPS",
+):
+    """Save a fcsv file.
+
+    Args:
+        path (str): The path to save the file to.
+        points (np.ndarray): The points to save. Shape: (N, 3)
+        names (List[str]): The names of the points. Shape: (N,)
+    """
+    if names is None:
+        names = ["" for i in range(len(points))]
+    assert points.shape[0] == len(names)
+    assert coordinate_system in ["LPS", "RAS"]
+    assert points.shape[1] == 3
+
+    with open(path, "w") as file:
+        file.write("# Markups fiducial file version = 5.0\n")
+        file.write(f"# CoordinateSystem = {coordinate_system}\n")
+        file.write(
+            f"# columns = id,x,y,z,ow,ox,oy,oz,vis,sel,lock,label,desc,associatedNodeID\n"
+        )
+        lines = []
+        for i, (point, name) in enumerate(zip(points, names)):
+            line = f"{i},{point[0]},{point[1]},{point[2]},0,0,0,1,1,1,1,{name},,\n"
+            lines.append(line)
+
+        file.writelines(lines)
+
+
+def load_fcsv(path: str) -> Tuple[np.ndarray, np.ndarray]:
+    """Load a fcsv file.
+
+    Args:
+        path (str): The path to the fcsv file.
+
+    Returns:
+        np.ndarray: The points. Shape: (N, 3)
+        np.ndarray: The names of the points. Shape: (N,)
+    """
+    with open(path, "r") as file:
+        lines = file.readlines()
+    points = []
+    names = []
+    for line in lines:
+        if line.startswith("#"):
+            continue
+        point = line.split(",")[1:4]
+        point = [float(p) for p in point]
+        points.append(point)
+        name = line.split(",")[11].strip()
+        names.append(name)
+    points = np.array(points)
+    return points, names
