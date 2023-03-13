@@ -5,7 +5,7 @@ with open("README.md", "r") as fh:
 
 setuptools.setup(
     name="deepdrr",
-    version="1.1.1a1",
+    version="1.1.1a2",
     author="Benjamin D. Killeen",
     author_email="killeen@jhu.edu",
     description="A Catalyst for Machine Learning in Fluoroscopy-guided Procedures.",
@@ -26,6 +26,7 @@ setuptools.setup(
         "pycuda",
         "rich",
         "opencv-python",
+        "seaborn",
     ],
     include_package_data=True,
     python_requires=">=3.7",
