@@ -1061,7 +1061,7 @@ class Volume(object):
         smooth: bool = True,
         decimation: float = 0.01,
         decimation_points: Optional[int] = None,
-        smooth_iter: int = 30,
+        smooth_iter: int = 200,
         relaxation_factor: float = 0.25,
         convert_to_LPS: bool = False,
     ) -> pv.PolyData:
@@ -1083,8 +1083,11 @@ class Volume(object):
         Returns:
             pv.PolyData: The surface mesh in anatomical coordinates.
         """
+        # Pad data with 0s to avoid open surfaces at the edges.
+        data = np.pad(self.data, 1, mode="constant", constant_values=0)
+
         surface = mesh_utils.isosurface(
-            self.data,
+            data,
             value=value,
             label=label,
             node_centered=node_centered,
@@ -1093,12 +1096,21 @@ class Volume(object):
             smooth_iter=smooth_iter,
             relaxation_factor=relaxation_factor,
         )
+        # Subtract 1 in all directions to remove pad
+        surface.transform(
+            np.array([[1, 0, 0, -1], [0, 1, 0, -1], [0, 0, 1, -1], [0, 0, 0, 1]]),
+            inplace=True,
+        )
+
+        # Convert to anatomical coordinates
         surface.transform(geo.get_data(self.anatomical_from_ijk), inplace=True)
 
         if self.anatomical_coordinate_system == "RAS" and convert_to_LPS:
+            # Convert to LPS
             surface.transform(geo.get_data(geo.RAS_from_LPS), inplace=True)
 
         if decimation_points is not None and surface.n_points > decimation_points:
+            # Decimate the surface to the desired number of points
             surface = surface.decimate(1 - decimation_points / surface.n_points)
 
         return surface
