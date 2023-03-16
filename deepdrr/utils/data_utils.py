@@ -11,6 +11,26 @@ import json
 log = logging.getLogger(__name__)
 
 
+def deepdrr_data_dir() -> Path:
+    """Get the data directory for DeepDRR.
+
+    The data directory is determined by the environment variable `DEEPDRR_DATA_DIR` if it exists.
+    Otherwise, it is `~/datasets/DeepDRR`. If the directory does not exist, it is created.
+
+    Returns:
+        Path: The data directory.
+    """
+    if os.environ.get("DEEPDRR_DATA_DIR") is not None:
+        root = Path(os.environ.get("DEEPDRR_DATA_DIR")).expanduser()
+    else:
+        root = Path.home() / "datasets" / "DeepDRR_DATA"
+
+    if not root.exists():
+        root.mkdir(parents=True)
+
+    return root
+
+
 def download(
     url: str,
     filename: Optional[str] = None,
@@ -30,14 +50,7 @@ def download(
     Returns:
         Path: The path of the downloaded file, or the extracted directory.
     """
-    if root is None and os.environ.get("DEEPDRR_DATA_DIR") is not None:
-        root = os.environ["DEEPDRR_DATA_DIR"]
-    elif root is None:
-        root = "~/datasets/DeepDRR_Data"
-
-    root = Path(root).expanduser()
-    if not root.exists():
-        root.mkdir(parents=True)
+    root = deepdrr_data_dir()
 
     if filename is None:
         filename = os.path.basename(url)
