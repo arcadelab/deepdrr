@@ -255,3 +255,38 @@ https://github.com/mattmacy/vnet.pytorch
 F. Milletari, N. Navab, S-A. Ahmadi. V-Net: Fully Convolutional Neural Networks for Volumetric Medical Image Segmentation. arXiv:160604797. 2016.
 
 We gratefully acknowledge the support of the NVIDIA Corporation with the donation of the GPUs used for this research.
+
+## Supplimentary materials
+scripts for virtual environment
+source project_env/bin/activate
+deactivate
+
+Convert the Prostate dataset into the correct format with
+nnUNet_convert_decathlon_task -i /xxx/Task05_Prostate
+Note that Task05_Prostate must be the folder that has the three 'imagesTr', 'labelsTr', 'imagesTs' subfolders!
+
+3D full resoltion U-Net:
+nnUNet_predict -i $nnUNet_raw_data_base/nnUNet_raw_data/Task003_Liver/imagesTs/ -o nnU_OUTPUT_Task03 -t 3 -m 3d_fullres
+! change needed for different cases.
+
+image processing python:
+https://github.com/fitushar/3D-Medical-Imaging-Preprocessing-All-you-need
+
+DECOM to NEFTI:
+/home/qiyuan/Downloads/MRIcroGL/Resources/dcm2niix -f "Ped01-ref" -p y -z y "output_dir" "/media/qiyuan/My Passport/Segmentation/data/Pediatric-CT-SEG/manifest-1645994167898/Pediatric-CT-SEG/Pediatric-CT-SEG-018B687C/10-11-2008-NA-CT-72580/2.000000-RTSTRUCT-58813"
+
+scripts to ssh into lab server:
+ssh sean@10.162.34.47
+
+scp -r sean@10.162.34.47:/srv/data1/sean/torso_mid_result/ts_mesh /media/qiyuan/My_Passport/Segmentation/data
+
+scp -r /home/qiyuan/environments/project_env sean@10.162.34.47:/home/sean/anaconda3/envs
+
+scp -r /home/qiyuan/Downloads/activate sean@10.162.34.47:/home/sean/anaconda3/envs/project_env/bin
+
+scp -r /home/qiyuan/Documents/run_server.py sean@10.162.34.47:/home/sean/cis2/nnUNet
+
+/home/qiyuan/Documents
+
+git remote add origin https://github.com/Ding515/3D-CT-Segmentation.git
+git push -u 
