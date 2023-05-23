@@ -2366,9 +2366,13 @@ __global__ void projectKernel(
       if (0 == do_trace[i]) {
         continue;
       }
+
+      // If alpha is outside the volume bounds, then we can skip this volume.
       if ((alpha < minAlpha_vol[i]) || (alpha > maxAlpha_vol[i])) {
         continue;
       }
+
+      // If all segmentation values are 0, then we can skip this volume.
       float any_seg = 0.0f;
       for (int m = 0; m < NUM_MATERIALS; m++) {
         any_seg += seg_at_alpha[i][m];
@@ -2380,6 +2384,7 @@ __global__ void projectKernel(
         continue;
       }
 
+      // Calculate highest priority (lowest priority num) at this location.
       if (priority[i] < curr_priority) {
         curr_priority = priority[i];
         n_vols_at_curr_priority = 1;
@@ -2397,6 +2402,7 @@ __global__ void projectKernel(
         area_density[AIR_INDEX] += AIR_DENSITY;
       }
     } else {
+      // If multiple volumes at the same priority, use the average
       float weight = 1.0f / ((float)n_vols_at_curr_priority);
 
       // For the entry boundary, multiply by 0.5. That is, for the initial
@@ -2406,6 +2412,7 @@ __global__ void projectKernel(
       // globalMaxAlpha boundary.
       weight *= (0 == t || num_steps - 1 == t) ? 0.5f : 1.0f;
 
+      // Loop through volumes and add to the area_density.
       INTERPOLATE(weight);
     }
     alpha += step;
