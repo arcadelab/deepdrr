@@ -59,8 +59,8 @@ class TestSingleVolume:
 
         image = (image * 255).astype(np.uint8)
         truth_img = np.array(Image.open(self.truth / name))
-        assert np.allclose(image, truth_img, atol=1)
         Image.fromarray(image).save(self.output_dir / name)
+        assert np.allclose(image, truth_img, atol=1)
         return image
 
     def test_simple(self):
