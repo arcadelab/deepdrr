@@ -20,6 +20,7 @@ def pytest_generate_tests(metafunc):
 
 
 class TestSingleVolume:
+    truth = Path.cwd() / "reference"
     output_dir = Path.cwd() / "output"
     output_dir.mkdir(exist_ok=True)
     file_path = test_utils.download_sampledata("CT-chest")
@@ -57,6 +58,8 @@ class TestSingleVolume:
             image = projector.project()
 
         image = (image * 255).astype(np.uint8)
+        truth_img = np.array(Image.open(self.truth / name))
+        assert np.allclose(image, truth_img, atol=1)
         Image.fromarray(image).save(self.output_dir / name)
         return image
 
