@@ -86,6 +86,7 @@ def _get_spectrum(spectrum: Union[np.ndarray, str]):
 
 def _get_kernel_projector_module(
     num_volumes: int,
+    num_meshes: int,
     num_materials: int,
     air_index: int,
     attenuate_outside_volume: bool = False,
@@ -125,6 +126,8 @@ def _get_kernel_projector_module(
     options += [
         "-D",
         f"NUM_VOLUMES={num_volumes}",
+        "-D",
+        f"NUM_MESHES={num_meshes}",
         "-D",
         f"NUM_MATERIALS={num_materials}",
         "-D",
@@ -191,6 +194,7 @@ class Projector(object):
         source_to_detector_distance: float = -1,
         carm: Optional[Device] = None,
         meshes: Optional[List[Mesh]] = None,
+        max_mesh_depth = 10
     ) -> None:
         """Create the projector, which has info for simulating the DRR.
 
@@ -288,12 +292,16 @@ class Projector(object):
         self.intensity_upper_bound = intensity_upper_bound
         # TODO (mjudish): handle intensity_upper_bound when [collected_energy is True]
         # Might want to disallow using intensity_upper_bound, due to nonsensicalness
+        self.max_mesh_depth = max_mesh_depth
 
         assert len(self.volumes) > 0
 
         all_mats = []
         for _vol in self.volumes:
             all_mats.extend(list(_vol.materials.keys()))
+
+        for _vol in self.meshes:
+            all_mats.append(_vol.material)
 
         self.all_materials = list(set(all_mats))
         self.all_materials.sort()
@@ -308,6 +316,7 @@ class Projector(object):
         # compile the module
         self.mod = _get_kernel_projector_module(
             len(self.volumes),
+            len(self.meshes),
             len(self.all_materials),
             air_index=air_index,
             attenuate_outside_volume=attenuate_outside_volume,
@@ -441,7 +450,7 @@ class Projector(object):
 
             for vol_id, _vol in enumerate(self.volumes):
                 source_ijk = np.array(
-                    _vol.IJK_from_world @ proj.center_in_world # bruh
+                    _vol.IJK_from_world @ proj.center_in_world # TODO: Remove unused center arguments
                 ).astype(np.float32)
                 cuda.memcpy_htod(
                     int(self.sourceX_gpu) + int(NUMBYTES_INT32 * vol_id),
@@ -518,9 +527,8 @@ class Projector(object):
                         ray_directions[mesh_i][img_dx, 1] = ry_ijk[i]
                         ray_directions[mesh_i][img_dx, 2] = rz_ijk[i]
 
-            max_mesh_depth = 10
 
-            mesh_hit_alphas = []
+            mesh_hit_alphas = np.ones((len(self.meshes), proj.sensor_width * proj.sensor_height, self.max_mesh_depth), dtype=np.float32)*np.inf
 
             print("started tracing")
             for mesh_i, _mesh in enumerate(self.meshes):
@@ -531,20 +539,21 @@ class Projector(object):
 
                 alphas = np.linalg.norm(points - origins[0], axis=1)
 
-                hit_alphas = np.ones((proj.sensor_width * proj.sensor_height, max_mesh_depth), dtype=np.float32)*np.inf
                 hit_counts = np.zeros((proj.sensor_width * proj.sensor_height), dtype=np.int32)
 
                 for i in range(len(points)):
-                    if hit_counts[rays[i]] < max_mesh_depth:
-                        hit_alphas[rays[i], hit_counts[rays[i]]] = alphas[i]
+                    if hit_counts[rays[i]] < self.max_mesh_depth:
+                        mesh_hit_alphas[mesh_i][rays[i], hit_counts[rays[i]]] = alphas[i]
                         hit_counts[rays[i]] += 1
 
-                hit_alphas_sorted = np.sort(hit_alphas, axis=1)
-                mesh_hit_alphas.append(hit_alphas_sorted)
-
-
-                # save points to points.npy
+                # save points.npy
                 np.save("points.npy", points)
+
+            hit_alphas_sorted = np.sort(mesh_hit_alphas, axis=2)
+
+            np.save("hit_alphas_sorted.npy", hit_alphas_sorted)
+
+            cuda.memcpy_htod(self.mesh_hit_alphas_gpu, hit_alphas_sorted)
 
             print("done tracing")
                 
@@ -563,9 +572,9 @@ class Projector(object):
                 self.voxelSizeX_gpu,  # gVoxelElementSizeX
                 self.voxelSizeY_gpu,  # gVoxelElementSizeY
                 self.voxelSizeZ_gpu,  # gVoxelElementSizeZ
-                np.float32(sx),  # sx
-                np.float32(sy),  # sy
-                np.float32(sz),  # sz
+                np.float32(sx),  # sx TODO: Unused
+                np.float32(sy),  # sy TODO: Unused
+                np.float32(sz),  # sz TODO: Unused
                 self.sourceX_gpu,  # sx_ijk
                 self.sourceY_gpu,  # sy_ijk
                 self.sourceZ_gpu,  # sz_ijk
@@ -579,6 +588,10 @@ class Projector(object):
                 self.intensity_gpu,  # intensity
                 self.photon_prob_gpu,  # photon_prob
                 self.solid_angle_gpu,  # solid_angle
+                self.mesh_hit_alphas_gpu,
+                np.int32(self.max_mesh_depth),
+                self.mesh_materials_gpu,
+                self.mesh_densities_gpu,
             ]
 
             # Calculate required blocks
@@ -1021,12 +1034,12 @@ class Projector(object):
                 if mat in _vol.materials:
                     seg = _vol.materials[mat]
                 else:
-                    seg = np.zeros(_vol.shape).astype(np.float32)
+                    seg = np.zeros(_vol.shape).astype(np.float32) # TODO: Wasted VRAM
                 seg_for_vol.append(
                     cuda.np_to_array(
                         np.moveaxis(seg, [0, 1, 2], [2, 1, 0]).copy(), order="C"
                     )
-                )
+                ) # TODO: 8 bit textures to save VRAM?
                 texref = self.mod.get_texref(f"seg_{vol_id}_{mat_id}")
                 texref_for_vol.append(texref)
 
@@ -1039,6 +1052,20 @@ class Projector(object):
 
             self.segmentations_gpu.append(seg_for_vol)
             self.segmentations_texref.append(texref)
+
+        self.mesh_materials_gpu = cuda.mem_alloc(len(self.meshes) * NUMBYTES_INT32)
+        mesh_materials = []
+        for mesh in self.meshes:
+            mesh_materials.append(self.all_materials.index(mesh.material))
+        mesh_materials = np.array(mesh_materials).astype(np.int32)
+        cuda.memcpy_htod(self.mesh_materials_gpu, mesh_materials)
+
+        self.mesh_densities_gpu = cuda.mem_alloc(len(self.meshes) * NUMBYTES_FLOAT32)
+        mesh_densities = []
+        for mesh in self.meshes:
+            mesh_densities.append(mesh.density)
+        mesh_densities = np.array(mesh_densities).astype(np.float32)
+        cuda.memcpy_htod(self.mesh_densities_gpu, mesh_densities)
 
         init_tock = time.perf_counter()
         log.debug(
@@ -1159,6 +1186,11 @@ class Projector(object):
         log.debug(
             f"time elapsed after intializing rest of primary-signal stuff: {init_tock - init_tick}"
         )
+
+        height = self.device.sensor_width # TODO: was deepdrr not locked to fixed resolution before?
+        width = self.device.sensor_height
+
+        self.mesh_hit_alphas_gpu = cuda.mem_alloc(math.prod((len(self.meshes), width * height, self.max_mesh_depth)) * NUMBYTES_FLOAT32)
 
         # Scatter-specific initializations
 

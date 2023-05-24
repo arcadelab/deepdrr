@@ -79,8 +79,9 @@ class TestSingleVolume:
         # load 10cmcube.stl from resources folder
         stl = pv.read("resources/suzanne.stl")
         # scale from m to mm
-        stl.scale([100]*3, inplace=True)
-        mesh = deepdrr.Mesh("steel", stl)
+        stl.scale([200]*3, inplace=True)
+        mesh = deepdrr.Mesh("titanium", 7, stl, world_from_anatomical=geo.FrameTransform.from_rotation(geo.Rotation.from_euler("x", 90, degrees=True)))
+        # mesh = deepdrr.Mesh("polyethylene", 1.05, stl)
         carm = deepdrr.MobileCArm(isocenter=volume.center_in_world, sensor_width=300, sensor_height=200, pixel_size=0.6)
         self.project(volume, carm, "test_mesh.png", meshes=[mesh])
 

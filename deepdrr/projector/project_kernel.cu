@@ -2182,6 +2182,10 @@ __global__ void projectKernel(
     float *photon_prob,       // flat array, with shape (out_height, out_width).
     float *solid_angle,       // flat array, with shape (out_height, out_width).
                               // Could be NULL pointer
+    float *mesh_hit_alphas,
+    int max_mesh_depth,
+    int *mesh_materials,
+    float *mesh_densities,
     int offsetW, int offsetH) {
   // The output image has the following coordinate system, with cell-centered
   // sampling. y is along the fast axis (columns), x along the slow (rows).
@@ -2328,6 +2332,8 @@ __global__ void projectKernel(
 
   // printf("global min, max alphas: %f, %f\n", minAlpha, maxAlpha);
 
+  maxAlpha = 2000.0f; // TODO: fix this hack
+
   // Part 2: Cast ray if it intersects any of the volumes
   int num_steps = ceil((maxAlpha - minAlpha) / step);
   // if (debug) printf("num_steps: %d\n", num_steps);
@@ -2347,6 +2353,18 @@ __global__ void projectKernel(
   int n_vols_at_curr_priority; // how many volumes to consider at the location
   float seg_at_alpha[NUM_VOLUMES][NUM_MATERIALS];
   // if (debug) printf("start trace\n");
+
+
+  int mesh_hit_depth[NUM_MESHES];
+  for (int i = 0; i < NUM_MESHES; i++) {
+    mesh_hit_depth[i] = 0;
+  }
+
+  int mesh_hit_index[NUM_MESHES];
+  for (int i = 0; i < NUM_MESHES; i++) {
+      mesh_hit_index[i] = 0;
+  }
+
 
   // Attenuate up to minAlpha, assuming it is filled with air.
   if (ATTENUATE_OUTSIDE_VOLUME) {
@@ -2393,30 +2411,81 @@ __global__ void projectKernel(
       }
     }
 
-    // if (debug) printf("  got priority at alpha, num vols\n"); // This is
-    // the one that seems to take a half a second.
-    if (0 == n_vols_at_curr_priority) {
-      // Outside the bounds of all volumes to trace. Use the default
-      // AIR_DENSITY.
-      if (ATTENUATE_OUTSIDE_VOLUME) {
-        area_density[AIR_INDEX] += AIR_DENSITY;
+    for (int i = 0; i < NUM_MESHES; i++) {
+      int hit_index = mesh_hit_index[i];
+      if (hit_index >= max_mesh_depth) {
+        continue;
       }
-    } else {
-      // If multiple volumes at the same priority, use the average
-      float weight = 1.0f / ((float)n_vols_at_curr_priority);
+      float next_alpha = mesh_hit_alphas[i*(out_height*out_width)*max_mesh_depth+img_dx*max_mesh_depth+hit_index];
+      if (next_alpha < alpha) {
+        mesh_hit_depth[i] = !mesh_hit_depth[i];
+        mesh_hit_index[i] += 1;
+      }
 
-      // For the entry boundary, multiply by 0.5. That is, for the initial
-      // interpolated value, only a half step-size is considered in the
-      // computation. For the second-to-last interpolation point, also
-      // multiply by 0.5, since there will be a final step at the
-      // globalMaxAlpha boundary.
-      weight *= (0 == t || num_steps - 1 == t) ? 0.5f : 1.0f;
-
-      // Loop through volumes and add to the area_density.
-      INTERPOLATE(weight);
+      if (mesh_hit_depth[i]) {
+        area_density[mesh_materials[i]] += mesh_densities[i];
+      }
     }
+
+//    // if (debug) printf("  got priority at alpha, num vols\n"); // This is
+//    // the one that seems to take a half a second.
+//    if (0 == n_vols_at_curr_priority) {
+//      // Outside the bounds of all volumes to trace. Use the default
+//      // AIR_DENSITY.
+//      if (ATTENUATE_OUTSIDE_VOLUME) {
+//        area_density[AIR_INDEX] += AIR_DENSITY;
+//      }
+//    } else {
+//      // If multiple volumes at the same priority, use the average
+//      float weight = 1.0f / ((float)n_vols_at_curr_priority);
+//
+//      // For the entry boundary, multiply by 0.5. That is, for the initial
+//      // interpolated value, only a half step-size is considered in the
+//      // computation. For the second-to-last interpolation point, also
+//      // multiply by 0.5, since there will be a final step at the
+//      // globalMaxAlpha boundary.
+//      weight *= (0 == t || num_steps - 1 == t) ? 0.5f : 1.0f;
+//
+//      // Loop through volumes and add to the area_density.
+//      INTERPOLATE(weight);
+//    }
     alpha += step;
   }
+
+//  bool finished_meshes[NUM_MESHES];
+//  for (int i = 0; i < NUM_MESHES; i++) {
+//    finished_meshes[i] = false;
+//  }
+//  int num_pending = NUM_MESHES;
+//  while (num_pending > 0) {
+//    for (int i = 0; i < NUM_MESHES; i++) {
+//      int hit_index = mesh_hit_index[i];
+//      if (hit_index >= max_mesh_depth) {
+//        if (!finished_meshes[i]) {
+//          num_pending -= 1;
+//          finished_meshes[i] = true;
+//        }
+//        continue;
+//      }
+//      float next_alpha = mesh_hit_alphas[i * (out_height * out_width) * max_mesh_depth + img_dx * max_mesh_depth + hit_index];
+//      if (next_alpha > INFINITY / 2) { // TODO bad
+//        if (!finished_meshes[i]) {
+//          num_pending -= 1;
+//          finished_meshes[i] = true;
+//        }
+//      }
+//      if (next_alpha < alpha) {
+//        mesh_hit_depth[i] = !mesh_hit_depth[i];
+//        mesh_hit_index[i] += 1;
+//      }
+//
+//      if (mesh_hit_depth[i]) {
+//        area_density[mesh_materials[i]] += mesh_densities[i];
+//      }
+//
+//      alpha += step;
+//    }
+//  }
 
   // Attenuate from the end of the volume to the detector.
   if (ATTENUATE_OUTSIDE_VOLUME) {

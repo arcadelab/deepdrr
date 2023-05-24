@@ -17,6 +17,10 @@
 #define NUM_VOLUMES 1
 #endif
 
+#ifndef NUM_MESHES
+#define NUM_MESHES 1
+#endif
+
 #ifndef ATTENUATE_OUTSIDE_VOLUME
 #define ATTENUATE_OUTSIDE_VOLUME 0
 #endif

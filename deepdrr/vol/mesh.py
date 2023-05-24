@@ -30,10 +30,12 @@ class Mesh(object):
     world_from_anatomical: geo.FrameTransform
     mesh: pv.PolyData
     material: str
+    density: float
 
     def __init__(
         self,
         material: str,
+        density: float,
         mesh: pv.PolyData,
         world_from_anatomical: Optional[geo.FrameTransform] = None,
     ) -> None:
@@ -45,6 +47,7 @@ class Mesh(object):
         )
         self.mesh = mesh
         self.material = material
+        self.density = density
 
 
     @property
