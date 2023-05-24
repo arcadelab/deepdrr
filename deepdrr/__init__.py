@@ -1,6 +1,6 @@
 from . import vis, geo, projector, device, annotations, utils
 from .projector import Projector
-from .vol import Volume
+from .vol import Volume, Mesh
 from .device import CArm, MobileCArm
 from .annotations import LineAnnotation
 from .logging import setup_log

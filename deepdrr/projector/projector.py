@@ -12,6 +12,9 @@ import math
 import torch
 import numpy as np
 
+import pyvista as pv # TODO: for debugging only
+import pyvista
+
 from .. import geo, utils, vol
 from ..device import Device, MobileCArm
 from . import analytic_generators, mass_attenuation, scatter, spectral_data
@@ -186,6 +189,7 @@ class Projector(object):
         attenuate_outside_volume: bool = False,
         source_to_detector_distance: float = -1,
         carm: Optional[Device] = None,
+        meshes: Optional[List[Mesh]] = None,
     ) -> None:
         """Create the projector, which has info for simulating the DRR.
 
@@ -245,6 +249,8 @@ class Projector(object):
                 ), "invalid priority outside range [0, NUM_VOLUMES)"
                 self.priorities.append(prio)
         assert len(self.volumes) == len(self.priorities)
+
+        self.meshes = meshes
 
         if carm is not None:
             warnings.warn("carm is deprecated, use device instead", DeprecationWarning)
@@ -427,9 +433,14 @@ class Projector(object):
             )
             cuda.memcpy_htod(self.world_from_index_gpu, world_from_index)
 
+            ijk_from_world = np.zeros(len(self.volumes) * 3 * 4, dtype=np.float32)
+            sx_ijk = np.zeros(len(self.volumes), dtype=np.float32)
+            sy_ijk = np.zeros(len(self.volumes), dtype=np.float32)
+            sz_ijk = np.zeros(len(self.volumes), dtype=np.float32)
+
             for vol_id, _vol in enumerate(self.volumes):
                 source_ijk = np.array(
-                    _vol.IJK_from_world @ proj.center_in_world
+                    _vol.IJK_from_world @ proj.center_in_world # bruh
                 ).astype(np.float32)
                 cuda.memcpy_htod(
                     int(self.sourceX_gpu) + int(NUMBYTES_INT32 * vol_id),
@@ -443,6 +454,9 @@ class Projector(object):
                     int(self.sourceZ_gpu) + int(NUMBYTES_INT32 * vol_id),
                     np.array([source_ijk[2]]),
                 )
+                sx_ijk[vol_id] = source_ijk[0]
+                sy_ijk[vol_id] = source_ijk[1]
+                sz_ijk[vol_id] = source_ijk[2]
 
                 # TODO: prefer toarray() to get transform throughout
                 IJK_from_world = _vol.IJK_from_world.toarray()
@@ -451,6 +465,63 @@ class Projector(object):
                     + (IJK_from_world.size * NUMBYTES_FLOAT32) * vol_id,
                     IJK_from_world,
                 )
+                ijk_from_world[(IJK_from_world.size * vol_id) : (IJK_from_world.size * (vol_id + 1))] = IJK_from_world.flatten()
+
+            ray_directions = np.zeros((proj.sensor_width * proj.sensor_height, 3), dtype=np.float32)
+            
+            for udx in range(proj.sensor_width):
+                for vdx in range(proj.sensor_height):
+                    img_dx = (udx * proj.sensor_height) + vdx
+
+                    u = udx + 0.5
+                    v = vdx + 0.5
+
+                    world_from_index_flat = world_from_index.flatten()
+
+                    rx = u * world_from_index_flat[0] + v * world_from_index_flat[1] + world_from_index_flat[2]
+                    ry = u * world_from_index_flat[3] + v * world_from_index_flat[4] + world_from_index_flat[5]
+                    rz = u * world_from_index_flat[6] + v * world_from_index_flat[7] + world_from_index_flat[8]
+
+                    ray_length = np.sqrt(rx * rx + ry * ry + rz * rz)
+                    inv_ray_norm = 1.0 / ray_length
+                    rx *= inv_ray_norm
+                    ry *= inv_ray_norm
+                    rz *= inv_ray_norm
+
+                    rx_ijk = np.zeros(len(self.volumes), dtype=np.float32)
+                    ry_ijk = np.zeros(len(self.volumes), dtype=np.float32)
+                    rz_ijk = np.zeros(len(self.volumes), dtype=np.float32)
+
+                    offs = 12
+
+                    rx_ijk[i] =\
+                        ijk_from_world[offs * i + 0] * rx + ijk_from_world[offs * i + 1] * ry +\
+                        ijk_from_world[offs * i + 2] * rz + ijk_from_world[offs * i + 3] * 0;
+                    ry_ijk[i] =\
+                        ijk_from_world[offs * i + 4] * rx + ijk_from_world[offs * i + 5] * ry +\
+                        ijk_from_world[offs * i + 6] * rz + ijk_from_world[offs * i + 7] * 0;
+                    rz_ijk[i] =\
+                        ijk_from_world[offs * i + 8] * rx + ijk_from_world[offs * i + 9] * ry +\
+                        ijk_from_world[offs * i + 10] * rz + ijk_from_world[offs * i + 11] * 0;
+            
+                    ray_directions[img_dx, 0] = rx_ijk[i]
+                    ray_directions[img_dx, 1] = ry_ijk[i]
+                    ray_directions[img_dx, 2] = rz_ijk[i]
+
+
+            # save ray_directions to out.npy
+            np.save('ray_directions.npy', ray_directions)
+
+            cent = np.zeros_like(ray_directions)
+            direction = ray_directions
+            # pyvista.plot_arrows(cent, direction)
+
+            # plot and save to out.png
+            pyvista.start_xvfb()  
+            plotter = pyvista.Plotter(off_screen=True)
+            plotter.add_arrows(cent, direction)
+            plotter.show(screenshot='out.png')
+
 
             args = [
                 np.int32(proj.sensor_width),  # out_width

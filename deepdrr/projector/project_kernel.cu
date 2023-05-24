@@ -2156,9 +2156,9 @@ __global__ void projectKernel(
     float *gVolumeEdgeMaxPointZ,
     float *gVoxelElementSizeX, // one value for each of the NUM_VOLUMES volumes
     float *gVoxelElementSizeY, float *gVoxelElementSizeZ,
-    float sx,      // x-coordinate of source point for rays in world-space
-    float sy,      // y-coordinate of source point for rays in world-space
-    float sz,      // z-coordinate of source point for rays in world-space
+    float sx,      // TODO: NOT USED!! x-coordinate of source point for rays in world-space
+    float sy,      // TODO: NOT USED!! y-coordinate of source point for rays in world-space
+    float sz,      // TODO: NOT USED!! z-coordinate of source point for rays in world-space
     float *sx_ijk, // x-coordinate of source point in IJK space for each
                    // volume (NUM_VOLUMES,)
     float *sy_ijk, // y-coordinate of source point in IJK space for each

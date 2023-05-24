@@ -16,3 +16,7 @@ dependencies:
   - pip:
       - -r requirements.txt
       - -e .
+      - trame
+      - ipykernel
+      - ipywidgets
+
