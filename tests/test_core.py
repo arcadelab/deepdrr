@@ -77,9 +77,11 @@ class TestSingleVolume:
     def test_mesh(self):
         volume = deepdrr.Volume.from_nrrd(self.file_path)
         # load 10cmcube.stl from resources folder
-        stl = pv.read("resources/10cmcube.stl")
+        stl = pv.read("resources/suzanne.stl")
+        # scale from m to mm
+        stl.scale([100]*3, inplace=True)
         mesh = deepdrr.Mesh("steel", stl)
-        carm = deepdrr.MobileCArm(isocenter=volume.center_in_world, sensor_width=300, sensor_height=200)
+        carm = deepdrr.MobileCArm(isocenter=volume.center_in_world, sensor_width=300, sensor_height=200, pixel_size=0.6)
         self.project(volume, carm, "test_mesh.png", meshes=[mesh])
 
     def test_translate(self, t):

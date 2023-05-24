@@ -9,6 +9,7 @@ import os
 import warnings
 
 import math
+from pyparsing import alphas
 import torch
 import numpy as np
 
@@ -454,9 +455,6 @@ class Projector(object):
                     int(self.sourceZ_gpu) + int(NUMBYTES_INT32 * vol_id),
                     np.array([source_ijk[2]]),
                 )
-                sx_ijk[vol_id] = source_ijk[0]
-                sy_ijk[vol_id] = source_ijk[1]
-                sz_ijk[vol_id] = source_ijk[2]
 
                 # TODO: prefer toarray() to get transform throughout
                 IJK_from_world = _vol.IJK_from_world.toarray()
@@ -465,9 +463,20 @@ class Projector(object):
                     + (IJK_from_world.size * NUMBYTES_FLOAT32) * vol_id,
                     IJK_from_world,
                 )
+
+            for vol_id, _vol in enumerate(self.meshes):
+                source_ijk = np.array(
+                    _vol.IJK_from_world @ proj.center_in_world # bruh
+                ).astype(np.float32)
+                sx_ijk[vol_id] = source_ijk[0]
+                sy_ijk[vol_id] = source_ijk[1]
+                sz_ijk[vol_id] = source_ijk[2]
+
+                # TODO: prefer toarray() to get transform throughout
+                IJK_from_world = _vol.IJK_from_world.toarray()
                 ijk_from_world[(IJK_from_world.size * vol_id) : (IJK_from_world.size * (vol_id + 1))] = IJK_from_world.flatten()
 
-            ray_directions = np.zeros((proj.sensor_width * proj.sensor_height, 3), dtype=np.float32)
+            ray_directions = [np.zeros((proj.sensor_width * proj.sensor_height, 3), dtype=np.float32) for _ in range(len(self.meshes))]
             
             for udx in range(proj.sensor_width):
                 for vdx in range(proj.sensor_height):
@@ -488,40 +497,57 @@ class Projector(object):
                     ry *= inv_ray_norm
                     rz *= inv_ray_norm
 
-                    rx_ijk = np.zeros(len(self.volumes), dtype=np.float32)
-                    ry_ijk = np.zeros(len(self.volumes), dtype=np.float32)
-                    rz_ijk = np.zeros(len(self.volumes), dtype=np.float32)
+                    rx_ijk = np.zeros(len(self.meshes), dtype=np.float32)
+                    ry_ijk = np.zeros(len(self.meshes), dtype=np.float32)
+                    rz_ijk = np.zeros(len(self.meshes), dtype=np.float32)
 
                     offs = 12
 
-                    rx_ijk[i] =\
-                        ijk_from_world[offs * i + 0] * rx + ijk_from_world[offs * i + 1] * ry +\
-                        ijk_from_world[offs * i + 2] * rz + ijk_from_world[offs * i + 3] * 0;
-                    ry_ijk[i] =\
-                        ijk_from_world[offs * i + 4] * rx + ijk_from_world[offs * i + 5] * ry +\
-                        ijk_from_world[offs * i + 6] * rz + ijk_from_world[offs * i + 7] * 0;
-                    rz_ijk[i] =\
-                        ijk_from_world[offs * i + 8] * rx + ijk_from_world[offs * i + 9] * ry +\
-                        ijk_from_world[offs * i + 10] * rz + ijk_from_world[offs * i + 11] * 0;
+                    for mesh_i, _mesh in enumerate(self.meshes):
+                        rx_ijk[mesh_i] =\
+                            ijk_from_world[offs * mesh_i + 0] * rx + ijk_from_world[offs * mesh_i + 1] * ry +\
+                            ijk_from_world[offs * mesh_i + 2] * rz + ijk_from_world[offs * mesh_i + 3] * 0;
+                        ry_ijk[mesh_i] =\
+                            ijk_from_world[offs * mesh_i + 4] * rx + ijk_from_world[offs * mesh_i + 5] * ry +\
+                            ijk_from_world[offs * mesh_i + 6] * rz + ijk_from_world[offs * mesh_i + 7] * 0;
+                        rz_ijk[mesh_i] =\
+                            ijk_from_world[offs * mesh_i + 8] * rx + ijk_from_world[offs * mesh_i + 9] * ry +\
+                            ijk_from_world[offs * mesh_i + 10] * rz + ijk_from_world[offs * mesh_i + 11] * 0;
             
-                    ray_directions[img_dx, 0] = rx_ijk[i]
-                    ray_directions[img_dx, 1] = ry_ijk[i]
-                    ray_directions[img_dx, 2] = rz_ijk[i]
+                        ray_directions[mesh_i][img_dx, 0] = rx_ijk[i]
+                        ray_directions[mesh_i][img_dx, 1] = ry_ijk[i]
+                        ray_directions[mesh_i][img_dx, 2] = rz_ijk[i]
+
+            max_mesh_depth = 10
+
+            mesh_hit_alphas = []
+
+            print("started tracing")
+            for mesh_i, _mesh in enumerate(self.meshes):
+
+                directions = ray_directions[mesh_i]
+                origins = np.array([[sx_ijk[mesh_i], sy_ijk[mesh_i], sz_ijk[mesh_i]]]*len(directions))
+                points, rays, cells = _mesh.mesh.multi_ray_trace(origins, directions)
+
+                alphas = np.linalg.norm(points - origins[0], axis=1)
+
+                hit_alphas = np.ones((proj.sensor_width * proj.sensor_height, max_mesh_depth), dtype=np.float32)*np.inf
+                hit_counts = np.zeros((proj.sensor_width * proj.sensor_height), dtype=np.int32)
+
+                for i in range(len(points)):
+                    if hit_counts[rays[i]] < max_mesh_depth:
+                        hit_alphas[rays[i], hit_counts[rays[i]]] = alphas[i]
+                        hit_counts[rays[i]] += 1
+
+                hit_alphas_sorted = np.sort(hit_alphas, axis=1)
+                mesh_hit_alphas.append(hit_alphas_sorted)
 
 
-            # save ray_directions to out.npy
-            np.save('ray_directions.npy', ray_directions)
+                # save points to points.npy
+                np.save("points.npy", points)
 
-            cent = np.zeros_like(ray_directions)
-            direction = ray_directions
-            # pyvista.plot_arrows(cent, direction)
-
-            # plot and save to out.png
-            pyvista.start_xvfb()  
-            plotter = pyvista.Plotter(off_screen=True)
-            plotter.add_arrows(cent, direction)
-            plotter.show(screenshot='out.png')
-
+            print("done tracing")
+                
 
             args = [
                 np.int32(proj.sensor_width),  # out_width
