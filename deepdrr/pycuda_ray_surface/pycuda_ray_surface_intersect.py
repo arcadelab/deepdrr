@@ -16,8 +16,10 @@ import pycuda.gpuarray as gpuarray
 import pycuda.driver as cuda
 from pycuda.compiler import SourceModule
 
-from diagnostic_utils import display_node_contents
-from diagnostic_graphics import bvh_graphviz, bvh_spatial
+from .diagnostic_utils import display_node_contents
+from .diagnostic_graphics import bvh_graphviz, bvh_spatial
+
+from .pycuda_source import get_cuda_template
 
 default_paths = {'PATH': '/usr/local/cuda-11.2/bin',
                  'LD_LIBRARY_PATH': '/usr/local/cuda-11.2/lib64',
@@ -67,8 +69,8 @@ class PyCudaRSI(object):
         # - By default, 'pycuda_source' refers to a presumably stable version of the code
         # - User can override this with a version under development (say, 'pycuda_dev')
         #   to test for code changes and easily compare their results.
-        name = params.get('CUDA_SOURCE_MODULE', 'pycuda_source')
-        module = importlib.import_module(name)
+        # name = params.get('CUDA_SOURCE_MODULE', 'pycuda_source')
+        # module = importlib.import_module(name)
 
         subst_dict = {
             'MORTON': 'uint64_t', 'COORD': 'unsigned int', 'TOLERANCE': self.tolerance,
@@ -77,7 +79,7 @@ class PyCudaRSI(object):
             'BVH_PREPROCESSOR_DIRECTIVE': '#define COMPILE_NON_ESSENTIAL 1' \
                 if self.params['USE_EXTRA_BVH_FIELDS'] else ''
         }
-        self.module = SourceModule(self.fill(module.get_cuda_template(), subst_dict))
+        self.module = SourceModule(self.fill(get_cuda_template(), subst_dict))
         self.perform_bindings_()
 
     def __enter__(self):

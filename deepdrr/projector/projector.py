@@ -31,6 +31,9 @@ from .mcgpu_compton_data import COMPTON_DATA
 from .mcgpu_mfp_data import MFP_DATA
 from .mcgpu_rita_samplers import rita_samplers
 
+from ..pycuda_ray_surface.pycuda_ray_surface_intersect import PyCudaRSI
+
+
 log = logging.getLogger(__name__)
 
 try:
@@ -533,8 +536,43 @@ class Projector(object):
             print("started tracing")
             for mesh_i, _mesh in enumerate(self.meshes):
 
-                directions = ray_directions[mesh_i]
-                origins = np.array([[sx_ijk[mesh_i], sy_ijk[mesh_i], sz_ijk[mesh_i]]]*len(directions))
+                directions = ray_directions[mesh_i].astype(np.float32)
+                origin_pt = [sx_ijk[mesh_i], sy_ijk[mesh_i], sz_ijk[mesh_i]]
+                origin_pt_np = np.array(origin_pt, dtype=np.float32)
+                origins = np.array([origin_pt]*len(directions))
+                
+                vertices = np.array(_mesh.mesh.points, dtype=np.float32)
+                triangles = _mesh.mesh.faces.reshape((-1, 4))[..., 1:][..., [0, 2, 1]].astype(np.int32)  # flip winding order
+
+                rayTo = origin_pt_np+directions*1000 # TODO
+
+                with PyCudaRSI() as pycu:
+                    np.save("vertices.npy", vertices)
+                    np.save("triangles.npy", triangles)
+                    np.save("origins.npy", origins)
+                    np.save("rayTo.npy", rayTo)
+
+                    results1 = pycu.test(vertices.copy(), triangles.copy(), origins.copy(), rayTo.copy(), None)
+
+                    # self.h_crossingDetected, self.h_interceptCounts, self.h_interceptTs
+                    interceptCounts, interceptTs, _, _ = results1
+
+                print(f"{np.unique(interceptCounts, return_counts=True)=}")
+
+                # make new mesh with only the first 10 triangles
+                # vertices = vertices[triangles[:10].flatten()]
+                # triangles = triangles[:10]
+
+                # print("interceptTs", interceptTs.shape, interceptTs.dtype, interceptTs)
+
+
+                # concat 3s to each index to account for the fact that the first index is the number of triangles
+                pv_faces = np.concatenate([np.ones((len(triangles), 1), dtype=np.int32)*3, triangles], axis=1).flatten()
+                pyvista_mesh = pv.PolyData(vertices, pv_faces)
+                # # save mesh to stl
+                # pyvista_mesh.save(f"asdf.stl")
+                    
+
                 points, rays, cells = _mesh.mesh.multi_ray_trace(origins, directions)
 
                 alphas = np.linalg.norm(points - origins[0], axis=1)

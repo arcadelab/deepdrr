@@ -319,12 +319,16 @@ __device__ void checkRayTriangleIntersection3(const float* __restrict__ vertices
 
     if (intersectMoller(v0, v1, v2, edge1, edge2, start, finish, t, u, v)) {
         bool newIntercept(true);
-        for (int i = 0; i < MAX_INTERSECTIONS; i++)
+        float floatId = triangleID;
+        for (int i = 0; i < MAX_INTERSECTIONS; i++) {
+            // if ((floatId > tp[i] - tol) && (floatId < tp[i] + tol)) {
             if ((t > tp[i] - tol) && (t < tp[i] + tol)) {
                 newIntercept = false;
                 break;
             }
+        }
         if (newIntercept) {
+            // tp[(*interceptCounts) & (MAX_INTERSECTIONS - 1)] = floatId;
             tp[(*interceptCounts) & (MAX_INTERSECTIONS - 1)] = t;
             (*interceptCounts) += 1;
             // results[rayIdx] += 1;

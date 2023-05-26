@@ -14,7 +14,7 @@ import matplotlib.colors as mcl
 import matplotlib.cm as cm
 import numpy as np
 
-from diagnostic_utils import bin_to_float
+from .diagnostic_utils import bin_to_float
 
 
 def visualise_example1(vertices, triangles, raysFrom, raysTo,

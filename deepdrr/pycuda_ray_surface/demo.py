@@ -12,9 +12,9 @@
 import numpy as np
 import os
 
-from pycuda_ray_surface_intersect import PyCudaRSI
-from diagnostic_input import synthesize_data
-from diagnostic_graphics import visualise_example1
+from .pycuda_ray_surface_intersect import PyCudaRSI
+from .diagnostic_input import synthesize_data
+from .diagnostic_graphics import visualise_example1
 
 info_msg = """
 NOTE: Before running this script, users will need to set the
