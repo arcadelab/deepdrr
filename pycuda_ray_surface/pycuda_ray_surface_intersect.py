@@ -25,16 +25,7 @@ default_paths = {'PATH': '/usr/local/cuda-11.2/bin',
 
 
 class PyCudaRSI(object):
-    """
-    A stand-alone PyCUDA implementation of the ray-surface intersection
-    algorithms described in https://arxiv.org/pdf/2209.02878.pdf
-    This encompasses the core functions of gpu_ray_surface_intersect.cu,
-    rsi_geometry.h, morton3D.h and bvh_structure.h. It performs parallel
-    computations on a CUDA-capable Nvidia GPU device. The supported modes
-    of operations include "boolean", "barycentric" and "intercept_count".
-    Refer to <repo>/pycuda/README.md for installation steps and comments.
-    """
-    def __init__(self, params={}):
+    def __init__(self, params=None, max_intersections=32):
         # - The constant parameters QUANT_LEVELS and LARGE_POS_VALUE
         #   represent design choices that ought to be fixed.
         # - PATH, LD_LIBRARY_PATH, CUDA_INC_DIR are environment variables
@@ -53,7 +44,13 @@ class PyCudaRSI(object):
         #   in the Moller-Trumbore ray-triangle intersection algorithm.
         import pycuda.autoinit
 
-        self.params = {'QUANT_LEVELS': (1 << 21) - 1, 'LARGE_POS_VALUE': 2.5e+8}
+        self.max_intersections = max_intersections
+
+        if params is None:
+            params = {}
+
+        self.params = {}
+        self.params['QUANT_LEVELS'] = params.get('QUANT_LEVELS', (1 << 21) - 1)
         self.params['USE_EXTRA_BVH_FIELDS'] = params.get('USE_EXTRA_BVH_FIELDS', False)
         self.params['USE_DOUBLE_PRECISION_MOLLER'] = params.get('USE_DOUBLE_PRECISION_MOLLER', False)
         self.quiet = params.get('QUIET', False)
@@ -89,8 +86,6 @@ class PyCudaRSI(object):
     def __exit__(self, type, value, traceback):
         pass
 
-    #------------------------------------------------------------------
-    # Helper methods
     def struct_size(self, cuda_szQuery, d_answer):
         # Use cuda_szQuery API to convey C struct size to Python
         # This is known at compile time and padding may be introduced.
@@ -114,8 +109,6 @@ class PyCudaRSI(object):
         half_delta = (0.5 / inv_delta).astype(np.float32)
         return minvals, maxvals, half_delta, inv_delta
 
-    #------------------------------------------------------------------
-    # Auxiliary functions
     def perform_bindings_(self):
         bind = lambda x : self.module.get_function(x)
         self.bytes_in_AABB = bind("bytesInAABB")
@@ -137,21 +130,6 @@ class PyCudaRSI(object):
                 self.kernel_intersect_distances = None
                 self.kernel_intersect_points = None
 
-    def translate_data_if_appropriate(self):
-        '''
-        Subtract the minimum coordinates from mesh and ray data if appropriate.
-        Refer to comments on `translate_data` in "gpu_ray_surface_intersect.py"
-        where issues relating to Universal Transverse Mercator (UTM) data,
-        IEEE754 float32 representation and precision limit are discussed.
-        '''
-        self.shift_required = np.max(np.abs(self.h_vertices)) > 16384
-        self.min_coords = np.zeros(3)
-        if self.shift_required:
-            self.min_coords = np.min(self.h_vertices, axis=0)
-            self.h_vertices -= self.min_coords
-            self.h_raysFrom -= self.min_coords
-            self.h_raysTo -= self.min_coords
-
     def configure_(self, vertices, triangles, raysFrom, raysTo):
         self.h_vertices = np.array(vertices, dtype=np.float32)
         self.h_triangles = np.array(triangles, dtype=np.int32)
@@ -165,7 +143,7 @@ class PyCudaRSI(object):
             self.h_triangles = np.vstack([self.h_triangles, [0,0,0]])
         # - For large spatial coordinates, shift the origin to maximise
         #   numerical precision (see ISSUES.md: 2 in SHA 1edbd3e39f2f)
-        self.translate_data_if_appropriate()
+        # self.translate_data_if_appropriate() # TODO: I don't think this is relevant for DeepDRR... See ISSUES.md
 
         # Get device attributes and specify grid-block partitions
         self.block_x = 512 if self.params['USE_DOUBLE_PRECISION_MOLLER'] else 1024
@@ -197,9 +175,8 @@ class PyCudaRSI(object):
         # Allocate memory on host and device
         self.h_morton = np.zeros(self.n_triangles, dtype=np.uint64)
         self.h_crossingDetected = np.zeros(self.n_rays, dtype=np.int32)
-        MAX_INTERSECTIONS = 32 # TODO
         self.h_interceptCounts = np.zeros(self.n_rays, dtype=np.int32)
-        self.h_interceptTs = np.zeros((self.n_rays, MAX_INTERSECTIONS), dtype=np.float32)
+        self.h_interceptTs = np.zeros((self.n_rays, self.max_intersections), dtype=np.float32)
         self.d_vertices = cuda.mem_alloc(self.h_vertices.nbytes)
         self.d_triangles = cuda.mem_alloc(self.h_triangles.nbytes)
         self.d_raysFrom = cuda.mem_alloc(self.h_raysFrom.nbytes)
@@ -212,22 +189,11 @@ class PyCudaRSI(object):
         # Data structures used in agglomerative LBVH construction
         self.d_leafNodes = cuda.mem_alloc(self.n_triangles * get_(self.bytes_in_BVHNode))
         self.d_internalNodes = cuda.mem_alloc(self.n_triangles * get_(self.bytes_in_BVHNode))
-        self.d_hitIDs = cuda.mem_alloc(self.grid_xLambda * self.block_x *
-                        get_(self.bytes_in_CollisionList))
-        if self.mode == 'intercept_count':
-            # self.d_interceptDists = cuda.mem_alloc(self.grid_xLambda * self.block_x *
-                        # get_(self.bytes_in_InterceptDistances))
-            self.d_interceptCounts = cuda.mem_alloc(self.h_interceptCounts.nbytes)
-            self.d_interceptTs = cuda.mem_alloc(self.h_interceptTs.nbytes)
-        if self.mode != 'barycentric':
-            self.d_crossingDetected = cuda.mem_alloc(self.h_crossingDetected.nbytes)
-        else:
-            self.h_intersectTriangle = -np.ones(self.n_rays, dtype=np.int32)
-            self.h_baryT = self.params['LARGE_POS_VALUE'] * np.ones(self.n_rays, dtype=np.float32)
-            self.d_intersectTriangle = cuda.mem_alloc(self.h_intersectTriangle.nbytes)
-            self.d_baryT = cuda.mem_alloc(self.h_baryT.nbytes)
-            self.d_baryU = gpuarray.zeros((self.n_rays,), np.float32)
-            self.d_baryV = gpuarray.zeros((self.n_rays,), np.float32)
+        self.d_hitIDs = cuda.mem_alloc(self.grid_xLambda * self.block_x * get_(self.bytes_in_CollisionList))
+
+        self.d_interceptCounts = cuda.mem_alloc(self.h_interceptCounts.nbytes)
+        self.d_interceptTs = cuda.mem_alloc(self.h_interceptTs.nbytes)
+
 
     def transfer_data_(self):
         # Initialise memory or copy data from host to device
@@ -236,20 +202,8 @@ class PyCudaRSI(object):
         cuda.memcpy_htod(self.d_raysFrom, self.h_raysFrom)
         cuda.memcpy_htod(self.d_raysTo, self.h_raysTo)
 
-        if self.mode != 'barycentric':
-            cuda.memset_d32(self.d_crossingDetected, 0, self.n_rays)
-        else:
-            cuda.memcpy_htod(self.d_intersectTriangle, self.h_intersectTriangle)
-            cuda.memcpy_htod(self.d_baryT, self.h_baryT)
-        
-    #------------------------------------------------------------------
-    # Core function
+
     def test(self, vertices, triangles, raysFrom, raysTo, cfg):
-        # Specify operating mode
-        self.show_morton = cfg.get('show_morton', False)
-        self.quiet = cfg.get('quiet', False)
-        self.mode = cfg.get('mode', 'boolean')
-        assert(self.mode in ['boolean', 'barycentric', 'intercept_count'])
         # Set up resources
         t_start = time.time()
         self.configure_(vertices, triangles, raysFrom, raysTo)
@@ -284,8 +238,6 @@ class PyCudaRSI(object):
         self.h_morton = self.h_morton[h_sortedTriangleIDs]
         cuda.memcpy_htod(self.d_morton, self.h_morton)
         cuda.memcpy_htod(self.d_sortedTriangleIDs, h_sortedTriangleIDs)
-        if self.show_morton:
-            print('{}: {}'.format(self.h_morton, h_sortedTriangleIDs))
 
         # Build bounding volume hierarchy for mesh triangles
         self.kernel_bvh_reset(
@@ -297,109 +249,19 @@ class PyCudaRSI(object):
             self.d_internalNodes, self.d_leafNodes, self.d_morton,
             np.int32(self.n_triangles), block=self.block_dims, grid=self.grid_dimsT)
 
-        #OPTION: Check BVH integrity
-        #- Decode bytestream to recover the leaf and internal BVHNode arrays.
-        #- The content is first copied from device memory to host memory
-        #  using numpy.int32 conversion. The relevant fields are subsequently
-        #  interpreted based on the type definitions given in struct BVHNode.
-        #- In the following, a "word" refers to 4 contiguous bytes.
-        examine_bvh = cfg.get('examine_bvh', False)
-        bvh_visualisation = cfg.get('bvh_visualisation', [])
-        if examine_bvh or len(bvh_visualisation) > 0:
-            sz_ = lambda x : np.ones(1, dtype=x).nbytes
-            get_ = lambda x : self.struct_size(x, self.d_szQuery)
-            sz_BVHNode = int(get_(self.bytes_in_BVHNode) / sz_(np.int32))
-            h_leafNodes = np.zeros(self.n_triangles * sz_BVHNode, dtype=np.int32)
-            h_internalNodes = np.zeros(self.n_triangles * sz_BVHNode, dtype=np.int32)
-            cuda.memcpy_dtoh(h_leafNodes, self.d_leafNodes)
-            cuda.memcpy_dtoh(h_internalNodes, self.d_internalNodes)
-            
-        if examine_bvh:
-            print('BVH tree structure')
-            print('---------------------------\nInternal nodes')
-            for t in range(self.n_triangles):
-                words = h_internalNodes[t*sz_BVHNode:(t+1)*sz_BVHNode]
-                display_node_contents(words, t, self.params['USE_EXTRA_BVH_FIELDS'])
-            print('---------------------------\nLeaf nodes')
-            for t in range(self.n_triangles):
-                words = h_leafNodes[t*sz_BVHNode:(t+1)*sz_BVHNode]
-                display_node_contents(words, t, self.params['USE_EXTRA_BVH_FIELDS'])
-            print('---------------------------')
 
-        if 'graph' in bvh_visualisation:
-            assert self.params['USE_EXTRA_BVH_FIELDS']
-            bvh_graphviz(h_internalNodes, h_leafNodes, self.n_triangles, sz_BVHNode)
-        if 'spatial' in bvh_visualisation:
-            assert self.params['USE_EXTRA_BVH_FIELDS']
-            bvh_spatial(h_internalNodes, h_leafNodes, self.n_triangles, sz_BVHNode)
-
-        # Apply the appropriate ray-surface intersection test
-        if self.mode == 'boolean':
-            self.kernel_bvh_find_intersections1(
-                self.d_vertices, self.d_triangles,
-                self.d_raysFrom, self.d_raysTo,
-                self.d_internalNodes, self.d_rayBox,
-                self.d_hitIDs, self.d_crossingDetected,
-                np.int32(self.n_triangles), np.int32(self.n_rays),
-                block=self.block_dims, grid=self.grid_lambda)
-            cuda.memcpy_dtoh(self.h_crossingDetected, self.d_crossingDetected)
-        elif self.mode == 'barycentric':
-            self.kernel_bvh_find_intersections2(
-                self.d_vertices, self.d_triangles,
-                self.d_raysFrom, self.d_raysTo,
-                self.d_internalNodes, self.d_rayBox,
-                self.d_hitIDs, self.d_intersectTriangle,
-                self.d_baryT, self.d_baryU, self.d_baryV,
-                np.int32(self.n_triangles), np.int32(self.n_rays),
-                block=self.block_dims, grid=self.grid_lambda)
-            cuda.memcpy_dtoh(self.h_intersectTriangle, self.d_intersectTriangle)
-            cuda.memcpy_dtoh(self.h_baryT, self.d_baryT)
-            intersecting_rays = i = np.where(self.h_intersectTriangle >= 0)[0]
-            #- Support computation on host or device across different versions
-            if self.kernel_intersect_distances is None:
-                normL2 = lambda x,y : np.sqrt(np.sum((x - y)**2, axis=1))
-                distances = self.h_baryT[i] * normL2(self.h_raysTo[i], self.h_raysFrom[i])
-            else: #perform the same calculation on the GPU
-                d_output = self.d_baryU #reuse instead of cuda.mem_alloc
-                self.kernel_intersect_distances(
-                    self.d_raysFrom, self.d_raysTo, self.d_baryT, d_output,
-                    np.int32(self.n_rays), block=self.block_dims, grid=self.grid_dimsR)
-                distances = d_output.get()[i]
-            hit_triangles = f = self.h_intersectTriangle[i]
-            #- Compute intersecting points on GPU if kernel is defined
-            if self.kernel_intersect_points is None:
-                hit_points = self.h_raysFrom[i] + self.h_baryT[i][:, np.newaxis] * (
-                             self.h_raysTo[i] - self.h_raysFrom[i])
-            else:
-                hit_points = np.empty(self.h_raysFrom.shape, dtype=np.float32)
-                d_result = cuda.mem_alloc(hit_points.nbytes)
-                self.kernel_intersect_points(
-                    self.d_raysFrom, self.d_raysTo, self.d_baryT, d_result,
-                    np.int32(self.n_rays), block=self.block_dims, grid=self.grid_dimsR)
-                cuda.memcpy_dtoh(hit_points, d_result)
-                hit_points = hit_points[i]
-            #- Adjust for translation
-            if self.shift_required:
-                hit_points += self.min_coords
-        elif self.mode == 'intercept_count':
-            self.kernel_bvh_find_intersections3(
-                self.d_vertices, self.d_triangles,
-                self.d_raysFrom, self.d_raysTo,
-                self.d_internalNodes, self.d_rayBox, self.d_hitIDs,
-                self.d_interceptCounts, self.d_interceptTs,
-                np.int32(self.n_triangles), np.int32(self.n_rays),
-                block=self.block_dims, grid=self.grid_lambda)
-            cuda.memcpy_dtoh(self.h_interceptCounts, self.d_interceptCounts)
-            cuda.memcpy_dtoh(self.h_interceptTs, self.d_interceptTs)
-            # cuda.memcpy_dtoh(self.h_crossingDetected, self.d_crossingDetected)
+        self.kernel_bvh_find_intersections3(
+            self.d_vertices, self.d_triangles,
+            self.d_raysFrom, self.d_raysTo,
+            self.d_internalNodes, self.d_rayBox, self.d_hitIDs,
+            self.d_interceptCounts, self.d_interceptTs,
+            np.int32(self.n_triangles), np.int32(self.n_rays),
+            block=self.block_dims, grid=self.grid_lambda)
+        cuda.memcpy_dtoh(self.h_interceptCounts, self.d_interceptCounts)
+        cuda.memcpy_dtoh(self.h_interceptTs, self.d_interceptTs)
 
         t_end = time.time()
         if not self.quiet:
             print('{}s\n'.format(t_end - t_start))
 
-        if self.mode == 'barycentric':
-            return intersecting_rays, distances, hit_triangles, hit_points
-        if self.mode == 'intercept_count':
-            return self.h_interceptCounts, self.h_interceptTs
-        else:
-            return self.h_crossingDetected
+        return self.h_interceptCounts, self.h_interceptTs, self.d_interceptCounts, self.d_interceptTs

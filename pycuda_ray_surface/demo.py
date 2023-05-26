@@ -194,7 +194,7 @@ def run_example3(mode):
         results1 = pycu.test(vertices, triangles, raysFrom, raysTo, cfg)
 
     # self.h_crossingDetected, self.h_interceptCounts, self.h_interceptTs
-    interceptCounts, interceptTs = results1
+    interceptCounts, interceptTs, _, _ = results1
     print(f'interceptCounts[-10:]: {interceptCounts[-10:]}')
     print(f'interceptTs[-10:]: {interceptTs[-10:]}')    
 
