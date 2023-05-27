@@ -2177,8 +2177,8 @@ __device__ void generateRays(
 
 //   int udx = rayIdx % out_width;
 //   int vdx = rayIdx / out_width;
-  int udx = rayIdx % out_width;
-  int vdx = rayIdx / out_width;
+  int udx = rayIdx / out_height;
+  int vdx = rayIdx % out_height;
   // int debug = (udx == 973) && (vdx == 598); // larger image size
   // int debug = (udx == 243) && (vdx == 149); // 4x4 binning
 
@@ -2255,9 +2255,9 @@ __device__ void generateRays(
     ray_directions[i*numRays*3 + rayIdx*3 + 1] = ry_ijk[i];
     ray_directions[i*numRays*3 + rayIdx*3 + 2] = rz_ijk[i];
 
-    ray_directions[i*numRays*3 + rayIdx*3 + 0] = udx;
-    ray_directions[i*numRays*3 + rayIdx*3 + 1] = vdx;
-    ray_directions[i*numRays*3 + rayIdx*3 + 2] = numRays;
+    // ray_directions[i*numRays*3 + rayIdx*3 + 0] = udx;
+    // ray_directions[i*numRays*3 + rayIdx*3 + 1] = vdx;
+    // ray_directions[i*numRays*3 + rayIdx*3 + 2] = numRays;
   }
 }
 
