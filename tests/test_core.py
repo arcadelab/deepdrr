@@ -89,9 +89,11 @@ class TestSingleVolume:
         # load 10cmcube.stl from resources folder
         # stl = pv.read("tests/resources/10cmrighttri.stl")
         # stl = pv.read("tests/resources/10cmcube.stl")
+        # stl = pv.read("tests/resources/suzanne.stl")
+        # stl.scale([20]*3, inplace=True)
         stl = pv.read("tests/resources/suzanne.stl")
-        # scale from m to mm
         stl.scale([200]*3, inplace=True)
+        # scale from m to mm
         # mesh = deepdrr.Mesh("titanium", 7, stl, world_from_anatomical=geo.FrameTransform.from_rotation(geo.Rotation.from_euler("y", 90, degrees=True)))
         mesh = deepdrr.Mesh("titanium", 7, stl, world_from_anatomical=geo.FrameTransform.from_rotation(geo.Rotation.from_euler("x", 90, degrees=True)))
         # mesh = deepdrr.Mesh("polyethylene", 1.05, stl)

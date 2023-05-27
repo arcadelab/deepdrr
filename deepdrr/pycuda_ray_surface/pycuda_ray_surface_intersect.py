@@ -56,7 +56,9 @@ class PyCudaRSI(object):
         self.params['USE_EXTRA_BVH_FIELDS'] = params.get('USE_EXTRA_BVH_FIELDS', False)
         self.params['USE_DOUBLE_PRECISION_MOLLER'] = params.get('USE_DOUBLE_PRECISION_MOLLER', False)
         self.quiet = params.get('QUIET', True)
-        self.tolerance = '%.6g' % params.get('TOLERANCE', 0.00001)
+        self.tolerance = '%.6g' % params.get('TOLERANCE', 0.0)
+        # self.tolerance = '%.6g' % params.get('TOLERANCE', 0.000000001)
+        # self.tolerance = '%.6g' % params.get('TOLERANCE', 0.0000001)
         # Check environment variables
         for k, v in default_paths.items():
             location = params.get(k, default_paths[k])
