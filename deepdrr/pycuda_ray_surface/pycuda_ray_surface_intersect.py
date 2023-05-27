@@ -55,7 +55,7 @@ class PyCudaRSI(object):
         self.params['QUANT_LEVELS'] = params.get('QUANT_LEVELS', (1 << 21) - 1)
         self.params['USE_EXTRA_BVH_FIELDS'] = params.get('USE_EXTRA_BVH_FIELDS', False)
         self.params['USE_DOUBLE_PRECISION_MOLLER'] = params.get('USE_DOUBLE_PRECISION_MOLLER', False)
-        self.quiet = params.get('QUIET', False)
+        self.quiet = params.get('QUIET', True)
         self.tolerance = '%.6g' % params.get('TOLERANCE', 0.00001)
         # Check environment variables
         for k, v in default_paths.items():

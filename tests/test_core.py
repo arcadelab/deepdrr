@@ -45,6 +45,10 @@ class TestSingleVolume:
         return volume
 
     def project(self, volume, carm, name, meshes=None):
+        # set projector log level to debug
+        import logging
+        logging.basicConfig(level=logging.DEBUG)
+
         with deepdrr.Projector(
             volume=volume,
             carm=carm,
@@ -53,12 +57,18 @@ class TestSingleVolume:
             max_block_index=200,
             spectrum="90KV_AL40",
             photon_count=100000,
-            add_scatter=False,
+            scatter_num=0,
             threads=8,
             neglog=True,
             meshes=meshes,
         ) as projector:
             image = projector.project()
+            # from timer_util import FPS
+            # fps = FPS()
+            # for i in range(1000):
+            #     image = projector.project()
+            #     if fps_count := fps():
+            #         print(f"FPS2 {fps_count}")
 
         image = (image * 255).astype(np.uint8)
         Image.fromarray(image).save(self.output_dir / name)
@@ -82,11 +92,12 @@ class TestSingleVolume:
         stl = pv.read("resources/suzanne.stl")
         # scale from m to mm
         stl.scale([200]*3, inplace=True)
-        mesh = deepdrr.Mesh("titanium", 7, stl, world_from_anatomical=geo.FrameTransform.from_rotation(geo.Rotation.from_euler("y", 90, degrees=True)))
-        # mesh = deepdrr.Mesh("titanium", 7, stl, world_from_anatomical=geo.FrameTransform.from_rotation(geo.Rotation.from_euler("x", 90, degrees=True)))
+        # mesh = deepdrr.Mesh("titanium", 7, stl, world_from_anatomical=geo.FrameTransform.from_rotation(geo.Rotation.from_euler("y", 90, degrees=True)))
+        mesh = deepdrr.Mesh("titanium", 7, stl, world_from_anatomical=geo.FrameTransform.from_rotation(geo.Rotation.from_euler("x", 90, degrees=True)))
         # mesh = deepdrr.Mesh("polyethylene", 1.05, stl)
         carm = deepdrr.MobileCArm(isocenter=volume.center_in_world, sensor_width=300, sensor_height=200, pixel_size=0.6)
         self.project(volume, carm, "test_mesh.png", meshes=[mesh])
+
 
     def test_translate(self, t):
         volume = deepdrr.Volume.from_nrrd(self.file_path)

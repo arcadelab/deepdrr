@@ -197,7 +197,7 @@ class Projector(object):
         source_to_detector_distance: float = -1,
         carm: Optional[Device] = None,
         meshes: Optional[List[Mesh]] = None,
-        max_mesh_depth = 10
+        max_mesh_depth = 32
     ) -> None:
         """Create the projector, which has info for simulating the DRR.
 
@@ -533,6 +533,8 @@ class Projector(object):
 
             mesh_hit_alphas = np.ones((len(self.meshes), proj.sensor_width * proj.sensor_height, self.max_mesh_depth), dtype=np.float32)*np.inf
 
+            trace_dist = 1000 # TODO: make this a parameter
+
             print("started tracing")
             for mesh_i, _mesh in enumerate(self.meshes):
 
@@ -544,9 +546,9 @@ class Projector(object):
                 vertices = np.array(_mesh.mesh.points, dtype=np.float32)
                 triangles = _mesh.mesh.faces.reshape((-1, 4))[..., 1:][..., [0, 2, 1]].astype(np.int32)  # flip winding order
 
-                rayTo = origin_pt_np+directions*1000 # TODO
+                rayTo = origin_pt_np+directions*trace_dist
 
-                with PyCudaRSI() as pycu:
+                with PyCudaRSI() as pycu: # TODO: max mesh depth parameter
                     np.save("vertices.npy", vertices)
                     np.save("triangles.npy", triangles)
                     np.save("origins.npy", origins)
@@ -559,37 +561,32 @@ class Projector(object):
 
                 print(f"{np.unique(interceptCounts, return_counts=True)=}")
 
-                # make new mesh with only the first 10 triangles
-                # vertices = vertices[triangles[:10].flatten()]
-                # triangles = triangles[:10]
+                # # concat 3s to each index to account for the fact that the first index is the number of triangles
+                # pv_faces = np.concatenate([np.ones((len(triangles), 1), dtype=np.int32)*3, triangles], axis=1).flatten()
+                # pyvista_mesh = pv.PolyData(vertices, pv_faces)
 
-                # print("interceptTs", interceptTs.shape, interceptTs.dtype, interceptTs)
+                # points, rays, cells = _mesh.mesh.multi_ray_trace(origins, directions)
 
+                # alphas = np.linalg.norm(points - origins[0], axis=1)
 
-                # concat 3s to each index to account for the fact that the first index is the number of triangles
-                pv_faces = np.concatenate([np.ones((len(triangles), 1), dtype=np.int32)*3, triangles], axis=1).flatten()
-                pyvista_mesh = pv.PolyData(vertices, pv_faces)
-                # # save mesh to stl
-                # pyvista_mesh.save(f"asdf.stl")
-                    
+                # hit_counts = np.zeros((proj.sensor_width * proj.sensor_height), dtype=np.int32)
 
-                points, rays, cells = _mesh.mesh.multi_ray_trace(origins, directions)
+                # for i in range(len(points)):
+                #     if hit_counts[rays[i]] < self.max_mesh_depth:
+                #         mesh_hit_alphas[mesh_i][rays[i], hit_counts[rays[i]]] = alphas[i]
+                #         hit_counts[rays[i]] += 1
+                # print(f"{np.unique(hit_counts, return_counts=True)=}")
 
-                alphas = np.linalg.norm(points - origins[0], axis=1)
-
-                hit_counts = np.zeros((proj.sensor_width * proj.sensor_height), dtype=np.int32)
-
-                for i in range(len(points)):
-                    if hit_counts[rays[i]] < self.max_mesh_depth:
-                        mesh_hit_alphas[mesh_i][rays[i], hit_counts[rays[i]]] = alphas[i]
-                        hit_counts[rays[i]] += 1
+                asdf = interceptTs*trace_dist
+                asdf[asdf < 0] = np.inf
+                mesh_hit_alphas[mesh_i] = asdf
 
                 # save points.npy
-                np.save("points.npy", points)
+                # np.save("points.npy", points)
 
             hit_alphas_sorted = np.sort(mesh_hit_alphas, axis=2)
 
-            np.save("hit_alphas_sorted.npy", hit_alphas_sorted)
+            # np.save("hit_alphas_sorted.npy", hit_alphas_sorted)
 
             cuda.memcpy_htod(self.mesh_hit_alphas_gpu, hit_alphas_sorted)
 
