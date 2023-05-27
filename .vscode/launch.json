@@ -5,17 +5,8 @@
     "version": "0.2.0",
     "configurations": [
 
-        
         {
-            "name": "Python: Current File",
-            "type": "python",
-            "request": "launch",
-            "program": "${file}",
-            "console": "integratedTerminal",
-            "justMyCode": true
-        },
-        {
-            "name": "Tests",
+            "name": "Core Test",
             "type": "python",
             "request": "launch",
             "program": "tests/test_core.py",
@@ -50,6 +41,14 @@
                 "test_mesh"
             ],
             "cwd": "${workspaceFolder}/tests",
+            "justMyCode": true
+        },
+        {
+            "name": "Python: Current File",
+            "type": "python",
+            "request": "launch",
+            "program": "${file}",
+            "console": "integratedTerminal",
             "justMyCode": true
         },
         {

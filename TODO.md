@@ -11,3 +11,4 @@
 - Reuse tree for non blend meshes
 - Use rasterization method
 - Fast mode rasterization
+- Free all new allocs

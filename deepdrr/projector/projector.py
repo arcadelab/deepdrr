@@ -325,6 +325,7 @@ class Projector(object):
             attenuate_outside_volume=attenuate_outside_volume,
         )
         self.project_kernel = self.mod.get_function("projectKernel")
+        self.generate_rays = self.mod.get_function("kernelGenerateRays")
 
         if self.scatter_num > 0:
             self.scatter_mod = _get_kernel_scatter_module(len(self.all_materials))
@@ -446,10 +447,10 @@ class Projector(object):
             )
             cuda.memcpy_htod(self.world_from_index_gpu, world_from_index)
 
-            ijk_from_world = np.zeros(len(self.volumes) * 3 * 4, dtype=np.float32)
-            sx_ijk = np.zeros(len(self.volumes), dtype=np.float32)
-            sy_ijk = np.zeros(len(self.volumes), dtype=np.float32)
-            sz_ijk = np.zeros(len(self.volumes), dtype=np.float32)
+            mesh_ijk_from_world = np.zeros(len(self.meshes) * 3 * 4, dtype=np.float32)
+            sx_ijk = np.zeros(len(self.meshes), dtype=np.float32)
+            sy_ijk = np.zeros(len(self.meshes), dtype=np.float32)
+            sz_ijk = np.zeros(len(self.meshes), dtype=np.float32)
 
             for vol_id, _vol in enumerate(self.volumes):
                 source_ijk = np.array(
@@ -480,16 +481,35 @@ class Projector(object):
                 source_ijk = np.array(
                     _vol.IJK_from_world @ proj.center_in_world # bruh
                 ).astype(np.float32)
+                cuda.memcpy_htod(
+                    int(self.mesh_sourceX_gpu) + int(NUMBYTES_INT32 * vol_id),
+                    np.array([source_ijk[0]]),
+                )
+                cuda.memcpy_htod(
+                    int(self.mesh_sourceY_gpu) + int(NUMBYTES_INT32 * vol_id),
+                    np.array([source_ijk[1]]),
+                )
+                cuda.memcpy_htod(
+                    int(self.mesh_sourceZ_gpu) + int(NUMBYTES_INT32 * vol_id),
+                    np.array([source_ijk[2]]),
+                )
                 sx_ijk[vol_id] = source_ijk[0]
                 sy_ijk[vol_id] = source_ijk[1]
                 sz_ijk[vol_id] = source_ijk[2]
 
                 # TODO: prefer toarray() to get transform throughout
                 IJK_from_world = _vol.IJK_from_world.toarray()
-                ijk_from_world[(IJK_from_world.size * vol_id) : (IJK_from_world.size * (vol_id + 1))] = IJK_from_world.flatten()
+                mesh_ijk_from_world[(IJK_from_world.size * vol_id) : (IJK_from_world.size * (vol_id + 1))] = IJK_from_world.flatten()
+                cuda.memcpy_htod(
+                    int(self.mesh_ijk_from_world_gpu)
+                    + (IJK_from_world.size * NUMBYTES_FLOAT32) * vol_id,
+                    IJK_from_world,
+                )
 
-            ray_directions = [np.zeros((proj.sensor_width * proj.sensor_height, 3), dtype=np.float32) for _ in range(len(self.meshes))]
-            
+            ray_directions = np.zeros((len(self.meshes), proj.sensor_width * proj.sensor_height, 3), dtype=np.float32)
+            ray_directions2 = np.zeros((len(self.meshes), proj.sensor_width * proj.sensor_height, 3), dtype=np.float32)
+            cuda.memcpy_htod(self.ray_directions_gpu, ray_directions)
+
             for udx in range(proj.sensor_width):
                 for vdx in range(proj.sensor_height):
                     img_dx = (udx * proj.sensor_height) + vdx
@@ -517,18 +537,39 @@ class Projector(object):
 
                     for mesh_i, _mesh in enumerate(self.meshes):
                         rx_ijk[mesh_i] =\
-                            ijk_from_world[offs * mesh_i + 0] * rx + ijk_from_world[offs * mesh_i + 1] * ry +\
-                            ijk_from_world[offs * mesh_i + 2] * rz + ijk_from_world[offs * mesh_i + 3] * 0;
+                            mesh_ijk_from_world[offs * mesh_i + 0] * rx + mesh_ijk_from_world[offs * mesh_i + 1] * ry +\
+                            mesh_ijk_from_world[offs * mesh_i + 2] * rz + mesh_ijk_from_world[offs * mesh_i + 3] * 0;
                         ry_ijk[mesh_i] =\
-                            ijk_from_world[offs * mesh_i + 4] * rx + ijk_from_world[offs * mesh_i + 5] * ry +\
-                            ijk_from_world[offs * mesh_i + 6] * rz + ijk_from_world[offs * mesh_i + 7] * 0;
+                            mesh_ijk_from_world[offs * mesh_i + 4] * rx + mesh_ijk_from_world[offs * mesh_i + 5] * ry +\
+                            mesh_ijk_from_world[offs * mesh_i + 6] * rz + mesh_ijk_from_world[offs * mesh_i + 7] * 0;
                         rz_ijk[mesh_i] =\
-                            ijk_from_world[offs * mesh_i + 8] * rx + ijk_from_world[offs * mesh_i + 9] * ry +\
-                            ijk_from_world[offs * mesh_i + 10] * rz + ijk_from_world[offs * mesh_i + 11] * 0;
+                            mesh_ijk_from_world[offs * mesh_i + 8] * rx + mesh_ijk_from_world[offs * mesh_i + 9] * ry +\
+                            mesh_ijk_from_world[offs * mesh_i + 10] * rz + mesh_ijk_from_world[offs * mesh_i + 11] * 0;
             
                         ray_directions[mesh_i][img_dx, 0] = rx_ijk[i]
                         ray_directions[mesh_i][img_dx, 1] = ry_ijk[i]
                         ray_directions[mesh_i][img_dx, 2] = rz_ijk[i]
+
+            args = [
+                np.int32(proj.sensor_width),  # out_width
+                np.int32(proj.sensor_height),  # out_height
+                self.mesh_sourceX_gpu,  # sx_ijk
+                self.mesh_sourceY_gpu,  # sy_ijk
+                self.mesh_sourceZ_gpu,  # sz_ijk
+                self.world_from_index_gpu,  # world_from_index
+                self.mesh_ijk_from_world_gpu,  # ijk_from_world
+                self.ray_directions_gpu, # ray_directions  
+                np.int32(proj.sensor_width * proj.sensor_height),  # num_rays
+            ]
+
+            self.generate_rays(
+                *args,
+                block=(512, 1, 1),
+                grid=(16, 1),
+            )
+
+            cuda.memcpy_dtoh(ray_directions2, self.ray_directions_gpu)
+
 
 
             mesh_hit_alphas = np.ones((len(self.meshes), proj.sensor_width * proj.sensor_height, self.max_mesh_depth), dtype=np.float32)*np.inf
@@ -615,9 +656,13 @@ class Projector(object):
                 self.sourceX_gpu,  # sx_ijk
                 self.sourceY_gpu,  # sy_ijk
                 self.sourceZ_gpu,  # sz_ijk
+                # self.mesh_sourceX_gpu,  # sx_ijk
+                # self.mesh_sourceY_gpu,  # sy_ijk
+                # self.mesh_sourceZ_gpu,  # sz_ijk
                 np.float32(max_ray_length),  # max_ray_length
                 self.world_from_index_gpu,  # world_from_index
                 self.ijk_from_world_gpu,  # ijk_from_world
+                # self.mesh_ijk_from_world_gpu,  # ijk_from_world
                 np.int32(self.spectrum.shape[0]),  # n_bins
                 self.energies_gpu,  # energies
                 self.pdf_gpu,  # pdf
@@ -650,7 +695,7 @@ class Projector(object):
                     *args, offset_w, offset_h, block=block, grid=(blocks_w, blocks_h)
                 )
             else:
-                log.debug("Running kernel patchwise")
+                log.debug("Running kernel patchwise") # TODO: what?
                 for w in range((blocks_w - 1) // (self.max_block_index + 1)):
                     for h in range((blocks_h - 1) // (self.max_block_index + 1)):
                         offset_w = np.int32(w * self.max_block_index)
@@ -1166,6 +1211,9 @@ class Projector(object):
         self.sourceX_gpu = cuda.mem_alloc(len(self.volumes) * NUMBYTES_FLOAT32)
         self.sourceY_gpu = cuda.mem_alloc(len(self.volumes) * NUMBYTES_FLOAT32)
         self.sourceZ_gpu = cuda.mem_alloc(len(self.volumes) * NUMBYTES_FLOAT32)
+        self.mesh_sourceX_gpu = cuda.mem_alloc(len(self.meshes) * NUMBYTES_FLOAT32)
+        self.mesh_sourceY_gpu = cuda.mem_alloc(len(self.meshes) * NUMBYTES_FLOAT32)
+        self.mesh_sourceZ_gpu = cuda.mem_alloc(len(self.meshes) * NUMBYTES_FLOAT32)
 
         init_tock = time.perf_counter()
         log.debug(
@@ -1178,6 +1226,10 @@ class Projector(object):
         # allocate ijk_from_world for each volume.
         self.ijk_from_world_gpu = cuda.mem_alloc(
             len(self.volumes) * 3 * 4 * NUMBYTES_FLOAT32
+        )
+        
+        self.mesh_ijk_from_world_gpu = cuda.mem_alloc(
+            len(self.meshes) * 3 * 4 * NUMBYTES_FLOAT32
         )
 
         # Initializes the output_shape as well.
@@ -1230,6 +1282,7 @@ class Projector(object):
 
         self.mesh_hit_alphas_gpu = cuda.mem_alloc(math.prod((len(self.meshes), width * height, self.max_mesh_depth)) * NUMBYTES_FLOAT32)
         self.mesh_hit_facing_gpu = cuda.mem_alloc(math.prod((len(self.meshes), width * height, self.max_mesh_depth)) * NUMBYTES_INT8)
+        self.ray_directions_gpu = cuda.mem_alloc(math.prod((len(self.meshes), width * height, 3)) * NUMBYTES_FLOAT32)
 
         # Scatter-specific initializations
 
@@ -1658,9 +1711,13 @@ class Projector(object):
             self.sourceX_gpu.free()
             self.sourceY_gpu.free()
             self.sourceZ_gpu.free()
+            self.mesh_sourceX_gpu.free()
+            self.mesh_sourceY_gpu.free()
+            self.mesh_sourceZ_gpu.free()
 
             self.world_from_index_gpu.free()
             self.ijk_from_world_gpu.free()
+            self.mesh_ijk_from_world_gpu.free()
             self.intensity_gpu.free()
             self.photon_prob_gpu.free()
 
