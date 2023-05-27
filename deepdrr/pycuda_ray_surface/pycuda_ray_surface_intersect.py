@@ -263,29 +263,13 @@ class PyCudaRSI(object):
             np.int32(self.n_triangles), np.int32(self.n_rays),
             block=self.block_dims, grid=self.grid_lambda)
 
-        # # TODO: Don't copy to host
-        # cuda.memcpy_dtoh(self.h_interceptCounts, self.d_interceptCounts)
-        # cuda.memcpy_dtoh(self.h_interceptTs, self.d_interceptTs)
-        # cuda.memcpy_dtoh(self.h_interceptFacing, self.d_interceptFacing)
-
-
-        # self.h_interceptTs[self.h_interceptTs < 0] = np.inf
-
-        # # TODO: implement in gpu
-        # mesh_argsort = np.argsort(self.h_interceptTs, axis=1)
-        # self.h_interceptTs = np.take_along_axis(self.h_interceptTs, mesh_argsort, axis=1)
-        # self.h_interceptFacing = np.take_along_axis(self.h_interceptFacing, mesh_argsort, axis=1)
-
-        # cuda.memcpy_htod(self.d_interceptTs, self.h_interceptTs)
-        # cuda.memcpy_htod(self.d_interceptFacing, self.h_interceptFacing)
-        # cuda.memcpy_htod(self.d_interceptCounts, self.h_interceptCounts)
-
         self.kernel_tide(
             self.d_interceptCounts, 
             self.d_interceptTs, 
             self.d_interceptFacing,
             np.int32(self.n_rays), 
             block=(int(self.block_x/2),1,1),  # TODO ??
+            # block=self.block_dims,  # TODO ??
             grid=self.grid_lambda
         )
 
