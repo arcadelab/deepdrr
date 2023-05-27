@@ -322,7 +322,7 @@ __device__ void checkRayTriangleIntersection3(const float* __restrict__ vertices
     int result = intersectMoller(v0, v1, v2, edge1, edge2, start, finish, t, u, v);
     if (result) {
         bool newIntercept(true);
-        float floatId = triangleID;
+        // float floatId = triangleID;
         for (int i = 0; i < MAX_INTERSECTIONS; i++) {
             // if ((floatId > tp[i] - tol) && (floatId < tp[i] + tol)) {
             if ((t > tp[i] - tol) && (t < tp[i] + tol)) {
@@ -891,7 +891,7 @@ __device__ void tide(
     int rayIdx
 )
 {
-    int[] altitudes = rayInterceptTs[rayIdx]
+    int altitudes[MAX_INTERSECTIONS];
     int altitude = 0;
     
     for (int i = 0; i < MAX_INTERSECTIONS; i++) {

@@ -580,16 +580,12 @@ class Projector(object):
                 # print(f"{np.unique(hit_counts, return_counts=True)=}")
 
                 asdf = interceptTs*trace_dist
-                asdf[asdf < 0] = np.inf
                 mesh_hit_alphas[mesh_i] = asdf
                 mesh_hit_facing[mesh_i] = interceptFacing
 
                 # save points.npy
                 # np.save("points.npy", points)
 
-            mesh_argsort = np.argsort(mesh_hit_alphas, axis=2)
-            mesh_hit_alphas = np.take_along_axis(mesh_hit_alphas, mesh_argsort, axis=2)
-            mesh_hit_facing = np.take_along_axis(mesh_hit_facing, mesh_argsort, axis=2)
 
             # np.save("hit_alphas_sorted.npy", hit_alphas_sorted)
 

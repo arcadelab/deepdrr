@@ -124,6 +124,7 @@ class PyCudaRSI(object):
         self.kernel_bvh_find_intersections1 = bind("kernelBVHIntersection1")
         self.kernel_bvh_find_intersections2 = bind("kernelBVHIntersection2")
         self.kernel_bvh_find_intersections3 = bind("kernelBVHIntersection3")
+        self.kernel_tide = bind("kernelTide")
         try:
             self.kernel_intersect_distances = bind("kernelIntersectDistances")
             self.kernel_intersect_points = bind("kernelIntersectPoints")
@@ -266,6 +267,33 @@ class PyCudaRSI(object):
         cuda.memcpy_dtoh(self.h_interceptCounts, self.d_interceptCounts)
         cuda.memcpy_dtoh(self.h_interceptTs, self.d_interceptTs)
         cuda.memcpy_dtoh(self.h_interceptFacing, self.d_interceptFacing)
+
+
+        self.h_interceptTs[self.h_interceptTs < 0] = np.inf
+
+        # TODO: implement in gpu
+        mesh_argsort = np.argsort(self.h_interceptTs, axis=1)
+        self.h_interceptTs = np.take_along_axis(self.h_interceptTs, mesh_argsort, axis=1)
+        self.h_interceptFacing = np.take_along_axis(self.h_interceptFacing, mesh_argsort, axis=1)
+
+        cuda.memcpy_htod(self.d_interceptTs, self.h_interceptTs)
+        cuda.memcpy_htod(self.d_interceptFacing, self.h_interceptFacing)
+        cuda.memcpy_htod(self.d_interceptCounts, self.h_interceptCounts)
+
+        self.kernel_tide(
+            self.d_interceptCounts, 
+            self.d_interceptTs, 
+            self.d_interceptFacing,
+            np.int32(self.n_rays), 
+            block=self.block_dims, 
+            grid=self.grid_lambda
+        )
+
+        cuda.memcpy_dtoh(self.h_interceptCounts, self.d_interceptCounts)
+        cuda.memcpy_dtoh(self.h_interceptTs, self.d_interceptTs)
+        cuda.memcpy_dtoh(self.h_interceptFacing, self.d_interceptFacing)
+
+        print(f"{np.unique(self.h_interceptCounts, return_counts=True)=}")
 
         t_end = time.time()
         if not self.quiet:
