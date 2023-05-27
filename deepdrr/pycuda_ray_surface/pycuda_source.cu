@@ -891,48 +891,80 @@ __device__ void tide(
     int rayIdx
 )
 {
-    int altitudes[MAX_INTERSECTIONS];
-    int altitude = 0;
-    
     for (int i = 0; i < MAX_INTERSECTIONS; i++) {
-        altitude += interceptFacing[i];
-        altitudes[i] = altitude;
-    }
-
-    int seaLevel = max(0, altitude);
-
-    int prevAltitide = 0;
-    for (int i = 0; i < MAX_INTERSECTIONS; i++) {
-        int currentAltitude = altitudes[i];
-        if (currentAltitude < seaLevel || prevAltitide < seaLevel) {
+        if (interceptTs[i] < 0) {
             interceptTs[i] = INFINITY;
-            (*interceptCounts) -= interceptFacing[i] != 0;
-            interceptFacing[i] = 0;
         }
-        prevAltitide = currentAltitude;
     }
 
-    // Fill gaps
-    int dstIdx = 0;
-    int srcIdx = 0;
-
-    while (dstIdx < MAX_INTERSECTIONS && interceptFacing[dstIdx] != 0) {
-        dstIdx++;
+    {
+        // selection sort h_interceptTs
+        int sortedIdx = 0;
+        while (sortedIdx < MAX_INTERSECTIONS) {
+            int minIdx = sortedIdx;
+            float minT = interceptTs[minIdx];
+            for (int i = sortedIdx + 1; i < MAX_INTERSECTIONS; i++) {
+                float t = interceptTs[i];
+                if (t < minT) {
+                    minIdx = i;
+                    minT = t;
+                }
+            }
+            float tmpT = interceptTs[sortedIdx];
+            interceptTs[sortedIdx] = minT;
+            interceptTs[minIdx] = tmpT;
+            int8_t tmpFacing = interceptFacing[sortedIdx];
+            interceptFacing[sortedIdx] = interceptFacing[minIdx];
+            interceptFacing[minIdx] = tmpFacing;
+            sortedIdx++;
+        }
     }
-    srcIdx = dstIdx + 1;
 
-    while (srcIdx < MAX_INTERSECTIONS && dstIdx < MAX_INTERSECTIONS) {
-        while (srcIdx < MAX_INTERSECTIONS && interceptFacing[srcIdx] == 0) {
+    {
+        int altitudes[MAX_INTERSECTIONS];
+        int altitude = 0;
+        
+        for (int i = 0; i < MAX_INTERSECTIONS; i++) {
+            altitude += interceptFacing[i];
+            altitudes[i] = altitude;
+        }
+    
+        int seaLevel = max(0, altitude);
+    
+        int prevAltitide = 0;
+        for (int i = 0; i < MAX_INTERSECTIONS; i++) {
+            int currentAltitude = altitudes[i];
+            if (currentAltitude < seaLevel || prevAltitide < seaLevel) {
+                interceptTs[i] = INFINITY;
+                (*interceptCounts) -= interceptFacing[i] != 0;
+                interceptFacing[i] = 0;
+            }
+            prevAltitide = currentAltitude;
+        }
+    }
+    {
+        // Fill gaps
+        int dstIdx = 0;
+        int srcIdx = 0;
+
+        while (dstIdx < MAX_INTERSECTIONS && interceptFacing[dstIdx] != 0) {
+            dstIdx++;
+        }
+        srcIdx = dstIdx + 1;
+
+        while (srcIdx < MAX_INTERSECTIONS && dstIdx < MAX_INTERSECTIONS) {
+            while (srcIdx < MAX_INTERSECTIONS && interceptFacing[srcIdx] == 0) {
+                srcIdx++;
+            }
+            if (srcIdx < MAX_INTERSECTIONS) {
+                interceptTs[dstIdx] = interceptTs[srcIdx];
+                interceptFacing[dstIdx] = interceptFacing[srcIdx];
+                interceptTs[srcIdx] = INFINITY;
+                interceptFacing[srcIdx] = 0;
+            }
             srcIdx++;
+            dstIdx++;
         }
-        if (srcIdx < MAX_INTERSECTIONS) {
-            interceptTs[dstIdx] = interceptTs[srcIdx];
-            interceptFacing[dstIdx] = interceptFacing[srcIdx];
-            interceptTs[srcIdx] = INFINITY;
-            interceptFacing[srcIdx] = 0;
-        }
-        srcIdx++;
-        dstIdx++;
     }
 }
 

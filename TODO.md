@@ -1,6 +1,6 @@
 
 # TODO
-- On gpu sort
+<!-- - On gpu sort -->
 - On gpu ray generation
 - Blend meshes
 - Confirm mesh cutout
