@@ -285,7 +285,7 @@ class PyCudaRSI(object):
             self.d_interceptTs, 
             self.d_interceptFacing,
             np.int32(self.n_rays), 
-            block=self.block_dims, 
+            block=(int(self.block_x/2),1,1),  # TODO ??
             grid=self.grid_lambda
         )
 
@@ -294,6 +294,7 @@ class PyCudaRSI(object):
         cuda.memcpy_dtoh(self.h_interceptFacing, self.d_interceptFacing)
 
         print(f"{np.unique(self.h_interceptCounts, return_counts=True)=}")
+        print(f"{np.unique(self.h_interceptFacing, return_counts=True)=}")
 
         t_end = time.time()
         if not self.quiet:

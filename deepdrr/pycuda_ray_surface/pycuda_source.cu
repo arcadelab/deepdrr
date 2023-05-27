@@ -236,7 +236,7 @@ __device__ int intersectMoller(
     else {
         u *= inv_det;
         v *= inv_det;
-        return inv_det < 0 ? -1 : 1;
+        return inv_det < 0 ? 1 : -1;
     }
 }
 
@@ -906,8 +906,8 @@ __device__ void tide(
         int currentAltitude = altitudes[i];
         if (currentAltitude < seaLevel || prevAltitide < seaLevel) {
             interceptTs[i] = INFINITY;
+            (*interceptCounts) -= interceptFacing[i] != 0;
             interceptFacing[i] = 0;
-            (*interceptCounts)--;
         }
         prevAltitide = currentAltitude;
     }
