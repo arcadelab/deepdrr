@@ -2183,6 +2183,7 @@ __global__ void projectKernel(
     float *solid_angle,       // flat array, with shape (out_height, out_width).
                               // Could be NULL pointer
     float *mesh_hit_alphas,
+    float *mesh_hit_facing,
     int max_mesh_depth,
     int *mesh_materials,
     float *mesh_densities,

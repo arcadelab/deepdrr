@@ -532,6 +532,7 @@ class Projector(object):
 
 
             mesh_hit_alphas = np.ones((len(self.meshes), proj.sensor_width * proj.sensor_height, self.max_mesh_depth), dtype=np.float32)*np.inf
+            mesh_hit_facing = np.zeros((len(self.meshes), proj.sensor_width * proj.sensor_height, self.max_mesh_depth), dtype=np.int8)
 
             trace_dist = 1000 # TODO: make this a parameter
 
@@ -557,9 +558,10 @@ class Projector(object):
                     results1 = pycu.test(vertices.copy(), triangles.copy(), origins.copy(), rayTo.copy(), None)
 
                     # self.h_crossingDetected, self.h_interceptCounts, self.h_interceptTs
-                    interceptCounts, interceptTs, _, _ = results1
+                    interceptCounts, interceptTs, interceptFacing = results1
 
-                print(f"{np.unique(interceptCounts, return_counts=True)=}")
+                    print(f"{np.unique(interceptFacing, return_counts=True)=}")
+                    print(f"{np.unique(interceptCounts, return_counts=True)=}")
 
                 # # concat 3s to each index to account for the fact that the first index is the number of triangles
                 # pv_faces = np.concatenate([np.ones((len(triangles), 1), dtype=np.int32)*3, triangles], axis=1).flatten()
@@ -580,15 +582,19 @@ class Projector(object):
                 asdf = interceptTs*trace_dist
                 asdf[asdf < 0] = np.inf
                 mesh_hit_alphas[mesh_i] = asdf
+                mesh_hit_facing[mesh_i] = interceptFacing
 
                 # save points.npy
                 # np.save("points.npy", points)
 
-            hit_alphas_sorted = np.sort(mesh_hit_alphas, axis=2)
+            mesh_argsort = np.argsort(mesh_hit_alphas, axis=2)
+            mesh_hit_alphas = np.take_along_axis(mesh_hit_alphas, mesh_argsort, axis=2)
+            mesh_hit_facing = np.take_along_axis(mesh_hit_facing, mesh_argsort, axis=2)
 
             # np.save("hit_alphas_sorted.npy", hit_alphas_sorted)
 
-            cuda.memcpy_htod(self.mesh_hit_alphas_gpu, hit_alphas_sorted)
+            cuda.memcpy_htod(self.mesh_hit_alphas_gpu, mesh_hit_alphas)
+            cuda.memcpy_htod(self.mesh_hit_facing_gpu, mesh_hit_facing)
 
             print("done tracing")
                 
@@ -624,6 +630,7 @@ class Projector(object):
                 self.photon_prob_gpu,  # photon_prob
                 self.solid_angle_gpu,  # solid_angle
                 self.mesh_hit_alphas_gpu,
+                self.mesh_hit_facing_gpu,
                 np.int32(self.max_mesh_depth),
                 self.mesh_materials_gpu,
                 self.mesh_densities_gpu,
@@ -1226,6 +1233,7 @@ class Projector(object):
         width = self.device.sensor_height
 
         self.mesh_hit_alphas_gpu = cuda.mem_alloc(math.prod((len(self.meshes), width * height, self.max_mesh_depth)) * NUMBYTES_FLOAT32)
+        self.mesh_hit_facing_gpu = cuda.mem_alloc(math.prod((len(self.meshes), width * height, self.max_mesh_depth)) * NUMBYTES_INT8)
 
         # Scatter-specific initializations
 

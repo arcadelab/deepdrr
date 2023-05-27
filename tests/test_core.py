@@ -89,7 +89,7 @@ class TestSingleVolume:
         # load 10cmcube.stl from resources folder
         # stl = pv.read("resources/10cmrighttri.stl")
         # stl = pv.read("resources/10cmcube.stl")
-        stl = pv.read("resources/suzanne.stl")
+        stl = pv.read("tests/resources/suzanne.stl")
         # scale from m to mm
         stl.scale([200]*3, inplace=True)
         # mesh = deepdrr.Mesh("titanium", 7, stl, world_from_anatomical=geo.FrameTransform.from_rotation(geo.Rotation.from_euler("y", 90, degrees=True)))

@@ -179,6 +179,7 @@ class PyCudaRSI(object):
         self.h_crossingDetected = np.zeros(self.n_rays, dtype=np.int32)
         self.h_interceptCounts = np.zeros(self.n_rays, dtype=np.int32)
         self.h_interceptTs = np.zeros((self.n_rays, self.max_intersections), dtype=np.float32)
+        self.h_interceptFacing = np.zeros((self.n_rays, self.max_intersections), dtype=np.int8)
         self.d_vertices = cuda.mem_alloc(self.h_vertices.nbytes)
         self.d_triangles = cuda.mem_alloc(self.h_triangles.nbytes)
         self.d_raysFrom = cuda.mem_alloc(self.h_raysFrom.nbytes)
@@ -195,6 +196,7 @@ class PyCudaRSI(object):
 
         self.d_interceptCounts = cuda.mem_alloc(self.h_interceptCounts.nbytes)
         self.d_interceptTs = cuda.mem_alloc(self.h_interceptTs.nbytes)
+        self.d_interceptFacing = cuda.mem_alloc(self.h_interceptFacing.nbytes)
 
 
     def transfer_data_(self):
@@ -256,14 +258,17 @@ class PyCudaRSI(object):
             self.d_vertices, self.d_triangles,
             self.d_raysFrom, self.d_raysTo,
             self.d_internalNodes, self.d_rayBox, self.d_hitIDs,
-            self.d_interceptCounts, self.d_interceptTs,
+            self.d_interceptCounts, self.d_interceptTs, self.d_interceptFacing,
             np.int32(self.n_triangles), np.int32(self.n_rays),
             block=self.block_dims, grid=self.grid_lambda)
+
+        # TODO: Don't copy to host
         cuda.memcpy_dtoh(self.h_interceptCounts, self.d_interceptCounts)
         cuda.memcpy_dtoh(self.h_interceptTs, self.d_interceptTs)
+        cuda.memcpy_dtoh(self.h_interceptFacing, self.d_interceptFacing)
 
         t_end = time.time()
         if not self.quiet:
             print('{}s\n'.format(t_end - t_start))
 
-        return self.h_interceptCounts, self.h_interceptTs, self.d_interceptCounts, self.d_interceptTs
+        return self.h_interceptCounts, self.h_interceptTs, self.h_interceptFacing
