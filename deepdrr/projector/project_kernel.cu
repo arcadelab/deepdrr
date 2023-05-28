@@ -2585,28 +2585,28 @@ __global__ void projectKernel(
       }
     }
 
-    // // if (debug) printf("  got priority at alpha, num vols\n"); // This is
-    // // the one that seems to take a half a second.
-    // if (0 == n_vols_at_curr_priority) {
-    //   // Outside the bounds of all volumes to trace. Use the default
-    //   // AIR_DENSITY.
-    //   if (ATTENUATE_OUTSIDE_VOLUME) {
-    //     area_density[AIR_INDEX] += AIR_DENSITY;
-    //   }
-    // } else if (!mesh_hit_this_step) {
-    //   // If multiple volumes at the same priority, use the average
-    //   float weight = 1.0f / ((float)n_vols_at_curr_priority);
+    // if (debug) printf("  got priority at alpha, num vols\n"); // This is
+    // the one that seems to take a half a second.
+    if (0 == n_vols_at_curr_priority) {
+      // Outside the bounds of all volumes to trace. Use the default
+      // AIR_DENSITY.
+      if (ATTENUATE_OUTSIDE_VOLUME) {
+        area_density[AIR_INDEX] += AIR_DENSITY;
+      }
+    } else if (!mesh_hit_this_step) { 
+      // If multiple volumes at the same priority, use the average
+      float weight = 1.0f / ((float)n_vols_at_curr_priority);
 
-    //   // For the entry boundary, multiply by 0.5. That is, for the initial
-    //   // interpolated value, only a half step-size is considered in the
-    //   // computation. For the second-to-last interpolation point, also
-    //   // multiply by 0.5, since there will be a final step at the
-    //   // globalMaxAlpha boundary.
-    //   weight *= (0 == t || num_steps - 1 == t) ? 0.5f : 1.0f;
+      // For the entry boundary, multiply by 0.5. That is, for the initial
+      // interpolated value, only a half step-size is considered in the
+      // computation. For the second-to-last interpolation point, also
+      // multiply by 0.5, since there will be a final step at the
+      // globalMaxAlpha boundary.
+      weight *= (0 == t || num_steps - 1 == t) ? 0.5f : 1.0f;
 
-    //   // Loop through volumes and add to the area_density.
-    //   INTERPOLATE(weight);
-    // }
+      // Loop through volumes and add to the area_density.
+      INTERPOLATE(weight);
+    }
     alpha += step;
   }
 

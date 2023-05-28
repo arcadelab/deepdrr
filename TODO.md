@@ -1,8 +1,8 @@
 
 # Features
-- Blend meshes
-- Confirm mesh cutout
 - Use winding order in renderer
+- Confirm mesh cutout
+- Blend meshes
 - Mesh instancing
 
 # Optimizations
