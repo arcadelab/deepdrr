@@ -1,11 +1,14 @@
 
-# TODO
-<!-- - On gpu sort -->
-- On gpu ray generation
+# Features
 - Blend meshes
 - Confirm mesh cutout
 - Use winding order in renderer
 - Mesh instancing
+
+# Optimizations
+<!-- - On gpu sort -->
+<!-- - On gpu ray generation -->
+- On gpu ray from and to gen
 - Save memory by merging same-material mesh raycast hits
 - Save memory by using signed distances to represent front/back hits
 - Reuse tree for non blend meshes

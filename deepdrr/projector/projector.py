@@ -506,54 +506,6 @@ class Projector(object):
                     IJK_from_world,
                 )
 
-            ray_directions = np.zeros((len(self.meshes), proj.sensor_width * proj.sensor_height, 3), dtype=np.float32)
-            ray_directions2 = np.zeros((len(self.meshes), proj.sensor_width * proj.sensor_height, 3), dtype=np.float32)
-            cuda.memcpy_htod(self.ray_directions_gpu, ray_directions)
-
-            # for udx in range(proj.sensor_width):
-            #     for vdx in range(proj.sensor_height):
-            #         img_dx = (udx * proj.sensor_height) + vdx
-
-            #         u = udx + 0.5
-            #         v = vdx + 0.5
-
-            #         world_from_index_flat = world_from_index.flatten()
-
-            #         rx = u * world_from_index_flat[0] + v * world_from_index_flat[1] + world_from_index_flat[2]
-            #         ry = u * world_from_index_flat[3] + v * world_from_index_flat[4] + world_from_index_flat[5]
-            #         rz = u * world_from_index_flat[6] + v * world_from_index_flat[7] + world_from_index_flat[8]
-
-            #         ray_length = np.sqrt(rx * rx + ry * ry + rz * rz)
-            #         inv_ray_norm = 1.0 / ray_length
-            #         rx *= inv_ray_norm
-            #         ry *= inv_ray_norm
-            #         rz *= inv_ray_norm
-
-            #         rx_ijk = np.zeros(len(self.meshes), dtype=np.float32)
-            #         ry_ijk = np.zeros(len(self.meshes), dtype=np.float32)
-            #         rz_ijk = np.zeros(len(self.meshes), dtype=np.float32)
-
-            #         offs = 12
-
-            #         for mesh_i, _mesh in enumerate(self.meshes):
-            #             rx_ijk[mesh_i] =\
-            #                 mesh_ijk_from_world[offs * mesh_i + 0] * rx + mesh_ijk_from_world[offs * mesh_i + 1] * ry +\
-            #                 mesh_ijk_from_world[offs * mesh_i + 2] * rz + mesh_ijk_from_world[offs * mesh_i + 3] * 0;
-            #             ry_ijk[mesh_i] =\
-            #                 mesh_ijk_from_world[offs * mesh_i + 4] * rx + mesh_ijk_from_world[offs * mesh_i + 5] * ry +\
-            #                 mesh_ijk_from_world[offs * mesh_i + 6] * rz + mesh_ijk_from_world[offs * mesh_i + 7] * 0;
-            #             rz_ijk[mesh_i] =\
-            #                 mesh_ijk_from_world[offs * mesh_i + 8] * rx + mesh_ijk_from_world[offs * mesh_i + 9] * ry +\
-            #                 mesh_ijk_from_world[offs * mesh_i + 10] * rz + mesh_ijk_from_world[offs * mesh_i + 11] * 0;
-            
-            #             ray_directions[mesh_i][img_dx, 0] = rx_ijk[i]
-            #             ray_directions[mesh_i][img_dx, 1] = ry_ijk[i]
-            #             ray_directions[mesh_i][img_dx, 2] = rz_ijk[i]
-
-            #             # ray_directions[mesh_i][img_dx, 0] = udx
-            #             # ray_directions[mesh_i][img_dx, 1] = vdx
-            #             # ray_directions[mesh_i][img_dx, 2] = 42
-
             args = [
                 np.int32(proj.sensor_width),  # out_width
                 np.int32(proj.sensor_height),  # out_height
@@ -572,8 +524,8 @@ class Projector(object):
                 grid=(16, 1),
             )
 
+            ray_directions = np.zeros((len(self.meshes), proj.sensor_width * proj.sensor_height, 3), dtype=np.float32)
             cuda.memcpy_dtoh(ray_directions, self.ray_directions_gpu)
-
 
 
             mesh_hit_alphas = np.ones((len(self.meshes), proj.sensor_width * proj.sensor_height, self.max_mesh_depth), dtype=np.float32)*np.inf
@@ -584,6 +536,7 @@ class Projector(object):
             print("started tracing")
             for mesh_i, _mesh in enumerate(self.meshes):
 
+                # TODO: do this on GPU
                 directions = ray_directions[mesh_i].astype(np.float32)
                 origin_pt = [sx_ijk[mesh_i], sy_ijk[mesh_i], sz_ijk[mesh_i]]
                 origin_pt_np = np.array(origin_pt, dtype=np.float32)
@@ -595,10 +548,10 @@ class Projector(object):
                 rayTo = origin_pt_np+directions*trace_dist
 
                 with PyCudaRSI() as pycu: # TODO: max mesh depth parameter
-                    np.save("vertices.npy", vertices)
-                    np.save("triangles.npy", triangles)
-                    np.save("origins.npy", origins)
-                    np.save("rayTo.npy", rayTo)
+                    # np.save("vertices.npy", vertices)
+                    # np.save("triangles.npy", triangles)
+                    # np.save("origins.npy", origins)
+                    # np.save("rayTo.npy", rayTo)
 
                     results1 = pycu.test(vertices.copy(), triangles.copy(), origins.copy(), rayTo.copy(), None)
 
