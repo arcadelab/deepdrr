@@ -1,3 +1,7 @@
+# Ops
+- Cleanup
+- Add tests
+- Get rid of macros
 
 # Features
 <!-- - Use winding order in renderer -->
