@@ -1,9 +1,10 @@
 
 # Features
-- Use winding order in renderer
-- Confirm mesh cutout
+<!-- - Use winding order in renderer -->
+<!-- - Confirm mesh cutout -->
 - Blend meshes
 - Mesh instancing
+- Mesh priorities (is necessary?)
 
 # Optimizations
 <!-- - On gpu sort -->

@@ -2339,7 +2339,7 @@ __global__ void projectKernel(
     float *solid_angle,       // flat array, with shape (out_height, out_width).
                               // Could be NULL pointer
     float *mesh_hit_alphas,
-    float *mesh_hit_facing,
+    int8_t *mesh_hit_facing,
     int max_mesh_depth,
     int *mesh_materials,
     float *mesh_densities,
@@ -2489,6 +2489,7 @@ __global__ void projectKernel(
 
   // printf("global min, max alphas: %f, %f\n", minAlpha, maxAlpha);
 
+//   minAlpha = 0.0f; // TODO: fix this hack
   maxAlpha = 2000.0f; // TODO: fix this hack
 
   // Part 2: Cast ray if it intersects any of the volumes
@@ -2571,17 +2572,21 @@ __global__ void projectKernel(
     bool mesh_hit_this_step = false;
 
     for (int i = 0; i < NUM_MESHES; i++) {
-      while (
-          mesh_hit_index[i] < max_mesh_depth &&
-          mesh_hit_alphas[i*(out_height*out_width)*max_mesh_depth+img_dx*max_mesh_depth+mesh_hit_index[i]] < alpha
-      ) {
-        mesh_hit_depth[i] = !mesh_hit_depth[i]; // TODO: doesn't support nested meshes
+      int hit_arr_index = 0;
+      while (true) {
+        hit_arr_index = i*(out_height*out_width)*max_mesh_depth+img_dx*max_mesh_depth+mesh_hit_index[i];
+        if (!(
+            mesh_hit_index[i] < max_mesh_depth &&
+            mesh_hit_facing[hit_arr_index] != 0 &&
+            mesh_hit_alphas[hit_arr_index] < alpha
+        )) break;
+        mesh_hit_depth[i] += mesh_hit_facing[hit_arr_index];
         mesh_hit_index[i] += 1;
       }
 
       if (mesh_hit_depth[i]) {
         area_density[mesh_materials[i]] += mesh_densities[i];
-        mesh_hit_this_step = true;
+        mesh_hit_this_step = true; // TODO mesh priorities?
       }
     }
 
