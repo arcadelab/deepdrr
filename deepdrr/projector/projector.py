@@ -542,8 +542,8 @@ class Projector(object):
                 origin_pt_np = np.array(origin_pt, dtype=np.float32)
                 origins = np.array([origin_pt]*len(directions))
                 
-                vertices = np.array(_mesh.mesh.points, dtype=np.float32)
-                triangles = _mesh.mesh.faces.reshape((-1, 4))[..., 1:][..., [0, 2, 1]].astype(np.int32)  # flip winding order
+                vertices = _mesh.compute_vertices()
+                triangles = _mesh.triangles()
 
                 rayTo = origin_pt_np+directions*trace_dist
 

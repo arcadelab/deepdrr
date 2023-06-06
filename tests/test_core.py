@@ -94,11 +94,23 @@ class TestSingleVolume:
         # stl = pv.read("tests/resources/suzanne.stl")
         stl.scale([200, 3000, 200], inplace=True)
         stl.translate([0, -250, 0], inplace=True)
+        morph_targets = np.array([
+            [1, 0, 0],
+            [1, 0, 0],
+            [1, 0, 0],
+            [1, 0, 0],
+            [0, 0, 1],
+            [0, 0, 1],
+            [-1, 0, 1],
+            [0, 0, 1],
+                                  ]).reshape(1, -1, 3)
         # scale from m to mm
         # mesh = deepdrr.Mesh("titanium", 7, stl, world_from_anatomical=geo.FrameTransform.from_rotation(geo.Rotation.from_euler("y", 90, degrees=True)))
-        mesh = deepdrr.Mesh("air", 0, stl, world_from_anatomical=geo.FrameTransform.from_rotation(geo.Rotation.from_euler("x", 90, degrees=True)))
+        mesh = deepdrr.Mesh("air", 0, stl, morph_targets=morph_targets, world_from_anatomical=geo.FrameTransform.from_rotation(geo.Rotation.from_euler("x", 90, degrees=True)))
         # mesh = deepdrr.Mesh("titanium", 7, stl, world_from_anatomical=geo.FrameTransform.from_rotation(geo.Rotation.from_euler("x", 90, degrees=True)))
         # mesh = deepdrr.Mesh("polyethylene", 1.05, stl)
+        mesh.morph_weights = np.array([-10])
+        
         carm = deepdrr.MobileCArm(isocenter=volume.center_in_world, sensor_width=300, sensor_height=200, pixel_size=0.6)
         self.project(volume, carm, "test_mesh.png", meshes=[mesh])
 

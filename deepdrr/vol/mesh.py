@@ -29,6 +29,7 @@ class Mesh(object):
     anatomical_from_IJK: geo.FrameTransform
     world_from_anatomical: geo.FrameTransform
     mesh: pv.PolyData
+    morph_targets: List[np.ndarray]
     material: str
     density: float
 
@@ -37,6 +38,8 @@ class Mesh(object):
         material: str,
         density: float,
         mesh: pv.PolyData,
+        morph_targets: Optional[np.ndarray] = None,
+        morph_weights: Optional[np.ndarray] = None,
         world_from_anatomical: Optional[geo.FrameTransform] = None,
     ) -> None:
         self.anatomical_from_IJK = geo.frame_transform(None)
@@ -46,6 +49,11 @@ class Mesh(object):
             else geo.frame_transform(world_from_anatomical)
         )
         self.mesh = mesh
+        self.morph_targets = morph_targets if morph_targets is not None else []
+        for mt in self.morph_targets:
+            assert mt.shape[0] == self.mesh.n_points
+        self.morph_weights = morph_weights if morph_weights is not None else np.zeros(len(self.morph_targets))
+        assert len(self.morph_weights) == len(self.morph_targets)
         self.material = material
         self.density = density
 
@@ -94,6 +102,14 @@ class Mesh(object):
     def center_in_world(self) -> geo.Point3D:
         """The center of the volume in world coorindates. Useful for debugging."""
         return self.world_from_ijk @ geo.point(np.array(self.shape) / 2)
+    
+
+    def compute_vertices(self):
+        """Compute the vertices of the mesh in local coordinates, including the morph targets."""
+        return np.array(self.mesh.points + self.morph_targets * self.morph_weights, dtype=np.float32)
+    
+    def triangles(self):
+        return self.mesh.faces.reshape((-1, 4))[..., 1:][..., [0, 2, 1]].astype(np.int32)   # flip winding order
 
     # def get_bounding_box_in_world(self) -> Tuple[geo.Point3D, geo.Point3D]:
     #     """Get the corners of a bounding box enclosing the volume in world coordinates.
