@@ -17,3 +17,4 @@
 - Use rasterization method
 - Fast mode rasterization
 - Free all new allocs
+- On GPU morph targets
