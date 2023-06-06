@@ -2489,9 +2489,6 @@ __global__ void projectKernel(
 
   // printf("global min, max alphas: %f, %f\n", minAlpha, maxAlpha);
 
-//   minAlpha = 0.0f; // TODO: fix this hack
-  maxAlpha = 2000.0f; // TODO: fix this hack
-
   // Part 2: Cast ray if it intersects any of the volumes
   int num_steps = ceil((maxAlpha - minAlpha) / step);
   // if (debug) printf("num_steps: %d\n", num_steps);
@@ -2585,7 +2582,7 @@ __global__ void projectKernel(
       }
 
       if (mesh_hit_depth[i]) {
-        area_density[mesh_materials[i]] += mesh_densities[i];
+        // area_density[mesh_materials[i]] += mesh_densities[i];
         mesh_hit_this_step = true; // TODO mesh priorities?
       }
     }
@@ -2617,41 +2614,6 @@ __global__ void projectKernel(
     alpha += step;
   }
 
-//  bool finished_meshes[NUM_MESHES];
-//  for (int i = 0; i < NUM_MESHES; i++) {
-//    finished_meshes[i] = false;
-//  }
-//  int num_pending = NUM_MESHES;
-//  while (num_pending > 0) {
-//    for (int i = 0; i < NUM_MESHES; i++) {
-//      int hit_index = mesh_hit_index[i];
-//      if (hit_index >= max_mesh_depth) {
-//        if (!finished_meshes[i]) {
-//          num_pending -= 1;
-//          finished_meshes[i] = true;
-//        }
-//        continue;
-//      }
-//      float next_alpha = mesh_hit_alphas[i * (out_height * out_width) * max_mesh_depth + img_dx * max_mesh_depth + hit_index];
-//      if (next_alpha > INFINITY / 2) { // TODO bad
-//        if (!finished_meshes[i]) {
-//          num_pending -= 1;
-//          finished_meshes[i] = true;
-//        }
-//      }
-//      if (next_alpha < alpha) {
-//        mesh_hit_depth[i] = !mesh_hit_depth[i];
-//        mesh_hit_index[i] += 1;
-//      }
-//
-//      if (mesh_hit_depth[i]) {
-//        area_density[mesh_materials[i]] += mesh_densities[i];
-//      }
-//
-//      alpha += step;
-//    }
-//  }
-
   // Attenuate from the end of the volume to the detector.
   if (ATTENUATE_OUTSIDE_VOLUME) {
     area_density[AIR_INDEX] += (ray_length - maxAlpha) / step * AIR_DENSITY;
@@ -2662,6 +2624,21 @@ __global__ void projectKernel(
   // Scaling by step
   for (int m = 0; m < NUM_MATERIALS; m++) {
     area_density[m] *= step;
+  }
+
+  // Render meshes exact (without depth pixellation)
+  for (int i = 0; i < NUM_MESHES; i++) {
+    int local_mesh_hit_index = 0;
+    int hit_arr_index = 0;
+    while (true) {
+      hit_arr_index = i*(out_height*out_width)*max_mesh_depth+img_dx*max_mesh_depth+local_mesh_hit_index;
+      if (!(
+        local_mesh_hit_index < max_mesh_depth &&
+          mesh_hit_facing[hit_arr_index] != 0
+      )) break;
+      area_density[mesh_materials[i]] += mesh_densities[i] * mesh_hit_alphas[hit_arr_index] * -mesh_hit_facing[hit_arr_index];
+      local_mesh_hit_index += 1;
+    }
   }
 
   // Convert to centimeters

@@ -106,7 +106,10 @@ class Mesh(object):
 
     def compute_vertices(self):
         """Compute the vertices of the mesh in local coordinates, including the morph targets."""
-        return np.array(self.mesh.points + self.morph_targets * self.morph_weights, dtype=np.float32)
+        if len(self.morph_targets) == 0:
+            return np.array(self.mesh.points, dtype=np.float32)
+        else:
+            return np.array(self.mesh.points + self.morph_targets * self.morph_weights, dtype=np.float32)
     
     def triangles(self):
         return self.mesh.faces.reshape((-1, 4))[..., 1:][..., [0, 2, 1]].astype(np.int32)   # flip winding order

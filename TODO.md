@@ -7,9 +7,10 @@
 <!-- - Use winding order in renderer -->
 <!-- - Confirm mesh cutout -->
 <!-- - Morph targets -->
-- Min/max alpha
+<!-- - Min/max alpha -->
 - Integrate API for meshes and volumes
 - Mesh priorities (is necessary?)
+- Fix attenuate outside volume
 
 # Optimizations
 <!-- - On gpu sort -->
