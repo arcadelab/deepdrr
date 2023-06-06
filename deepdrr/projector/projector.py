@@ -477,9 +477,9 @@ class Projector(object):
                     IJK_from_world,
                 )
 
-            for vol_id, _vol in enumerate(self.meshes):
+            for vol_id, _vol in enumerate(self.meshes): # TODO: duplicated code
                 source_ijk = np.array(
-                    _vol.IJK_from_world @ proj.center_in_world # bruh
+                    _vol.IJK_from_world @ proj.center_in_world
                 ).astype(np.float32)
                 cuda.memcpy_htod(
                     int(self.mesh_sourceX_gpu) + int(NUMBYTES_INT32 * vol_id),
@@ -542,56 +542,19 @@ class Projector(object):
                 origin_pt_np = np.array(origin_pt, dtype=np.float32)
                 origins = np.array([origin_pt]*len(directions))
                 
-                vertices = _mesh.compute_vertices()
+                vertices = _mesh.compute_vertices() # TODO on GPU
                 triangles = _mesh.triangles()
 
                 rayTo = origin_pt_np+directions*trace_dist
 
                 with PyCudaRSI() as pycu: # TODO: max mesh depth parameter
-                    # np.save("vertices.npy", vertices)
-                    # np.save("triangles.npy", triangles)
-                    # np.save("origins.npy", origins)
-                    # np.save("rayTo.npy", rayTo)
+                    interceptCounts, interceptTs, interceptFacing = pycu.test(vertices.copy(), triangles.copy(), origins.copy(), rayTo.copy(), None)
 
-                    results1 = pycu.test(vertices.copy(), triangles.copy(), origins.copy(), rayTo.copy(), None)
-
-                    # self.h_crossingDetected, self.h_interceptCounts, self.h_interceptTs
-                    interceptCounts, interceptTs, interceptFacing = results1
-
-                    print(f"{np.unique(interceptFacing, return_counts=True)=}")
-                    print(f"{np.unique(interceptCounts, return_counts=True)=}")
-
-                # # concat 3s to each index to account for the fact that the first index is the number of triangles
-                # pv_faces = np.concatenate([np.ones((len(triangles), 1), dtype=np.int32)*3, triangles], axis=1).flatten()
-                # pyvista_mesh = pv.PolyData(vertices, pv_faces)
-
-                # points, rays, cells = _mesh.mesh.multi_ray_trace(origins, directions)
-
-                # alphas = np.linalg.norm(points - origins[0], axis=1)
-
-                # hit_counts = np.zeros((proj.sensor_width * proj.sensor_height), dtype=np.int32)
-
-                # for i in range(len(points)):
-                #     if hit_counts[rays[i]] < self.max_mesh_depth:
-                #         mesh_hit_alphas[mesh_i][rays[i], hit_counts[rays[i]]] = alphas[i]
-                #         hit_counts[rays[i]] += 1
-                # print(f"{np.unique(hit_counts, return_counts=True)=}")
-
-                asdf = interceptTs*trace_dist
-                mesh_hit_alphas[mesh_i] = asdf
+                mesh_hit_alphas[mesh_i] = interceptTs*trace_dist
                 mesh_hit_facing[mesh_i] = interceptFacing
-
-                # save points.npy
-                # np.save("points.npy", points)
-
-
-            # np.save("hit_alphas_sorted.npy", hit_alphas_sorted)
 
             cuda.memcpy_htod(self.mesh_hit_alphas_gpu, mesh_hit_alphas)
             cuda.memcpy_htod(self.mesh_hit_facing_gpu, mesh_hit_facing)
-
-            print("done tracing")
-                
 
             args = [
                 np.int32(proj.sensor_width),  # out_width
