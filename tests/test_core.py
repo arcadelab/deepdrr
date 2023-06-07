@@ -109,12 +109,15 @@ class TestSingleVolume:
         # mesh = deepdrr.Mesh("air", 0, stl, morph_targets=morph_targets, world_from_anatomical=geo.FrameTransform.from_rotation(geo.Rotation.from_euler("x", 90, degrees=True)))
         prim = deepdrr.Primitive("titanium", 7, stl)
         mesh = deepdrr.Mesh([prim], world_from_anatomical=geo.FrameTransform.from_rotation(geo.Rotation.from_euler("x", 90, degrees=True)))
+
+        prim2 = deepdrr.Primitive("titanium", 7, stl)
+        mesh2 = deepdrr.Mesh([prim2], world_from_anatomical=geo.FrameTransform.from_rotation(geo.Rotation.from_euler("x", 90, degrees=True)))
         # mesh = deepdrr.Mesh("polyethylene", 1.05, stl)
         # mesh.morph_weights = np.array([-10])
         
         carm = deepdrr.MobileCArm(isocenter=volume.center_in_world, sensor_width=300, sensor_height=200, pixel_size=0.6)
         # self.project([volume], carm, "test_mesh.png")
-        self.project([volume, mesh], carm, "test_mesh.png")
+        self.project([volume, mesh, mesh2], carm, "test_mesh.png")
 
 
     def test_translate(self, t):
