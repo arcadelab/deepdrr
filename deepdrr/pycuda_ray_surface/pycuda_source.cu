@@ -169,6 +169,7 @@ __device__ int intersectMoller(
         float &t, float &u, float &v)
 {
 #if COMPILE_DOUBLE_PRECISION_MOLLER // TODO: Fix this for direction
+TODO: Fix this for direction
     double direction[3], avec[3], bvec[3], tvec[3], det;
     float inv_det;
     subtract_ffd(q1, q0, direction);
