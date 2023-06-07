@@ -40,6 +40,6 @@ class Mesh(Renderable):
         self.primitives = primitives if primitives is not None else []
         for primitive in self.primitives:
             primitive.set_parent_mesh(self)
-        self.morph_weights = morph_weights if morph_weights is not None else np.zeros(len(self.morph_targets))
-        if len(primitives) > 0:
-            assert len(self.morph_weights) == len(self.primitives[0].morph_targets)
+        len_morph_targets = len(self.primitives[0].morph_targets) if len(self.primitives) > 0 else 0
+        self.morph_weights = morph_weights if morph_weights is not None else np.zeros(len_morph_targets)
+        assert len(self.morph_weights) == len_morph_targets

@@ -19,7 +19,6 @@ from ..utils import mesh_utils
 from ..device import Device
 from ..projector.material_coefficients import material_coefficients
 from .renderable import Renderable
-from .mesh import Mesh
 
 vtk, nps, vtk_available = utils.try_import_vtk()
 
@@ -32,7 +31,6 @@ class Primitive(object):
     morph_targets: List[np.ndarray]
     material: str
     density: float
-    parent_mesh: Mesh
 
     def __init__(
         self,
@@ -50,6 +48,7 @@ class Primitive(object):
         assert len(self.morph_weights) == len(self.morph_targets)
         self.material = material
         self.density = density
+        self.parent_mesh = None
 
     def compute_vertices(self):
         """Compute the vertices of the mesh in local coordinates, including the morph targets."""
