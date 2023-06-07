@@ -26,8 +26,139 @@ default_paths = {'PATH': '/usr/local/cuda-11.2/bin',
                  'CUDA_INC_DIR': '/usr/local/cuda-11.2/include'}
 
 
-class PyCudaRSI(object):
-    def __init__(self, n_rays, params=None, max_intersections=32):
+class RSISurface(object):
+    # def __init__(self):
+    #     pass
+
+    def get_min_max_extent_of_surface(self, vertices):
+        # Find min, max coordinates for the surface. Discretisation is
+        # only used to obtain Morton codes for the location of triangles.
+        minvals = np.min(vertices, axis=0).astype(np.float32)
+        maxvals = np.max(vertices, axis=0).astype(np.float32)
+        inv_delta = (self.manager.params['QUANT_LEVELS'] / (maxvals - minvals)).astype(np.float32)
+        half_delta = (0.5 / inv_delta).astype(np.float32)
+        return minvals, maxvals, half_delta, inv_delta
+
+    def configure_(self, vertices, triangles):
+        self.h_vertices = np.array(vertices, dtype=np.float32)
+        self.h_triangles = np.array(triangles, dtype=np.int32)
+        # self.h_raysTo = np.array(raysTo, np.float32)
+
+        # Handling special cases
+        # - BVH traversal expects root node in binary radix tree
+        #   to have 2 descendants (see ISSUES.md: 1 in SHA 77cf088a4525)
+        if len(self.h_triangles) == 1:
+            self.h_triangles = np.vstack([self.h_triangles, [0,0,0]])
+        # - For large spatial coordinates, shift the origin to maximise
+        #   numerical precision (see ISSUES.md: 2 in SHA 1edbd3e39f2f)
+        # self.translate_data_if_appropriate() # TODO: I don't think this is relevant for DeepDRR... See ISSUES.md
+
+
+        # self.n_rays = len(self.h_raysFrom)
+        self.n_triangles = len(self.h_triangles)
+        self.grid_xT = int(np.ceil(self.n_triangles / self.manager.block_x))
+        self.grid_xLambda = 16
+        assert max([self.grid_xT]) <= self.manager.grid_xlim, \
+              'Limit exceeded: use blockDim.y with 2D grid-blocks'
+        self.block_dims = (self.manager.block_x,1,1)
+        self.grid_dimsT = (self.grid_xT,1)
+        self.grid_lambda = (self.grid_xLambda,1)
+        # if not self.manager.quiet:
+        #     print('CUDA partitions: {} threads/block, '
+        #           'grids: [rays: {}, bvh_construct: {}, bvh_intersect: {}]'.format(
+        #            self.block_x, self.grid_xR, self.grid_xT, self.grid_xLambda))
+
+
+    
+    def allocate_memory_(self):
+        # Create a buffer for querying the bytesize of a data structure
+        self.d_szQuery = cuda.mem_alloc(np.ones(1, dtype=np.int32).nbytes)
+        # Allocate memory on host and device
+        self.h_morton = np.zeros(self.n_triangles, dtype=np.uint64)
+        # self.h_crossingDetected = np.zeros(self.n_rays, dtype=np.int32)
+        # self.h_interceptTs = np.zeros((self.n_rays, self.max_intersections), dtype=np.float32)
+        # self.h_interceptFacing = np.zeros((self.n_rays, self.max_intersections), dtype=np.int8)
+        self.d_vertices = cuda.mem_alloc(self.h_vertices.nbytes)
+        self.d_triangles = cuda.mem_alloc(self.h_triangles.nbytes)
+
+        sz_ = lambda x : np.ones(1, dtype=x).nbytes
+        get_ = lambda x : struct_size(x, self.d_szQuery)
+        self.d_morton = cuda.mem_alloc(self.n_triangles * sz_(np.uint64))
+        self.d_sortedTriangleIDs = cuda.mem_alloc(self.n_triangles * sz_(np.int32))
+        # Data structures used in agglomerative LBVH construction
+        self.d_leafNodes = cuda.mem_alloc(self.n_triangles * get_(self.manager.bytes_in_BVHNode))
+        self.d_internalNodes = cuda.mem_alloc(self.n_triangles * get_(self.manager.bytes_in_BVHNode))
+
+        self.d_hitIDs = cuda.mem_alloc(self.grid_xLambda * self.manager.block_x * get_(self.manager.bytes_in_CollisionList)) # TODO: should this not be in surf?
+
+
+        # self.d_interceptTs = cuda.mem_alloc(self.h_interceptTs.nbytes)
+        # self.d_interceptFacing = cuda.mem_alloc(self.h_interceptFacing.nbytes)
+
+        # TODO: check free
+
+    
+    # def struct_size(self, cuda_szQuery, d_answer):
+    #     # Use cuda_szQuery API to convey C struct size to Python
+    #     # This is known at compile time and padding may be introduced.
+    #     h_answer = np.zeros(1, dtype=np.int32)
+    #     cuda_szQuery(d_answer, block=(1,1,1), grid=(1,1))
+    #     cuda.memcpy_dtoh(h_answer, d_answer)
+    #     return int(h_answer[0])
+
+
+    def transfer_data_(self):
+        # Initialise memory or copy data from host to device
+        cuda.memcpy_htod(self.d_vertices, self.h_vertices)
+        cuda.memcpy_htod(self.d_triangles, self.h_triangles)
+        # cuda.memcpy_htod(self.d_raysTo, self.h_raysTo)
+
+
+    def __init__(self, manager, vertices, triangles):
+        self.manager = manager
+        self.configure_(vertices, triangles)
+        self.allocate_memory_()
+        self.transfer_data_()
+
+        # Establish spatial domain of surface
+        minvals, maxvals, half_delta, inv_delta = \
+            self.get_min_max_extent_of_surface(self.h_vertices)
+
+
+ 
+        # Sort triangles using Morton code
+        self.manager.kernel_create_morton_code(
+            self.d_vertices, self.d_triangles, cuda.In(minvals),
+            cuda.In(half_delta), cuda.In(inv_delta), self.d_morton,
+            np.int32(self.n_triangles), block=self.block_dims, grid=self.grid_dimsT)
+        cuda.memcpy_dtoh(self.h_morton, self.d_morton)
+
+        h_sortedTriangleIDs = np.argsort(self.h_morton).astype(np.int32)
+        '''
+        Casting to 32-bit integer is super important as numpy.argsort returns
+        an int64 array. Without it, the `t` variable that corresponds to
+        node[i].triangleID in kernelBVHReset will be stepping through
+        sortedTriangleIDs[] at half the required rate. As a consequence, not
+        all the triangles in the mesh will be discovered. CUDA regards int* as
+        a 32-bit integer pointer, so it is not compatible with an int64 array.
+        '''
+        self.h_morton = self.h_morton[h_sortedTriangleIDs]
+        cuda.memcpy_htod(self.d_morton, self.h_morton)
+        cuda.memcpy_htod(self.d_sortedTriangleIDs, h_sortedTriangleIDs)
+
+        # Build bounding volume hierarchy for mesh triangles
+        self.manager.kernel_bvh_reset(
+            self.d_vertices, self.d_triangles, self.d_internalNodes,
+            self.d_leafNodes, self.d_sortedTriangleIDs, np.int32(self.n_triangles),
+            block=self.block_dims, grid=self.grid_dimsT)
+
+        self.manager.kernel_bvh_construct(
+            self.d_internalNodes, self.d_leafNodes, self.d_morton,
+            np.int32(self.n_triangles), block=self.block_dims, grid=self.grid_dimsT)
+
+
+class PyCudaRSIManager(object):
+    def __init__(self, params=None):
         # - The constant parameters QUANT_LEVELS and LARGE_POS_VALUE
         #   represent design choices that ought to be fixed.
         # - PATH, LD_LIBRARY_PATH, CUDA_INC_DIR are environment variables
@@ -46,7 +177,6 @@ class PyCudaRSI(object):
         #   in the Moller-Trumbore ray-triangle intersection algorithm.
         import pycuda.autoinit
 
-        self.max_intersections = max_intersections
 
         if params is None:
             params = {}
@@ -84,13 +214,62 @@ class PyCudaRSI(object):
         self.module = SourceModule(self.fill(get_cuda_template(), subst_dict))
         self.perform_bindings_()
 
+        self.block_x = 512 if self.params['USE_DOUBLE_PRECISION_MOLLER'] else 1024
+        self.grid_xlim = np.inf
+        for devicenum in range(cuda.Device.count()):
+            attrs = cuda.Device(devicenum).get_attributes()
+            self.block_x = min(attrs[cuda.device_attribute.MAX_BLOCK_DIM_X], self.block_x)
+            self.grid_xlim = min(attrs[cuda.device_attribute.MAX_GRID_DIM_X], self.grid_xlim)
+
     
+    def fill(self, template, mapping):
+        # Override symbols in .cu source file string
+        for word, subs in mapping.items():
+            template = template.replace(word, subs)
+        return template
+
+    def perform_bindings_(self):
+        bind = lambda x : self.module.get_function(x)
+        self.bytes_in_AABB = bind("bytesInAABB")
+        self.bytes_in_BVHNode = bind("bytesInBVHNode")
+        self.bytes_in_CollisionList = bind("bytesInCollisionList")
+        # self.bytes_in_InterceptDistances = bind("bytesInInterceptDistances")
+        self.kernel_create_morton_code = bind("kernelMortonCode")
+        self.kernel_compute_ray_bounds = bind("kernelRayBox")
+        self.kernel_bvh_reset = bind("kernelBVHReset")
+        self.kernel_bvh_construct = bind("kernelBVHConstruct")
+        # self.kernel_bvh_find_intersections1 = bind("kernelBVHIntersection1")
+        # self.kernel_bvh_find_intersections2 = bind("kernelBVHIntersection2")
+        self.kernel_bvh_find_intersections3 = bind("kernelBVHIntersection3")
+        self.kernel_tide = bind("kernelTide")
+        try:
+            self.kernel_intersect_distances = bind("kernelIntersectDistances")
+            self.kernel_intersect_points = bind("kernelIntersectPoints")
+        except cuda.LogicError as e:
+            if "cuModuleGetFunction failed: named symbol not found" in str(e):
+                self.kernel_intersect_distances = None
+                self.kernel_intersect_points = None
+
+
+def struct_size(cuda_szQuery, d_answer):
+    # Use cuda_szQuery API to convey C struct size to Python
+    # This is known at compile time and padding may be introduced.
+    h_answer = np.zeros(1, dtype=np.int32)
+    cuda_szQuery(d_answer, block=(1,1,1), grid=(1,1))
+    cuda.memcpy_dtoh(h_answer, d_answer)
+    return int(h_answer[0])
+
+class PyCudaRSI(object):
+    def __init__(self, manager, n_rays, max_intersections=32):
+        self.max_intersections = max_intersections # TODO: must use this
+
+        self.manager = manager
         self.n_rays = n_rays
         self.d_szQuery = cuda.mem_alloc(np.ones(1, dtype=np.int32).nbytes)
-        get_ = lambda x : self.struct_size(x, self.d_szQuery)
+        get_ = lambda x : struct_size(x, self.d_szQuery)
 
         self.h_interceptCounts = np.zeros(self.n_rays, dtype=np.int32)
-        self.d_rayBox = cuda.mem_alloc(self.n_rays * get_(self.bytes_in_AABB))
+        self.d_rayBox = cuda.mem_alloc(self.n_rays * get_(self.manager.bytes_in_AABB))
         self.d_interceptCounts = cuda.mem_alloc(self.h_interceptCounts.nbytes)
 
         self.d_raysFrom = cuda.mem_alloc(self.n_rays * 3 * np.float32().nbytes)
@@ -102,193 +281,65 @@ class PyCudaRSI(object):
     def __exit__(self, type, value, traceback):
         pass
 
-    def struct_size(self, cuda_szQuery, d_answer):
-        # Use cuda_szQuery API to convey C struct size to Python
-        # This is known at compile time and padding may be introduced.
-        h_answer = np.zeros(1, dtype=np.int32)
-        cuda_szQuery(d_answer, block=(1,1,1), grid=(1,1))
-        cuda.memcpy_dtoh(h_answer, d_answer)
-        return int(h_answer[0])
 
-    def fill(self, template, mapping):
-        # Override symbols in .cu source file string
-        for word, subs in mapping.items():
-            template = template.replace(word, subs)
-        return template
 
-    def get_min_max_extent_of_surface(self, vertices):
-        # Find min, max coordinates for the surface. Discretisation is
-        # only used to obtain Morton codes for the location of triangles.
-        minvals = np.min(vertices, axis=0).astype(np.float32)
-        maxvals = np.max(vertices, axis=0).astype(np.float32)
-        inv_delta = (self.params['QUANT_LEVELS'] / (maxvals - minvals)).astype(np.float32)
-        half_delta = (0.5 / inv_delta).astype(np.float32)
-        return minvals, maxvals, half_delta, inv_delta
 
-    def perform_bindings_(self):
-        bind = lambda x : self.module.get_function(x)
-        self.bytes_in_AABB = bind("bytesInAABB")
-        self.bytes_in_BVHNode = bind("bytesInBVHNode")
-        self.bytes_in_CollisionList = bind("bytesInCollisionList")
-        self.bytes_in_InterceptDistances = bind("bytesInInterceptDistances")
-        self.kernel_create_morton_code = bind("kernelMortonCode")
-        self.kernel_compute_ray_bounds = bind("kernelRayBox")
-        self.kernel_bvh_reset = bind("kernelBVHReset")
-        self.kernel_bvh_construct = bind("kernelBVHConstruct")
-        self.kernel_bvh_find_intersections1 = bind("kernelBVHIntersection1")
-        self.kernel_bvh_find_intersections2 = bind("kernelBVHIntersection2")
-        self.kernel_bvh_find_intersections3 = bind("kernelBVHIntersection3")
-        self.kernel_tide = bind("kernelTide")
-        try:
-            self.kernel_intersect_distances = bind("kernelIntersectDistances")
-            self.kernel_intersect_points = bind("kernelIntersectPoints")
-        except cuda.LogicError as e:
-            if "cuModuleGetFunction failed: named symbol not found" in str(e):
-                self.kernel_intersect_distances = None
-                self.kernel_intersect_points = None
 
-    def configure_(self, vertices, triangles, raysFrom, raysTo):
-        self.h_vertices = np.array(vertices, dtype=np.float32)
-        self.h_triangles = np.array(triangles, dtype=np.int32)
+    def configure_(self, raysFrom, raysTo):
         self.h_raysFrom = np.array(raysFrom, np.float32)
-        # self.h_raysTo = np.array(raysTo, np.float32)
 
-        # Handling special cases
-        # - BVH traversal expects root node in binary radix tree
-        #   to have 2 descendants (see ISSUES.md: 1 in SHA 77cf088a4525)
-        if len(self.h_triangles) == 1:
-            self.h_triangles = np.vstack([self.h_triangles, [0,0,0]])
-        # - For large spatial coordinates, shift the origin to maximise
-        #   numerical precision (see ISSUES.md: 2 in SHA 1edbd3e39f2f)
-        # self.translate_data_if_appropriate() # TODO: I don't think this is relevant for DeepDRR... See ISSUES.md
-
-        # Get device attributes and specify grid-block partitions
-        self.block_x = 512 if self.params['USE_DOUBLE_PRECISION_MOLLER'] else 1024
-        grid_xlim = np.inf
-        for devicenum in range(cuda.Device.count()):
-            attrs = cuda.Device(devicenum).get_attributes()
-            self.block_x = min(attrs[cuda.device_attribute.MAX_BLOCK_DIM_X], self.block_x)
-            grid_xlim = min(attrs[cuda.device_attribute.MAX_GRID_DIM_X], grid_xlim)
-
-        # self.n_rays = len(self.h_raysFrom)
-        self.n_triangles = len(self.h_triangles)
-        self.grid_xR = int(np.ceil(self.n_rays / self.block_x))
-        self.grid_xT = int(np.ceil(self.n_triangles / self.block_x))
         self.grid_xLambda = 16
-        assert max([self.grid_xR, self.grid_xT]) <= grid_xlim, \
-              'Limit exceeded: use blockDim.y with 2D grid-blocks'
-        self.block_dims = (self.block_x,1,1)
-        self.grid_dimsR = (self.grid_xR,1)
-        self.grid_dimsT = (self.grid_xT,1)
+        self.block_dims = (self.manager.block_x,1,1)
         self.grid_lambda = (self.grid_xLambda,1)
-        if not self.quiet:
-            print('CUDA partitions: {} threads/block, '
-                  'grids: [rays: {}, bvh_construct: {}, bvh_intersect: {}]'.format(
-                   self.block_x, self.grid_xR, self.grid_xT, self.grid_xLambda))
-
-    def allocate_memory_(self):
-        # Create a buffer for querying the bytesize of a data structure
-        self.d_szQuery = cuda.mem_alloc(np.ones(1, dtype=np.int32).nbytes)
-        # Allocate memory on host and device
-        self.h_morton = np.zeros(self.n_triangles, dtype=np.uint64)
-        # self.h_crossingDetected = np.zeros(self.n_rays, dtype=np.int32)
-        # self.h_interceptTs = np.zeros((self.n_rays, self.max_intersections), dtype=np.float32)
-        # self.h_interceptFacing = np.zeros((self.n_rays, self.max_intersections), dtype=np.int8)
-        self.d_vertices = cuda.mem_alloc(self.h_vertices.nbytes)
-        self.d_triangles = cuda.mem_alloc(self.h_triangles.nbytes)
-
-        sz_ = lambda x : np.ones(1, dtype=x).nbytes
-        get_ = lambda x : self.struct_size(x, self.d_szQuery)
-        self.d_morton = cuda.mem_alloc(self.n_triangles * sz_(np.uint64))
-        self.d_sortedTriangleIDs = cuda.mem_alloc(self.n_triangles * sz_(np.int32))
-        # Data structures used in agglomerative LBVH construction
-        self.d_leafNodes = cuda.mem_alloc(self.n_triangles * get_(self.bytes_in_BVHNode))
-        self.d_internalNodes = cuda.mem_alloc(self.n_triangles * get_(self.bytes_in_BVHNode))
-        self.d_hitIDs = cuda.mem_alloc(self.grid_xLambda * self.block_x * get_(self.bytes_in_CollisionList))
 
 
-        # self.d_interceptTs = cuda.mem_alloc(self.h_interceptTs.nbytes)
-        # self.d_interceptFacing = cuda.mem_alloc(self.h_interceptFacing.nbytes)
 
-        # TODO: check free
+        self.grid_xR = int(np.ceil(self.n_rays / self.manager.block_x))
+        self.grid_dimsR = (self.grid_xR,1)
+        assert max([self.grid_xR]) <= self.manager.grid_xlim, \
+              'Limit exceeded: use blockDim.y with 2D grid-blocks'
 
 
     def transfer_data_(self):
         # Initialise memory or copy data from host to device
-        cuda.memcpy_htod(self.d_vertices, self.h_vertices)
-        cuda.memcpy_htod(self.d_triangles, self.h_triangles)
         cuda.memcpy_htod(self.d_raysFrom, self.h_raysFrom)
         # cuda.memcpy_htod(self.d_raysTo, self.h_raysTo)
 
 
-    def test(self, vertices, triangles, raysFrom, raysTo, trace_dist, mesh_hit_alphas_gpu, mesh_hit_facing_gpu, cfg):
+    def test(self, surf, raysFrom, raysTo, trace_dist, mesh_hit_alphas_gpu, mesh_hit_facing_gpu, cfg):
         # Set up resources
         t_start = time.time()
-        self.configure_(vertices, triangles, raysFrom, raysTo)
+        self.configure_(raysFrom, raysTo)
 
         self.d_raysTo = raysTo
 
-        self.allocate_memory_()
+        # self.allocate_memory_()
         
         self.d_interceptTs = mesh_hit_alphas_gpu
         self.d_interceptFacing = mesh_hit_facing_gpu
 
         self.transfer_data_()
 
-        # Establish spatial domain of surface
-        minvals, maxvals, half_delta, inv_delta = \
-            self.get_min_max_extent_of_surface(self.h_vertices)
-
         # Pre-compute line segment bounding boxes
-        self.kernel_compute_ray_bounds(
+        self.manager.kernel_compute_ray_bounds(
             self.d_raysFrom, self.d_raysTo, self.d_rayBox, np.int32(self.n_rays),
             block=self.block_dims, grid=self.grid_dimsR)
- 
-        # Sort triangles using Morton code
-        self.kernel_create_morton_code(
-            self.d_vertices, self.d_triangles, cuda.In(minvals),
-            cuda.In(half_delta), cuda.In(inv_delta), self.d_morton,
-            np.int32(self.n_triangles), block=self.block_dims, grid=self.grid_dimsT)
-        cuda.memcpy_dtoh(self.h_morton, self.d_morton)
-
-        h_sortedTriangleIDs = np.argsort(self.h_morton).astype(np.int32)
-        '''
-        Casting to 32-bit integer is super important as numpy.argsort returns
-        an int64 array. Without it, the `t` variable that corresponds to
-        node[i].triangleID in kernelBVHReset will be stepping through
-        sortedTriangleIDs[] at half the required rate. As a consequence, not
-        all the triangles in the mesh will be discovered. CUDA regards int* as
-        a 32-bit integer pointer, so it is not compatible with an int64 array.
-        '''
-        self.h_morton = self.h_morton[h_sortedTriangleIDs]
-        cuda.memcpy_htod(self.d_morton, self.h_morton)
-        cuda.memcpy_htod(self.d_sortedTriangleIDs, h_sortedTriangleIDs)
-
-        # Build bounding volume hierarchy for mesh triangles
-        self.kernel_bvh_reset(
-            self.d_vertices, self.d_triangles, self.d_internalNodes,
-            self.d_leafNodes, self.d_sortedTriangleIDs, np.int32(self.n_triangles),
-            block=self.block_dims, grid=self.grid_dimsT)
-
-        self.kernel_bvh_construct(
-            self.d_internalNodes, self.d_leafNodes, self.d_morton,
-            np.int32(self.n_triangles), block=self.block_dims, grid=self.grid_dimsT)
 
 
-        self.kernel_bvh_find_intersections3(
-            self.d_vertices, self.d_triangles,
+        self.manager.kernel_bvh_find_intersections3(
+            surf.d_vertices, surf.d_triangles,
             self.d_raysFrom, self.d_raysTo,
-            self.d_internalNodes, self.d_rayBox, self.d_hitIDs,
+            surf.d_internalNodes, self.d_rayBox, surf.d_hitIDs,
             self.d_interceptCounts, self.d_interceptTs, self.d_interceptFacing,
-            np.int32(self.n_triangles), np.int32(self.n_rays), np.float32(trace_dist),
+            np.int32(surf.n_triangles), np.int32(self.n_rays), np.float32(trace_dist),
             block=self.block_dims, grid=self.grid_lambda)
 
-        self.kernel_tide(
+        self.manager.kernel_tide(
             self.d_interceptCounts, 
             self.d_interceptTs, 
             self.d_interceptFacing,
             np.int32(self.n_rays), 
-            block=(int(self.block_x/2),1,1),  # TODO ??
+            block=(int(self.manager.block_x/2),1,1),  # TODO ??
             # block=self.block_dims,  # TODO ??
             grid=self.grid_lambda
         )
@@ -298,7 +349,7 @@ class PyCudaRSI(object):
         # cuda.memcpy_dtoh(self.h_interceptFacing, int(self.d_interceptFacing))
 
         t_end = time.time()
-        if not self.quiet:
+        if not self.manager.quiet:
             print('{}s\n'.format(t_end - t_start))
 
         # return self.h_interceptCounts, self.h_interceptTs, self.h_interceptFacing

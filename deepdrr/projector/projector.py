@@ -31,7 +31,7 @@ from .mcgpu_compton_data import COMPTON_DATA
 from .mcgpu_mfp_data import MFP_DATA
 from .mcgpu_rita_samplers import rita_samplers
 
-from ..pycuda_ray_surface.pycuda_ray_surface_intersect import PyCudaRSI
+from ..pycuda_ray_surface.pycuda_ray_surface_intersect import PyCudaRSI, RSISurface, PyCudaRSIManager
 
 
 log = logging.getLogger(__name__)
@@ -543,7 +543,7 @@ class Projector(object):
                 )
 
                 mesh_perf_end = time.perf_counter()
-                log.debug(f"rays: {mesh_perf_end - mesh_perf_start}")
+                print(f"rays: {mesh_perf_end - mesh_perf_start}")
                 mesh_perf_start = mesh_perf_end
 
                 for mesh_i, _mesh in enumerate(self.primitives):
@@ -554,19 +554,20 @@ class Projector(object):
                     origins = np.array([origin_pt])
 
                     mesh_perf_end = time.perf_counter()
-                    log.debug(f"ray compute: {mesh_perf_end - mesh_perf_start}")
+                    print(f"ray compute: {mesh_perf_end - mesh_perf_start}")
                     mesh_perf_start = mesh_perf_end
 
-                    vertices = _mesh.compute_vertices() # TODO on GPU
-                    triangles = _mesh.triangles()
+                    # vertices = _mesh.compute_vertices() # TODO on GPU
+                    # triangles = _mesh.triangles()
 
-                    mesh_perf_end = time.perf_counter()
-                    log.debug(f"triangle compute: {mesh_perf_end - mesh_perf_start}")
-                    mesh_perf_start = mesh_perf_end
+                    # mesh_perf_end = time.perf_counter()
+                    # print(f"triangle compute: {mesh_perf_end - mesh_perf_start}")
+                    # mesh_perf_start = mesh_perf_end
 
                     self.pycuda_rsi.test(
-                        vertices.copy(), 
-                        triangles.copy(), 
+                        # vertices.copy(), 
+                        # triangles.copy(), 
+                        self.prim_surfs[mesh_i],
                         origins.copy(), 
                         np.uint64(int(self.ray_directions_gpu) + mesh_i * num_rays * 3 * NUMBYTES_FLOAT32), 
                         trace_dist, 
@@ -575,7 +576,7 @@ class Projector(object):
                         None)
                     
                     mesh_perf_end = time.perf_counter()
-                    log.debug(f"tracing: {mesh_perf_end - mesh_perf_start}")
+                    print(f"tracing: {mesh_perf_end - mesh_perf_start}")
                     mesh_perf_start = mesh_perf_end
 
 
@@ -1108,7 +1109,9 @@ class Projector(object):
 
         n_rays = height * width # TODO: move this
 
-        self.pycuda_rsi = PyCudaRSI(n_rays=n_rays)  # TODO: max mesh depth parameter
+        self.rsi_manager = PyCudaRSIManager()
+        self.pycuda_rsi = PyCudaRSI(self.rsi_manager, n_rays=n_rays)  # TODO: max mesh depth parameter
+        self.prim_surfs = [RSISurface(self.rsi_manager, prim.compute_vertices().copy(), prim.triangles().copy()) for prim in self.primitives]
 
         # allocate volumes' priority level on the GPU
         self.priorities_gpu = cuda.mem_alloc(len(self.volumes) * NUMBYTES_INT32)
