@@ -151,7 +151,7 @@ class PyCudaRSI(object):
         self.h_vertices = np.array(vertices, dtype=np.float32)
         self.h_triangles = np.array(triangles, dtype=np.int32)
         self.h_raysFrom = np.array(raysFrom, np.float32)
-        self.h_raysTo = np.array(raysTo, np.float32)
+        # self.h_raysTo = np.array(raysTo, np.float32)
 
         # Handling special cases
         # - BVH traversal expects root node in binary radix tree
@@ -218,13 +218,16 @@ class PyCudaRSI(object):
         cuda.memcpy_htod(self.d_vertices, self.h_vertices)
         cuda.memcpy_htod(self.d_triangles, self.h_triangles)
         cuda.memcpy_htod(self.d_raysFrom, self.h_raysFrom)
-        cuda.memcpy_htod(self.d_raysTo, self.h_raysTo)
+        # cuda.memcpy_htod(self.d_raysTo, self.h_raysTo)
 
 
     def test(self, vertices, triangles, raysFrom, raysTo, trace_dist, mesh_hit_alphas_gpu, mesh_hit_facing_gpu, cfg):
         # Set up resources
         t_start = time.time()
         self.configure_(vertices, triangles, raysFrom, raysTo)
+
+        self.d_raysTo = raysTo
+
         self.allocate_memory_()
         
         self.d_interceptTs = mesh_hit_alphas_gpu

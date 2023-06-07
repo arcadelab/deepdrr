@@ -582,14 +582,18 @@ class Projector(object):
                     print(f"triangle compute: {mesh_perf_end - mesh_perf_start}")
                     mesh_perf_start = mesh_perf_end
 
-
                     fdsasd = num_rays * self.max_mesh_depth
+
+
+                    fdsfasd = np.zeros_like(rayTo)
+                    cuda.memcpy_dtoh(fdsfasd, int(np.uint64(int(self.ray_directions_gpu) + mesh_i * fdsasd * 3 * NUMBYTES_FLOAT32)))
+
                     self.pycuda_rsi.test(
                         vertices.copy(), 
                         triangles.copy(), 
                         origins.copy(), 
-                        # np.uint64(int(self.ray_directions_gpu) + mesh_i * fdsasd * 3 * NUMBYTES_FLOAT32), 
-                        rayTo.copy(), 
+                        np.uint64(int(self.ray_directions_gpu) + mesh_i * fdsasd * 3 * NUMBYTES_FLOAT32), 
+                        # rayTo.copy(), 
                         trace_dist, 
                         np.uint64(int(self.mesh_hit_alphas_gpu) + mesh_i * fdsasd * NUMBYTES_FLOAT32), 
                         np.uint64(int(self.mesh_hit_facing_gpu) + mesh_i * fdsasd * NUMBYTES_INT8),
