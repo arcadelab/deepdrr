@@ -516,6 +516,8 @@ class Projector(object):
                     IJK_from_world,
                 )
 
+            num_rays = proj.sensor_width * proj.sensor_height
+
             args = [
                 np.int32(proj.sensor_width),  # out_width
                 np.int32(proj.sensor_height),  # out_height
@@ -525,7 +527,7 @@ class Projector(object):
                 self.world_from_index_gpu,  # world_from_index
                 self.mesh_ijk_from_world_gpu,  # ijk_from_world
                 self.ray_directions_gpu, # ray_directions  
-                np.int32(proj.sensor_width * proj.sensor_height),  # num_rays
+                np.int32(num_rays),  # num_rays
             ]
 
             self.generate_rays(
@@ -548,7 +550,7 @@ class Projector(object):
 
                 # TODO: do this on GPU
                 directions = ray_directions[mesh_i].astype(np.float32)
-                origin_pt = [sx_ijk[mesh_i], sy_ijk[mesh_i], sz_ijk[mesh_i]]
+                origin_pt = [sx_ijk[mesh_i], sy_ijk[mesh_i], sz_ijk[mesh_i]] # TODO: rays should always be at origin, move objects instead
                 origin_pt_np = np.array(origin_pt, dtype=np.float32)
                 origins = np.array([origin_pt]*len(directions))
                 
@@ -557,14 +559,21 @@ class Projector(object):
 
                 rayTo = origin_pt_np+directions*trace_dist
 
-                with PyCudaRSI() as pycu: # TODO: max mesh depth parameter
-                    interceptCounts, interceptTs, interceptFacing = pycu.test(vertices.copy(), triangles.copy(), origins.copy(), rayTo.copy(), None)
+                # with PyCudaRSI() as pycu: # TODO: max mesh depth parameter
+                    # interceptCounts, interceptTs, interceptFacing = pycu.test(vertices.copy(), triangles.copy(), origins.copy(), rayTo.copy(), None)
+                fdsasd = num_rays * self.max_mesh_depth
+                interceptCounts, interceptTs, interceptFacing = self.pycuda_rsi.test(vertices.copy(), triangles.copy(), origins.copy(), rayTo.copy(), trace_dist, 
+                                                                                    #  np.uint64(int(self.mesh_hit_alphas_gpu) ), 
+                                                                                     np.uint64(int(self.mesh_hit_alphas_gpu) + mesh_i * fdsasd * NUMBYTES_FLOAT32), 
+                                                                                    #  np.uint64(int(self.mesh_hit_facing_gpu)),
+                                                                                     np.uint64(int(self.mesh_hit_facing_gpu) + mesh_i * fdsasd * NUMBYTES_INT8),
+                                                                                       None)
 
-                mesh_hit_alphas[mesh_i] = interceptTs*trace_dist
-                mesh_hit_facing[mesh_i] = interceptFacing
+                # mesh_hit_alphas[mesh_i] = interceptTs*trace_dist
+                # mesh_hit_facing[mesh_i] = interceptFacing
 
-            cuda.memcpy_htod(self.mesh_hit_alphas_gpu, mesh_hit_alphas)
-            cuda.memcpy_htod(self.mesh_hit_facing_gpu, mesh_hit_facing)
+            # cuda.memcpy_htod(self.mesh_hit_alphas_gpu, mesh_hit_alphas)
+            # cuda.memcpy_htod(self.mesh_hit_facing_gpu, mesh_hit_facing)
 
             print("finished tracing")
 
@@ -1086,6 +1095,8 @@ class Projector(object):
         log.debug(
             f"time elapsed after intializing segmentations: {init_tock - init_tick}"
         )
+
+        self.pycuda_rsi = PyCudaRSI()  # TODO: max mesh depth parameter
 
         # allocate volumes' priority level on the GPU
         self.priorities_gpu = cuda.mem_alloc(len(self.volumes) * NUMBYTES_INT32)

@@ -179,7 +179,7 @@ class PyCudaRSI(object):
         self.d_szQuery = cuda.mem_alloc(np.ones(1, dtype=np.int32).nbytes)
         # Allocate memory on host and device
         self.h_morton = np.zeros(self.n_triangles, dtype=np.uint64)
-        self.h_crossingDetected = np.zeros(self.n_rays, dtype=np.int32)
+        # self.h_crossingDetected = np.zeros(self.n_rays, dtype=np.int32)
         self.h_interceptCounts = np.zeros(self.n_rays, dtype=np.int32)
         self.h_interceptTs = np.zeros((self.n_rays, self.max_intersections), dtype=np.float32)
         self.h_interceptFacing = np.zeros((self.n_rays, self.max_intersections), dtype=np.int8)
@@ -201,6 +201,8 @@ class PyCudaRSI(object):
         self.d_interceptTs = cuda.mem_alloc(self.h_interceptTs.nbytes)
         self.d_interceptFacing = cuda.mem_alloc(self.h_interceptFacing.nbytes)
 
+        # TODO: check free
+
 
     def transfer_data_(self):
         # Initialise memory or copy data from host to device
@@ -210,11 +212,15 @@ class PyCudaRSI(object):
         cuda.memcpy_htod(self.d_raysTo, self.h_raysTo)
 
 
-    def test(self, vertices, triangles, raysFrom, raysTo, cfg):
+    def test(self, vertices, triangles, raysFrom, raysTo, trace_dist, mesh_hit_alphas_gpu, mesh_hit_facing_gpu, cfg):
         # Set up resources
         t_start = time.time()
         self.configure_(vertices, triangles, raysFrom, raysTo)
         self.allocate_memory_()
+        
+        self.d_interceptTs = mesh_hit_alphas_gpu
+        self.d_interceptFacing = mesh_hit_facing_gpu
+
         self.transfer_data_()
 
         # Establish spatial domain of surface
@@ -262,7 +268,7 @@ class PyCudaRSI(object):
             self.d_raysFrom, self.d_raysTo,
             self.d_internalNodes, self.d_rayBox, self.d_hitIDs,
             self.d_interceptCounts, self.d_interceptTs, self.d_interceptFacing,
-            np.int32(self.n_triangles), np.int32(self.n_rays),
+            np.int32(self.n_triangles), np.int32(self.n_rays), np.float32(trace_dist),
             block=self.block_dims, grid=self.grid_lambda)
 
         self.kernel_tide(
@@ -275,12 +281,14 @@ class PyCudaRSI(object):
             grid=self.grid_lambda
         )
 
-        cuda.memcpy_dtoh(self.h_interceptCounts, self.d_interceptCounts)
-        cuda.memcpy_dtoh(self.h_interceptTs, self.d_interceptTs)
-        cuda.memcpy_dtoh(self.h_interceptFacing, self.d_interceptFacing)
+        cuda.memcpy_dtoh(self.h_interceptCounts, int(self.d_interceptCounts))
+        cuda.memcpy_dtoh(self.h_interceptTs, int(self.d_interceptTs))
+        cuda.memcpy_dtoh(self.h_interceptFacing, int(self.d_interceptFacing))
 
         t_end = time.time()
         if not self.quiet:
             print('{}s\n'.format(t_end - t_start))
 
         return self.h_interceptCounts, self.h_interceptTs, self.h_interceptFacing
+        # return self.h_interceptCounts, self.d_interceptTs, self.d_interceptFacing
+
