@@ -566,6 +566,8 @@ class Projector(object):
             cuda.memcpy_htod(self.mesh_hit_alphas_gpu, mesh_hit_alphas)
             cuda.memcpy_htod(self.mesh_hit_facing_gpu, mesh_hit_facing)
 
+            print("finished tracing")
+
             args = [
                 np.int32(proj.sensor_width),  # out_width
                 np.int32(proj.sensor_height),  # out_height

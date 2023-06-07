@@ -12,6 +12,7 @@ pynrrd
 rich
 opencv-python
 seaborn
+graphviz
 
 # development requirements
 black # proper python style

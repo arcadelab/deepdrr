@@ -279,9 +279,6 @@ class PyCudaRSI(object):
         cuda.memcpy_dtoh(self.h_interceptTs, self.d_interceptTs)
         cuda.memcpy_dtoh(self.h_interceptFacing, self.d_interceptFacing)
 
-        print(f"{np.unique(self.h_interceptCounts, return_counts=True)=}")
-        print(f"{np.unique(self.h_interceptFacing, return_counts=True)=}")
-
         t_end = time.time()
         if not self.quiet:
             print('{}s\n'.format(t_end - t_start))
