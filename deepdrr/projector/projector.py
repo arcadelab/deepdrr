@@ -546,30 +546,16 @@ class Projector(object):
                 print(f"rays: {mesh_perf_end - mesh_perf_start}")
                 mesh_perf_start = mesh_perf_end
 
-                # ray_directions = np.zeros((len(self.primitives), proj.sensor_width * proj.sensor_height, 3), dtype=np.float32)
-                # cuda.memcpy_dtoh(ray_directions, self.ray_directions_gpu)
-
-                # mesh_perf_end = time.perf_counter()
-                # print(f"ray_copy: {mesh_perf_end - mesh_perf_start}")
-                # mesh_perf_start = mesh_perf_end
-
-
                 mesh_hit_alphas = np.ones((len(self.primitives), proj.sensor_width * proj.sensor_height, self.max_mesh_depth), dtype=np.float32) * np.inf
                 mesh_hit_facing = np.zeros((len(self.primitives), proj.sensor_width * proj.sensor_height, self.max_mesh_depth), dtype=np.int8)
 
 
                 for mesh_i, _mesh in enumerate(self.primitives):
 
-                    # TODO: do this on GPU
-                    # directions = ray_directions[mesh_i].astype(np.float32)
+                    # TODO: do this on GPU (won't speedup, low priority)
                     origin_pt = [sx_ijk[mesh_i], sy_ijk[mesh_i], sz_ijk[mesh_i]]
                     origin_pt_np = np.array(origin_pt, dtype=np.float32)
                     origins = np.array([origin_pt])
-                    # origins = np.array([origin_pt]*len(directions))
-                    
-                    # rayTo = directions
-                    # rayTo = directions*trace_dist
-                    # rayTo = origin_pt_np+directions*trace_dist
 
                     mesh_perf_end = time.perf_counter()
                     print(f"ray compute: {mesh_perf_end - mesh_perf_start}")
@@ -588,7 +574,6 @@ class Projector(object):
                         triangles.copy(), 
                         origins.copy(), 
                         np.uint64(int(self.ray_directions_gpu) + mesh_i * fdsasd * 3 * NUMBYTES_FLOAT32), 
-                        # rayTo.copy(), 
                         trace_dist, 
                         np.uint64(int(self.mesh_hit_alphas_gpu) + mesh_i * fdsasd * NUMBYTES_FLOAT32), 
                         np.uint64(int(self.mesh_hit_facing_gpu) + mesh_i * fdsasd * NUMBYTES_INT8),
