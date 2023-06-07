@@ -519,6 +519,8 @@ class Projector(object):
             num_rays = proj.sensor_width * proj.sensor_height
 
             if len(self.primitives) > 0:
+                mesh_perf_start = time.perf_counter()
+
                 args = [
                     np.int32(proj.sensor_width),  # out_width
                     np.int32(proj.sensor_height),  # out_height
@@ -537,8 +539,16 @@ class Projector(object):
                     grid=(16, 1),
                 )
 
+                mesh_perf_end = time.perf_counter()
+                print(f"rays: {mesh_perf_end - mesh_perf_start}")
+                mesh_perf_start = mesh_perf_end
+
                 ray_directions = np.zeros((len(self.primitives), proj.sensor_width * proj.sensor_height, 3), dtype=np.float32)
                 cuda.memcpy_dtoh(ray_directions, self.ray_directions_gpu)
+
+                mesh_perf_end = time.perf_counter()
+                print(f"ray_copy: {mesh_perf_end - mesh_perf_start}")
+                mesh_perf_start = mesh_perf_end
 
 
                 mesh_hit_alphas = np.ones((len(self.primitives), proj.sensor_width * proj.sensor_height, self.max_mesh_depth), dtype=np.float32) * np.inf
@@ -559,11 +569,19 @@ class Projector(object):
 
                     rayTo = origin_pt_np+directions*trace_dist
 
+                    mesh_perf_end = time.perf_counter()
+                    print(f"ray compute: {mesh_perf_end - mesh_perf_start}")
+                    mesh_perf_start = mesh_perf_end
+
                     fdsasd = num_rays * self.max_mesh_depth
                     self.pycuda_rsi.test(vertices.copy(), triangles.copy(), origins.copy(), rayTo.copy(), trace_dist, 
                                                                                         np.uint64(int(self.mesh_hit_alphas_gpu) + mesh_i * fdsasd * NUMBYTES_FLOAT32), 
                                                                                         np.uint64(int(self.mesh_hit_facing_gpu) + mesh_i * fdsasd * NUMBYTES_INT8),
                                                                                         None)
+                    
+                    mesh_perf_end = time.perf_counter()
+                    print(f"tracing: {mesh_perf_end - mesh_perf_start}")
+                    mesh_perf_start = mesh_perf_end
 
 
             args = [
