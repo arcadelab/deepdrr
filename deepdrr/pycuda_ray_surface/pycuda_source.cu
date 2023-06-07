@@ -165,10 +165,10 @@ __global__ void setIntArrayKernel(int* array, int value, int numElements)
 __device__ int intersectMoller(
         const float *v0, const float *v1, const float *v2,
         const float *edge1, const float *edge2,
-        const float *q0, const float *q1,
+        const float *q0, const float *direction,
         float &t, float &u, float &v)
 {
-#if COMPILE_DOUBLE_PRECISION_MOLLER
+#if COMPILE_DOUBLE_PRECISION_MOLLER // TODO: Fix this for direction
     double direction[3], avec[3], bvec[3], tvec[3], det;
     float inv_det;
     subtract_ffd(q1, q0, direction);
@@ -200,8 +200,9 @@ __device__ int intersectMoller(
     inv_det = static_cast<float>(1.0 / det);
     dot_dff(bvec, edge2, t);
 #else
-    float direction[3], avec[3], bvec[3], tvec[3], det, inv_det;
-    subtract(q1, q0, direction);
+    float avec[3], bvec[3], tvec[3], det, inv_det;
+    // float direction[3], avec[3], bvec[3], tvec[3], det, inv_det;
+    // subtract(q1, q0, direction);
     cross(direction, edge2, avec);
     dot(avec, edge1, det);
     float epsilon = tolerance(direction, edge1, edge2);
@@ -335,7 +336,7 @@ __device__ void checkRayTriangleIntersection3(const float* __restrict__ vertices
         }
         if (newIntercept) {
             // tp[(*interceptCounts) & (MAX_INTERSECTIONS - 1)] = floatId;
-            tp[(*interceptCounts) & (MAX_INTERSECTIONS - 1)] = t*traceDist;
+            tp[(*interceptCounts) & (MAX_INTERSECTIONS - 1)] = t*traceDist; // TODO: traceDist shouldn't be necessary here
             fp[(*interceptCounts) & (MAX_INTERSECTIONS - 1)] = result;
             (*interceptCounts) += 1;
             // results[rayIdx] += 1;

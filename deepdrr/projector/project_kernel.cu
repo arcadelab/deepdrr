@@ -2155,6 +2155,7 @@ __device__ void generateRays(
     float *ijk_from_world, // (NUM_VOLUMES, 3, 4) transform giving the transform from world to IJK coordinates for each volume.
     float *ray_directions,
     int numRays,
+    float traceDist,
     int rayIdx
 ) {
 #if NUM_MESHES > 0
@@ -2252,9 +2253,9 @@ __device__ void generateRays(
         ijk_from_world[offs * i + 8] * rx + ijk_from_world[offs * i + 9] * ry +
         ijk_from_world[offs * i + 10] * rz + ijk_from_world[offs * i + 11] * 0;
 
-    ray_directions[i*numRays*3 + rayIdx*3 + 0] = rx_ijk[i];
-    ray_directions[i*numRays*3 + rayIdx*3 + 1] = ry_ijk[i];
-    ray_directions[i*numRays*3 + rayIdx*3 + 2] = rz_ijk[i];
+    ray_directions[i*numRays*3 + rayIdx*3 + 0] = rx_ijk[i] * traceDist;
+    ray_directions[i*numRays*3 + rayIdx*3 + 1] = ry_ijk[i] * traceDist;
+    ray_directions[i*numRays*3 + rayIdx*3 + 2] = rz_ijk[i] * traceDist;
 
     // ray_directions[i*numRays*3 + rayIdx*3 + 0] = udx;
     // ray_directions[i*numRays*3 + rayIdx*3 + 1] = vdx;
@@ -2272,7 +2273,8 @@ __global__ void kernelGenerateRays(
     float *world_from_index, // (3, 3) array giving the world_from_index ray transform for the camera
     float *ijk_from_world, // (NUM_VOLUMES, 3, 4) transform giving the transform from world to IJK coordinates for each volume.
     float *ray_directions, // (NUM_MESHES, out_height, out_width, 3) array giving the ray direction for each pixel in the output image
-    int numRays
+    int numRays,
+    float traceDist
 )
 {
     __shared__ int stride;
@@ -2295,6 +2297,7 @@ __global__ void kernelGenerateRays(
                 ijk_from_world,
                 ray_directions,
                 numRays,
+                traceDist,
                 idx
             );
         }

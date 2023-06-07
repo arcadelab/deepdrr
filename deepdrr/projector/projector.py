@@ -521,6 +521,8 @@ class Projector(object):
             if len(self.primitives) > 0:
                 mesh_perf_start = time.perf_counter()
 
+                trace_dist = 1000 # TODO: make this a parameter
+
                 args = [
                     np.int32(proj.sensor_width),  # out_width
                     np.int32(proj.sensor_height),  # out_height
@@ -531,6 +533,7 @@ class Projector(object):
                     self.mesh_ijk_from_world_gpu,  # ijk_from_world
                     self.ray_directions_gpu, # ray_directions  
                     np.int32(num_rays),  # num_rays
+                    np.float32(trace_dist),  # trace_dist
                 ]
 
                 self.generate_rays(
@@ -554,7 +557,6 @@ class Projector(object):
                 mesh_hit_alphas = np.ones((len(self.primitives), proj.sensor_width * proj.sensor_height, self.max_mesh_depth), dtype=np.float32) * np.inf
                 mesh_hit_facing = np.zeros((len(self.primitives), proj.sensor_width * proj.sensor_height, self.max_mesh_depth), dtype=np.int8)
 
-                trace_dist = 1000 # TODO: make this a parameter
 
                 for mesh_i, _mesh in enumerate(self.primitives):
 
@@ -565,7 +567,9 @@ class Projector(object):
                     origins = np.array([origin_pt])
                     # origins = np.array([origin_pt]*len(directions))
                     
-                    rayTo = origin_pt_np+directions*trace_dist
+                    rayTo = directions
+                    # rayTo = directions*trace_dist
+                    # rayTo = origin_pt_np+directions*trace_dist
 
                     mesh_perf_end = time.perf_counter()
                     print(f"ray compute: {mesh_perf_end - mesh_perf_start}")
@@ -580,10 +584,16 @@ class Projector(object):
 
 
                     fdsasd = num_rays * self.max_mesh_depth
-                    self.pycuda_rsi.test(vertices.copy(), triangles.copy(), origins.copy(), rayTo.copy(), trace_dist, 
-                                                                                        np.uint64(int(self.mesh_hit_alphas_gpu) + mesh_i * fdsasd * NUMBYTES_FLOAT32), 
-                                                                                        np.uint64(int(self.mesh_hit_facing_gpu) + mesh_i * fdsasd * NUMBYTES_INT8),
-                                                                                        None)
+                    self.pycuda_rsi.test(
+                        vertices.copy(), 
+                        triangles.copy(), 
+                        origins.copy(), 
+                        # np.uint64(int(self.ray_directions_gpu) + mesh_i * fdsasd * 3 * NUMBYTES_FLOAT32), 
+                        rayTo.copy(), 
+                        trace_dist, 
+                        np.uint64(int(self.mesh_hit_alphas_gpu) + mesh_i * fdsasd * NUMBYTES_FLOAT32), 
+                        np.uint64(int(self.mesh_hit_facing_gpu) + mesh_i * fdsasd * NUMBYTES_INT8),
+                        None)
                     
                     mesh_perf_end = time.perf_counter()
                     print(f"tracing: {mesh_perf_end - mesh_perf_start}")
