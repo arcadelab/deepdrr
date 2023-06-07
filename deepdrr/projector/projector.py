@@ -518,55 +518,56 @@ class Projector(object):
 
             num_rays = proj.sensor_width * proj.sensor_height
 
-            args = [
-                np.int32(proj.sensor_width),  # out_width
-                np.int32(proj.sensor_height),  # out_height
-                self.mesh_sourceX_gpu,  # sx_ijk
-                self.mesh_sourceY_gpu,  # sy_ijk
-                self.mesh_sourceZ_gpu,  # sz_ijk
-                self.world_from_index_gpu,  # world_from_index
-                self.mesh_ijk_from_world_gpu,  # ijk_from_world
-                self.ray_directions_gpu, # ray_directions  
-                np.int32(num_rays),  # num_rays
-            ]
+            if len(self.primitives) > 0:
+                args = [
+                    np.int32(proj.sensor_width),  # out_width
+                    np.int32(proj.sensor_height),  # out_height
+                    self.mesh_sourceX_gpu,  # sx_ijk
+                    self.mesh_sourceY_gpu,  # sy_ijk
+                    self.mesh_sourceZ_gpu,  # sz_ijk
+                    self.world_from_index_gpu,  # world_from_index
+                    self.mesh_ijk_from_world_gpu,  # ijk_from_world
+                    self.ray_directions_gpu, # ray_directions  
+                    np.int32(num_rays),  # num_rays
+                ]
 
-            self.generate_rays(
-                *args,
-                block=(512, 1, 1),
-                grid=(16, 1),
-            )
+                self.generate_rays(
+                    *args,
+                    block=(512, 1, 1),
+                    grid=(16, 1),
+                )
 
-            ray_directions = np.zeros((len(self.primitives), proj.sensor_width * proj.sensor_height, 3), dtype=np.float32)
-            cuda.memcpy_dtoh(ray_directions, self.ray_directions_gpu)
-
-
-            mesh_hit_alphas = np.ones((len(self.primitives), proj.sensor_width * proj.sensor_height, self.max_mesh_depth), dtype=np.float32) * np.inf
-            mesh_hit_facing = np.zeros((len(self.primitives), proj.sensor_width * proj.sensor_height, self.max_mesh_depth), dtype=np.int8)
-
-            trace_dist = 1000 # TODO: make this a parameter
-
-            print("started tracing")
-            for mesh_i, _mesh in enumerate(self.primitives):
-
-                # TODO: do this on GPU
-                directions = ray_directions[mesh_i].astype(np.float32)
-                origin_pt = [sx_ijk[mesh_i], sy_ijk[mesh_i], sz_ijk[mesh_i]] # TODO: rays should always be at origin, move objects instead
-                origin_pt_np = np.array(origin_pt, dtype=np.float32)
-                origins = np.array([origin_pt]*len(directions))
-                
-                vertices = _mesh.compute_vertices() # TODO on GPU
-                triangles = _mesh.triangles()
-
-                rayTo = origin_pt_np+directions*trace_dist
-
-                fdsasd = num_rays * self.max_mesh_depth
-                self.pycuda_rsi.test(vertices.copy(), triangles.copy(), origins.copy(), rayTo.copy(), trace_dist, 
-                                                                                     np.uint64(int(self.mesh_hit_alphas_gpu) + mesh_i * fdsasd * NUMBYTES_FLOAT32), 
-                                                                                     np.uint64(int(self.mesh_hit_facing_gpu) + mesh_i * fdsasd * NUMBYTES_INT8),
-                                                                                       None)
+                ray_directions = np.zeros((len(self.primitives), proj.sensor_width * proj.sensor_height, 3), dtype=np.float32)
+                cuda.memcpy_dtoh(ray_directions, self.ray_directions_gpu)
 
 
-            print("finished tracing")
+                mesh_hit_alphas = np.ones((len(self.primitives), proj.sensor_width * proj.sensor_height, self.max_mesh_depth), dtype=np.float32) * np.inf
+                mesh_hit_facing = np.zeros((len(self.primitives), proj.sensor_width * proj.sensor_height, self.max_mesh_depth), dtype=np.int8)
+
+                trace_dist = 1000 # TODO: make this a parameter
+
+                print("started tracing")
+                for mesh_i, _mesh in enumerate(self.primitives):
+
+                    # TODO: do this on GPU
+                    directions = ray_directions[mesh_i].astype(np.float32)
+                    origin_pt = [sx_ijk[mesh_i], sy_ijk[mesh_i], sz_ijk[mesh_i]] # TODO: rays should always be at origin, move objects instead
+                    origin_pt_np = np.array(origin_pt, dtype=np.float32)
+                    origins = np.array([origin_pt]*len(directions))
+                    
+                    vertices = _mesh.compute_vertices() # TODO on GPU
+                    triangles = _mesh.triangles()
+
+                    rayTo = origin_pt_np+directions*trace_dist
+
+                    fdsasd = num_rays * self.max_mesh_depth
+                    self.pycuda_rsi.test(vertices.copy(), triangles.copy(), origins.copy(), rayTo.copy(), trace_dist, 
+                                                                                        np.uint64(int(self.mesh_hit_alphas_gpu) + mesh_i * fdsasd * NUMBYTES_FLOAT32), 
+                                                                                        np.uint64(int(self.mesh_hit_facing_gpu) + mesh_i * fdsasd * NUMBYTES_INT8),
+                                                                                        None)
+
+
+                print("finished tracing")
 
             args = [
                 np.int32(proj.sensor_width),  # out_width
@@ -602,11 +603,11 @@ class Projector(object):
                 self.intensity_gpu,  # intensity
                 self.photon_prob_gpu,  # photon_prob
                 self.solid_angle_gpu,  # solid_angle
-                self.mesh_hit_alphas_gpu,
-                self.mesh_hit_facing_gpu,
+                np.uint64(self.mesh_hit_alphas_gpu),
+                np.uint64(self.mesh_hit_facing_gpu),
                 np.int32(self.max_mesh_depth),
-                self.mesh_materials_gpu,
-                self.mesh_densities_gpu,
+                np.uint64(self.mesh_materials_gpu),
+                np.uint64(self.mesh_densities_gpu),
             ]
 
             # Calculate required blocks
@@ -1068,14 +1069,19 @@ class Projector(object):
             self.segmentations_gpu.append(seg_for_vol)
             self.segmentations_texref.append(texref)
 
-        self.mesh_materials_gpu = cuda.mem_alloc(len(self.primitives) * NUMBYTES_INT32)
+        def safe_mem_alloc(size):
+            if size == 0:
+                return 0
+            return cuda.mem_alloc(size)
+
+        self.mesh_materials_gpu = safe_mem_alloc(len(self.primitives) * NUMBYTES_INT32)
         mesh_materials = []
         for mesh in self.primitives:
             mesh_materials.append(self.all_materials.index(mesh.material))
         mesh_materials = np.array(mesh_materials).astype(np.int32)
         cuda.memcpy_htod(self.mesh_materials_gpu, mesh_materials)
 
-        self.mesh_densities_gpu = cuda.mem_alloc(len(self.primitives) * NUMBYTES_FLOAT32)
+        self.mesh_densities_gpu = safe_mem_alloc(len(self.primitives) * NUMBYTES_FLOAT32)
         mesh_densities = []
         for mesh in self.primitives:
             mesh_densities.append(mesh.density)
@@ -1150,9 +1156,9 @@ class Projector(object):
         self.sourceX_gpu = cuda.mem_alloc(len(self.volumes) * NUMBYTES_FLOAT32)
         self.sourceY_gpu = cuda.mem_alloc(len(self.volumes) * NUMBYTES_FLOAT32)
         self.sourceZ_gpu = cuda.mem_alloc(len(self.volumes) * NUMBYTES_FLOAT32)
-        self.mesh_sourceX_gpu = cuda.mem_alloc(len(self.primitives) * NUMBYTES_FLOAT32)
-        self.mesh_sourceY_gpu = cuda.mem_alloc(len(self.primitives) * NUMBYTES_FLOAT32)
-        self.mesh_sourceZ_gpu = cuda.mem_alloc(len(self.primitives) * NUMBYTES_FLOAT32)
+        self.mesh_sourceX_gpu = safe_mem_alloc(len(self.primitives) * NUMBYTES_FLOAT32)
+        self.mesh_sourceY_gpu = safe_mem_alloc(len(self.primitives) * NUMBYTES_FLOAT32)
+        self.mesh_sourceZ_gpu = safe_mem_alloc(len(self.primitives) * NUMBYTES_FLOAT32)
 
         init_tock = time.perf_counter()
         log.debug(
@@ -1167,7 +1173,7 @@ class Projector(object):
             len(self.volumes) * 3 * 4 * NUMBYTES_FLOAT32
         )
         
-        self.mesh_ijk_from_world_gpu = cuda.mem_alloc(
+        self.mesh_ijk_from_world_gpu = safe_mem_alloc(
             len(self.primitives) * 3 * 4 * NUMBYTES_FLOAT32
         )
 
@@ -1218,9 +1224,9 @@ class Projector(object):
 
 
 
-        self.mesh_hit_alphas_gpu = cuda.mem_alloc(math.prod((len(self.primitives), width * height, self.max_mesh_depth)) * NUMBYTES_FLOAT32)
-        self.mesh_hit_facing_gpu = cuda.mem_alloc(math.prod((len(self.primitives), width * height, self.max_mesh_depth)) * NUMBYTES_INT8)
-        self.ray_directions_gpu = cuda.mem_alloc(math.prod((len(self.primitives), width * height, 3)) * NUMBYTES_FLOAT32)
+        self.mesh_hit_alphas_gpu = safe_mem_alloc(math.prod((len(self.primitives), width * height, self.max_mesh_depth)) * NUMBYTES_FLOAT32)
+        self.mesh_hit_facing_gpu = safe_mem_alloc(math.prod((len(self.primitives), width * height, self.max_mesh_depth)) * NUMBYTES_INT8)
+        self.ray_directions_gpu = safe_mem_alloc(math.prod((len(self.primitives), width * height, 3)) * NUMBYTES_FLOAT32)
 
         # Scatter-specific initializations
 
@@ -1627,6 +1633,11 @@ class Projector(object):
     def free(self):
         """Free the allocated GPU memory."""
         if self.initialized:
+
+            def safe_free(gpu_ptr):
+                if isinstance(gpu_ptr, cuda.DeviceAllocation):
+                    gpu_ptr.free()
+
             for vol_id, vol_gpu in enumerate(self.volumes_gpu):
                 vol_gpu.free()
                 for seg in self.segmentations_gpu[vol_id]:
@@ -1649,13 +1660,13 @@ class Projector(object):
             self.sourceX_gpu.free()
             self.sourceY_gpu.free()
             self.sourceZ_gpu.free()
-            self.mesh_sourceX_gpu.free()
-            self.mesh_sourceY_gpu.free()
-            self.mesh_sourceZ_gpu.free()
+            safe_free(self.mesh_sourceX_gpu)
+            safe_free(self.mesh_sourceY_gpu)
+            safe_free(self.mesh_sourceZ_gpu)
 
             self.world_from_index_gpu.free()
             self.ijk_from_world_gpu.free()
-            self.mesh_ijk_from_world_gpu.free()
+            safe_free(self.mesh_ijk_from_world_gpu)
             self.intensity_gpu.free()
             self.photon_prob_gpu.free()
 

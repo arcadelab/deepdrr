@@ -113,6 +113,7 @@ class TestSingleVolume:
         # mesh.morph_weights = np.array([-10])
         
         carm = deepdrr.MobileCArm(isocenter=volume.center_in_world, sensor_width=300, sensor_height=200, pixel_size=0.6)
+        # self.project([volume], carm, "test_mesh.png")
         self.project([volume, mesh], carm, "test_mesh.png")
 
 

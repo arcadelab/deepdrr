@@ -2157,6 +2157,7 @@ __device__ void generateRays(
     int numRays,
     int rayIdx
 ) {
+#if NUM_MESHES > 0
   // The output image has the following coordinate system, with cell-centered
   // sampling. y is along the fast axis (columns), x along the slow (rows).
   //
@@ -2259,6 +2260,7 @@ __device__ void generateRays(
     // ray_directions[i*numRays*3 + rayIdx*3 + 1] = vdx;
     // ray_directions[i*numRays*3 + rayIdx*3 + 2] = numRays;
   }
+#endif
 }
 
 __global__ void kernelGenerateRays(
@@ -2510,6 +2512,7 @@ __global__ void projectKernel(
   // if (debug) printf("start trace\n");
 
 
+#if NUM_MESHES > 0
   int mesh_hit_depth[NUM_MESHES];
   for (int i = 0; i < NUM_MESHES; i++) {
     mesh_hit_depth[i] = 0;
@@ -2519,6 +2522,7 @@ __global__ void projectKernel(
   for (int i = 0; i < NUM_MESHES; i++) {
       mesh_hit_index[i] = 0;
   }
+#endif
 
 
   // Attenuate up to minAlpha, assuming it is filled with air.
@@ -2568,6 +2572,7 @@ __global__ void projectKernel(
 
     bool mesh_hit_this_step = false;
 
+#if NUM_MESHES > 0
     for (int i = 0; i < NUM_MESHES; i++) {
       int hit_arr_index = 0;
       while (true) {
@@ -2586,6 +2591,7 @@ __global__ void projectKernel(
         mesh_hit_this_step = true; // TODO mesh priorities?
       }
     }
+#endif
 
     // if (debug) printf("  got priority at alpha, num vols\n"); // This is
     // the one that seems to take a half a second.
@@ -2626,6 +2632,7 @@ __global__ void projectKernel(
     area_density[m] *= step;
   }
 
+#if NUM_MESHES > 0
   // Render meshes exact (without depth pixellation)
   for (int i = 0; i < NUM_MESHES; i++) {
     int local_mesh_hit_index = 0;
@@ -2640,6 +2647,7 @@ __global__ void projectKernel(
       local_mesh_hit_index += 1;
     }
   }
+#endif
 
   // Convert to centimeters
   for (int m = 0; m < NUM_MATERIALS; m++) {
