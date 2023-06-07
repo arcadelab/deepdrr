@@ -112,8 +112,11 @@ __global__ void kernelRayBox(const float* __restrict__ rayFrom,
     //instead of repeating the same in each thread-block.
     const int i = blockIdx.x * blockDim.x + threadIdx.x;
     if (i < numRays) {
-        const float *start = &rayFrom[0], *finish = &rayTo[3*i];
+        const float *start = &rayFrom[0], *dir = &rayTo[3*i];
         // const float *start = &rayFrom[3*i], *finish = &rayTo[3*i];
+        float finish[3];
+        for (int j = 0; j < 3; j++)
+            finish[j] = start[j] + dir[j];
         lineSegmentBbox(start, finish, rayBox[i]);
     }
 }
