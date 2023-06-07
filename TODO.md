@@ -2,6 +2,7 @@
 - Cleanup
 - Add tests
 - Get rid of macros
+- Implement in PelvisVR
 
 # Features
 <!-- - Use winding order in renderer -->
@@ -11,6 +12,7 @@
 - Integrate API for meshes and volumes
 - Mesh priorities (is necessary?)
 - Fix attenuate outside volume
+- scatter?
 
 # Optimizations
 <!-- - On gpu sort -->
