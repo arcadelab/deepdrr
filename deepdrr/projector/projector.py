@@ -238,12 +238,13 @@ class Projector(object):
         volume = utils.listify(volume)
         self.volumes = []
         self.priorities = []
-        self.meshes = []
+        self.primitives = []
         for _vol in volume:
             if isinstance(_vol, vol.Volume):
                 self.volumes.append(_vol)
             elif isinstance(_vol, vol.Mesh):
-                self.meshes.append(_vol)
+                for p in _vol.primitives:
+                    self.primitives.append(p)
             else:
                 raise ValueError(
                     f"unrecognized Renderable type: {type(_vol)}."
@@ -311,7 +312,7 @@ class Projector(object):
         for _vol in self.volumes:
             all_mats.extend(list(_vol.materials.keys()))
 
-        for _vol in self.meshes:
+        for _vol in self.primitives:
             all_mats.append(_vol.material)
 
         self.all_materials = list(set(all_mats))
@@ -327,7 +328,7 @@ class Projector(object):
         # compile the module
         self.mod = _get_kernel_projector_module(
             len(self.volumes),
-            len(self.meshes),
+            len(self.primitives),
             len(self.all_materials),
             air_index=air_index,
             attenuate_outside_volume=attenuate_outside_volume,
@@ -455,10 +456,10 @@ class Projector(object):
             )
             cuda.memcpy_htod(self.world_from_index_gpu, world_from_index)
 
-            mesh_ijk_from_world = np.zeros(len(self.meshes) * 3 * 4, dtype=np.float32)
-            sx_ijk = np.zeros(len(self.meshes), dtype=np.float32)
-            sy_ijk = np.zeros(len(self.meshes), dtype=np.float32)
-            sz_ijk = np.zeros(len(self.meshes), dtype=np.float32)
+            mesh_ijk_from_world = np.zeros(len(self.primitives) * 3 * 4, dtype=np.float32)
+            sx_ijk = np.zeros(len(self.primitives), dtype=np.float32)
+            sy_ijk = np.zeros(len(self.primitives), dtype=np.float32)
+            sz_ijk = np.zeros(len(self.primitives), dtype=np.float32)
 
             for vol_id, _vol in enumerate(self.volumes):
                 source_ijk = np.array(
@@ -485,7 +486,8 @@ class Projector(object):
                     IJK_from_world,
                 )
 
-            for vol_id, _vol in enumerate(self.meshes): # TODO: duplicated code
+            for vol_id, prim in enumerate(self.primitives): # TODO: duplicated code
+                _vol = prim.get_parent_mesh()
                 source_ijk = np.array(
                     _vol.IJK_from_world @ proj.center_in_world
                 ).astype(np.float32)
@@ -532,17 +534,17 @@ class Projector(object):
                 grid=(16, 1),
             )
 
-            ray_directions = np.zeros((len(self.meshes), proj.sensor_width * proj.sensor_height, 3), dtype=np.float32)
+            ray_directions = np.zeros((len(self.primitives), proj.sensor_width * proj.sensor_height, 3), dtype=np.float32)
             cuda.memcpy_dtoh(ray_directions, self.ray_directions_gpu)
 
 
-            mesh_hit_alphas = np.ones((len(self.meshes), proj.sensor_width * proj.sensor_height, self.max_mesh_depth), dtype=np.float32)*np.inf
-            mesh_hit_facing = np.zeros((len(self.meshes), proj.sensor_width * proj.sensor_height, self.max_mesh_depth), dtype=np.int8)
+            mesh_hit_alphas = np.ones((len(self.primitives), proj.sensor_width * proj.sensor_height, self.max_mesh_depth), dtype=np.float32) * np.inf
+            mesh_hit_facing = np.zeros((len(self.primitives), proj.sensor_width * proj.sensor_height, self.max_mesh_depth), dtype=np.int8)
 
             trace_dist = 1000 # TODO: make this a parameter
 
             print("started tracing")
-            for mesh_i, _mesh in enumerate(self.meshes):
+            for mesh_i, _mesh in enumerate(self.primitives):
 
                 # TODO: do this on GPU
                 directions = ray_directions[mesh_i].astype(np.float32)
@@ -1064,16 +1066,16 @@ class Projector(object):
             self.segmentations_gpu.append(seg_for_vol)
             self.segmentations_texref.append(texref)
 
-        self.mesh_materials_gpu = cuda.mem_alloc(len(self.meshes) * NUMBYTES_INT32)
+        self.mesh_materials_gpu = cuda.mem_alloc(len(self.primitives) * NUMBYTES_INT32)
         mesh_materials = []
-        for mesh in self.meshes:
+        for mesh in self.primitives:
             mesh_materials.append(self.all_materials.index(mesh.material))
         mesh_materials = np.array(mesh_materials).astype(np.int32)
         cuda.memcpy_htod(self.mesh_materials_gpu, mesh_materials)
 
-        self.mesh_densities_gpu = cuda.mem_alloc(len(self.meshes) * NUMBYTES_FLOAT32)
+        self.mesh_densities_gpu = cuda.mem_alloc(len(self.primitives) * NUMBYTES_FLOAT32)
         mesh_densities = []
-        for mesh in self.meshes:
+        for mesh in self.primitives:
             mesh_densities.append(mesh.density)
         mesh_densities = np.array(mesh_densities).astype(np.float32)
         cuda.memcpy_htod(self.mesh_densities_gpu, mesh_densities)
@@ -1139,9 +1141,9 @@ class Projector(object):
         self.sourceX_gpu = cuda.mem_alloc(len(self.volumes) * NUMBYTES_FLOAT32)
         self.sourceY_gpu = cuda.mem_alloc(len(self.volumes) * NUMBYTES_FLOAT32)
         self.sourceZ_gpu = cuda.mem_alloc(len(self.volumes) * NUMBYTES_FLOAT32)
-        self.mesh_sourceX_gpu = cuda.mem_alloc(len(self.meshes) * NUMBYTES_FLOAT32)
-        self.mesh_sourceY_gpu = cuda.mem_alloc(len(self.meshes) * NUMBYTES_FLOAT32)
-        self.mesh_sourceZ_gpu = cuda.mem_alloc(len(self.meshes) * NUMBYTES_FLOAT32)
+        self.mesh_sourceX_gpu = cuda.mem_alloc(len(self.primitives) * NUMBYTES_FLOAT32)
+        self.mesh_sourceY_gpu = cuda.mem_alloc(len(self.primitives) * NUMBYTES_FLOAT32)
+        self.mesh_sourceZ_gpu = cuda.mem_alloc(len(self.primitives) * NUMBYTES_FLOAT32)
 
         init_tock = time.perf_counter()
         log.debug(
@@ -1157,7 +1159,7 @@ class Projector(object):
         )
         
         self.mesh_ijk_from_world_gpu = cuda.mem_alloc(
-            len(self.meshes) * 3 * 4 * NUMBYTES_FLOAT32
+            len(self.primitives) * 3 * 4 * NUMBYTES_FLOAT32
         )
 
         # Initializes the output_shape as well.
@@ -1208,9 +1210,9 @@ class Projector(object):
         height = self.device.sensor_width # TODO: was deepdrr not locked to fixed resolution before?
         width = self.device.sensor_height
 
-        self.mesh_hit_alphas_gpu = cuda.mem_alloc(math.prod((len(self.meshes), width * height, self.max_mesh_depth)) * NUMBYTES_FLOAT32)
-        self.mesh_hit_facing_gpu = cuda.mem_alloc(math.prod((len(self.meshes), width * height, self.max_mesh_depth)) * NUMBYTES_INT8)
-        self.ray_directions_gpu = cuda.mem_alloc(math.prod((len(self.meshes), width * height, 3)) * NUMBYTES_FLOAT32)
+        self.mesh_hit_alphas_gpu = cuda.mem_alloc(math.prod((len(self.primitives), width * height, self.max_mesh_depth)) * NUMBYTES_FLOAT32)
+        self.mesh_hit_facing_gpu = cuda.mem_alloc(math.prod((len(self.primitives), width * height, self.max_mesh_depth)) * NUMBYTES_INT8)
+        self.ray_directions_gpu = cuda.mem_alloc(math.prod((len(self.primitives), width * height, 3)) * NUMBYTES_FLOAT32)
 
         # Scatter-specific initializations
 
