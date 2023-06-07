@@ -543,7 +543,7 @@ class Projector(object):
                 )
 
                 mesh_perf_end = time.perf_counter()
-                print(f"rays: {mesh_perf_end - mesh_perf_start}")
+                log.debug(f"rays: {mesh_perf_end - mesh_perf_start}")
                 mesh_perf_start = mesh_perf_end
 
                 for mesh_i, _mesh in enumerate(self.primitives):
@@ -554,14 +554,14 @@ class Projector(object):
                     origins = np.array([origin_pt])
 
                     mesh_perf_end = time.perf_counter()
-                    print(f"ray compute: {mesh_perf_end - mesh_perf_start}")
+                    log.debug(f"ray compute: {mesh_perf_end - mesh_perf_start}")
                     mesh_perf_start = mesh_perf_end
 
                     vertices = _mesh.compute_vertices() # TODO on GPU
                     triangles = _mesh.triangles()
 
                     mesh_perf_end = time.perf_counter()
-                    print(f"triangle compute: {mesh_perf_end - mesh_perf_start}")
+                    log.debug(f"triangle compute: {mesh_perf_end - mesh_perf_start}")
                     mesh_perf_start = mesh_perf_end
 
                     fdsasd = num_rays * self.max_mesh_depth
@@ -576,7 +576,7 @@ class Projector(object):
                         None)
                     
                     mesh_perf_end = time.perf_counter()
-                    print(f"tracing: {mesh_perf_end - mesh_perf_start}")
+                    log.debug(f"tracing: {mesh_perf_end - mesh_perf_start}")
                     mesh_perf_start = mesh_perf_end
 
 
