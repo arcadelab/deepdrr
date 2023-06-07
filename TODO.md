@@ -3,6 +3,7 @@
 - Add tests
 - Get rid of macros
 - Implement in PelvisVR
+- Ask about     from pycuda.autoinit import context
 
 # Features
 <!-- - Use winding order in renderer -->
