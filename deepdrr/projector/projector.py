@@ -13,7 +13,7 @@ from pyparsing import alphas
 import torch
 import numpy as np
 
-import pyvista as pv # TODO: for debugging only
+import pyvista as pv
 import pyvista
 
 from .. import geo, utils, vol
