@@ -112,7 +112,8 @@ __global__ void kernelRayBox(const float* __restrict__ rayFrom,
     //instead of repeating the same in each thread-block.
     const int i = blockIdx.x * blockDim.x + threadIdx.x;
     if (i < numRays) {
-        const float *start = &rayFrom[3*i], *finish = &rayTo[3*i];
+        const float *start = &rayFrom[0], *finish = &rayTo[3*i];
+        // const float *start = &rayFrom[3*i], *finish = &rayTo[3*i];
         lineSegmentBbox(start, finish, rayBox[i]);
     }
 }
@@ -316,7 +317,8 @@ __device__ void checkRayTriangleIntersection3(const float* __restrict__ vertices
     float *tp = interceptTs; //circular buffer
     int8_t *fp = interceptFacing; //circular buffer
     const float *v0=&triVerts[0], *v1=&triVerts[3], *v2=&triVerts[6];
-    const float *start = &rayFrom[3*rayIdx], *finish = &rayTo[3*rayIdx];
+    const float *start = &rayFrom[0], *finish = &rayTo[3*rayIdx];
+    // const float *start = &rayFrom[3*rayIdx], *finish = &rayTo[3*rayIdx];
 
     computeEdges(vertices, triangles, v0, v1, v2, triangleID, triVerts, edge1, edge2);
 

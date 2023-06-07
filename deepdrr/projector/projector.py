@@ -562,16 +562,22 @@ class Projector(object):
                     directions = ray_directions[mesh_i].astype(np.float32)
                     origin_pt = [sx_ijk[mesh_i], sy_ijk[mesh_i], sz_ijk[mesh_i]] # TODO: rays should always be at origin, move objects instead
                     origin_pt_np = np.array(origin_pt, dtype=np.float32)
-                    origins = np.array([origin_pt]*len(directions))
+                    origins = np.array([origin_pt])
+                    # origins = np.array([origin_pt]*len(directions))
                     
-                    vertices = _mesh.compute_vertices() # TODO on GPU
-                    triangles = _mesh.triangles()
-
                     rayTo = origin_pt_np+directions*trace_dist
 
                     mesh_perf_end = time.perf_counter()
                     print(f"ray compute: {mesh_perf_end - mesh_perf_start}")
                     mesh_perf_start = mesh_perf_end
+
+                    vertices = _mesh.compute_vertices() # TODO on GPU
+                    triangles = _mesh.triangles()
+
+                    mesh_perf_end = time.perf_counter()
+                    print(f"triangle compute: {mesh_perf_end - mesh_perf_start}")
+                    mesh_perf_start = mesh_perf_end
+
 
                     fdsasd = num_rays * self.max_mesh_depth
                     self.pycuda_rsi.test(vertices.copy(), triangles.copy(), origins.copy(), rayTo.copy(), trace_dist, 
