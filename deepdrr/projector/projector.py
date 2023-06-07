@@ -546,7 +546,6 @@ class Projector(object):
 
                 trace_dist = 1000 # TODO: make this a parameter
 
-                print("started tracing")
                 for mesh_i, _mesh in enumerate(self.primitives):
 
                     # TODO: do this on GPU
@@ -566,8 +565,6 @@ class Projector(object):
                                                                                         np.uint64(int(self.mesh_hit_facing_gpu) + mesh_i * fdsasd * NUMBYTES_INT8),
                                                                                         None)
 
-
-                print("finished tracing")
 
             args = [
                 np.int32(proj.sensor_width),  # out_width
