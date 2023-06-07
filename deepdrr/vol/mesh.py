@@ -29,6 +29,8 @@ log = logging.getLogger(__name__)
 class Mesh(Renderable):
     mesh: pv.PolyData
     morph_targets: List[np.ndarray]
+    material: str
+    density: float
 
     def __init__(
         self,
@@ -39,13 +41,15 @@ class Mesh(Renderable):
         morph_weights: Optional[np.ndarray] = None,
         world_from_anatomical: Optional[geo.FrameTransform] = None,
     ) -> None:
-        Renderable.__init__(self, material, density, world_from_anatomical)
+        Renderable.__init__(self, None, world_from_anatomical)
         self.mesh = mesh
         self.morph_targets = morph_targets if morph_targets is not None else []
         for mt in self.morph_targets:
             assert mt.shape[0] == self.mesh.n_points
         self.morph_weights = morph_weights if morph_weights is not None else np.zeros(len(self.morph_targets))
         assert len(self.morph_weights) == len(self.morph_targets)
+        self.material = material
+        self.density = density
 
     def compute_vertices(self):
         """Compute the vertices of the mesh in local coordinates, including the morph targets."""

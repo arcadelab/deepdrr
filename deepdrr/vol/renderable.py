@@ -28,23 +28,23 @@ log = logging.getLogger(__name__)
 class Renderable(object):
     anatomical_from_IJK: geo.FrameTransform
     world_from_anatomical: geo.FrameTransform
-    material: str
-    density: float
+
 
     def __init__(
         self,
-        material: str,
-        density: float,
+        anatomical_from_IJK: Optional[geo.FrameTransform] = None,
         world_from_anatomical: Optional[geo.FrameTransform] = None,
+        anatomical_from_ijk: Optional[geo.FrameTransform] = None,
     ) -> None:
-        self.anatomical_from_IJK = geo.frame_transform(None)
+        if anatomical_from_ijk is not None:
+            # Deprecation warning
+            anatomical_from_IJK = anatomical_from_ijk
+        self.anatomical_from_IJK = geo.frame_transform(anatomical_from_IJK)
         self.world_from_anatomical = (
             geo.FrameTransform.identity(3)
             if world_from_anatomical is None
             else geo.frame_transform(world_from_anatomical)
         )
-        self.material = material
-        self.density = density
 
 
     @property
