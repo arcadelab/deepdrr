@@ -19,6 +19,7 @@
 <!-- - On gpu sort -->
 <!-- - On gpu ray generation -->
 - Mesh instancing
+- Primitive merging
 - On gpu ray from and to gen
 - Save memory by merging same-material mesh raycast hits
 - Save memory by using signed distances to represent front/back hits
