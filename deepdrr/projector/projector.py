@@ -546,10 +546,6 @@ class Projector(object):
                 print(f"rays: {mesh_perf_end - mesh_perf_start}")
                 mesh_perf_start = mesh_perf_end
 
-                mesh_hit_alphas = np.ones((len(self.primitives), proj.sensor_width * proj.sensor_height, self.max_mesh_depth), dtype=np.float32) * np.inf
-                mesh_hit_facing = np.zeros((len(self.primitives), proj.sensor_width * proj.sensor_height, self.max_mesh_depth), dtype=np.int8)
-
-
                 for mesh_i, _mesh in enumerate(self.primitives):
 
                     # TODO: do this on GPU (won't speedup, low priority)
