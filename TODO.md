@@ -1,16 +1,16 @@
 # Ops
+- Implement in PelvisVR
 - Cleanup
 - Add tests
-- Get rid of macros
-- Implement in PelvisVR
 - Ask about     from pycuda.autoinit import context
+- Get rid of macros
 
 # Features
 <!-- - Use winding order in renderer -->
 <!-- - Confirm mesh cutout -->
 <!-- - Morph targets -->
 <!-- - Min/max alpha -->
-- Integrate API for meshes and volumes
+<!-- - Integrate API for meshes and volumes -->
 - Mesh priorities (is necessary?)
 - Fix attenuate outside volume
 - scatter?

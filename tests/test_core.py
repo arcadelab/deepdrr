@@ -44,7 +44,7 @@ class TestSingleVolume:
         volume.rotate(Rotation.from_euler("x", -90, degrees=True))
         return volume
 
-    def project(self, volume, carm, name, meshes=None):
+    def project(self, volume, carm, name):
         # set projector log level to debug
         import logging
         logging.basicConfig(level=logging.DEBUG)
@@ -60,7 +60,6 @@ class TestSingleVolume:
             scatter_num=0,
             threads=8,
             neglog=True,
-            meshes=meshes,
         ) as projector:
             image = projector.project()
             # from timer_util import FPS
@@ -108,12 +107,12 @@ class TestSingleVolume:
         # scale from m to mm
         # mesh = deepdrr.Mesh("titanium", 7, stl, world_from_anatomical=geo.FrameTransform.from_rotation(geo.Rotation.from_euler("y", 90, degrees=True)))
         # mesh = deepdrr.Mesh("air", 0, stl, morph_targets=morph_targets, world_from_anatomical=geo.FrameTransform.from_rotation(geo.Rotation.from_euler("x", 90, degrees=True)))
-        mesh = deepdrr.Mesh("titanium", 7, stl, world_from_anatomical=geo.FrameTransform.from_rotation(geo.Rotation.from_euler("x", 90, degrees=True)))
+        mesh = deepdrr.Mesh("titanium", 1, stl, world_from_anatomical=geo.FrameTransform.from_rotation(geo.Rotation.from_euler("x", 90, degrees=True)))
         # mesh = deepdrr.Mesh("polyethylene", 1.05, stl)
         mesh.morph_weights = np.array([-10])
         
         carm = deepdrr.MobileCArm(isocenter=volume.center_in_world, sensor_width=300, sensor_height=200, pixel_size=0.6)
-        self.project(volume, carm, "test_mesh.png", meshes=[mesh])
+        self.project([volume, mesh], carm, "test_mesh.png")
 
 
     def test_translate(self, t):

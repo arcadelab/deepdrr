@@ -180,7 +180,7 @@ class Projector(object):
 
     def __init__(
         self,
-        volume: Union[vol.Volume, List[vol.Volume]],
+        volume: Union[vol.Renderable, List[vol.Renderable]],
         priorities: Optional[List[int]] = None,
         camera_intrinsics: Optional[geo.CameraIntrinsicTransform] = None,
         device: Optional[Device] = None,
@@ -199,7 +199,6 @@ class Projector(object):
         attenuate_outside_volume: bool = False,
         source_to_detector_distance: float = -1,
         carm: Optional[Device] = None,
-        meshes: Optional[List[Mesh]] = None,
         max_mesh_depth = 32
     ) -> None:
         """Create the projector, which has info for simulating the DRR.
@@ -239,9 +238,16 @@ class Projector(object):
         volume = utils.listify(volume)
         self.volumes = []
         self.priorities = []
+        self.meshes = []
         for _vol in volume:
-            assert isinstance(_vol, vol.Volume)
-            self.volumes.append(_vol)
+            if isinstance(_vol, vol.Volume):
+                self.volumes.append(_vol)
+            elif isinstance(_vol, vol.Mesh):
+                self.meshes.append(_vol)
+            else:
+                raise ValueError(
+                    f"unrecognized Renderable type: {type(_vol)}."
+                )
 
         if len(self.volumes) > 20:
             raise ValueError("Only up to 20 volumes are supported")
@@ -261,7 +267,6 @@ class Projector(object):
                 self.priorities.append(prio)
         assert len(self.volumes) == len(self.priorities)
 
-        self.meshes = meshes
 
         if carm is not None:
             warnings.warn("carm is deprecated, use device instead", DeprecationWarning)
