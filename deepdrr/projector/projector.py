@@ -559,21 +559,12 @@ class Projector(object):
 
                 rayTo = origin_pt_np+directions*trace_dist
 
-                # with PyCudaRSI() as pycu: # TODO: max mesh depth parameter
-                    # interceptCounts, interceptTs, interceptFacing = pycu.test(vertices.copy(), triangles.copy(), origins.copy(), rayTo.copy(), None)
                 fdsasd = num_rays * self.max_mesh_depth
-                interceptCounts, interceptTs, interceptFacing = self.pycuda_rsi.test(vertices.copy(), triangles.copy(), origins.copy(), rayTo.copy(), trace_dist, 
-                                                                                    #  np.uint64(int(self.mesh_hit_alphas_gpu) ), 
+                self.pycuda_rsi.test(vertices.copy(), triangles.copy(), origins.copy(), rayTo.copy(), trace_dist, 
                                                                                      np.uint64(int(self.mesh_hit_alphas_gpu) + mesh_i * fdsasd * NUMBYTES_FLOAT32), 
-                                                                                    #  np.uint64(int(self.mesh_hit_facing_gpu)),
                                                                                      np.uint64(int(self.mesh_hit_facing_gpu) + mesh_i * fdsasd * NUMBYTES_INT8),
                                                                                        None)
 
-                # mesh_hit_alphas[mesh_i] = interceptTs*trace_dist
-                # mesh_hit_facing[mesh_i] = interceptFacing
-
-            # cuda.memcpy_htod(self.mesh_hit_alphas_gpu, mesh_hit_alphas)
-            # cuda.memcpy_htod(self.mesh_hit_facing_gpu, mesh_hit_facing)
 
             print("finished tracing")
 
@@ -1096,7 +1087,12 @@ class Projector(object):
             f"time elapsed after intializing segmentations: {init_tock - init_tick}"
         )
 
-        self.pycuda_rsi = PyCudaRSI()  # TODO: max mesh depth parameter
+        height = self.device.sensor_width # TODO: was deepdrr not locked to fixed resolution before?
+        width = self.device.sensor_height
+
+        n_rays = height * width # TODO: move this
+
+        self.pycuda_rsi = PyCudaRSI(n_rays=n_rays)  # TODO: max mesh depth parameter
 
         # allocate volumes' priority level on the GPU
         self.priorities_gpu = cuda.mem_alloc(len(self.volumes) * NUMBYTES_INT32)
@@ -1220,8 +1216,7 @@ class Projector(object):
             f"time elapsed after intializing rest of primary-signal stuff: {init_tock - init_tick}"
         )
 
-        height = self.device.sensor_width # TODO: was deepdrr not locked to fixed resolution before?
-        width = self.device.sensor_height
+
 
         self.mesh_hit_alphas_gpu = cuda.mem_alloc(math.prod((len(self.primitives), width * height, self.max_mesh_depth)) * NUMBYTES_FLOAT32)
         self.mesh_hit_facing_gpu = cuda.mem_alloc(math.prod((len(self.primitives), width * height, self.max_mesh_depth)) * NUMBYTES_INT8)

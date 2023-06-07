@@ -27,7 +27,7 @@ default_paths = {'PATH': '/usr/local/cuda-11.2/bin',
 
 
 class PyCudaRSI(object):
-    def __init__(self, params=None, max_intersections=32):
+    def __init__(self, n_rays, params=None, max_intersections=32):
         # - The constant parameters QUANT_LEVELS and LARGE_POS_VALUE
         #   represent design choices that ought to be fixed.
         # - PATH, LD_LIBRARY_PATH, CUDA_INC_DIR are environment variables
@@ -83,6 +83,18 @@ class PyCudaRSI(object):
         }
         self.module = SourceModule(self.fill(get_cuda_template(), subst_dict))
         self.perform_bindings_()
+
+    
+        self.n_rays = n_rays
+        self.d_szQuery = cuda.mem_alloc(np.ones(1, dtype=np.int32).nbytes)
+        get_ = lambda x : self.struct_size(x, self.d_szQuery)
+
+        self.h_interceptCounts = np.zeros(self.n_rays, dtype=np.int32)
+        self.d_rayBox = cuda.mem_alloc(self.n_rays * get_(self.bytes_in_AABB))
+        self.d_interceptCounts = cuda.mem_alloc(self.h_interceptCounts.nbytes)
+
+        self.d_raysFrom = cuda.mem_alloc(self.n_rays * 3 * np.float32().nbytes)
+        self.d_raysTo = cuda.mem_alloc(self.n_rays * 3 * np.float32().nbytes)
 
     def __enter__(self):
         return self
@@ -158,7 +170,7 @@ class PyCudaRSI(object):
             self.block_x = min(attrs[cuda.device_attribute.MAX_BLOCK_DIM_X], self.block_x)
             grid_xlim = min(attrs[cuda.device_attribute.MAX_GRID_DIM_X], grid_xlim)
 
-        self.n_rays = len(self.h_raysFrom)
+        # self.n_rays = len(self.h_raysFrom)
         self.n_triangles = len(self.h_triangles)
         self.grid_xR = int(np.ceil(self.n_rays / self.block_x))
         self.grid_xT = int(np.ceil(self.n_triangles / self.block_x))
@@ -180,26 +192,23 @@ class PyCudaRSI(object):
         # Allocate memory on host and device
         self.h_morton = np.zeros(self.n_triangles, dtype=np.uint64)
         # self.h_crossingDetected = np.zeros(self.n_rays, dtype=np.int32)
-        self.h_interceptCounts = np.zeros(self.n_rays, dtype=np.int32)
-        self.h_interceptTs = np.zeros((self.n_rays, self.max_intersections), dtype=np.float32)
-        self.h_interceptFacing = np.zeros((self.n_rays, self.max_intersections), dtype=np.int8)
+        # self.h_interceptTs = np.zeros((self.n_rays, self.max_intersections), dtype=np.float32)
+        # self.h_interceptFacing = np.zeros((self.n_rays, self.max_intersections), dtype=np.int8)
         self.d_vertices = cuda.mem_alloc(self.h_vertices.nbytes)
         self.d_triangles = cuda.mem_alloc(self.h_triangles.nbytes)
-        self.d_raysFrom = cuda.mem_alloc(self.h_raysFrom.nbytes)
-        self.d_raysTo = cuda.mem_alloc(self.h_raysTo.nbytes)
+
         sz_ = lambda x : np.ones(1, dtype=x).nbytes
         get_ = lambda x : self.struct_size(x, self.d_szQuery)
         self.d_morton = cuda.mem_alloc(self.n_triangles * sz_(np.uint64))
         self.d_sortedTriangleIDs = cuda.mem_alloc(self.n_triangles * sz_(np.int32))
-        self.d_rayBox = cuda.mem_alloc(self.n_rays * get_(self.bytes_in_AABB))
         # Data structures used in agglomerative LBVH construction
         self.d_leafNodes = cuda.mem_alloc(self.n_triangles * get_(self.bytes_in_BVHNode))
         self.d_internalNodes = cuda.mem_alloc(self.n_triangles * get_(self.bytes_in_BVHNode))
         self.d_hitIDs = cuda.mem_alloc(self.grid_xLambda * self.block_x * get_(self.bytes_in_CollisionList))
 
-        self.d_interceptCounts = cuda.mem_alloc(self.h_interceptCounts.nbytes)
-        self.d_interceptTs = cuda.mem_alloc(self.h_interceptTs.nbytes)
-        self.d_interceptFacing = cuda.mem_alloc(self.h_interceptFacing.nbytes)
+
+        # self.d_interceptTs = cuda.mem_alloc(self.h_interceptTs.nbytes)
+        # self.d_interceptFacing = cuda.mem_alloc(self.h_interceptFacing.nbytes)
 
         # TODO: check free
 
@@ -281,14 +290,14 @@ class PyCudaRSI(object):
             grid=self.grid_lambda
         )
 
-        cuda.memcpy_dtoh(self.h_interceptCounts, int(self.d_interceptCounts))
-        cuda.memcpy_dtoh(self.h_interceptTs, int(self.d_interceptTs))
-        cuda.memcpy_dtoh(self.h_interceptFacing, int(self.d_interceptFacing))
+        # cuda.memcpy_dtoh(self.h_interceptCounts, int(self.d_interceptCounts))
+        # cuda.memcpy_dtoh(self.h_interceptTs, int(self.d_interceptTs))
+        # cuda.memcpy_dtoh(self.h_interceptFacing, int(self.d_interceptFacing))
 
         t_end = time.time()
         if not self.quiet:
             print('{}s\n'.format(t_end - t_start))
 
-        return self.h_interceptCounts, self.h_interceptTs, self.h_interceptFacing
+        # return self.h_interceptCounts, self.h_interceptTs, self.h_interceptFacing
         # return self.h_interceptCounts, self.d_interceptTs, self.d_interceptFacing
 
