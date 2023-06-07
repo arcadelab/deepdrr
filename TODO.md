@@ -14,6 +14,8 @@
 - Mesh priorities (is necessary?)
 - Fix attenuate outside volume
 - scatter?
+- better zero mesh handling
+- zero volume handling
 
 # Optimizations
 <!-- - On gpu sort -->
