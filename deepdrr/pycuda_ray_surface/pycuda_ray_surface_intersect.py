@@ -342,7 +342,7 @@ class PyCudaRSI(object):
 
         assert self.h_raysFrom.shape == (3,)
         
-        # cuda.memcpy_htod(self.d_raysFrom, self.h_raysFrom)
+        cuda.memcpy_htod(self.d_raysFrom, self.h_raysFrom)
 
 
         mesh_perf_end = time.perf_counter()
@@ -351,10 +351,7 @@ class PyCudaRSI(object):
 
         # Pre-compute line segment bounding boxes
         self.manager.kernel_compute_ray_bounds(
-            self.h_raysFrom[0],
-            self.h_raysFrom[1],
-            self.h_raysFrom[2],
-              self.d_raysTo, self.d_rayBox, np.int32(self.n_rays),
+            self.d_raysFrom, self.d_raysTo, self.d_rayBox, np.int32(self.n_rays),
             block=self.block_dims, grid=self.grid_dimsR)
         
 
@@ -368,9 +365,7 @@ class PyCudaRSI(object):
 
         self.manager.kernel_bvh_find_intersections3(
             surf.d_vertices, surf.d_triangles,
-            self.h_raysFrom[0],
-            self.h_raysFrom[1],
-            self.h_raysFrom[2], self.d_raysTo,
+            self.d_raysFrom, self.d_raysTo,
             surf.d_internalNodes, self.d_rayBox, surf.d_hitIDs,
             self.d_interceptCounts, self.d_interceptTs, self.d_interceptFacing,
             np.int32(surf.n_triangles), np.int32(self.n_rays), np.float32(trace_dist),
