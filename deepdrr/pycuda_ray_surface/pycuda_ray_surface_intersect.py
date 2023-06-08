@@ -26,6 +26,10 @@ default_paths = {'PATH': '/usr/local/cuda-11.2/bin',
                  'CUDA_INC_DIR': '/usr/local/cuda-11.2/include'}
 
 
+from pycuda.autoinit import context # TODO: only this works on my machine
+
+
+
 class RSISurface(object):
     # def __init__(self):
     #     pass
@@ -272,7 +276,8 @@ class PyCudaRSI(object):
         self.d_rayBox = cuda.mem_alloc(self.n_rays * get_(self.manager.bytes_in_AABB))
         self.d_interceptCounts = cuda.mem_alloc(self.h_interceptCounts.nbytes)
 
-        self.d_raysFrom = cuda.mem_alloc(self.n_rays * 3 * np.float32().nbytes)
+        self.d_raysFrom = cuda.mem_alloc(3 * np.float32().nbytes)
+        # self.d_raysFrom = cuda.mem_alloc(self.n_rays * 3 * np.float32().nbytes)
         self.d_raysTo = cuda.mem_alloc(self.n_rays * 3 * np.float32().nbytes)
 
     def __enter__(self):
@@ -285,8 +290,33 @@ class PyCudaRSI(object):
 
 
 
-    def configure_(self, raysFrom, raysTo):
-        self.h_raysFrom = np.array(raysFrom, np.float32)
+    # def configure_(self, raysFrom, raysTo):
+    #     self.h_raysFrom = np.array(raysFrom, np.float32)
+
+    #     self.grid_xLambda = 16
+    #     self.block_dims = (self.manager.block_x,1,1)
+    #     self.grid_lambda = (self.grid_xLambda,1)
+
+
+
+    #     self.grid_xR = int(np.ceil(self.n_rays / self.manager.block_x))
+    #     self.grid_dimsR = (self.grid_xR,1)
+    #     assert max([self.grid_xR]) <= self.manager.grid_xlim, \
+    #           'Limit exceeded: use blockDim.y with 2D grid-blocks'
+
+
+    # def transfer_data_(self):
+    #     # Initialise memory or copy data from host to device
+    #     cuda.memcpy_htod(self.d_raysFrom, self.h_raysFrom)
+    #     # cuda.memcpy_htod(self.d_raysTo, self.h_raysTo)
+
+
+    def test(self, surf, raysFrom, raysTo, trace_dist, mesh_hit_alphas_gpu, mesh_hit_facing_gpu, cfg):
+        mesh_perf_start = time.perf_counter()
+        # Set up resources
+        t_start = time.time()
+              
+        self.h_raysFrom = np.array(raysFrom, np.float32).reshape(3)
 
         self.grid_xLambda = 16
         self.block_dims = (self.manager.block_x,1,1)
@@ -299,17 +329,9 @@ class PyCudaRSI(object):
         assert max([self.grid_xR]) <= self.manager.grid_xlim, \
               'Limit exceeded: use blockDim.y with 2D grid-blocks'
 
-
-    def transfer_data_(self):
-        # Initialise memory or copy data from host to device
-        cuda.memcpy_htod(self.d_raysFrom, self.h_raysFrom)
-        # cuda.memcpy_htod(self.d_raysTo, self.h_raysTo)
-
-
-    def test(self, surf, raysFrom, raysTo, trace_dist, mesh_hit_alphas_gpu, mesh_hit_facing_gpu, cfg):
-        # Set up resources
-        t_start = time.time()
-        self.configure_(raysFrom, raysTo)
+        mesh_perf_end = time.perf_counter()
+        print(f"rsi configure: {mesh_perf_end - mesh_perf_start}")
+        mesh_perf_start = mesh_perf_end
 
         self.d_raysTo = raysTo
 
@@ -318,21 +340,48 @@ class PyCudaRSI(object):
         self.d_interceptTs = mesh_hit_alphas_gpu
         self.d_interceptFacing = mesh_hit_facing_gpu
 
-        self.transfer_data_()
+        assert self.h_raysFrom.shape == (3,)
+        
+        # cuda.memcpy_htod(self.d_raysFrom, self.h_raysFrom)
+
+
+        mesh_perf_end = time.perf_counter()
+        print(f"rsi transfer: {mesh_perf_end - mesh_perf_start}")
+        mesh_perf_start = mesh_perf_end
 
         # Pre-compute line segment bounding boxes
         self.manager.kernel_compute_ray_bounds(
-            self.d_raysFrom, self.d_raysTo, self.d_rayBox, np.int32(self.n_rays),
+            self.h_raysFrom[0],
+            self.h_raysFrom[1],
+            self.h_raysFrom[2],
+              self.d_raysTo, self.d_rayBox, np.int32(self.n_rays),
             block=self.block_dims, grid=self.grid_dimsR)
+        
+
+        context.synchronize()
+        
+
+        mesh_perf_end = time.perf_counter()
+        print(f"rsi ray bounds: {mesh_perf_end - mesh_perf_start}")
+        mesh_perf_start = mesh_perf_end
 
 
         self.manager.kernel_bvh_find_intersections3(
             surf.d_vertices, surf.d_triangles,
-            self.d_raysFrom, self.d_raysTo,
+            self.h_raysFrom[0],
+            self.h_raysFrom[1],
+            self.h_raysFrom[2], self.d_raysTo,
             surf.d_internalNodes, self.d_rayBox, surf.d_hitIDs,
             self.d_interceptCounts, self.d_interceptTs, self.d_interceptFacing,
             np.int32(surf.n_triangles), np.int32(self.n_rays), np.float32(trace_dist),
             block=self.block_dims, grid=self.grid_lambda)
+        
+        context.synchronize()
+
+
+        mesh_perf_end = time.perf_counter()
+        print(f"rsi tracing: {mesh_perf_end - mesh_perf_start} with {np.int32(surf.n_triangles)} triangles {np.int32(self.n_rays)} rays {(surf.n_triangles * self.n_rays)/((mesh_perf_end - mesh_perf_start)*1000000)} MTriangles/s")
+        mesh_perf_start = mesh_perf_end
 
         self.manager.kernel_tide(
             self.d_interceptCounts, 
@@ -343,6 +392,13 @@ class PyCudaRSI(object):
             # block=self.block_dims,  # TODO ??
             grid=self.grid_lambda
         )
+
+        context.synchronize()
+
+
+        mesh_perf_end = time.perf_counter()
+        print(f"rsi tide: {mesh_perf_end - mesh_perf_start}")
+        mesh_perf_start = mesh_perf_end
 
         # cuda.memcpy_dtoh(self.h_interceptCounts, int(self.d_interceptCounts))
         # cuda.memcpy_dtoh(self.h_interceptTs, int(self.d_interceptTs))

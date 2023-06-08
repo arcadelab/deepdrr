@@ -104,7 +104,10 @@ __device__ bool notOverlap(const float *tMin, const float *tMax,
     return false;
 }
 
-__global__ void kernelRayBox(const float* __restrict__ rayFrom,
+__global__ void kernelRayBox(
+    float rayFromX,
+    float rayFromY,
+    float rayFromZ,
                              const float* __restrict__ rayTo,
                              AABB* __restrict__ rayBox, int numRays)
 {
@@ -112,7 +115,9 @@ __global__ void kernelRayBox(const float* __restrict__ rayFrom,
     //instead of repeating the same in each thread-block.
     const int i = blockIdx.x * blockDim.x + threadIdx.x;
     if (i < numRays) {
-        const float *start = &rayFrom[0], *dir = &rayTo[3*i];
+        float start[3] = {rayFromX, rayFromY, rayFromZ};
+        const float *dir = &rayTo[3*i];
+        // const float *start = &rayFrom[0], *dir = &rayTo[3*i];
         // const float *start = &rayFrom[3*i], *finish = &rayTo[3*i];
         float finish[3];
         for (int j = 0; j < 3; j++)
@@ -847,7 +852,10 @@ __global__ void kernelBVHIntersection2(const float* __restrict__ vertices,
 // This version counts number of unique surface intersections (limited to < 32)
 __global__ void kernelBVHIntersection3(const float* __restrict__ vertices,
                                        const int* __restrict__ triangles,
-                                       const float* __restrict__ rayFrom,
+                                    //    const float* __restrict__ rayFrom,
+                                    float rayFromX,
+                                    float rayFromY,
+                                    float rayFromZ,
                                        const float* __restrict__ rayTo,
                                        const BVHNode* __restrict__ internalNodes,
                                        const AABB* __restrict__ rayBox,
@@ -868,6 +876,8 @@ __global__ void kernelBVHIntersection3(const float* __restrict__ vertices,
 
     int threadStartIdx = blockIdx.x * blockDim.x + threadIdx.x;
     int bufferIdx = threadStartIdx;
+
+    float rayFrom[3] = {rayFromX, rayFromY, rayFromZ};
 
     for (int idx = threadStartIdx; idx < numRays; idx += stride) {
         if (idx < numRays) {

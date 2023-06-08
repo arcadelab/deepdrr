@@ -542,6 +542,9 @@ class Projector(object):
                     grid=(16, 1),
                 )
 
+                context.synchronize()
+
+
                 mesh_perf_end = time.perf_counter()
                 print(f"rays: {mesh_perf_end - mesh_perf_start}")
                 mesh_perf_start = mesh_perf_end
@@ -550,8 +553,10 @@ class Projector(object):
 
                     # TODO: do this on GPU (won't speedup, low priority)
                     origin_pt = [sx_ijk[mesh_i], sy_ijk[mesh_i], sz_ijk[mesh_i]]
-                    origin_pt_np = np.array(origin_pt, dtype=np.float32)
+                    # origin_pt_np = np.array(origin_pt, dtype=np.float32)
                     origins = np.array([origin_pt])
+
+                    context.synchronize()
 
                     mesh_perf_end = time.perf_counter()
                     print(f"ray compute: {mesh_perf_end - mesh_perf_start}")
@@ -574,6 +579,8 @@ class Projector(object):
                         np.uint64(int(self.mesh_hit_alphas_gpu) + mesh_i * num_rays * self.max_mesh_depth * NUMBYTES_FLOAT32), 
                         np.uint64(int(self.mesh_hit_facing_gpu) + mesh_i * num_rays * self.max_mesh_depth * NUMBYTES_INT8),
                         None)
+
+                    context.synchronize()
                     
                     mesh_perf_end = time.perf_counter()
                     print(f"tracing: {mesh_perf_end - mesh_perf_start}")
