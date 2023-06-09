@@ -17,3 +17,20 @@ graphviz
 # development requirements
 black # proper python style
 pytest
+
+
+# pyrender
+freetype-py
+imageio
+networkx
+numpy
+Pillow
+pyglet==1.4.0a1
+PyOpenGL
+PyOpenGL_accelerate
+six
+trimesh
+sphinx
+sphinx_rtd_theme
+sphinx-automodapi
+

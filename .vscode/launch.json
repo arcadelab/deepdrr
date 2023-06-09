@@ -77,5 +77,18 @@
                 }
             ],
         },
+        {
+            "name": "Duck",
+            "type": "python",
+            "request": "launch",
+            "program": "duck.py",
+            "console": "integratedTerminal",
+            "justMyCode": true,
+            // "justMyCode": false,
+            "cwd": "${workspaceFolder}/examples",
+            "env": {
+                "PYTHONPATH": "${workspaceFolder}"
+            }
+        },
     ]
 }
