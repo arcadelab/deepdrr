@@ -38,14 +38,11 @@ class Primitive(object):
         density: float,
         mesh: pv.PolyData,
         morph_targets: Optional[np.ndarray] = None,
-        morph_weights: Optional[np.ndarray] = None,
     ) -> None:
         self.data = mesh
         self.morph_targets = morph_targets if morph_targets is not None else []
         for mt in self.morph_targets:
             assert mt.shape[0] == self.data.n_points
-        self.morph_weights = morph_weights if morph_weights is not None else np.zeros(len(self.morph_targets))
-        assert len(self.morph_weights) == len(self.morph_targets)
         self.material = material
         self.density = density
         self.parent_mesh = None
