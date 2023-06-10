@@ -54,9 +54,11 @@ class Primitive(object):
         else:
             return np.array(self.data.points + self.morph_targets * self.morph_weights, dtype=np.float32)
     
-    def triangles(self):
-        # return self.data.faces.reshape((-1, 4))[..., 1:][..., [0, 1, 2]].astype(np.int32)   # flip winding order
-        return self.data.faces.reshape((-1, 4))[..., 1:][..., [0, 2, 1]].astype(np.int32)   # flip winding order
+    def triangles(self, flip_winding_order=True):
+        if flip_winding_order: # TODO bad
+            return self.data.faces.reshape((-1, 4))[..., 1:][..., [0, 2, 1]].astype(np.int32)
+        else:
+            return self.data.faces.reshape((-1, 4))[..., 1:][..., [0, 1, 2]].astype(np.int32)   # flip winding order
 
     def set_parent_mesh(self, mesh: Mesh):
         if self.parent_mesh is not None:

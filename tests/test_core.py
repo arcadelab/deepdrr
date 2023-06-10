@@ -87,13 +87,18 @@ class TestSingleVolume:
         volume = deepdrr.Volume.from_nrrd(self.file_path)
         # load 10cmcube.stl from resources folder
         # stl = pv.read("tests/resources/10cmrighttri.stl")
-        # stl = pv.read("tests/resources/10cmcube.stl")
+        stl3 = pv.read("tests/resources/10cmcube.stl")
+        stl3.scale([100, 100, 100], inplace=True)
+        stl3.rotate_z(60, inplace=True)
+        # stl3.translate([0, 00, 0], inplace=True)
+
+        stl2 = pv.read("tests/resources/10cmcube.stl")
+        stl2.scale([200, 200, 200], inplace=True)
+        # stl2.translate([0, 30, 0], inplace=True)
         stl = pv.read("tests/resources/suzanne.stl")
         stl.scale([200]*3, inplace=True)
-        stl.translate([0, -200, 0], inplace=True)
+        # stl.translate([0, -200, 0], inplace=True)
         # stl = pv.read("tests/resources/suzanne.stl")
-        # stl.scale([200, 3000, 200], inplace=True)
-        # stl.translate([0, -250, 0], inplace=True)
         morph_targets = np.array([
             [1, 0, 0],
             [1, 0, 0],
@@ -110,14 +115,17 @@ class TestSingleVolume:
         prim = deepdrr.Primitive("titanium", 7, stl)
         mesh = deepdrr.Mesh([prim], world_from_anatomical=geo.FrameTransform.from_rotation(geo.Rotation.from_euler("x", 90, degrees=True)))
 
-        prim2 = deepdrr.Primitive("titanium", 7, stl)
-        mesh2 = deepdrr.Mesh([prim2], world_from_anatomical=geo.FrameTransform.from_rotation(geo.Rotation.from_euler("x", 90, degrees=True)))
+        prim2 = deepdrr.Primitive("titanium", 7, stl2)
+        mesh2 = deepdrr.Mesh([prim2], world_from_anatomical=geo.FrameTransform.from_translation([30, 50, 200]))
+
+        prim3 = deepdrr.Primitive("titanium", 7, stl2)
+        mesh3 = deepdrr.Mesh([prim3], world_from_anatomical=geo.FrameTransform.from_translation([-30, 20, -70]))
         # mesh = deepdrr.Mesh("polyethylene", 1.05, stl)
         # mesh.morph_weights = np.array([-10])
         
         carm = deepdrr.MobileCArm(isocenter=volume.center_in_world, sensor_width=300, sensor_height=200, pixel_size=0.6)
         # self.project([volume], carm, "test_mesh.png")
-        self.project([volume, mesh], carm, "test_mesh.png")
+        self.project([volume, mesh, mesh2, mesh3], carm, "test_mesh.png")
 
 
     def test_translate(self, t):

@@ -15,7 +15,8 @@
             "env": {
                 "PYTHONPATH": "${workspaceFolder}"
             },
-            "justMyCode": true
+            "justMyCode": false,
+            // "justMyCode": true,
         },
         {
             "name": "Test Simple",
@@ -83,8 +84,8 @@
             "request": "launch",
             "program": "duck.py",
             "console": "integratedTerminal",
-            "justMyCode": true,
-            // "justMyCode": false,
+            // "justMyCode": true,
+            "justMyCode": false,
             "cwd": "${workspaceFolder}/examples",
             "env": {
                 "PYTHONPATH": "${workspaceFolder}"

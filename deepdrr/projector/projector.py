@@ -7,14 +7,26 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple, Union
 import os
 import warnings
+os.environ['PYOPENGL_PLATFORM'] = 'egl' # TODO
+
 
 import math
 from pyparsing import alphas
 import torch
 import numpy as np
+import cv2 # TODO
+import trimesh
+ 
 
 import pyvista as pv
 import pyvista
+
+from ..pyrender import IntrinsicsCamera,\
+                     DirectionalLight, SpotLight, PointLight,\
+                     MetallicRoughnessMaterial,\
+                     Primitive, Mesh, Node, Scene,\
+                     Viewer, OffscreenRenderer, RenderFlags, PerspectiveCamera
+from ..pyrender.constants import DRRMode
 
 from .. import geo, utils, vol
 from ..device import Device, MobileCArm
@@ -491,6 +503,8 @@ class Projector(object):
                 source_ijk = np.array(
                     _vol.IJK_from_world @ proj.center_in_world
                 ).astype(np.float32)
+
+                self.prim_nodes[vol_id].matrix = np.array(_vol.IJK_from_world)
                 cuda.memcpy_htod(
                     int(self.mesh_sourceX_gpu) + int(NUMBYTES_INT32 * vol_id),
                     np.array([source_ijk[0]]),
@@ -586,6 +600,70 @@ class Projector(object):
                     print(f"tracing: {mesh_perf_end - mesh_perf_start}")
                     mesh_perf_start = mesh_perf_end
 
+
+            self.cam.fx = proj.intrinsic.fx
+            self.cam.fy = proj.intrinsic.fy
+            self.cam.cx = proj.intrinsic.cx
+            self.cam.cy = proj.intrinsic.cy
+            self.cam.znear = self.device.source_to_detector_distance/1000
+            self.cam.zfar = self.device.source_to_detector_distance
+            self.cam_node.matrix = np.array(proj.extrinsic.inv)
+
+            def render():
+                color, depth = self.gl_renderer.render(self.scene, drr_mode=DRRMode.ERROR)
+
+                error_mask = np.abs(color) > 1e-6
+                color, depth = self.gl_renderer.render(self.scene, drr_mode=DRRMode.DENSITY)
+                # color, depth = self.gl_renderer.render(self.scene, drr_mode=DRRMode.DENSITY)
+                # color, depth = self.gl_renderer.render(self.scene, drr_mode=DRRMode.DENSITY)
+                # color, depth = self.gl_renderer.render(self.scene, drr_mode=DRRMode.DENSITY)
+                
+                color[error_mask] = 0
+
+
+                return color, depth
+
+
+
+
+            def stuff():
+                color, depth = render()
+                
+                # set all values less than 0 to 0
+                # color[color < 0] = 0
+                # color = np.abs(color)
+
+                print(f"{color.shape=} {color.dtype=}")
+
+                print(f"{np.amin(color)=} {np.amax(color)=}")
+                print(f"{np.unique(color, return_counts=True)=}")
+
+                # save to file
+                # remapped = np.interp(color[:,:,::-1], (0, 0.3), (0, 255)).astype(np.uint8)
+                remapped = np.interp(color[:,:,::-1], (np.amin(color), np.amax(color)), (0, 255)).astype(np.uint8)
+                print(f"{np.amin(remapped)=} {np.amax(remapped)=}")
+                cv2.imwrite('fdafsdsafd.png', remapped)
+                # cv2.imwrite('duck_depth.png', depth)
+
+
+            fix = np.array([
+                [1, 0, 0, 0],
+                [0, -1, 0, 0],
+                [0, 0, -1, 0],
+                [0, 0, 0, 1]
+            ])
+
+            # self.cam_node.matrix = fix @ self.cam_node.matrix# @ np.linalg.inv(fix)
+
+            # for prim in self.prim_nodes:
+            #     prim.matrix = fix @ prim.matrix# @ np.linalg.inv(fix)
+
+            self.cam_node.matrix =  self.cam_node.matrix @ fix# @ np.linalg.inv(fix)
+
+            for prim in self.prim_nodes:
+                prim.matrix = np.linalg.inv(prim.matrix)# @ np.linalg.inv(fix)
+
+            stuff()
 
             args = [
                 np.int32(proj.sensor_width),  # out_width
@@ -1111,14 +1189,38 @@ class Projector(object):
             f"time elapsed after intializing segmentations: {init_tock - init_tick}"
         )
 
-        height = self.device.sensor_width # TODO: was deepdrr not locked to fixed resolution before?
-        width = self.device.sensor_height
+        width = self.device.sensor_width # TODO: was deepdrr not locked to fixed resolution before?
+        height = self.device.sensor_height
 
         n_rays = height * width # TODO: move this
 
         self.rsi_manager = PyCudaRSIManager()
         self.pycuda_rsi = PyCudaRSI(self.rsi_manager, n_rays=n_rays)  # TODO: max mesh depth parameter
         self.prim_surfs = [RSISurface(self.rsi_manager, prim.compute_vertices().copy(), prim.triangles().copy()) for prim in self.primitives]
+
+        self.scene = Scene(bg_color=[0.0, 0.0, 0.0])
+
+        self.prim_nodes = [self.scene.add(Mesh([Primitive(positions=prim.compute_vertices().copy(), indices=prim.triangles(flip_winding_order=False).copy())])) for prim in self.primitives]
+        # duckmesh = Mesh.from_trimesh(trimesh.load("./models/suzanne_stress.stl"))
+        # self.scene.add(duckmesh)
+
+        cam_intr = self.device.camera_intrinsics
+
+        self.cam = IntrinsicsCamera(
+            fx=cam_intr.fx,
+            fy=cam_intr.fy,
+            cx=cam_intr.cx,
+            cy=cam_intr.cy,
+            # znear=self.device.source_to_detector_distance/1000,
+            znear=1,
+            # zfar=self.device.source_to_detector_distance
+            zfar=5000
+            )
+        # self.cam = PerspectiveCamera(yfov=(np.pi / 12.0), znear=1, zfar=5000)
+        
+        self.cam_node = self.scene.add(self.cam)
+
+        self.gl_renderer = OffscreenRenderer(viewport_width=width, viewport_height=height, point_size=1.0)
 
         # allocate volumes' priority level on the GPU
         self.priorities_gpu = cuda.mem_alloc(len(self.volumes) * NUMBYTES_INT32)
@@ -1653,6 +1755,8 @@ class Projector(object):
     def free(self):
         """Free the allocated GPU memory."""
         if self.initialized:
+
+            self.gl_renderer.delete()
 
             def safe_free(gpu_ptr):
                 if isinstance(gpu_ptr, cuda.DeviceAllocation):
