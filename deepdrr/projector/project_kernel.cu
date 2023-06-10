@@ -2345,6 +2345,9 @@ __global__ void projectKernel(
                               // Could be NULL pointer
     float *mesh_hit_alphas,
     int8_t *mesh_hit_facing,
+    float *additive_densities,
+    int *mesh_unique_materials_gpu,
+    int mesh_unique_material_count,
     int max_mesh_depth,
     int *mesh_materials,
     float *mesh_densities,
@@ -2651,6 +2654,10 @@ __global__ void projectKernel(
     }
   }
 #endif
+  for (int i = 0; i < mesh_unique_material_count; i++) {
+    area_density[mesh_unique_materials_gpu[i]] += additive_densities[vdx * out_width + udx];
+    // area_density[mesh_unique_materials_gpu[i]] += additive_densities[i*(out_height*out_width)+img_dx];
+  }
 
   // Convert to centimeters
   for (int m = 0; m < NUM_MATERIALS; m++) {

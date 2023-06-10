@@ -113,7 +113,7 @@ class TestSingleVolume:
         # mesh = deepdrr.Mesh("titanium", 7, stl, world_from_anatomical=geo.FrameTransform.from_rotation(geo.Rotation.from_euler("y", 90, degrees=True)))
         # mesh = deepdrr.Mesh("air", 0, stl, morph_targets=morph_targets, world_from_anatomical=geo.FrameTransform.from_rotation(geo.Rotation.from_euler("x", 90, degrees=True)))
         prim = deepdrr.Primitive("titanium", 7, stl)
-        mesh = deepdrr.Mesh([prim], world_from_anatomical=geo.FrameTransform.from_rotation(geo.Rotation.from_euler("x", 90, degrees=True)))
+        mesh = deepdrr.Mesh([prim], world_from_anatomical=geo.FrameTransform.from_rotation(geo.Rotation.from_euler("x", 90, degrees=True) * geo.Rotation.from_euler("y", 30, degrees=True)))
 
         prim2 = deepdrr.Primitive("titanium", 7, stl2)
         mesh2 = deepdrr.Mesh([prim2], world_from_anatomical=geo.FrameTransform.from_translation([30, 50, 200]))

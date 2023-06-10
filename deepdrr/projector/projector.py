@@ -145,7 +145,8 @@ def _get_kernel_projector_module(
         "-D",
         f"NUM_VOLUMES={num_volumes}",
         "-D",
-        f"NUM_MESHES={num_meshes}",
+        f"NUM_MESHES={0}",
+        # f"NUM_MESHES={num_meshes}",
         "-D",
         f"NUM_MATERIALS={num_materials}",
         "-D",
@@ -504,7 +505,7 @@ class Projector(object):
                     _vol.IJK_from_world @ proj.center_in_world
                 ).astype(np.float32)
 
-                self.prim_nodes[vol_id].matrix = np.array(_vol.IJK_from_world)
+                self.prim_nodes[vol_id].matrix = np.linalg.inv(np.array(_vol.IJK_from_world))
                 cuda.memcpy_htod(
                     int(self.mesh_sourceX_gpu) + int(NUMBYTES_INT32 * vol_id),
                     np.array([source_ijk[0]]),
@@ -532,73 +533,73 @@ class Projector(object):
 
             num_rays = proj.sensor_width * proj.sensor_height
 
-            if len(self.primitives) > 0:
-                mesh_perf_start = time.perf_counter()
+            # if len(self.primitives) > 0:
+            #     mesh_perf_start = time.perf_counter()
 
-                trace_dist = 1000 # TODO: make this a parameter
+            #     trace_dist = 1000 # TODO: make this a parameter
 
-                args = [
-                    np.int32(proj.sensor_width),  # out_width
-                    np.int32(proj.sensor_height),  # out_height
-                    self.mesh_sourceX_gpu,  # sx_ijk
-                    self.mesh_sourceY_gpu,  # sy_ijk
-                    self.mesh_sourceZ_gpu,  # sz_ijk
-                    self.world_from_index_gpu,  # world_from_index
-                    self.mesh_ijk_from_world_gpu,  # ijk_from_world
-                    self.ray_directions_gpu, # ray_directions  
-                    np.int32(num_rays),  # num_rays
-                    np.float32(trace_dist),  # trace_dist
-                ]
+            #     args = [
+            #         np.int32(proj.sensor_width),  # out_width
+            #         np.int32(proj.sensor_height),  # out_height
+            #         self.mesh_sourceX_gpu,  # sx_ijk
+            #         self.mesh_sourceY_gpu,  # sy_ijk
+            #         self.mesh_sourceZ_gpu,  # sz_ijk
+            #         self.world_from_index_gpu,  # world_from_index
+            #         self.mesh_ijk_from_world_gpu,  # ijk_from_world
+            #         self.ray_directions_gpu, # ray_directions  
+            #         np.int32(num_rays),  # num_rays
+            #         np.float32(trace_dist),  # trace_dist
+            #     ]
 
-                self.generate_rays(
-                    *args,
-                    block=(512, 1, 1),
-                    grid=(16, 1),
-                )
+            #     self.generate_rays(
+            #         *args,
+            #         block=(512, 1, 1),
+            #         grid=(16, 1),
+            #     )
 
-                context.synchronize()
+            #     context.synchronize()
 
 
-                mesh_perf_end = time.perf_counter()
-                print(f"rays: {mesh_perf_end - mesh_perf_start}")
-                mesh_perf_start = mesh_perf_end
+            #     mesh_perf_end = time.perf_counter()
+            #     print(f"rays: {mesh_perf_end - mesh_perf_start}")
+            #     mesh_perf_start = mesh_perf_end
 
-                for mesh_i, _mesh in enumerate(self.primitives):
+            #     for mesh_i, _mesh in enumerate(self.primitives):
 
-                    # TODO: do this on GPU (won't speedup, low priority)
-                    origin_pt = [sx_ijk[mesh_i], sy_ijk[mesh_i], sz_ijk[mesh_i]]
-                    # origin_pt_np = np.array(origin_pt, dtype=np.float32)
-                    origins = np.array([origin_pt])
+            #         # TODO: do this on GPU (won't speedup, low priority)
+            #         origin_pt = [sx_ijk[mesh_i], sy_ijk[mesh_i], sz_ijk[mesh_i]]
+            #         # origin_pt_np = np.array(origin_pt, dtype=np.float32)
+            #         origins = np.array([origin_pt])
 
-                    context.synchronize()
+            #         context.synchronize()
 
-                    mesh_perf_end = time.perf_counter()
-                    print(f"ray compute: {mesh_perf_end - mesh_perf_start}")
-                    mesh_perf_start = mesh_perf_end
+            #         mesh_perf_end = time.perf_counter()
+            #         print(f"ray compute: {mesh_perf_end - mesh_perf_start}")
+            #         mesh_perf_start = mesh_perf_end
 
-                    # vertices = _mesh.compute_vertices() # TODO on GPU
-                    # triangles = _mesh.triangles()
+            #         # vertices = _mesh.compute_vertices() # TODO on GPU
+            #         # triangles = _mesh.triangles()
 
-                    # mesh_perf_end = time.perf_counter()
-                    # print(f"triangle compute: {mesh_perf_end - mesh_perf_start}")
-                    # mesh_perf_start = mesh_perf_end
+            #         # mesh_perf_end = time.perf_counter()
+            #         # print(f"triangle compute: {mesh_perf_end - mesh_perf_start}")
+            #         # mesh_perf_start = mesh_perf_end
 
-                    self.pycuda_rsi.test(
-                        # vertices.copy(), 
-                        # triangles.copy(), 
-                        self.prim_surfs[mesh_i],
-                        origins.copy(), 
-                        np.uint64(int(self.ray_directions_gpu) + mesh_i * num_rays * 3 * NUMBYTES_FLOAT32), 
-                        trace_dist, 
-                        np.uint64(int(self.mesh_hit_alphas_gpu) + mesh_i * num_rays * self.max_mesh_depth * NUMBYTES_FLOAT32), 
-                        np.uint64(int(self.mesh_hit_facing_gpu) + mesh_i * num_rays * self.max_mesh_depth * NUMBYTES_INT8),
-                        None)
+            #         self.pycuda_rsi.test(
+            #             # vertices.copy(), 
+            #             # triangles.copy(), 
+            #             self.prim_surfs[mesh_i],
+            #             origins.copy(), 
+            #             np.uint64(int(self.ray_directions_gpu) + mesh_i * num_rays * 3 * NUMBYTES_FLOAT32), 
+            #             trace_dist, 
+            #             np.uint64(int(self.mesh_hit_alphas_gpu) + mesh_i * num_rays * self.max_mesh_depth * NUMBYTES_FLOAT32), 
+            #             np.uint64(int(self.mesh_hit_facing_gpu) + mesh_i * num_rays * self.max_mesh_depth * NUMBYTES_INT8),
+            #             None)
 
-                    context.synchronize()
+            #         context.synchronize()
                     
-                    mesh_perf_end = time.perf_counter()
-                    print(f"tracing: {mesh_perf_end - mesh_perf_start}")
-                    mesh_perf_start = mesh_perf_end
+            #         mesh_perf_end = time.perf_counter()
+            #         print(f"tracing: {mesh_perf_end - mesh_perf_start}")
+            #         mesh_perf_start = mesh_perf_end
 
 
             self.cam.fx = proj.intrinsic.fx
@@ -607,7 +608,17 @@ class Projector(object):
             self.cam.cy = proj.intrinsic.cy
             self.cam.znear = self.device.source_to_detector_distance/1000
             self.cam.zfar = self.device.source_to_detector_distance
-            self.cam_node.matrix = np.array(proj.extrinsic.inv)
+
+
+
+            deepdrr_to_opengl_cam = np.array([
+                [1, 0, 0, 0],
+                [0, -1, 0, 0],
+                [0, 0, -1, 0],
+                [0, 0, 0, 1]
+            ])
+
+            self.cam_node.matrix = np.array(proj.extrinsic.inv) @ deepdrr_to_opengl_cam
 
             def render():
                 color, depth = self.gl_renderer.render(self.scene, drr_mode=DRRMode.ERROR)
@@ -644,26 +655,11 @@ class Projector(object):
                 print(f"{np.amin(remapped)=} {np.amax(remapped)=}")
                 cv2.imwrite('fdafsdsafd.png', remapped)
                 # cv2.imwrite('duck_depth.png', depth)
+                return color*7
 
+            color = stuff()
 
-            fix = np.array([
-                [1, 0, 0, 0],
-                [0, -1, 0, 0],
-                [0, 0, -1, 0],
-                [0, 0, 0, 1]
-            ])
-
-            # self.cam_node.matrix = fix @ self.cam_node.matrix# @ np.linalg.inv(fix)
-
-            # for prim in self.prim_nodes:
-            #     prim.matrix = fix @ prim.matrix# @ np.linalg.inv(fix)
-
-            self.cam_node.matrix =  self.cam_node.matrix @ fix# @ np.linalg.inv(fix)
-
-            for prim in self.prim_nodes:
-                prim.matrix = np.linalg.inv(prim.matrix)# @ np.linalg.inv(fix)
-
-            stuff()
+            cuda.memcpy_htod(self.additive_densities, color.astype(np.float32))
 
             args = [
                 np.int32(proj.sensor_width),  # out_width
@@ -701,6 +697,9 @@ class Projector(object):
                 self.solid_angle_gpu,  # solid_angle
                 np.uint64(self.mesh_hit_alphas_gpu),
                 np.uint64(self.mesh_hit_facing_gpu),
+                np.uint64(self.additive_densities),
+                np.uint64(self.mesh_unique_materials_gpu),
+                np.int32(len(self.mesh_unique_materials)),
                 np.int32(self.max_mesh_depth),
                 np.uint64(self.mesh_materials_gpu),
                 np.uint64(self.mesh_densities_gpu),
@@ -1171,6 +1170,10 @@ class Projector(object):
             return cuda.mem_alloc(size)
 
         self.mesh_materials_gpu = safe_mem_alloc(len(self.primitives) * NUMBYTES_INT32)
+        self.mesh_unique_materials = list(set([mesh.material for mesh in self.primitives]))
+        self.mesh_unique_materials_indices = [self.all_materials.index(mat) for mat in self.mesh_unique_materials]
+        self.mesh_unique_materials_gpu = safe_mem_alloc(len(self.mesh_unique_materials) * NUMBYTES_INT32)
+        cuda.memcpy_htod(self.mesh_unique_materials_gpu, np.array(self.mesh_unique_materials_indices).astype(np.int32))
         mesh_materials = []
         for mesh in self.primitives:
             mesh_materials.append(self.all_materials.index(mesh.material))
@@ -1221,6 +1224,8 @@ class Projector(object):
         self.cam_node = self.scene.add(self.cam)
 
         self.gl_renderer = OffscreenRenderer(viewport_width=width, viewport_height=height, point_size=1.0)
+
+        self.additive_densities = cuda.mem_alloc(len(self.mesh_unique_materials) * n_rays * NUMBYTES_FLOAT32)
 
         # allocate volumes' priority level on the GPU
         self.priorities_gpu = cuda.mem_alloc(len(self.volumes) * NUMBYTES_INT32)
@@ -1766,6 +1771,9 @@ class Projector(object):
                 vol_gpu.free()
                 for seg in self.segmentations_gpu[vol_id]:
                     seg.free()
+
+            self.additive_densities.free()
+            self.mesh_unique_materials_gpu.free()
 
             self.priorities_gpu.free()
 
