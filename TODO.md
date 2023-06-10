@@ -4,6 +4,7 @@
 - Add tests
 - Ask about     from pycuda.autoinit import context
 - Get rid of macros
+- chmod 777 /dev/dri/renderD128
 
 # Features
 <!-- - Use winding order in renderer -->

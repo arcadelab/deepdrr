@@ -640,21 +640,21 @@ class Projector(object):
             def stuff():
                 color, depth = render()
                 
-                # set all values less than 0 to 0
-                # color[color < 0] = 0
-                # color = np.abs(color)
+                # # set all values less than 0 to 0
+                # # color[color < 0] = 0
+                # # color = np.abs(color)
 
-                print(f"{color.shape=} {color.dtype=}")
+                # print(f"{color.shape=} {color.dtype=}")
 
-                print(f"{np.amin(color)=} {np.amax(color)=}")
-                print(f"{np.unique(color, return_counts=True)=}")
+                # print(f"{np.amin(color)=} {np.amax(color)=}")
+                # print(f"{np.unique(color, return_counts=True)=}")
 
-                # save to file
-                # remapped = np.interp(color[:,:,::-1], (0, 0.3), (0, 255)).astype(np.uint8)
-                remapped = np.interp(color[:,:,::-1], (np.amin(color), np.amax(color)), (0, 255)).astype(np.uint8)
-                print(f"{np.amin(remapped)=} {np.amax(remapped)=}")
-                cv2.imwrite('fdafsdsafd.png', remapped)
-                # cv2.imwrite('duck_depth.png', depth)
+                # # save to file
+                # # remapped = np.interp(color[:,:,::-1], (0, 0.3), (0, 255)).astype(np.uint8)
+                # remapped = np.interp(color[:,:,::-1], (np.amin(color), np.amax(color)), (0, 255)).astype(np.uint8)
+                # print(f"{np.amin(remapped)=} {np.amax(remapped)=}")
+                # cv2.imwrite('fdafsdsafd.png', remapped)
+                # # cv2.imwrite('duck_depth.png', depth)
                 return color*7
 
             color = stuff()
