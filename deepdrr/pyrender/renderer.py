@@ -582,9 +582,9 @@ class Renderer(object):
 
             if drr_mode in [DRRMode.FRONTDIST, DRRMode.BACKDIST]:
                 glEnable(GL_BLEND)
-                # glBlendFunc(GL_ONE, GL_ZERO)
-                glBlendEquationSeparate(GL_MIN, GL_MAX);
-                glBlendFuncSeparate(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA, GL_ONE, GL_ZERO);
+                glBlendFunc(GL_ONE, GL_ZERO)
+                # glBlendEquationSeparate(GL_MIN, GL_MAX);
+                # glBlendFuncSeparate(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA, GL_ONE, GL_ZERO);
             else:
                 glEnable(GL_BLEND)
                 glBlendFunc(GL_ONE, GL_ONE)

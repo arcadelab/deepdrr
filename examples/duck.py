@@ -25,7 +25,7 @@ duck_source = "https://github.com/KhronosGroup/glTF-Sample-Models/raw/master/2.0
 # duckmesh = Mesh.from_trimesh(list(duck.geometry.values())[0])
 duckmesh = Mesh.from_trimesh(trimesh.load("./models/suzanne_stress.stl"))
 # duckmesh = Mesh.from_trimesh(trimesh.load("./models/suzanne.stl"))
-scene = Scene(ambient_light=np.array([1.0, 1.0, 1.0, 1.0]), bg_color=[100, 100, 100])
+scene = Scene(ambient_light=np.array([1.0, 1.0, 1.0, 1.0]), bg_color=[0.0, 0.0, 0.0])
 
 duckmesh_pose = np.array([
     [0.0, 0.0, -1.0, 0.0],
