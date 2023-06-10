@@ -325,7 +325,7 @@ class Renderer(object):
 
     def _forward_pass(self, scene, flags, seg_node_map=None, drr_mode=DRRMode.NONE):
         # Set up viewport for render
-        self._configure_forward_pass_viewport(flags)
+        self._configure_forward_pass_viewport(flags, drr_mode=drr_mode)
 
         # Clear it
         if bool(flags & RenderFlags.SEG):
@@ -393,7 +393,8 @@ class Renderer(object):
                     primitive=primitive,
                     pose=scene.get_pose(node),
                     program=program,
-                    flags=flags
+                    flags=flags,
+                    drr_mode=drr_mode
                 )
                 self._reset_active_textures()
 
@@ -512,7 +513,7 @@ class Renderer(object):
     # Handlers for binding uniforms and drawing primitives
     ###########################################################################
 
-    def _bind_and_draw_primitive(self, primitive, pose, program, flags):
+    def _bind_and_draw_primitive(self, primitive, pose, program, flags, drr_mode=DRRMode.NONE):
         # Set model pose matrix
         program.set_uniform('M', pose)
 
@@ -568,16 +569,25 @@ class Renderer(object):
                 program.set_uniform(b.format('glossiness_factor'),
                                     material.glossinessFactor)
 
-            # Set blending options
-            if material.alphaMode == 'BLEND':
+            # # Set blending options
+            # if material.alphaMode == 'BLEND':
+            #     glEnable(GL_BLEND)
+            #     glBlendFunc(GL_ONE, GL_ONE)
+            #     # glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA)
+            # else:
+            #     # raise ValueError('TODO')
+            #     glEnable(GL_BLEND)
+            #     glBlendFunc(GL_ONE, GL_ONE)
+            #     # glBlendFunc(GL_ONE, GL_ZERO)
+
+            if drr_mode in [DRRMode.FRONTDIST, DRRMode.BACKDIST]:
                 glEnable(GL_BLEND)
-                glBlendFunc(GL_ONE, GL_ONE)
-                # glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA)
+                glBlendFunc(GL_ONE, GL_ZERO)
+                # glBlendEquationSeparate(GL_MIN, GL_MAX);
+                # glBlendFuncSeparate(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA, GL_ONE, GL_ZERO);
             else:
-                # raise ValueError('TODO')
                 glEnable(GL_BLEND)
                 glBlendFunc(GL_ONE, GL_ONE)
-                # glBlendFunc(GL_ONE, GL_ZERO)
 
             # # Set wireframe mode
             # wf = material.wireframe
@@ -927,6 +937,9 @@ class Renderer(object):
         elif drr_mode == DRRMode.DENSITY:
             vertex_shader = 'density.vert'
             fragment_shader = 'density.frag'
+        elif drr_mode in [DRRMode.FRONTDIST, DRRMode.BACKDIST]:
+            vertex_shader = 'front.vert'
+            fragment_shader = 'front.frag'
         # if (bool(program_flags & ProgramFlags.USE_MATERIAL) and
         #         not flags & RenderFlags.DEPTH_ONLY and
         #         not flags & RenderFlags.FLAT and
@@ -1033,7 +1046,7 @@ class Renderer(object):
     # Viewport Management
     ###########################################################################
 
-    def _configure_forward_pass_viewport(self, flags):
+    def _configure_forward_pass_viewport(self, flags, drr_mode=DRRMode.NONE):
 
         # If using offscreen render, bind main framebuffer
         if flags & RenderFlags.OFFSCREEN:
@@ -1043,10 +1056,15 @@ class Renderer(object):
             glBindFramebuffer(GL_DRAW_FRAMEBUFFER, 0)
 
         glViewport(0, 0, self.viewport_width, self.viewport_height)
-        glDisable(GL_DEPTH_TEST)
-        # glEnable(GL_DEPTH_TEST)
+        if drr_mode in [DRRMode.FRONTDIST, DRRMode.BACKDIST]:
+            glEnable(GL_DEPTH_TEST)
+        else:
+            glDisable(GL_DEPTH_TEST)
         glDepthMask(GL_TRUE)
-        glDepthFunc(GL_LESS)
+        if drr_mode == DRRMode.FRONTDIST:
+            glDepthFunc(GL_LESS)
+        else:
+            glDepthFunc(GL_GREATER)
         glDepthRange(0.0, 1.0)
 
     def _configure_shadow_mapping_viewport(self, light, flags):

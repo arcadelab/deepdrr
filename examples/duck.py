@@ -69,15 +69,19 @@ r = pyrender.OffscreenRenderer(viewport_width=640,
                                 point_size=1.0)
 
 def render():
-    color, depth = r.render(scene, drr_mode=DRRMode.ERROR)
+    # color, depth = r.render(scene, drr_mode=DRRMode.ERROR)
 
-    error_mask = np.abs(color) > 1e-6
-    color, depth = r.render(scene, drr_mode=DRRMode.DENSITY)
+    # error_mask = np.abs(color) > 1e-6
     # color, depth = r.render(scene, drr_mode=DRRMode.DENSITY)
-    # color, depth = r.render(scene, drr_mode=DRRMode.DENSITY)
-    # color, depth = r.render(scene, drr_mode=DRRMode.DENSITY)
+    # # color, depth = r.render(scene, drr_mode=DRRMode.DENSITY)
+    # # color, depth = r.render(scene, drr_mode=DRRMode.DENSITY)
+    # # color, depth = r.render(scene, drr_mode=DRRMode.DENSITY)
     
-    color[error_mask] = 0
+    # color[error_mask] = 0
+
+    color, depth = r.render(scene, drr_mode=DRRMode.BACKDIST)
+    # color, depth = r.render(scene, drr_mode=DRRMode.FRONTDIST)
+
 
 
     return color, depth
@@ -86,12 +90,12 @@ def render():
 color, depth = render()
 
 
-N=1000
-start_time = time.perf_counter()
-for i in range(N):
-    color, depth = render()
+# N=1000
+# start_time = time.perf_counter()
+# for i in range(N):
+#     color, depth = render()
 
-print("FPS: ", N / (time.perf_counter() - start_time))
+# print("FPS: ", N / (time.perf_counter() - start_time))
 
 r.delete()
 
@@ -106,8 +110,8 @@ print(f"{np.unique(color, return_counts=True)=}")
 
 # save to file
 import cv2
-remapped = np.interp(color[:,:,::-1], (0, 0.3), (0, 255)).astype(np.uint8)
-# remapped = np.interp(color[:,:,::-1], (np.amin(color), np.amax(color)), (0, 255)).astype(np.uint8)
+# remapped = np.interp(color[:,:,::-1], (0, 0.3), (0, 255)).astype(np.uint8)
+remapped = np.interp(color[:,:,::-1], (np.amin(color), np.amax(color)), (0, 255)).astype(np.uint8)
 print(f"{np.amin(remapped)=} {np.amax(remapped)=}")
 cv2.imwrite('duck.png', remapped)
 cv2.imwrite('duck_depth.png', depth)
