@@ -445,7 +445,8 @@ void main()
 
     // frag_color = clamp(vec4(pow(color.xyz, vec3(1.0/2.2)), color.a * base_color.a), 0.0, 1.0);
     float mult = gl_FrontFacing ? -1 : 1;
-    frag_color = vec4(length(frag_position-cam_pos),0,0,1);
+    float dist = length(frag_position-cam_pos);
+    frag_color = vec4(dist,dist,dist,dist);
     // frag_color = vec4(length(frag_position-cam_pos)*mult,0,0,1);
     // frag_color = vec4(mult,0,0,1);
     // frag_color = vec4(gl_FrontFacing ? 0 : 1,0,0,1);

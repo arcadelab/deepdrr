@@ -328,12 +328,14 @@ class Renderer(object):
         self._configure_forward_pass_viewport(flags, drr_mode=drr_mode)
 
         # Clear it
-        if bool(flags & RenderFlags.SEG):
-            glClearColor(0.0, 0.0, 0.0, 1.0)
-            if seg_node_map is None:
-                seg_node_map = {}
-        else:
-            glClearColor(*scene.bg_color)
+        # if bool(flags & RenderFlags.SEG):
+        #     glClearColor(0.0, 0.0, 0.0, 1.0)
+        #     if seg_node_map is None:
+        #         seg_node_map = {}
+        # else:
+        #     glClearColor(*scene.bg_color)
+        glClearColor(3,3,3,0)
+
 
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT)
 
@@ -582,8 +584,13 @@ class Renderer(object):
 
             if drr_mode in [DRRMode.FRONTDIST, DRRMode.BACKDIST]:
                 glEnable(GL_BLEND)
-                glBlendFunc(GL_ONE, GL_ZERO)
-                # glBlendEquationSeparate(GL_MIN, GL_MAX);
+                # glBlendEquation(GL_FUNC_ADD)
+                # glBlendEquation(GL_MAX)
+                # glBlendEquation(GL_MIN)
+                # glBlendFunc(GL_ONE, GL_ONE)
+                # glBlendFunc(GL_ONE, GL_ONE)
+                glBlendEquationSeparate(GL_MIN, GL_MAX);
+                glBlendFuncSeparate(GL_ONE, GL_ZERO, GL_ONE, GL_ZERO);
                 # glBlendFuncSeparate(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA, GL_ONE, GL_ZERO);
             else:
                 glEnable(GL_BLEND)
@@ -1056,15 +1063,19 @@ class Renderer(object):
             glBindFramebuffer(GL_DRAW_FRAMEBUFFER, 0)
 
         glViewport(0, 0, self.viewport_width, self.viewport_height)
-        if drr_mode in [DRRMode.FRONTDIST, DRRMode.BACKDIST]:
-            glEnable(GL_DEPTH_TEST)
-        else:
-            glDisable(GL_DEPTH_TEST)
-        glDepthMask(GL_TRUE)
-        if drr_mode == DRRMode.FRONTDIST:
-            glDepthFunc(GL_LESS)
-        else:
-            glDepthFunc(GL_GREATER)
+        # glEnable(GL_DEPTH_TEST)
+        glDisable(GL_DEPTH_TEST)
+        # if drr_mode in [DRRMode.FRONTDIST, DRRMode.BACKDIST]:
+        #     glEnable(GL_DEPTH_TEST)
+        # else:
+        #     glDisable(GL_DEPTH_TEST)
+        # glDepthMask(GL_TRUE)
+        glDepthFunc(GL_ALWAYS)
+        # glDepthFunc(GL_LESS)
+        # if drr_mode == DRRMode.FRONTDIST:
+        #     glDepthFunc(GL_LESS)
+        # else:
+        #     glDepthFunc(GL_GREATER)
         glDepthRange(0.0, 1.0)
 
     def _configure_shadow_mapping_viewport(self, light, flags):
@@ -1112,7 +1123,7 @@ class Renderer(object):
 
             glBindRenderbuffer(GL_RENDERBUFFER, self._main_cb)
             glRenderbufferStorage(
-                GL_RENDERBUFFER, GL_R32F,
+                GL_RENDERBUFFER, GL_RGBA32F,
                 self.viewport_width, self.viewport_height
             )
 
@@ -1137,7 +1148,7 @@ class Renderer(object):
             self._main_cb_ms, self._main_db_ms = glGenRenderbuffers(2)
             glBindRenderbuffer(GL_RENDERBUFFER, self._main_cb_ms)
             glRenderbufferStorageMultisample(
-                GL_RENDERBUFFER, 4, GL_R32F,
+                GL_RENDERBUFFER, 4, GL_RGBA32F,
                 self.viewport_width, self.viewport_height
             )
             glBindRenderbuffer(GL_RENDERBUFFER, self._main_db_ms)
@@ -1220,16 +1231,16 @@ class Renderer(object):
         # Read color
         if flags & RenderFlags.RGBA:
             color_buf = glReadPixels(
-                0, 0, width, height, GL_RED, GL_FLOAT
+                0, 0, width, height, GL_RGBA, GL_FLOAT
             )
             color_im = np.frombuffer(color_buf, dtype=np.float32)
             color_im = color_im.reshape((height, width, 4))
         else:
             color_buf = glReadPixels(
-                0, 0, width, height, GL_RED, GL_FLOAT
+                0, 0, width, height, GL_RGB, GL_FLOAT
             )
             color_im = np.frombuffer(color_buf, dtype=np.float32)
-            color_im = color_im.reshape((height, width, 1))
+            color_im = color_im.reshape((height, width, 3))
         color_im = np.flip(color_im, axis=0)
 
         # Resize for macos if needed

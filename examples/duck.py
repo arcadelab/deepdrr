@@ -25,7 +25,7 @@ duck_source = "https://github.com/KhronosGroup/glTF-Sample-Models/raw/master/2.0
 # duckmesh = Mesh.from_trimesh(list(duck.geometry.values())[0])
 duckmesh = Mesh.from_trimesh(trimesh.load("./models/suzanne_stress.stl"))
 # duckmesh = Mesh.from_trimesh(trimesh.load("./models/suzanne.stl"))
-scene = Scene(ambient_light=np.array([1.0, 1.0, 1.0, 1.0]), bg_color=[0.0, 0.0, 0.0])
+scene = Scene(ambient_light=np.array([1.0, 1.0, 1.0, 1.0]), bg_color=[100, 100, 100])
 
 duckmesh_pose = np.array([
     [0.0, 0.0, -1.0, 0.0],
@@ -79,7 +79,7 @@ def render():
     
     # color[error_mask] = 0
 
-    color, depth = r.render(scene, drr_mode=DRRMode.BACKDIST)
+    color, depth = r.render(scene, drr_mode=DRRMode.BACKDIST, flags=RenderFlags.RGBA)
     # color, depth = r.render(scene, drr_mode=DRRMode.FRONTDIST)
 
 
@@ -108,10 +108,17 @@ print(f"{color.shape=} {color.dtype=}")
 print(f"{np.amin(color)=} {np.amax(color)=}")
 print(f"{np.unique(color, return_counts=True)=}")
 
+print(f"{depth.shape=} {depth.dtype=}")
+
+print(f"{np.amin(depth)=} {np.amax(depth)=}")
+print(f"{np.unique(depth, return_counts=True)=}")
+
 # save to file
 import cv2
-# remapped = np.interp(color[:,:,::-1], (0, 0.3), (0, 255)).astype(np.uint8)
-remapped = np.interp(color[:,:,::-1], (np.amin(color), np.amax(color)), (0, 255)).astype(np.uint8)
-print(f"{np.amin(remapped)=} {np.amax(remapped)=}")
+# remapped = np.interp(color[:,:,::-1], (1, 5), (0, 255)).astype(np.uint8)
+front = color[:,:,:3]
+back = color[:,:,3]
+remapped = np.interp(front, (np.amin(front), np.amax(front)), (0, 255)).astype(np.uint8)
+remapped_depth = np.interp(back, (np.amin(back), np.amax(back)), (0, 255)).astype(np.uint8)
 cv2.imwrite('duck.png', remapped)
-cv2.imwrite('duck_depth.png', depth)
+cv2.imwrite('duck_depth.png', remapped_depth)
