@@ -37,6 +37,7 @@ class Volume(object):
     anatomical_coordinate_system: Optional[str]
 
     cache_dir: Optional[Path] = None
+
     # TODO: The current Volume class is really a scanned volume. We should have a BaseVolume or
     # GenericVolume, which might be subclassed by tools or other types of volumes not constructed
     # from array data, e.g. for which materials is perfectly known.
@@ -130,10 +131,7 @@ class Volume(object):
         assert spacing.dim == 3
 
         # define anatomical_from_ijk FrameTransform
-        if (
-            anatomical_coordinate_system is None
-            or anatomical_coordinate_system == "none"
-        ):
+        if anatomical_coordinate_system is None or anatomical_coordinate_system == "none":
             raise NotImplementedError
             anatomical_from_IJK = geo.FrameTransform.from_scaling(
                 scaling=spacing, translation=origin
@@ -145,13 +143,9 @@ class Volume(object):
                 [0, 0, spacing[2]],
                 [0, -spacing[1], 0],
             ]
-            anatomical_from_IJK = geo.FrameTransform.from_rt(
-                rotation=rotation, translation=origin
-            )
+            anatomical_from_IJK = geo.FrameTransform.from_rt(rotation=rotation, translation=origin)
         elif anatomical_coordinate_system == "RAS":
-            raise NotImplementedError(
-                "conversion from RAS (not hard, look at LPS example)"
-            )
+            raise NotImplementedError("conversion from RAS (not hard, look at LPS example)")
         else:
             raise ValueError()
 
@@ -292,9 +286,7 @@ class Volume(object):
 
         if path_root is None:
             log.info(f"segmenting materials in volume")
-            materials = cls._segment_materials(
-                hu_values, use_thresholding=use_thresholding
-            )
+            materials = cls._segment_materials(hu_values, use_thresholding=use_thresholding)
             return materials
 
         materials_path_npz = path_root.with_suffix(".npz")
@@ -303,11 +295,7 @@ class Volume(object):
         if use_cached and materials_path_npz.exists():
             log.info(f"using cached materials segmentation at {materials_path_npz}")
             materials = dict(np.load(materials_path_npz))
-        elif (
-            use_cached
-            and materials_record_path.exists()
-            and materials_path_nifti.exists()
-        ):
+        elif use_cached and materials_record_path.exists() and materials_path_nifti.exists():
             log.info(f"using cached materials segmentation at {materials_path_nifti}")
             material_names = data_utils.load_json(materials_record_path)
             materal_data = nib.load(materials_path_nifti).get_fdata()
@@ -316,9 +304,7 @@ class Volume(object):
                 materials[name] = materal_data == label
         else:
             log.info(f"segmenting materials in volume")
-            materials = cls._segment_materials(
-                hu_values, use_thresholding=use_thresholding
-            )
+            materials = cls._segment_materials(hu_values, use_thresholding=use_thresholding)
 
             if save_cache and not materials_path_nifti.exists():
                 log.debug(f"saving materials segmentation to {materials_path_nifti}")
@@ -397,9 +383,7 @@ class Volume(object):
 
         # Save the material segmentations
         for name, segmentation in self.materials.items():
-            img = nib.Nifti1Image(
-                segmentation.astype(np.int32), geo.get_data(self.RAS_from_IJK)
-            )
+            img = nib.Nifti1Image(segmentation.astype(np.int32), geo.get_data(self.RAS_from_IJK))
             nib.save(img, output_dir / f"{name}.nii.gz")
 
     @classmethod
@@ -501,9 +485,7 @@ class Volume(object):
         log.info(f"loading NiFti volume from {path}")
         img = nib.load(path)
         if img.header.get_xyzt_units()[0] not in ["mm", "unknown"]:
-            log.warning(
-                f'got NifTi xyz units: {img.header.get_xyzt_units()[0]}. (Expected "mm").'
-            )
+            log.warning(f'got NifTi xyz units: {img.header.get_xyzt_units()[0]}. (Expected "mm").')
 
         anatomical_from_IJK = geo.FrameTransform(img.affine)
 
@@ -539,9 +521,7 @@ class Volume(object):
                         if Path(materials[m]).exists():
                             materials[m] = nib.load(materials[m]).get_fdata() > 0
                         else:
-                            raise ValueError(
-                                f"Could not find material {m} at {materials[m]}"
-                            )
+                            raise ValueError(f"Could not find material {m} at {materials[m]}")
                     else:
                         materials[m] = materials[m].astype(bool)
 
@@ -599,20 +579,12 @@ class Volume(object):
         # slice specific tags
         frames = ds.PerFrameFunctionalGroupsSequence
         num_slices = len(frames)
-        first_slice_position = np.array(
-            frames[0].PlanePositionSequence[0].ImagePositionPatient
-        )
-        last_slice_position = np.array(
-            frames[-1].PlanePositionSequence[0].ImagePositionPatient
-        )
+        first_slice_position = np.array(frames[0].PlanePositionSequence[0].ImagePositionPatient)
+        last_slice_position = np.array(frames[-1].PlanePositionSequence[0].ImagePositionPatient)
 
         # volume specific tags
         shared = ds.SharedFunctionalGroupsSequence[0]
-        RC = (
-            np.array(shared.PlaneOrientationSequence[0].ImageOrientationPatient)
-            .reshape(2, 3)
-            .T
-        )
+        RC = np.array(shared.PlaneOrientationSequence[0].ImageOrientationPatient).reshape(2, 3).T
         PixelSpacing = np.array(shared.PixelMeasuresSequence[0].PixelSpacing)
         SliceThickness = np.array(shared.PixelMeasuresSequence[0].SliceThickness)
         offset = shared.PixelValueTransformationSequence[0].RescaleIntercept
@@ -675,9 +647,7 @@ class Volume(object):
         instead modified the data in memory to be in (i, j, k) order.
         """
         # construct column for index k
-        k = np.array(
-            (last_slice_position - first_slice_position) / (num_slices - 1)
-        ).reshape(3, 1)
+        k = np.array((last_slice_position - first_slice_position) / (num_slices - 1)).reshape(3, 1)
 
         # check if the calculated increment matches the SliceThickness (allow .1 millimeters deviations)
         assert np.allclose(np.abs(k[2]), SliceThickness, atol=0.1, rtol=0)
@@ -738,9 +708,7 @@ class Volume(object):
             axis=1,
         )
         log.debug("TODO: double check this transform.")
-        anatomical_from_ijk = np.concatenate(
-            [ijk_from_anatomical, [[0, 0, 0, 1]]], axis=0
-        )
+        anatomical_from_ijk = np.concatenate([ijk_from_anatomical, [[0, 0, 0, 1]]], axis=0)
         data = cls._convert_hounsfield_to_density(hu_values)
         materials = cls.segment_materials(
             hu_values,
@@ -869,17 +837,13 @@ class Volume(object):
         """
 
         x = geo.point(x)
-        center_anatomical = self.anatomical_from_ijk @ geo.point(
-            np.array(self.shape) / 2
-        )
+        center_anatomical = self.anatomical_from_ijk @ geo.point(np.array(self.shape) / 2)
         center_world = self.world_from_anatomical @ center_anatomical
         self.place(center_anatomical, x)
 
     translate_center_to = place_center
 
-    def place(
-        self, point_in_anatomical: geo.Point3D, desired_point_in_world: geo.Point3D
-    ) -> None:
+    def place(self, point_in_anatomical: geo.Point3D, desired_point_in_world: geo.Point3D) -> None:
         """Translate the volume so that x_in_anatomical corresponds to x_in_world."""
         p_A = np.array(point_in_anatomical)
         p_W = np.array(desired_point_in_world)
@@ -940,9 +904,7 @@ class Volume(object):
         """
         if self.anatomical_coordinate_system == "RAS":
             self.world_from_anatomical = geo.FrameTransform.from_rt(
-                rotation=Rotation.from_euler("xz", [90, -90], degrees=True)
-                .as_matrix()
-                .squeeze(),
+                rotation=Rotation.from_euler("xz", [90, -90], degrees=True).as_matrix().squeeze(),
             )
         else:
             raise NotImplementedError
@@ -962,9 +924,7 @@ class Volume(object):
         """
         if self.anatomical_coordinate_system == "RAS":
             self.world_from_anatomical = geo.FrameTransform.from_rt(
-                rotation=Rotation.from_euler("xz", [-90, 90], degrees=True)
-                .as_matrix()
-                .squeeze(),
+                rotation=Rotation.from_euler("xz", [-90, 90], degrees=True).as_matrix().squeeze(),
             )
         else:
             raise NotImplementedError
@@ -1006,9 +966,7 @@ class Volume(object):
                 R.T, self.world_from_anatomical.t
             )
         else:
-            device_from_anatomical = geo.FrameTransform.from_rt(
-                R.T, self.world_from_anatomical.t
-            )
+            device_from_anatomical = geo.FrameTransform.from_rt(R.T, self.world_from_anatomical.t)
             self.world_from_anatomical = world_from_device @ device_from_anatomical
 
     def interpolate(self, *x: geo.Point3D, method: str = "linear") -> np.ndarray:
@@ -1117,18 +1075,14 @@ class Volume(object):
 
     def _make_surface(self, material: str = "bone"):
         """Make a surface for the boolean segmentation"""
-        assert (
-            material in self.materials
-        ), f'"{material}" not in {self.materials.keys()}'
+        assert material in self.materials, f'"{material}" not in {self.materials.keys()}'
 
         segmentation = self.materials[material]
         R = self.anatomical_from_ijk.R
         t = self.anatomical_from_ijk.t
 
         vol = vtk.vtkStructuredPoints()
-        vol.SetDimensions(
-            segmentation.shape[0], segmentation.shape[1], segmentation.shape[2]
-        )
+        vol.SetDimensions(segmentation.shape[0], segmentation.shape[1], segmentation.shape[2])
         vol.SetOrigin(
             -np.sign(R[0, 0]) * t[0],  # negate?
             np.sign(R[1, 1]) * t[1],  # negate?
@@ -1181,9 +1135,7 @@ class Volume(object):
     ):
         log.info(f"cache_dir: {self.cache_dir}")
         cache_path = (
-            None
-            if self.cache_dir is None
-            else self.cache_dir / f"cached_{material}_mesh.vtp"
+            None if self.cache_dir is None else self.cache_dir / f"cached_{material}_mesh.vtp"
         )
         log.info(f"cache_path: {cache_path}")
         if use_cached and cache_path is not None and cache_path.exists():
