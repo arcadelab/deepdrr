@@ -34,10 +34,14 @@ try:
 
     # import pycuda.autoinit # causes problems when running with pytorch concurrently
     import pycuda.driver as cuda
-    from pycuda.autoinit import context
+
+    # from pycuda.autoinit import context # also causes problems
+    from pycuda.autoprimaryctx import context  # retains context across multiple calls
     from pycuda.compiler import SourceModule
 except ImportError:
     log.warning(f"Running without pycuda: projector operations will fail.")
+except RuntimeError as e:
+    log.warning(f"Running without pycuda, possibly in subprocess: {e}")
 
 
 def import_pycuda():
