@@ -273,8 +273,8 @@ class PyCudaRSI(object):
         get_ = lambda x : struct_size(x, self.d_szQuery)
 
         self.h_interceptCounts = np.zeros(self.n_rays, dtype=np.int32)
-        self.d_rayBox = cuda.mem_alloc(self.n_rays * get_(self.manager.bytes_in_AABB))
         self.d_interceptCounts = cuda.mem_alloc(self.h_interceptCounts.nbytes)
+        self.d_rayBox = cuda.mem_alloc(self.n_rays * get_(self.manager.bytes_in_AABB))
 
         self.d_raysFrom = cuda.mem_alloc(3 * np.float32().nbytes)
         # self.d_raysFrom = cuda.mem_alloc(self.n_rays * 3 * np.float32().nbytes)

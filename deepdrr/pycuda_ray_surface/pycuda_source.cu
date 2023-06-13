@@ -897,12 +897,18 @@ __device__ void tide(
     int *interceptCounts,
     float *interceptTs,
     int8_t *interceptFacing,
-    int rayIdx
+    int rayIdx,
+    float sourceToDetectorDistance
 )
 {
+    (*interceptCounts) = 0;
+    float cutoffEpsilon = 0.00001;
     for (int i = 0; i < MAX_INTERSECTIONS; i++) {
-        if (interceptTs[i] < 0) {
+        if (interceptTs[i] < cutoffEpsilon || interceptTs[i] > sourceToDetectorDistance-1) {
             interceptTs[i] = INFINITY;
+            interceptFacing[i] = 0;
+        } else {
+            (*interceptCounts) += 1;
         }
     }
 
@@ -983,7 +989,8 @@ __global__ void kernelTide(
     int8_t* __restrict__ rayInterceptFacing,
     // int* __restrict__ detected,
     // int numTriangles, 
-    int numRays
+    int numRays,
+    float sourceToDetectorDistance
 )
 {
     __shared__ int stride;
@@ -999,7 +1006,7 @@ __global__ void kernelTide(
             int *interceptCounts = rayInterceptCounts + idx;
             float *interceptTs = rayInterceptTs + idx * MAX_INTERSECTIONS;
             int8_t *interceptFacing = rayInterceptFacing + idx * MAX_INTERSECTIONS;
-            tide(interceptCounts, interceptTs, interceptFacing, idx);
+            tide(interceptCounts, interceptTs, interceptFacing, idx, sourceToDetectorDistance);
         }
     }
 }

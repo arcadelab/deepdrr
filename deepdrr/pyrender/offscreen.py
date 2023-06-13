@@ -60,7 +60,7 @@ class OffscreenRenderer(object):
     def point_size(self, value):
         self._point_size = float(value)
 
-    def render(self, scene, flags=RenderFlags.NONE, seg_node_map=None, drr_mode=DRRMode.NONE):
+    def render(self, scene, flags=RenderFlags.NONE, seg_node_map=None, drr_mode=DRRMode.NONE, zfar=0):
         """Render a scene with the given set of flags.
 
         Parameters
@@ -99,7 +99,7 @@ class OffscreenRenderer(object):
 
         if self._platform.supports_framebuffers():
             flags |= RenderFlags.OFFSCREEN
-            retval = self._renderer.render(scene, flags, seg_node_map, drr_mode=drr_mode)
+            retval = self._renderer.render(scene, flags, seg_node_map, drr_mode=drr_mode, zfar=zfar)
         else:
             raise ValueError('TODO')
             self._renderer.render(scene, flags, seg_node_map)

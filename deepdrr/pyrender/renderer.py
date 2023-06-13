@@ -97,7 +97,7 @@ class Renderer(object):
     def point_size(self, value):
         self._point_size = float(value)
 
-    def render(self, scene, flags, seg_node_map=None, drr_mode=DRRMode.NONE):
+    def render(self, scene, flags, seg_node_map=None, drr_mode=DRRMode.NONE, zfar=0):
         """Render a scene with the given set of flags.
 
         Parameters
@@ -142,7 +142,7 @@ class Renderer(object):
         #             self._shadow_mapping_pass(scene, ln, flags)
 
         # Make forward pass
-        retval = self._forward_pass(scene, flags, seg_node_map=seg_node_map, drr_mode=drr_mode)
+        retval = self._forward_pass(scene, flags, seg_node_map=seg_node_map, drr_mode=drr_mode, zfar=zfar)
 
         # If necessary, make normals pass
         if flags & (RenderFlags.VERTEX_NORMALS | RenderFlags.FACE_NORMALS):
@@ -323,7 +323,7 @@ class Renderer(object):
     # Rendering passes
     ###########################################################################
 
-    def _forward_pass(self, scene, flags, seg_node_map=None, drr_mode=DRRMode.NONE):
+    def _forward_pass(self, scene, flags, seg_node_map=None, drr_mode=DRRMode.NONE, zfar=0):
         # Set up viewport for render
         self._configure_forward_pass_viewport(flags, drr_mode=drr_mode)
 
@@ -334,7 +334,7 @@ class Renderer(object):
         #         seg_node_map = {}
         # else:
         #     glClearColor(*scene.bg_color)
-        glClearColor(3,3,3,0)
+        glClearColor(zfar,zfar,zfar,0)
 
 
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT)

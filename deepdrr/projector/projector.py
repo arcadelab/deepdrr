@@ -145,8 +145,8 @@ def _get_kernel_projector_module(
         "-D",
         f"NUM_VOLUMES={num_volumes}",
         "-D",
-        f"NUM_MESHES={0}",
-        # f"NUM_MESHES={num_meshes}",
+        # f"NUM_MESHES={0}",
+        f"NUM_MESHES={num_meshes}",
         "-D",
         f"NUM_MATERIALS={num_materials}",
         "-D",
@@ -620,46 +620,95 @@ class Projector(object):
 
             self.cam_node.matrix = np.array(proj.extrinsic.inv) @ deepdrr_to_opengl_cam
 
-            def render():
-                color, depth = self.gl_renderer.render(self.scene, drr_mode=DRRMode.ERROR)
+            self.mesh_hit_counts = np.zeros((len(self.primitives), self.n_rays), dtype=np.int32)
+            self.mesh_hit_alphas = np.zeros((len(self.primitives), self.n_rays, self.max_mesh_depth), dtype=np.float32)
+            self.mesh_hit_facing = np.zeros((len(self.primitives), self.n_rays, self.max_mesh_depth), dtype=np.int8)
 
-                error_mask = np.abs(color) > 1e-6
-                color, depth = self.gl_renderer.render(self.scene, drr_mode=DRRMode.DENSITY)
-                # color, depth = self.gl_renderer.render(self.scene, drr_mode=DRRMode.DENSITY)
-                # color, depth = self.gl_renderer.render(self.scene, drr_mode=DRRMode.DENSITY)
-                # color, depth = self.gl_renderer.render(self.scene, drr_mode=DRRMode.DENSITY)
+            cuda.memcpy_htod(self.mesh_hit_counts_gpu, self.mesh_hit_counts)
+            cuda.memcpy_htod(self.mesh_hit_alphas_gpu, self.mesh_hit_alphas)
+            cuda.memcpy_htod(self.mesh_hit_facing_gpu, self.mesh_hit_facing)
+
+            for mesh_i, _mesh in enumerate(self.primitives[:1]):
+            # for mesh_i, _mesh in enumerate(self.primitives):
+
+                def render():
+                    color, depth = self.gl_renderer.render(self.scene, drr_mode=DRRMode.BACKDIST, flags=RenderFlags.RGBA, zfar=self.device.source_to_detector_distance)
+
+
+                    print(f"{color.shape=} {color.dtype=}")
+
+                    print(f"{np.amin(color)=} {np.amax(color)=}")
+                    print(f"{np.unique(color, return_counts=True)=}")
+
+                    print(f"{depth.shape=} {depth.dtype=}")
+
+                    print(f"{np.amin(depth)=} {np.amax(depth)=}")
+                    print(f"{np.unique(depth, return_counts=True)=}")
+
+                    # save to file
+                    import cv2
+                    # remapped = np.interp(color[:,:,::-1], (1, 5), (0, 255)).astype(np.uint8)
+                    front = color[:,:,0]
+                    back = color[:,:,3]
+                    remapped = np.interp(front, (np.amin(front), np.amax(front)), (0, 255)).astype(np.uint8)
+                    remapped_depth = np.interp(back, (np.amin(back), np.amax(back)), (0, 255)).astype(np.uint8)
+                    cv2.imwrite('duck.png', remapped)
+                    cv2.imwrite('duck_depth.png', remapped_depth)
+
+                    front = np.swapaxes(front, 0, 1)
+                    back = np.swapaxes(back, 0, 1)
+
+                    return front, back
+
+                    # return color, depth
+
+                # def stuff():
+                #     color, depth = render()
+                #     return color[:,:,0], depth
+
+                front, back = render()
+
                 
-                color[error_mask] = 0
+
+                # cuda.memcpy_htod(self.additive_densities, color.astype(np.float32))
+
+                prim_hit_alphas = np.zeros((num_rays, self.max_mesh_depth), dtype=np.float32)
+                prim_hit_alphas[:,0] = front.flatten()
+                prim_hit_alphas[:,1] = back.flatten()
+
+                prim_hit_facing = np.zeros((num_rays, self.max_mesh_depth), dtype=np.int8)
+                prim_hit_facing[:,0] = np.ones(num_rays, dtype=np.int8)
+                prim_hit_facing[:,1] = -np.ones(num_rays, dtype=np.int8) #TODO: might need to reverse
+
+                mesh_hit_counts_ptr = int(self.mesh_hit_counts_gpu) + mesh_i * num_rays * NUMBYTES_INT32
+                mesh_hit_alphas_ptr = int(self.mesh_hit_alphas_gpu) + mesh_i * num_rays * self.max_mesh_depth * NUMBYTES_FLOAT32
+                mesh_hit_facing_ptr = int(self.mesh_hit_facing_gpu) + mesh_i * num_rays * self.max_mesh_depth * NUMBYTES_INT8
+
+                cuda.memcpy_htod(mesh_hit_counts_ptr, np.zeros(num_rays, dtype=np.int32))
+                cuda.memcpy_htod(mesh_hit_alphas_ptr, prim_hit_alphas)
+                cuda.memcpy_htod(mesh_hit_facing_ptr, prim_hit_facing)
 
 
-                return color, depth
+                self.grid_xLambda = 16
+                self.block_dims = (self.rsi_manager.block_x,1,1)
+                self.grid_lambda = (self.grid_xLambda,1)
+
+                self.rsi_manager.kernel_tide(
+                    np.uint64(mesh_hit_counts_ptr),
+                    np.uint64(mesh_hit_alphas_ptr),
+                    np.uint64(mesh_hit_facing_ptr),
+                    np.int32(self.n_rays), 
+                    np.float32(self.device.source_to_detector_distance),
+                    block=(int(self.rsi_manager.block_x/2),1,1),  # TODO ??
+                    # block=self.block_dims,  # TODO ??
+                    grid=self.grid_lambda
+                )
 
 
 
-
-            def stuff():
-                color, depth = render()
-                
-                # # set all values less than 0 to 0
-                # # color[color < 0] = 0
-                # # color = np.abs(color)
-
-                # print(f"{color.shape=} {color.dtype=}")
-
-                # print(f"{np.amin(color)=} {np.amax(color)=}")
-                # print(f"{np.unique(color, return_counts=True)=}")
-
-                # # save to file
-                # # remapped = np.interp(color[:,:,::-1], (0, 0.3), (0, 255)).astype(np.uint8)
-                # remapped = np.interp(color[:,:,::-1], (np.amin(color), np.amax(color)), (0, 255)).astype(np.uint8)
-                # print(f"{np.amin(remapped)=} {np.amax(remapped)=}")
-                # cv2.imwrite('fdafsdsafd.png', remapped)
-                # # cv2.imwrite('duck_depth.png', depth)
-                return color*7
-
-            color = stuff()
-
-            cuda.memcpy_htod(self.additive_densities, color.astype(np.float32))
+            cuda.memcpy_dtoh(self.mesh_hit_counts, self.mesh_hit_counts_gpu)
+            cuda.memcpy_dtoh(self.mesh_hit_alphas, self.mesh_hit_alphas_gpu)
+            cuda.memcpy_dtoh(self.mesh_hit_facing, self.mesh_hit_facing_gpu)
 
             args = [
                 np.int32(proj.sensor_width),  # out_width
@@ -1195,10 +1244,10 @@ class Projector(object):
         width = self.device.sensor_width # TODO: was deepdrr not locked to fixed resolution before?
         height = self.device.sensor_height
 
-        n_rays = height * width # TODO: move this
+        self.n_rays = height * width # TODO: move this
 
         self.rsi_manager = PyCudaRSIManager()
-        self.pycuda_rsi = PyCudaRSI(self.rsi_manager, n_rays=n_rays)  # TODO: max mesh depth parameter
+        self.pycuda_rsi = PyCudaRSI(self.rsi_manager, n_rays=self.n_rays)  # TODO: max mesh depth parameter
         self.prim_surfs = [RSISurface(self.rsi_manager, prim.compute_vertices().copy(), prim.triangles().copy()) for prim in self.primitives]
 
         self.scene = Scene(bg_color=[0.0, 0.0, 0.0])
@@ -1217,7 +1266,7 @@ class Projector(object):
             # znear=self.device.source_to_detector_distance/1000,
             znear=1,
             # zfar=self.device.source_to_detector_distance
-            zfar=5000
+            zfar=5000 #TODO
             )
         # self.cam = PerspectiveCamera(yfov=(np.pi / 12.0), znear=1, zfar=5000)
         
@@ -1225,7 +1274,7 @@ class Projector(object):
 
         self.gl_renderer = OffscreenRenderer(viewport_width=width, viewport_height=height, point_size=1.0)
 
-        self.additive_densities = cuda.mem_alloc(len(self.mesh_unique_materials) * n_rays * NUMBYTES_FLOAT32)
+        self.additive_densities = cuda.mem_alloc(len(self.mesh_unique_materials) * self.n_rays * NUMBYTES_FLOAT32)
 
         # allocate volumes' priority level on the GPU
         self.priorities_gpu = cuda.mem_alloc(len(self.volumes) * NUMBYTES_INT32)
@@ -1350,7 +1399,7 @@ class Projector(object):
         )
 
 
-
+        self.mesh_hit_counts_gpu = safe_mem_alloc(math.prod((len(self.primitives), width * height)) * NUMBYTES_INT32)
         self.mesh_hit_alphas_gpu = safe_mem_alloc(math.prod((len(self.primitives), width * height, self.max_mesh_depth)) * NUMBYTES_FLOAT32)
         self.mesh_hit_facing_gpu = safe_mem_alloc(math.prod((len(self.primitives), width * height, self.max_mesh_depth)) * NUMBYTES_INT8)
         self.ray_directions_gpu = safe_mem_alloc(math.prod((len(self.primitives), width * height, 3)) * NUMBYTES_FLOAT32)
