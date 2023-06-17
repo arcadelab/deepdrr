@@ -323,7 +323,7 @@ class Renderer(object):
 
     ###########################################################################
     # Rendering passes
-    #########################################F##################################
+    ###########################################################################
 
     def _forward_pass(self, scene, flags, seg_node_map=None, drr_mode=DRRMode.NONE, zfar=0):
         # Set up viewport for render
@@ -1145,7 +1145,7 @@ class Renderer(object):
                 glTexParameteri(GL_TEXTURE_RECTANGLE, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE)
                 glTexParameteri(GL_TEXTURE_RECTANGLE, GL_TEXTURE_MIN_FILTER, GL_NEAREST)
                 glTexParameteri(GL_TEXTURE_RECTANGLE, GL_TEXTURE_MAG_FILTER, GL_NEAREST)
-                glTexImage2D(GL_TEXTURE_RECTANGLE, 0, GL_RG32F, self.viewport_width, self.viewport_height, 0, GL_RGB, GL_FLOAT, 0)
+                glTexImage2D(GL_TEXTURE_RECTANGLE, 0, GL_RG32F, self.viewport_width, self.viewport_height, 0, GL_RG, GL_FLOAT, None)
 
 
             glBindFramebuffer(GL_FRAMEBUFFER, self.g_dualPeelingSingleFboId)
