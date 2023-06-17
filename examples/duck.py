@@ -79,7 +79,7 @@ def render():
     
     # color[error_mask] = 0
 
-    color, depth = r.render(scene, drr_mode=DRRMode.BACKDIST, flags=RenderFlags.RGBA)
+    color, depth = r.render(scene, drr_mode=DRRMode.BACKDIST, flags=RenderFlags.RGBA, zfar=3)
     # color, depth = r.render(scene, drr_mode=DRRMode.FRONTDIST)
 
 

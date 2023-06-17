@@ -602,6 +602,9 @@ class Projector(object):
             #         mesh_perf_start = mesh_perf_end
 
 
+            mesh_perf_start = time.perf_counter()
+
+
             self.cam.fx = proj.intrinsic.fx
             self.cam.fy = proj.intrinsic.fy
             self.cam.cx = proj.intrinsic.cx
@@ -620,13 +623,17 @@ class Projector(object):
 
             self.cam_node.matrix = np.array(proj.extrinsic.inv) @ deepdrr_to_opengl_cam
 
-            self.mesh_hit_counts = np.zeros((len(self.primitives), self.n_rays), dtype=np.int32)
-            self.mesh_hit_alphas = np.zeros((len(self.primitives), self.n_rays, self.max_mesh_depth), dtype=np.float32)
-            self.mesh_hit_facing = np.zeros((len(self.primitives), self.n_rays, self.max_mesh_depth), dtype=np.int8)
+            # self.mesh_hit_counts = np.zeros((len(self.primitives), self.n_rays), dtype=np.int32)
+            # self.mesh_hit_alphas = np.zeros((len(self.primitives), self.n_rays, self.max_mesh_depth), dtype=np.float32)
+            # self.mesh_hit_facing = np.zeros((len(self.primitives), self.n_rays, self.max_mesh_depth), dtype=np.int8)
 
-            cuda.memcpy_htod(self.mesh_hit_counts_gpu, self.mesh_hit_counts)
-            cuda.memcpy_htod(self.mesh_hit_alphas_gpu, self.mesh_hit_alphas)
-            cuda.memcpy_htod(self.mesh_hit_facing_gpu, self.mesh_hit_facing)
+            # cuda.memcpy_htod(self.mesh_hit_counts_gpu, self.mesh_hit_counts)
+            # cuda.memcpy_htod(self.mesh_hit_alphas_gpu, self.mesh_hit_alphas)
+            # cuda.memcpy_htod(self.mesh_hit_facing_gpu, self.mesh_hit_facing)
+
+            mesh_perf_end = time.perf_counter()
+            print(f"init arrays: {mesh_perf_end - mesh_perf_start}")
+            mesh_perf_start = mesh_perf_end
 
             for mesh_i, _mesh in enumerate(self.primitives[:1]):
             # for mesh_i, _mesh in enumerate(self.primitives):
@@ -635,25 +642,25 @@ class Projector(object):
                     color, depth = self.gl_renderer.render(self.scene, drr_mode=DRRMode.BACKDIST, flags=RenderFlags.RGBA, zfar=self.device.source_to_detector_distance)
 
 
-                    print(f"{color.shape=} {color.dtype=}")
+                     # print(f"{color.shape=} {color.dtype=}")
 
-                    print(f"{np.amin(color)=} {np.amax(color)=}")
-                    print(f"{np.unique(color, return_counts=True)=}")
+                    # print(f"{np.amin(color)=} {np.amax(color)=}")
+                    # print(f"{np.unique(color, return_counts=True)=}")
 
-                    print(f"{depth.shape=} {depth.dtype=}")
+                    # print(f"{depth.shape=} {depth.dtype=}")
 
-                    print(f"{np.amin(depth)=} {np.amax(depth)=}")
-                    print(f"{np.unique(depth, return_counts=True)=}")
+                    # print(f"{np.amin(depth)=} {np.amax(depth)=}")
+                    # print(f"{np.unique(depth, return_counts=True)=}")
 
-                    # save to file
-                    import cv2
-                    # remapped = np.interp(color[:,:,::-1], (1, 5), (0, 255)).astype(np.uint8)
+                    # # save to file
+                    # import cv2
+                    # # remapped = np.interp(color[:,:,::-1], (1, 5), (0, 255)).astype(np.uint8)
                     front = color[:,:,0]
                     back = color[:,:,3]
-                    remapped = np.interp(front, (np.amin(front), np.amax(front)), (0, 255)).astype(np.uint8)
-                    remapped_depth = np.interp(back, (np.amin(back), np.amax(back)), (0, 255)).astype(np.uint8)
-                    cv2.imwrite('duck.png', remapped)
-                    cv2.imwrite('duck_depth.png', remapped_depth)
+                    # remapped = np.interp(front, (np.amin(front), np.amax(front)), (0, 255)).astype(np.uint8)
+                    # remapped_depth = np.interp(back, (np.amin(back), np.amax(back)), (0, 255)).astype(np.uint8)
+                    # cv2.imwrite('duck.png', remapped)
+                    # cv2.imwrite('duck_depth.png', remapped_depth)
 
                     front = np.swapaxes(front, 0, 1)
                     back = np.swapaxes(back, 0, 1)
@@ -667,6 +674,10 @@ class Projector(object):
                 #     return color[:,:,0], depth
 
                 front, back = render()
+
+                mesh_perf_end = time.perf_counter()
+                print(f"render: {mesh_perf_end - mesh_perf_start}")
+                mesh_perf_start = mesh_perf_end
 
                 
 
@@ -688,6 +699,10 @@ class Projector(object):
                 cuda.memcpy_htod(mesh_hit_alphas_ptr, prim_hit_alphas)
                 cuda.memcpy_htod(mesh_hit_facing_ptr, prim_hit_facing)
 
+                mesh_perf_end = time.perf_counter()
+                print(f"transfer: {mesh_perf_end - mesh_perf_start}")
+                mesh_perf_start = mesh_perf_end
+
 
                 self.grid_xLambda = 16
                 self.block_dims = (self.rsi_manager.block_x,1,1)
@@ -704,11 +719,22 @@ class Projector(object):
                     grid=self.grid_lambda
                 )
 
+                context.synchronize()
+
+                mesh_perf_end = time.perf_counter()
+                print(f"tide: {mesh_perf_end - mesh_perf_start}")
+                mesh_perf_start = mesh_perf_end
 
 
-            cuda.memcpy_dtoh(self.mesh_hit_counts, self.mesh_hit_counts_gpu)
-            cuda.memcpy_dtoh(self.mesh_hit_alphas, self.mesh_hit_alphas_gpu)
-            cuda.memcpy_dtoh(self.mesh_hit_facing, self.mesh_hit_facing_gpu)
+
+
+            # cuda.memcpy_dtoh(self.mesh_hit_counts, self.mesh_hit_counts_gpu)
+            # cuda.memcpy_dtoh(self.mesh_hit_alphas, self.mesh_hit_alphas_gpu)
+            # cuda.memcpy_dtoh(self.mesh_hit_facing, self.mesh_hit_facing_gpu)
+
+            # mesh_perf_end = time.perf_counter()
+            # print(f"back copy: {mesh_perf_end - mesh_perf_start}")
+            # mesh_perf_start = mesh_perf_end
 
             args = [
                 np.int32(proj.sensor_width),  # out_width

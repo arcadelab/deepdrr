@@ -1,3 +1,8 @@
+# Questions
+- Scatter?
+- Worth having a high-density mode, renders much faster, to handle nearly all cases?
+- Mesh priorities?
+
 # Ops
 - Implement in PelvisVR
 - Cleanup
