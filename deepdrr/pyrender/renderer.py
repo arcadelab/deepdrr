@@ -600,8 +600,8 @@ class Renderer(object):
             # else:
             #     glEnable(GL_BLEND)
             #     glBlendFunc(GL_ONE, GL_ONE)
-            glDisable(GL_BLEND)
-            # glEnable(GL_BLEND)
+            # glDisable(GL_BLEND)
+            glEnable(GL_BLEND)
             glBlendEquation(GL_MAX)
             glBlendFunc(GL_ONE, GL_ONE)
             
@@ -958,10 +958,10 @@ class Renderer(object):
         # elif drr_mode in [DRRMode.FRONTDIST, DRRMode.BACKDIST]:
         # vertex_shader = 'front.vert'
         # fragment_shader = 'front.frag'
-        vertex_shader = 'segmentation.vert'
-        fragment_shader = 'segmentation.frag'
-        # vertex_shader = 'dual_peeling_init_vertex.glsl'
-        # fragment_shader = 'dual_peeling_init_fragment.glsl'
+        # vertex_shader = 'segmentation.vert'
+        # fragment_shader = 'segmentation.frag'
+        vertex_shader = 'dual_peeling_init_vertex.glsl'
+        fragment_shader = 'dual_peeling_init_fragment.glsl'
         # if (bool(program_flags & ProgramFlags.USE_MATERIAL) and
         #         not flags & RenderFlags.DEPTH_ONLY and
         #         not flags & RenderFlags.FLAT and

@@ -67,7 +67,7 @@ scene.add(cam, pose=cam_pose)
 r = pyrender.OffscreenRenderer(viewport_width=640,
                                 viewport_height=480,
                                 point_size=1.0)
-
+zfar = 10
 def render():
     # color, depth = r.render(scene, drr_mode=DRRMode.ERROR)
 
@@ -79,7 +79,7 @@ def render():
     
     # color[error_mask] = 0
 
-    color, depth = r.render(scene, drr_mode=DRRMode.BACKDIST, flags=RenderFlags.RGBA, zfar=3)
+    color, depth = r.render(scene, drr_mode=DRRMode.BACKDIST, flags=RenderFlags.RGBA, zfar=zfar)
     # color, depth = r.render(scene, drr_mode=DRRMode.FRONTDIST)
 
 
@@ -103,13 +103,12 @@ r.delete()
 # color[color < 0] = 0
 # color = np.abs(color)
 
-color = color[:,:,0]
 
 
-print(f"{color.shape=} {color.dtype=}")
+# print(f"{color.shape=} {color.dtype=}")
 
-print(f"{np.amin(color)=} {np.amax(color)=}")
-print(f"{np.unique(color, return_counts=True)=}")
+# print(f"{np.amin(color)=} {np.amax(color)=}")
+# print(f"{np.unique(color, return_counts=True)=}")
 
 # print(f"{depth.shape=} {depth.dtype=}")
 
@@ -119,12 +118,24 @@ print(f"{np.unique(color, return_counts=True)=}")
 # save to file
 import cv2
 # remapped = np.interp(color[:,:,::-1], (1, 5), (0, 255)).astype(np.uint8)
-# front = color[:,:,0]
-front = color
-# back = color[:,:,3]
-remapped = np.interp(front, (np.amin(front), np.amax(front)), (0, 255)).astype(np.uint8)
+front = color[:,:,0]
+back = color[:,:,1]
+
+print(f"{front.shape=} {front.dtype=}")
+
+print(f"{np.amin(front)=} {np.amax(front)=}")
+print(f"{np.unique(front, return_counts=True)=}")
+
+
+print(f"{back.shape=} {back.dtype=}")
+
+print(f"{np.amin(back)=} {np.amax(back)=}")
+print(f"{np.unique(back, return_counts=True)=}")
+
+remapped = np.interp(front, (np.amin(front[front>-zfar+.001]), np.amax(front)), (0, 255)).astype(np.uint8)
+remapped_depth = np.interp(back, (np.amin(front[front>-zfar+.001]), np.amax(back)), (0, 255)).astype(np.uint8)
 # remapped_depth = np.interp(back, (np.amin(back), np.amax(back)), (0, 255)).astype(np.uint8)
 cv2.imwrite('asdfsa.png', remapped)
-# cv2.imwrite('asdfsa_depth.png', remapped_depth)
+cv2.imwrite('asdfsa_depth.png', remapped_depth)
 
 print("done")
