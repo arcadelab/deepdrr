@@ -144,10 +144,10 @@ class Renderer(object):
         # Make forward pass
         retval = self._forward_pass(scene, flags, seg_node_map=seg_node_map, drr_mode=drr_mode, zfar=zfar)
 
-        # If necessary, make normals pass
-        if flags & (RenderFlags.VERTEX_NORMALS | RenderFlags.FACE_NORMALS):
-            raise ValueError('TODO')
-            self._normals_pass(scene, flags)
+        # # If necessary, make normals pass
+        # if flags & (RenderFlags.VERTEX_NORMALS | RenderFlags.FACE_NORMALS):
+        #     raise ValueError('TODO')
+        #     self._normals_pass(scene, flags)
 
         # Update camera settings for retrieving depth buffers
         self._latest_znear = scene.main_camera_node.camera.znear
@@ -385,10 +385,10 @@ class Renderer(object):
                 if bool(flags & RenderFlags.SEG):
                     program.set_uniform('color', color)
 
-                # Next, bind the lighting
-                if not (flags & RenderFlags.DEPTH_ONLY or flags & RenderFlags.FLAT or
-                        flags & RenderFlags.SEG):
-                    self._bind_lighting(scene, program, node, flags)
+                # # Next, bind the lighting
+                # if not (flags & RenderFlags.DEPTH_ONLY or flags & RenderFlags.FLAT or
+                #         flags & RenderFlags.SEG):
+                #     self._bind_lighting(scene, program, node, flags)
 
                 # Finally, bind and draw the primitive
                 self._bind_and_draw_primitive(
@@ -412,104 +412,104 @@ class Renderer(object):
             raise ValueError('TODO')
             return
 
-    def _shadow_mapping_pass(self, scene, light_node, flags):
-        light = light_node.light
+    # def _shadow_mapping_pass(self, scene, light_node, flags):
+    #     light = light_node.light
 
-        # Set up viewport for render
-        self._configure_shadow_mapping_viewport(light, flags)
+    #     # Set up viewport for render
+    #     self._configure_shadow_mapping_viewport(light, flags)
 
-        # Set up camera matrices
-        V, P = self._get_light_cam_matrices(scene, light_node, flags)
+    #     # Set up camera matrices
+    #     V, P = self._get_light_cam_matrices(scene, light_node, flags)
 
-        # Now, render each object in sorted order
-        for node in self._sorted_mesh_nodes(scene):
-            mesh = node.mesh
+    #     # Now, render each object in sorted order
+    #     for node in self._sorted_mesh_nodes(scene):
+    #         mesh = node.mesh
 
-            # Skip the mesh if it's not visible
-            if not mesh.is_visible:
-                continue
+    #         # Skip the mesh if it's not visible
+    #         if not mesh.is_visible:
+    #             continue
 
-            for primitive in mesh.primitives:
+    #         for primitive in mesh.primitives:
 
-                # First, get and bind the appropriate program
-                program = self._get_primitive_program(
-                    primitive, flags, ProgramFlags.NONE
-                )
-                program._bind()
+    #             # First, get and bind the appropriate program
+    #             program = self._get_primitive_program(
+    #                 primitive, flags, ProgramFlags.NONE
+    #             )
+    #             program._bind()
 
-                # Set the camera uniforms
-                program.set_uniform('V', V)
-                program.set_uniform('P', P)
-                program.set_uniform(
-                    'cam_pos', scene.get_pose(scene.main_camera_node)[:3,3]
-                )
+    #             # Set the camera uniforms
+    #             program.set_uniform('V', V)
+    #             program.set_uniform('P', P)
+    #             program.set_uniform(
+    #                 'cam_pos', scene.get_pose(scene.main_camera_node)[:3,3]
+    #             )
 
-                # Finally, bind and draw the primitive
-                self._bind_and_draw_primitive(
-                    primitive=primitive,
-                    pose=scene.get_pose(node),
-                    program=program,
-                    flags=RenderFlags.DEPTH_ONLY
-                )
-                self._reset_active_textures()
+    #             # Finally, bind and draw the primitive
+    #             self._bind_and_draw_primitive(
+    #                 primitive=primitive,
+    #                 pose=scene.get_pose(node),
+    #                 program=program,
+    #                 flags=RenderFlags.DEPTH_ONLY
+    #             )
+    #             self._reset_active_textures()
 
-        # Unbind the shader and flush the output
-        if program is not None:
-            program._unbind()
-        glFlush()
+    #     # Unbind the shader and flush the output
+    #     if program is not None:
+    #         program._unbind()
+    #     glFlush()
 
-    def _normals_pass(self, scene, flags):
-        # Set up viewport for render
-        self._configure_forward_pass_viewport(flags)
-        program = None
+    # def _normals_pass(self, scene, flags):
+    #     # Set up viewport for render
+    #     self._configure_forward_pass_viewport(flags)
+    #     program = None
 
-        # Set up camera matrices
-        V, P = self._get_camera_matrices(scene)
+    #     # Set up camera matrices
+    #     V, P = self._get_camera_matrices(scene)
 
-        # Now, render each object in sorted order
-        for node in self._sorted_mesh_nodes(scene):
-            mesh = node.mesh
+    #     # Now, render each object in sorted order
+    #     for node in self._sorted_mesh_nodes(scene):
+    #         mesh = node.mesh
 
-            # Skip the mesh if it's not visible
-            if not mesh.is_visible:
-                continue
+    #         # Skip the mesh if it's not visible
+    #         if not mesh.is_visible:
+    #             continue
 
-            for primitive in mesh.primitives:
+    #         for primitive in mesh.primitives:
 
-                # Skip objects that don't have normals
-                if not primitive.buf_flags & BufFlags.NORMAL:
-                    continue
+    #             # Skip objects that don't have normals
+    #             if not primitive.buf_flags & BufFlags.NORMAL:
+    #                 continue
 
-                # First, get and bind the appropriate program
-                pf = ProgramFlags.NONE
-                if flags & RenderFlags.VERTEX_NORMALS:
-                    pf = pf | ProgramFlags.VERTEX_NORMALS
-                if flags & RenderFlags.FACE_NORMALS:
-                    pf = pf | ProgramFlags.FACE_NORMALS
-                program = self._get_primitive_program(primitive, flags, pf)
-                program._bind()
+    #             # First, get and bind the appropriate program
+    #             pf = ProgramFlags.NONE
+    #             if flags & RenderFlags.VERTEX_NORMALS:
+    #                 pf = pf | ProgramFlags.VERTEX_NORMALS
+    #             if flags & RenderFlags.FACE_NORMALS:
+    #                 pf = pf | ProgramFlags.FACE_NORMALS
+    #             program = self._get_primitive_program(primitive, flags, pf)
+    #             program._bind()
 
-                # Set the camera uniforms
-                program.set_uniform('V', V)
-                program.set_uniform('P', P)
-                program.set_uniform('normal_magnitude', 0.05 * primitive.scale)
-                program.set_uniform(
-                    'normal_color', np.array([0.1, 0.1, 1.0, 1.0])
-                )
+    #             # Set the camera uniforms
+    #             program.set_uniform('V', V)
+    #             program.set_uniform('P', P)
+    #             program.set_uniform('normal_magnitude', 0.05 * primitive.scale)
+    #             program.set_uniform(
+    #                 'normal_color', np.array([0.1, 0.1, 1.0, 1.0])
+    #             )
 
-                # Finally, bind and draw the primitive
-                self._bind_and_draw_primitive(
-                    primitive=primitive,
-                    pose=scene.get_pose(node),
-                    program=program,
-                    flags=RenderFlags.DEPTH_ONLY
-                )
-                self._reset_active_textures()
+    #             # Finally, bind and draw the primitive
+    #             self._bind_and_draw_primitive(
+    #                 primitive=primitive,
+    #                 pose=scene.get_pose(node),
+    #                 program=program,
+    #                 flags=RenderFlags.DEPTH_ONLY
+    #             )
+    #             self._reset_active_textures()
 
-        # Unbind the shader and flush the output
-        if program is not None:
-            program._unbind()
-        glFlush()
+    #     # Unbind the shader and flush the output
+    #     if program is not None:
+    #         program._unbind()
+    #     glFlush()
 
     ###########################################################################
     # Handlers for binding uniforms and drawing primitives
@@ -653,81 +653,81 @@ class Renderer(object):
         # Unbind mesh buffers
         primitive._unbind()
 
-    def _bind_lighting(self, scene, program, node, flags):
-        """Bind all lighting uniform values for a scene.
-        """
-        max_n_lights = self._compute_max_n_lights(flags)
+    # def _bind_lighting(self, scene, program, node, flags):
+    #     """Bind all lighting uniform values for a scene.
+    #     """
+    #     max_n_lights = self._compute_max_n_lights(flags)
 
-        n_d = min(len(scene.directional_light_nodes), max_n_lights[0])
-        n_s = min(len(scene.spot_light_nodes), max_n_lights[1])
-        n_p = min(len(scene.point_light_nodes), max_n_lights[2])
-        program.set_uniform('ambient_light', scene.ambient_light)
-        program.set_uniform('n_directional_lights', n_d)
-        program.set_uniform('n_spot_lights', n_s)
-        program.set_uniform('n_point_lights', n_p)
-        plc = 0
-        slc = 0
-        dlc = 0
+    #     n_d = min(len(scene.directional_light_nodes), max_n_lights[0])
+    #     n_s = min(len(scene.spot_light_nodes), max_n_lights[1])
+    #     n_p = min(len(scene.point_light_nodes), max_n_lights[2])
+    #     program.set_uniform('ambient_light', scene.ambient_light)
+    #     program.set_uniform('n_directional_lights', n_d)
+    #     program.set_uniform('n_spot_lights', n_s)
+    #     program.set_uniform('n_point_lights', n_p)
+    #     plc = 0
+    #     slc = 0
+    #     dlc = 0
 
-        light_nodes = scene.light_nodes
-        if (len(scene.directional_light_nodes) > max_n_lights[0] or
-                len(scene.spot_light_nodes) > max_n_lights[1] or
-                len(scene.point_light_nodes) > max_n_lights[2]):
-            light_nodes = self._sorted_nodes_by_distance(
-                scene, scene.light_nodes, node
-            )
+    #     light_nodes = scene.light_nodes
+    #     if (len(scene.directional_light_nodes) > max_n_lights[0] or
+    #             len(scene.spot_light_nodes) > max_n_lights[1] or
+    #             len(scene.point_light_nodes) > max_n_lights[2]):
+    #         light_nodes = self._sorted_nodes_by_distance(
+    #             scene, scene.light_nodes, node
+    #         )
 
-        for n in light_nodes:
-            light = n.light
-            pose = scene.get_pose(n)
-            position = pose[:3,3]
-            direction = -pose[:3,2]
+    #     for n in light_nodes:
+    #         light = n.light
+    #         pose = scene.get_pose(n)
+    #         position = pose[:3,3]
+    #         direction = -pose[:3,2]
 
-            if isinstance(light, PointLight):
-                if plc == max_n_lights[2]:
-                    continue
-                b = 'point_lights[{}].'.format(plc)
-                plc += 1
-                shadow = bool(flags & RenderFlags.SHADOWS_POINT)
-                program.set_uniform(b + 'position', position)
-            elif isinstance(light, SpotLight):
-                if slc == max_n_lights[1]:
-                    continue
-                b = 'spot_lights[{}].'.format(slc)
-                slc += 1
-                shadow = bool(flags & RenderFlags.SHADOWS_SPOT)
-                las = 1.0 / max(0.001, np.cos(light.innerConeAngle) -
-                                np.cos(light.outerConeAngle))
-                lao = -np.cos(light.outerConeAngle) * las
-                program.set_uniform(b + 'direction', direction)
-                program.set_uniform(b + 'position', position)
-                program.set_uniform(b + 'light_angle_scale', las)
-                program.set_uniform(b + 'light_angle_offset', lao)
-            else:
-                if dlc == max_n_lights[0]:
-                    continue
-                b = 'directional_lights[{}].'.format(dlc)
-                dlc += 1
-                shadow = bool(flags & RenderFlags.SHADOWS_DIRECTIONAL)
-                program.set_uniform(b + 'direction', direction)
+    #         if isinstance(light, PointLight):
+    #             if plc == max_n_lights[2]:
+    #                 continue
+    #             b = 'point_lights[{}].'.format(plc)
+    #             plc += 1
+    #             shadow = bool(flags & RenderFlags.SHADOWS_POINT)
+    #             program.set_uniform(b + 'position', position)
+    #         elif isinstance(light, SpotLight):
+    #             if slc == max_n_lights[1]:
+    #                 continue
+    #             b = 'spot_lights[{}].'.format(slc)
+    #             slc += 1
+    #             shadow = bool(flags & RenderFlags.SHADOWS_SPOT)
+    #             las = 1.0 / max(0.001, np.cos(light.innerConeAngle) -
+    #                             np.cos(light.outerConeAngle))
+    #             lao = -np.cos(light.outerConeAngle) * las
+    #             program.set_uniform(b + 'direction', direction)
+    #             program.set_uniform(b + 'position', position)
+    #             program.set_uniform(b + 'light_angle_scale', las)
+    #             program.set_uniform(b + 'light_angle_offset', lao)
+    #         else:
+    #             if dlc == max_n_lights[0]:
+    #                 continue
+    #             b = 'directional_lights[{}].'.format(dlc)
+    #             dlc += 1
+    #             shadow = bool(flags & RenderFlags.SHADOWS_DIRECTIONAL)
+    #             program.set_uniform(b + 'direction', direction)
 
-            program.set_uniform(b + 'color', light.color)
-            program.set_uniform(b + 'intensity', light.intensity)
-            # if light.range is not None:
-            #     program.set_uniform(b + 'range', light.range)
-            # else:
-            #     program.set_uniform(b + 'range', 0)
+    #         program.set_uniform(b + 'color', light.color)
+    #         program.set_uniform(b + 'intensity', light.intensity)
+    #         # if light.range is not None:
+    #         #     program.set_uniform(b + 'range', light.range)
+    #         # else:
+    #         #     program.set_uniform(b + 'range', 0)
 
-            if shadow:
-                self._bind_texture(light.shadow_texture,
-                                   b + 'shadow_map', program)
-                if not isinstance(light, PointLight):
-                    V, P = self._get_light_cam_matrices(scene, n, flags)
-                    program.set_uniform(b + 'light_matrix', P.dot(V))
-                else:
-                    raise NotImplementedError(
-                        'Point light shadows not implemented'
-                    )
+    #         if shadow:
+    #             self._bind_texture(light.shadow_texture,
+    #                                b + 'shadow_map', program)
+    #             if not isinstance(light, PointLight):
+    #                 V, P = self._get_light_cam_matrices(scene, n, flags)
+    #                 program.set_uniform(b + 'light_matrix', P.dot(V))
+    #             else:
+    #                 raise NotImplementedError(
+    #                     'Point light shadows not implemented'
+    #                 )
 
     def _sorted_mesh_nodes(self, scene):
         cam_loc = scene.get_pose(scene.main_camera_node)[:3,3]
@@ -814,13 +814,13 @@ class Renderer(object):
             if l.shadow_texture is not None:
                 shadow_textures.add(l.shadow_texture)
 
-        # Add new textures to context
-        for texture in shadow_textures - self._shadow_textures:
-            texture._add_to_context()
+        # # Add new textures to context
+        # for texture in shadow_textures - self._shadow_textures:
+        #     texture._add_to_context()
 
-        # Remove old textures from context
-        for texture in self._shadow_textures - shadow_textures:
-            texture.delete()
+        # # Remove old textures from context
+        # for texture in self._shadow_textures - shadow_textures:
+        #     texture.delete()
 
         self._shadow_textures = shadow_textures.copy()
 
@@ -1078,24 +1078,24 @@ class Renderer(object):
         #     glDepthFunc(GL_GREATER)
         glDepthRange(0.0, 1.0)
 
-    def _configure_shadow_mapping_viewport(self, light, flags):
-        self._configure_shadow_framebuffer()
-        glBindFramebuffer(GL_FRAMEBUFFER, self._shadow_fb)
-        light.shadow_texture._bind()
-        light.shadow_texture._bind_as_depth_attachment()
-        glActiveTexture(GL_TEXTURE0)
-        light.shadow_texture._bind()
-        glDrawBuffer(GL_NONE)
-        glReadBuffer(GL_NONE)
+    # def _configure_shadow_mapping_viewport(self, light, flags):
+    #     self._configure_shadow_framebuffer()
+    #     glBindFramebuffer(GL_FRAMEBUFFER, self._shadow_fb)
+    #     light.shadow_texture._bind()
+    #     light.shadow_texture._bind_as_depth_attachment()
+    #     glActiveTexture(GL_TEXTURE0)
+    #     light.shadow_texture._bind()
+    #     glDrawBuffer(GL_NONE)
+    #     glReadBuffer(GL_NONE)
 
-        glClear(GL_DEPTH_BUFFER_BIT)
-        glViewport(0, 0, SHADOW_TEX_SZ, SHADOW_TEX_SZ)
-        glEnable(GL_DEPTH_TEST)
-        glDepthMask(GL_TRUE)
-        glDepthFunc(GL_LESS)
-        glDepthRange(0.0, 1.0)
-        glDisable(GL_CULL_FACE)
-        glDisable(GL_BLEND)
+    #     glClear(GL_DEPTH_BUFFER_BIT)
+    #     glViewport(0, 0, SHADOW_TEX_SZ, SHADOW_TEX_SZ)
+    #     glEnable(GL_DEPTH_TEST)
+    #     glDepthMask(GL_TRUE)
+    #     glDepthFunc(GL_LESS)
+    #     glDepthRange(0.0, 1.0)
+    #     glDisable(GL_CULL_FACE)
+    #     glDisable(GL_BLEND)
 
     ###########################################################################
     # Framebuffer Management
