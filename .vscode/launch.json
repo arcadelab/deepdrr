@@ -89,7 +89,8 @@
             "cwd": "${workspaceFolder}/examples",
             "env": {
                 "PYTHONPATH": "${workspaceFolder}"
-            }
+            },
+            
         },
     ]
 }

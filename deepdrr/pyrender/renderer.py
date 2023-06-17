@@ -58,6 +58,8 @@ class Renderer(object):
         self._shadow_fb = None
         self._latest_znear = DEFAULT_Z_NEAR
         self._latest_zfar = DEFAULT_Z_FAR
+        self.g_dualDepthTexId = None
+        self.g_dualPeelingSingleFboId = None
 
         # Shader Program Cache
         self._program_cache = ShaderProgramCache()
@@ -321,7 +323,7 @@ class Renderer(object):
 
     ###########################################################################
     # Rendering passes
-    ###########################################################################
+    #########################################F##################################
 
     def _forward_pass(self, scene, flags, seg_node_map=None, drr_mode=DRRMode.NONE, zfar=0):
         # Set up viewport for render
@@ -334,9 +336,12 @@ class Renderer(object):
         #         seg_node_map = {}
         # else:
         #     glClearColor(*scene.bg_color)
-        glClearColor(zfar,zfar,zfar,0)
+        glClearColor(-zfar, -zfar, -zfar, -zfar)
+        # glClearColor(0, 0, 0, 0);
 
 
+        # glClear(GL_COLOR_BUFFER_BIT) # TODO
+        # glClear(GL_DEPTH_BUFFER_BIT) # TODO
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT)
 
         # if not bool(flags & RenderFlags.SEG):
@@ -582,19 +587,25 @@ class Renderer(object):
             #     glBlendFunc(GL_ONE, GL_ONE)
             #     # glBlendFunc(GL_ONE, GL_ZERO)
 
-            if drr_mode in [DRRMode.FRONTDIST, DRRMode.BACKDIST]:
-                glEnable(GL_BLEND)
-                # glBlendEquation(GL_FUNC_ADD)
-                # glBlendEquation(GL_MAX)
-                # glBlendEquation(GL_MIN)
-                # glBlendFunc(GL_ONE, GL_ONE)
-                # glBlendFunc(GL_ONE, GL_ONE)
-                glBlendEquationSeparate(GL_MIN, GL_MAX);
-                glBlendFuncSeparate(GL_ONE, GL_ZERO, GL_ONE, GL_ZERO);
-                # glBlendFuncSeparate(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA, GL_ONE, GL_ZERO);
-            else:
-                glEnable(GL_BLEND)
-                glBlendFunc(GL_ONE, GL_ONE)
+            # if drr_mode in [DRRMode.FRONTDIST, DRRMode.BACKDIST]:
+            #     glEnable(GL_BLEND)
+            #     # glBlendEquation(GL_FUNC_ADD)
+            #     # glBlendEquation(GL_MAX)
+            #     # glBlendEquation(GL_MIN)
+            #     # glBlendFunc(GL_ONE, GL_ONE)
+            #     # glBlendFunc(GL_ONE, GL_ONE)
+            #     glBlendEquationSeparate(GL_MIN, GL_MAX);
+            #     glBlendFuncSeparate(GL_ONE, GL_ZERO, GL_ONE, GL_ZERO);
+            #     # glBlendFuncSeparate(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA, GL_ONE, GL_ZERO);
+            # else:
+            #     glEnable(GL_BLEND)
+            #     glBlendFunc(GL_ONE, GL_ONE)
+            glDisable(GL_BLEND)
+            # glEnable(GL_BLEND)
+            glBlendEquation(GL_MAX)
+            glBlendFunc(GL_ONE, GL_ONE)
+            
+
 
             # # Set wireframe mode
             # wf = material.wireframe
@@ -936,17 +947,21 @@ class Renderer(object):
         defines = {}
 
 
-        if drr_mode == DRRMode.NONE:
-            raise ValueError('TODO')
-        elif drr_mode == DRRMode.ERROR:
-            vertex_shader = 'error.vert'
-            fragment_shader = 'error.frag'
-        elif drr_mode == DRRMode.DENSITY:
-            vertex_shader = 'density.vert'
-            fragment_shader = 'density.frag'
-        elif drr_mode in [DRRMode.FRONTDIST, DRRMode.BACKDIST]:
-            vertex_shader = 'front.vert'
-            fragment_shader = 'front.frag'
+        # if drr_mode == DRRMode.NONE:
+        #     raise ValueError('TODO')
+        # elif drr_mode == DRRMode.ERROR:
+        #     vertex_shader = 'error.vert'
+        #     fragment_shader = 'error.frag'
+        # elif drr_mode == DRRMode.DENSITY:
+        #     vertex_shader = 'density.vert'
+        #     fragment_shader = 'density.frag'
+        # elif drr_mode in [DRRMode.FRONTDIST, DRRMode.BACKDIST]:
+        # vertex_shader = 'front.vert'
+        # fragment_shader = 'front.frag'
+        vertex_shader = 'segmentation.vert'
+        fragment_shader = 'segmentation.frag'
+        # vertex_shader = 'dual_peeling_init_vertex.glsl'
+        # fragment_shader = 'dual_peeling_init_fragment.glsl'
         # if (bool(program_flags & ProgramFlags.USE_MATERIAL) and
         #         not flags & RenderFlags.DEPTH_ONLY and
         #         not flags & RenderFlags.FLAT and
@@ -1056,11 +1071,14 @@ class Renderer(object):
     def _configure_forward_pass_viewport(self, flags, drr_mode=DRRMode.NONE):
 
         # If using offscreen render, bind main framebuffer
-        if flags & RenderFlags.OFFSCREEN:
-            self._configure_main_framebuffer()
-            glBindFramebuffer(GL_DRAW_FRAMEBUFFER, self._main_fb_ms)
-        else:
-            glBindFramebuffer(GL_DRAW_FRAMEBUFFER, 0)
+        # if flags & RenderFlags.OFFSCREEN:
+        self._configure_main_framebuffer()
+        #     glBindFramebuffer(GL_DRAW_FRAMEBUFFER, self._main_fb_ms)
+        # else:
+        #     glBindFramebuffer(GL_DRAW_FRAMEBUFFER, 0)
+        print(f"{self.g_dualPeelingSingleFboId=}")
+        glBindFramebuffer(GL_FRAMEBUFFER, self.g_dualPeelingSingleFboId)
+        glDrawBuffer(GL_COLOR_ATTACHMENT0)
 
         glViewport(0, 0, self.viewport_width, self.viewport_height)
         # glEnable(GL_DEPTH_TEST)
@@ -1118,6 +1136,25 @@ class Renderer(object):
 
         # If framebuffer doesn't exist, create it
         if self._main_fb is None:
+            self.g_dualDepthTexId = glGenTextures(2)
+            self.g_dualPeelingSingleFboId = glGenFramebuffers(1)
+
+            for i in range(2):
+                glBindTexture(GL_TEXTURE_RECTANGLE, self.g_dualDepthTexId[i])
+                glTexParameteri(GL_TEXTURE_RECTANGLE, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE)
+                glTexParameteri(GL_TEXTURE_RECTANGLE, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE)
+                glTexParameteri(GL_TEXTURE_RECTANGLE, GL_TEXTURE_MIN_FILTER, GL_NEAREST)
+                glTexParameteri(GL_TEXTURE_RECTANGLE, GL_TEXTURE_MAG_FILTER, GL_NEAREST)
+                glTexImage2D(GL_TEXTURE_RECTANGLE, 0, GL_RG32F, self.viewport_width, self.viewport_height, 0, GL_RGB, GL_FLOAT, 0)
+
+
+            glBindFramebuffer(GL_FRAMEBUFFER, self.g_dualPeelingSingleFboId)
+            # glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_RECTANGLE, self.g_dualDepthTexId[0], 0)
+            # glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT1, GL_TEXTURE_RECTANGLE, self.g_dualDepthTexId[1], 0)
+            glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_RECTANGLE, self.g_dualDepthTexId[0], 0)
+            glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT1, GL_TEXTURE_RECTANGLE, self.g_dualDepthTexId[1], 0)
+
+
             # Generate standard buffer
             self._main_cb, self._main_db = glGenRenderbuffers(2)
 
@@ -1176,6 +1213,12 @@ class Renderer(object):
             glDeleteRenderbuffers(2, [self._main_cb, self._main_cb_ms])
         if self._main_db is not None:
             glDeleteRenderbuffers(2, [self._main_db, self._main_db_ms])
+        if self.g_dualDepthTexId is not None:
+            glDeleteTextures(2, self.g_dualDepthTexId)
+            self.g_dualDepthTexId = None # TODO: needed?
+        if self.g_dualPeelingSingleFboId is not None:
+            glDeleteFramebuffers(1, self.g_dualPeelingSingleFboId)
+            self.g_dualPeelingSingleFboId = None #TODO: needed?
 
         self._main_fb = None
         self._main_cb = None
@@ -1201,53 +1244,63 @@ class Renderer(object):
         )
         glBindFramebuffer(GL_READ_FRAMEBUFFER, self._main_fb)
 
-        # Read depth
-        depth_buf = glReadPixels(
-            0, 0, width, height, GL_DEPTH_COMPONENT, GL_FLOAT
+        glBindFramebuffer(GL_READ_FRAMEBUFFER, self.g_dualPeelingSingleFboId)
+        glReadBuffer(GL_COLOR_ATTACHMENT0)
+
+        # # Read depth
+        # depth_buf = glReadPixels(
+        #     0, 0, width, height, GL_DEPTH_COMPONENT, GL_FLOAT
+        # )
+        # depth_im = np.frombuffer(depth_buf, dtype=np.float32)
+        # depth_im = depth_im.reshape((height, width))
+        # depth_im = np.flip(depth_im, axis=0)
+        # inf_inds = (depth_im == 1.0)
+        # depth_im = 2.0 * depth_im - 1.0
+        # z_near = scene.main_camera_node.camera.znear
+        # z_far = scene.main_camera_node.camera.zfar
+        # noninf = np.logical_not(inf_inds)
+        # if z_far is None:
+        #     depth_im[noninf] = 2 * z_near / (1.0 - depth_im[noninf])
+        # else:
+        #     depth_im[noninf] = ((2.0 * z_near * z_far) /
+        #                         (z_far + z_near - depth_im[noninf] *
+        #                         (z_far - z_near)))
+        # depth_im[inf_inds] = 0.0
+
+        # # Resize for macos if needed
+        # if sys.platform == 'darwin':
+        #     depth_im = self._resize_image(depth_im)
+
+        # if flags & RenderFlags.DEPTH_ONLY:
+        #     return depth_im
+
+        # # Read color
+        # if flags & RenderFlags.RGBA:
+        #     color_buf = glReadPixels(
+        #         0, 0, width, height, GL_RGBA, GL_FLOAT
+        #     )
+        #     color_im = np.frombuffer(color_buf, dtype=np.float32)
+        #     color_im = color_im.reshape((height, width, 4))
+        # else:
+        #     color_buf = glReadPixels(
+        #         0, 0, width, height, GL_RGB, GL_FLOAT
+        #     )
+        #     color_im = np.frombuffer(color_buf, dtype=np.float32)
+        #     color_im = color_im.reshape((height, width, 3))
+        # color_im = np.flip(color_im, axis=0)
+
+        # # Resize for macos if needed
+        # if sys.platform == 'darwin':
+        #     color_im = self._resize_image(color_im, True)
+
+        color_buf = glReadPixels(
+            0, 0, width, height, GL_RGB, GL_FLOAT
         )
-        depth_im = np.frombuffer(depth_buf, dtype=np.float32)
-        depth_im = depth_im.reshape((height, width))
-        depth_im = np.flip(depth_im, axis=0)
-        inf_inds = (depth_im == 1.0)
-        depth_im = 2.0 * depth_im - 1.0
-        z_near = scene.main_camera_node.camera.znear
-        z_far = scene.main_camera_node.camera.zfar
-        noninf = np.logical_not(inf_inds)
-        if z_far is None:
-            depth_im[noninf] = 2 * z_near / (1.0 - depth_im[noninf])
-        else:
-            depth_im[noninf] = ((2.0 * z_near * z_far) /
-                                (z_far + z_near - depth_im[noninf] *
-                                (z_far - z_near)))
-        depth_im[inf_inds] = 0.0
+        color_im = np.frombuffer(color_buf, dtype=np.float32)
+        color_im = color_im.reshape((height, width, 3))
 
-        # Resize for macos if needed
-        if sys.platform == 'darwin':
-            depth_im = self._resize_image(depth_im)
-
-        if flags & RenderFlags.DEPTH_ONLY:
-            return depth_im
-
-        # Read color
-        if flags & RenderFlags.RGBA:
-            color_buf = glReadPixels(
-                0, 0, width, height, GL_RGBA, GL_FLOAT
-            )
-            color_im = np.frombuffer(color_buf, dtype=np.float32)
-            color_im = color_im.reshape((height, width, 4))
-        else:
-            color_buf = glReadPixels(
-                0, 0, width, height, GL_RGB, GL_FLOAT
-            )
-            color_im = np.frombuffer(color_buf, dtype=np.float32)
-            color_im = color_im.reshape((height, width, 3))
-        color_im = np.flip(color_im, axis=0)
-
-        # Resize for macos if needed
-        if sys.platform == 'darwin':
-            color_im = self._resize_image(color_im, True)
-
-        return color_im, depth_im
+        return color_im, color_im
+        # return color_im, depth_im
 
     def _resize_image(self, value, antialias=False):
         """If needed, rescale the render for MacOS."""

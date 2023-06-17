@@ -103,22 +103,28 @@ r.delete()
 # color[color < 0] = 0
 # color = np.abs(color)
 
+color = color[:,:,0]
+
+
 print(f"{color.shape=} {color.dtype=}")
 
 print(f"{np.amin(color)=} {np.amax(color)=}")
 print(f"{np.unique(color, return_counts=True)=}")
 
-print(f"{depth.shape=} {depth.dtype=}")
+# print(f"{depth.shape=} {depth.dtype=}")
 
-print(f"{np.amin(depth)=} {np.amax(depth)=}")
-print(f"{np.unique(depth, return_counts=True)=}")
+# print(f"{np.amin(depth)=} {np.amax(depth)=}")
+# print(f"{np.unique(depth, return_counts=True)=}")
 
 # save to file
 import cv2
 # remapped = np.interp(color[:,:,::-1], (1, 5), (0, 255)).astype(np.uint8)
-front = color[:,:,:3]
-back = color[:,:,3]
+# front = color[:,:,0]
+front = color
+# back = color[:,:,3]
 remapped = np.interp(front, (np.amin(front), np.amax(front)), (0, 255)).astype(np.uint8)
-remapped_depth = np.interp(back, (np.amin(back), np.amax(back)), (0, 255)).astype(np.uint8)
-cv2.imwrite('duck.png', remapped)
-cv2.imwrite('duck_depth.png', remapped_depth)
+# remapped_depth = np.interp(back, (np.amin(back), np.amax(back)), (0, 255)).astype(np.uint8)
+cv2.imwrite('asdfsa.png', remapped)
+# cv2.imwrite('asdfsa_depth.png', remapped_depth)
+
+print("done")
