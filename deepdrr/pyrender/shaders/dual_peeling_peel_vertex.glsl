@@ -1,16 +1,18 @@
-//--------------------------------------------------------------------------------------
-// Order Independent Transparency with Dual Depth Peeling
-//
-// Author: Louis Bavoil
-// Email: sdkfeedback@nvidia.com
-//
-// Copyright (c) NVIDIA Corporation. All rights reserved.
-//--------------------------------------------------------------------------------------
+#version 330 core
+layout(location = 0) in vec3 position;
+layout(location = INST_M_LOC) in mat4 inst_m;
 
-vec3 ShadeVertex();
+uniform mat4 P;
+uniform mat4 V;
+uniform mat4 M;
 
-void main(void)
+out vec3 frag_position;
+
+
+void main()
 {
-	gl_Position = ftransform();
-	gl_TexCoord[0].xyz = ShadeVertex();
+    mat4 light_matrix = P * V;
+    gl_Position = light_matrix * M * inst_m * vec4(position, 1.0);
+    frag_position = vec3(M * inst_m * vec4(position, 1.0));
 }
+

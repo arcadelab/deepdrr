@@ -79,15 +79,15 @@ def render():
     
     # color[error_mask] = 0
 
-    color, depth = r.render(scene, drr_mode=DRRMode.BACKDIST, flags=RenderFlags.RGBA, zfar=zfar)
+    color, depth, dfsa = r.render(scene, drr_mode=DRRMode.BACKDIST, flags=RenderFlags.RGBA, zfar=zfar)
     # color, depth = r.render(scene, drr_mode=DRRMode.FRONTDIST)
 
 
 
-    return color, depth
+    return color, depth, dfsa
 
 
-color, depth = render()
+color, depth, dfsa = render()
 
 
 # N=1000
@@ -118,24 +118,35 @@ r.delete()
 # save to file
 import cv2
 # remapped = np.interp(color[:,:,::-1], (1, 5), (0, 255)).astype(np.uint8)
-front = color[:,:,0]
-back = color[:,:,1]
+# front = color[:,:,0]
+# back = color[:,:,1]
 
-print(f"{front.shape=} {front.dtype=}")
+# print(f"{front.shape=} {front.dtype=}")
 
-print(f"{np.amin(front)=} {np.amax(front)=}")
-print(f"{np.unique(front, return_counts=True)=}")
+# print(f"{np.amin(front)=} {np.amax(front)=}")
+# print(f"{np.unique(front, return_counts=True)=}")
 
 
-print(f"{back.shape=} {back.dtype=}")
+# print(f"{back.shape=} {back.dtype=}")
 
-print(f"{np.amin(back)=} {np.amax(back)=}")
-print(f"{np.unique(back, return_counts=True)=}")
+# print(f"{np.amin(back)=} {np.amax(back)=}")
+# print(f"{np.unique(back, return_counts=True)=}")
 
-remapped = np.interp(front, (np.amin(front[front>-zfar+.001]), np.amax(front)), (0, 255)).astype(np.uint8)
-remapped_depth = np.interp(back, (np.amin(front[front>-zfar+.001]), np.amax(back)), (0, 255)).astype(np.uint8)
-# remapped_depth = np.interp(back, (np.amin(back), np.amax(back)), (0, 255)).astype(np.uint8)
-cv2.imwrite('asdfsa.png', remapped)
-cv2.imwrite('asdfsa_depth.png', remapped_depth)
+# remapped = np.interp(front, (np.amin(front[front>-zfar+.001]), np.amax(front)), (0, 255)).astype(np.uint8)
+# remapped_depth = np.interp(back, (np.amin(front[front>-zfar+.001]), np.amax(back)), (0, 255)).astype(np.uint8)
+# # remapped_depth = np.interp(back, (np.amin(back), np.amax(back)), (0, 255)).astype(np.uint8)
+# cv2.imwrite('asdfsa.png', remapped)
+# cv2.imwrite('asdfsa_depth.png', remapped_depth)
 
-print("done")
+# print("done")
+
+ims = [color[:,:,0], color[:,:,1], depth[:,:,0], depth[:,:,1], dfsa[:,:,0], dfsa[:,:,1]]
+for i, im in enumerate(ims):
+    print(f"")
+    print(f"{i=}")
+    print(f"{im.shape=} {im.dtype=}")
+    print(f"{np.amin(im)=} {np.amax(im)=}")
+    print(f"{np.unique(im, return_counts=True)=}")
+
+    remapped = np.interp(im, (np.amin(im[im>-zfar+.001]), np.amax(im)), (0, 255)).astype(np.uint8)
+    cv2.imwrite(f'asdfsa{i}.png', remapped)

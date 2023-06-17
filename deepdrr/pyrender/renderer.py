@@ -143,8 +143,12 @@ class Renderer(object):
         #         if take_pass:
         #             self._shadow_mapping_pass(scene, ln, flags)
 
+        # print(f"{int(GL_MAX_COLOR_ATTACHMENTS)=}")
+
         # Make forward pass
-        retval = self._forward_pass(scene, flags, seg_node_map=seg_node_map, drr_mode=drr_mode, zfar=zfar)
+        retval = self._forward_pass(scene, flags, seg_node_map=seg_node_map, drr_mode=drr_mode, zfar=zfar, peelnum=0)
+        retval = self._forward_pass(scene, flags, seg_node_map=seg_node_map, drr_mode=drr_mode, zfar=zfar, peelnum=1)
+        retval = self._forward_pass(scene, flags, seg_node_map=seg_node_map, drr_mode=drr_mode, zfar=zfar, peelnum=2)
 
         # # If necessary, make normals pass
         # if flags & (RenderFlags.VERTEX_NORMALS | RenderFlags.FACE_NORMALS):
@@ -325,9 +329,9 @@ class Renderer(object):
     # Rendering passes
     ###########################################################################
 
-    def _forward_pass(self, scene, flags, seg_node_map=None, drr_mode=DRRMode.NONE, zfar=0):
+    def _forward_pass(self, scene, flags, seg_node_map=None, drr_mode=DRRMode.NONE, zfar=0, peelnum=0):
         # Set up viewport for render
-        self._configure_forward_pass_viewport(flags, drr_mode=drr_mode)
+        self._configure_forward_pass_viewport(flags, drr_mode=drr_mode, peelnum=peelnum)
 
         # Clear it
         # if bool(flags & RenderFlags.SEG):
@@ -377,7 +381,7 @@ class Renderer(object):
 
                 # First, get and bind the appropriate program
                 program = self._get_primitive_program(
-                    primitive, flags, ProgramFlags.USE_MATERIAL, drr_mode=drr_mode
+                    primitive, flags, ProgramFlags.USE_MATERIAL, drr_mode=drr_mode, peelnum=peelnum
                 )
                 program._bind()
 
@@ -401,7 +405,9 @@ class Renderer(object):
                     pose=scene.get_pose(node),
                     program=program,
                     flags=flags,
-                    drr_mode=drr_mode
+                    drr_mode=drr_mode,
+                    zfar=zfar,
+                    peelnum=peelnum
                 )
                 self._reset_active_textures()
 
@@ -520,7 +526,7 @@ class Renderer(object):
     # Handlers for binding uniforms and drawing primitives
     ###########################################################################
 
-    def _bind_and_draw_primitive(self, primitive, pose, program, flags, drr_mode=DRRMode.NONE):
+    def _bind_and_draw_primitive(self, primitive, pose, program, flags, drr_mode=DRRMode.NONE, zfar=3, peelnum=0):
         # Set model pose matrix
         program.set_uniform('M', pose)
 
@@ -575,6 +581,17 @@ class Renderer(object):
                                     material.specularFactor)
                 program.set_uniform(b.format('glossiness_factor'),
                                     material.glossinessFactor)
+            
+
+            if peelnum > 0:
+                glActiveTexture(GL_TEXTURE0 + 0)
+                glBindTexture(GL_TEXTURE_RECTANGLE, self.g_dualDepthTexId[peelnum-1])
+                # setTextureUnit("DepthBlenderTex", 0)
+                program.set_uniform('DepthBlenderTex', 0)
+                program.set_uniform('MaxDepth', float(zfar))
+
+                glActiveTexture(GL_TEXTURE0)
+
 
             # # Set blending options
             # if material.alphaMode == 'BLEND':
@@ -940,7 +957,7 @@ class Renderer(object):
 
         return max_n_lights
 
-    def _get_primitive_program(self, primitive, flags, program_flags, drr_mode=DRRMode.NONE):
+    def _get_primitive_program(self, primitive, flags, program_flags, drr_mode=DRRMode.NONE, peelnum=0):
         vertex_shader = None
         fragment_shader = None
         geometry_shader = None
@@ -960,8 +977,12 @@ class Renderer(object):
         # fragment_shader = 'front.frag'
         # vertex_shader = 'segmentation.vert'
         # fragment_shader = 'segmentation.frag'
-        vertex_shader = 'dual_peeling_init_vertex.glsl'
-        fragment_shader = 'dual_peeling_init_fragment.glsl'
+        if peelnum == 0:
+            vertex_shader = 'dual_peeling_init_vertex.glsl'
+            fragment_shader = 'dual_peeling_init_fragment.glsl'
+        else:
+            vertex_shader = 'dual_peeling_peel_vertex.glsl'
+            fragment_shader = 'dual_peeling_peel_fragment.glsl'
         # if (bool(program_flags & ProgramFlags.USE_MATERIAL) and
         #         not flags & RenderFlags.DEPTH_ONLY and
         #         not flags & RenderFlags.FLAT and
@@ -1068,7 +1089,7 @@ class Renderer(object):
     # Viewport Management
     ###########################################################################
 
-    def _configure_forward_pass_viewport(self, flags, drr_mode=DRRMode.NONE):
+    def _configure_forward_pass_viewport(self, flags, drr_mode=DRRMode.NONE, peelnum=0):
 
         # If using offscreen render, bind main framebuffer
         # if flags & RenderFlags.OFFSCREEN:
@@ -1076,9 +1097,20 @@ class Renderer(object):
         #     glBindFramebuffer(GL_DRAW_FRAMEBUFFER, self._main_fb_ms)
         # else:
         #     glBindFramebuffer(GL_DRAW_FRAMEBUFFER, 0)
-        print(f"{self.g_dualPeelingSingleFboId=}")
         glBindFramebuffer(GL_FRAMEBUFFER, self.g_dualPeelingSingleFboId)
-        glDrawBuffer(GL_COLOR_ATTACHMENT0)
+
+        attach_array = [
+            GL_COLOR_ATTACHMENT0,
+            GL_COLOR_ATTACHMENT1,
+            GL_COLOR_ATTACHMENT2,
+            GL_COLOR_ATTACHMENT3,
+            GL_COLOR_ATTACHMENT4,
+            GL_COLOR_ATTACHMENT5,
+            GL_COLOR_ATTACHMENT6,
+            GL_COLOR_ATTACHMENT7,
+        ]
+
+        glDrawBuffer(attach_array[peelnum])
 
         glViewport(0, 0, self.viewport_width, self.viewport_height)
         # glEnable(GL_DEPTH_TEST)
@@ -1136,10 +1168,10 @@ class Renderer(object):
 
         # If framebuffer doesn't exist, create it
         if self._main_fb is None:
-            self.g_dualDepthTexId = glGenTextures(2)
+            self.g_dualDepthTexId = glGenTextures(4)
             self.g_dualPeelingSingleFboId = glGenFramebuffers(1)
 
-            for i in range(2):
+            for i in range(4):
                 glBindTexture(GL_TEXTURE_RECTANGLE, self.g_dualDepthTexId[i])
                 glTexParameteri(GL_TEXTURE_RECTANGLE, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE)
                 glTexParameteri(GL_TEXTURE_RECTANGLE, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE)
@@ -1153,6 +1185,8 @@ class Renderer(object):
             # glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT1, GL_TEXTURE_RECTANGLE, self.g_dualDepthTexId[1], 0)
             glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_RECTANGLE, self.g_dualDepthTexId[0], 0)
             glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT1, GL_TEXTURE_RECTANGLE, self.g_dualDepthTexId[1], 0)
+            glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT2, GL_TEXTURE_RECTANGLE, self.g_dualDepthTexId[2], 0)
+            glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT3, GL_TEXTURE_RECTANGLE, self.g_dualDepthTexId[3], 0)
 
 
             # Generate standard buffer
@@ -1245,7 +1279,6 @@ class Renderer(object):
         glBindFramebuffer(GL_READ_FRAMEBUFFER, self._main_fb)
 
         glBindFramebuffer(GL_READ_FRAMEBUFFER, self.g_dualPeelingSingleFboId)
-        glReadBuffer(GL_COLOR_ATTACHMENT0)
 
         # # Read depth
         # depth_buf = glReadPixels(
@@ -1293,13 +1326,31 @@ class Renderer(object):
         # if sys.platform == 'darwin':
         #     color_im = self._resize_image(color_im, True)
 
+        glReadBuffer(GL_COLOR_ATTACHMENT0)
+
         color_buf = glReadPixels(
             0, 0, width, height, GL_RGB, GL_FLOAT
         )
         color_im = np.frombuffer(color_buf, dtype=np.float32)
         color_im = color_im.reshape((height, width, 3))
 
-        return color_im, color_im
+        glReadBuffer(GL_COLOR_ATTACHMENT1)
+
+        color_buf = glReadPixels(
+            0, 0, width, height, GL_RGB, GL_FLOAT
+        )
+        color_im2 = np.frombuffer(color_buf, dtype=np.float32)
+        color_im2 = color_im2.reshape((height, width, 3))
+
+        glReadBuffer(GL_COLOR_ATTACHMENT2)
+
+        color_buf = glReadPixels(
+            0, 0, width, height, GL_RGB, GL_FLOAT
+        )
+        color_im3 = np.frombuffer(color_buf, dtype=np.float32)
+        color_im3 = color_im3.reshape((height, width, 3))
+
+        return color_im, color_im2, color_im3
         # return color_im, depth_im
 
     def _resize_image(self, value, antialias=False):
@@ -1317,123 +1368,123 @@ class Renderer(object):
     # Shadowmap Debugging
     ###########################################################################
 
-    def _forward_pass_no_reset(self, scene, flags):
-        # Set up camera matrices
-        V, P = self._get_camera_matrices(scene)
+    # def _forward_pass_no_reset(self, scene, flags):
+    #     # Set up camera matrices
+    #     V, P = self._get_camera_matrices(scene)
 
-        # Now, render each object in sorted order
-        for node in self._sorted_mesh_nodes(scene):
-            mesh = node.mesh
+    #     # Now, render each object in sorted order
+    #     for node in self._sorted_mesh_nodes(scene):
+    #         mesh = node.mesh
 
-            # Skip the mesh if it's not visible
-            if not mesh.is_visible:
-                continue
+    #         # Skip the mesh if it's not visible
+    #         if not mesh.is_visible:
+    #             continue
 
-            for primitive in mesh.primitives:
+    #         for primitive in mesh.primitives:
 
-                # First, get and bind the appropriate program
-                program = self._get_primitive_program(
-                    primitive, flags, ProgramFlags.USE_MATERIAL
-                )
-                program._bind()
+    #             # First, get and bind the appropriate program
+    #             program = self._get_primitive_program(
+    #                 primitive, flags, ProgramFlags.USE_MATERIAL
+    #             )
+    #             program._bind()
 
-                # Set the camera uniforms
-                program.set_uniform('V', V)
-                program.set_uniform('P', P)
-                program.set_uniform(
-                    'cam_pos', scene.get_pose(scene.main_camera_node)[:3,3]
-                )
+    #             # Set the camera uniforms
+    #             program.set_uniform('V', V)
+    #             program.set_uniform('P', P)
+    #             program.set_uniform(
+    #                 'cam_pos', scene.get_pose(scene.main_camera_node)[:3,3]
+    #             )
 
-                # Next, bind the lighting
-                if not flags & RenderFlags.DEPTH_ONLY and not flags & RenderFlags.FLAT:
-                    self._bind_lighting(scene, program, node, flags)
+    #             # Next, bind the lighting
+    #             if not flags & RenderFlags.DEPTH_ONLY and not flags & RenderFlags.FLAT:
+    #                 self._bind_lighting(scene, program, node, flags)
 
-                # Finally, bind and draw the primitive
-                self._bind_and_draw_primitive(
-                    primitive=primitive,
-                    pose=scene.get_pose(node),
-                    program=program,
-                    flags=flags
-                )
-                self._reset_active_textures()
+    #             # Finally, bind and draw the primitive
+    #             self._bind_and_draw_primitive(
+    #                 primitive=primitive,
+    #                 pose=scene.get_pose(node),
+    #                 program=program,
+    #                 flags=flags
+    #             )
+    #             self._reset_active_textures()
 
-        # Unbind the shader and flush the output
-        if program is not None:
-            program._unbind()
-        glFlush()
+    #     # Unbind the shader and flush the output
+    #     if program is not None:
+    #         program._unbind()
+    #     glFlush()
 
-    def _render_light_shadowmaps(self, scene, light_nodes, flags, tile=False):
-        glBindFramebuffer(GL_DRAW_FRAMEBUFFER, 0)
-        glClearColor(*scene.bg_color)
-        glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT)
-        glEnable(GL_DEPTH_TEST)
-        glDepthMask(GL_TRUE)
-        glDepthFunc(GL_LESS)
-        glDepthRange(0.0, 1.0)
+    # def _render_light_shadowmaps(self, scene, light_nodes, flags, tile=False):
+    #     glBindFramebuffer(GL_DRAW_FRAMEBUFFER, 0)
+    #     glClearColor(*scene.bg_color)
+    #     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT)
+    #     glEnable(GL_DEPTH_TEST)
+    #     glDepthMask(GL_TRUE)
+    #     glDepthFunc(GL_LESS)
+    #     glDepthRange(0.0, 1.0)
 
-        w = self.viewport_width
-        h = self.viewport_height
+    #     w = self.viewport_width
+    #     h = self.viewport_height
 
-        num_nodes = len(light_nodes)
-        viewport_dims = {
-            (0, 2): [0, h // 2, w // 2, h],
-            (1, 2): [w // 2, h // 2, w, h],
-            (0, 3): [0, h // 2, w // 2, h],
-            (1, 3): [w // 2, h // 2, w, h],
-            (2, 3): [0, 0, w // 2, h // 2],
-            (0, 4): [0, h // 2, w // 2, h],
-            (1, 4): [w // 2, h // 2, w, h],
-            (2, 4): [0, 0, w // 2, h // 2],
-            (3, 4): [w // 2, 0, w, h // 2]
-        }
+    #     num_nodes = len(light_nodes)
+    #     viewport_dims = {
+    #         (0, 2): [0, h // 2, w // 2, h],
+    #         (1, 2): [w // 2, h // 2, w, h],
+    #         (0, 3): [0, h // 2, w // 2, h],
+    #         (1, 3): [w // 2, h // 2, w, h],
+    #         (2, 3): [0, 0, w // 2, h // 2],
+    #         (0, 4): [0, h // 2, w // 2, h],
+    #         (1, 4): [w // 2, h // 2, w, h],
+    #         (2, 4): [0, 0, w // 2, h // 2],
+    #         (3, 4): [w // 2, 0, w, h // 2]
+    #     }
 
-        if tile:
-            for i, ln in enumerate(light_nodes):
-                light = ln.light
+    #     if tile:
+    #         for i, ln in enumerate(light_nodes):
+    #             light = ln.light
 
-                if light.shadow_texture is None:
-                    raise ValueError('Light does not have a shadow texture')
+    #             if light.shadow_texture is None:
+    #                 raise ValueError('Light does not have a shadow texture')
 
-                glViewport(*viewport_dims[(i, num_nodes + 1)])
+    #             glViewport(*viewport_dims[(i, num_nodes + 1)])
 
-                program = self._get_debug_quad_program()
-                program._bind()
-                self._bind_texture(light.shadow_texture, 'depthMap', program)
-                self._render_debug_quad()
-                self._reset_active_textures()
-                glFlush()
-            i += 1
-            glViewport(*viewport_dims[(i, num_nodes + 1)])
-            self._forward_pass_no_reset(scene, flags)
-        else:
-            for i, ln in enumerate(light_nodes):
-                light = ln.light
+    #             program = self._get_debug_quad_program()
+    #             program._bind()
+    #             self._bind_texture(light.shadow_texture, 'depthMap', program)
+    #             self._render_debug_quad()
+    #             self._reset_active_textures()
+    #             glFlush()
+    #         i += 1
+    #         glViewport(*viewport_dims[(i, num_nodes + 1)])
+    #         self._forward_pass_no_reset(scene, flags)
+    #     else:
+    #         for i, ln in enumerate(light_nodes):
+    #             light = ln.light
 
-                if light.shadow_texture is None:
-                    raise ValueError('Light does not have a shadow texture')
+    #             if light.shadow_texture is None:
+    #                 raise ValueError('Light does not have a shadow texture')
 
-                glViewport(0, 0, self.viewport_width, self.viewport_height)
+    #             glViewport(0, 0, self.viewport_width, self.viewport_height)
 
-                program = self._get_debug_quad_program()
-                program._bind()
-                self._bind_texture(light.shadow_texture, 'depthMap', program)
-                self._render_debug_quad()
-                self._reset_active_textures()
-                glFlush()
-                return
+    #             program = self._get_debug_quad_program()
+    #             program._bind()
+    #             self._bind_texture(light.shadow_texture, 'depthMap', program)
+    #             self._render_debug_quad()
+    #             self._reset_active_textures()
+    #             glFlush()
+    #             return
 
-    def _get_debug_quad_program(self):
-        program = self._program_cache.get_program(
-            vertex_shader='debug_quad.vert',
-            fragment_shader='debug_quad.frag'
-        )
-        if not program._in_context():
-            program._add_to_context()
-        return program
+    # def _get_debug_quad_program(self):
+    #     program = self._program_cache.get_program(
+    #         vertex_shader='debug_quad.vert',
+    #         fragment_shader='debug_quad.frag'
+    #     )
+    #     if not program._in_context():
+    #         program._add_to_context()
+    #     return program
 
-    def _render_debug_quad(self):
-        x = glGenVertexArrays(1)
-        glBindVertexArray(x)
-        glDrawArrays(GL_TRIANGLES, 0, 6)
-        glBindVertexArray(0)
-        glDeleteVertexArrays(1, [x])
+    # def _render_debug_quad(self):
+    #     x = glGenVertexArrays(1)
+    #     glBindVertexArray(x)
+    #     glDrawArrays(GL_TRIANGLES, 0, 6)
+    #     glBindVertexArray(0)
+    #     glDeleteVertexArrays(1, [x])
