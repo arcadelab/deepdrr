@@ -4,7 +4,7 @@
 // Component 1: Ray-surface intersection geometry tests
 //-----------------------------------------------------------
 #define EPSILON TOLERANCE
-#define MAX_INTERSECTIONS 32
+#define MAX_INTERSECTIONS 32 // TODO: parameter
 MOLLER_DOUBLE_PRECISION_DIRECTIVE
 
 using namespace std;

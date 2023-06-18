@@ -213,6 +213,7 @@ class Projector(object):
         source_to_detector_distance: float = -1,
         carm: Optional[Device] = None,
         max_mesh_depth = 32
+        # max_mesh_depth = 16
     ) -> None:
         """Create the projector, which has info for simulating the DRR.
 
@@ -317,7 +318,17 @@ class Projector(object):
         self.intensity_upper_bound = intensity_upper_bound
         # TODO (mjudish): handle intensity_upper_bound when [collected_energy is True]
         # Might want to disallow using intensity_upper_bound, due to nonsensicalness
+
+
         self.max_mesh_depth = max_mesh_depth
+        if self.max_mesh_depth != 32:
+            raise ValueError("max_mesh_depth must be 32") # TODO: remove this restriction
+        # if self.max_mesh_depth % 2 != 0:
+        #     raise ValueError("max_mesh_depth must be even")
+        # if self.max_mesh_depth > 16:
+        #     raise ValueError("max_mesh_depth must be <= 16")
+        # if self.max_mesh_depth < 2:
+        #     raise ValueError("max_mesh_depth must be >= 2")
 
         assert len(self.volumes) > 0
 
@@ -641,19 +652,29 @@ class Projector(object):
                 def render():
                     rendered_layers = self.gl_renderer.render(self.scene, drr_mode=DRRMode.BACKDIST, flags=RenderFlags.RGBA, zfar=self.device.source_to_detector_distance)
 
-                    color = rendered_layers[0]
 
-                    front = -color[:,:,0]
-                    back = color[:,:,1]
-                    remapped = np.interp(front, (np.amin(front), np.amax(front)), (0, 255)).astype(np.uint8)
-                    remapped_depth = np.interp(back, (np.amin(back), np.amax(back)), (0, 255)).astype(np.uint8)
-                    cv2.imwrite('dfssdfa.png', remapped)
-                    cv2.imwrite('dfssdfa_back.png', remapped_depth)
 
-                    front = np.swapaxes(front, 0, 1)
-                    back = np.swapaxes(back, 0, 1)
+                    rendered_layers = [[-layer[:,:,0], layer[:,:,1]] for layer in rendered_layers]
+                    # rendered_layers = [x for y in rendered_layers for x in y]
+                    rendered_layers = [x[0] for x in rendered_layers] + [x[1] for x in rendered_layers]
+                    rendered_layers = [np.swapaxes(x, 0, 1) for x in rendered_layers]
 
-                    return front, back
+                    return rendered_layers
+
+                    # color = rendered_layers[0]
+
+                    # front = -color[:,:,0]
+                    # back = color[:,:,1]
+
+                    # # # remapped = np.interp(front, (np.amin(front), np.amax(front)), (0, 255)).astype(np.uint8)
+                    # # # remapped_depth = np.interp(back, (np.amin(back), np.amax(back)), (0, 255)).astype(np.uint8)
+                    # # # cv2.imwrite('dfssdfa.png', remapped)
+                    # # # cv2.imwrite('dfssdfa_back.png', remapped_depth)
+
+                    # front = np.swapaxes(front, 0, 1)
+                    # back = np.swapaxes(back, 0, 1)
+
+                    # return front, back
 
                     # return color, depth
 
@@ -661,7 +682,7 @@ class Projector(object):
                 #     color, depth = render()
                 #     return color[:,:,0], depth
 
-                front, back = render()
+                rendered_layers = render()
 
                 mesh_perf_end = time.perf_counter()
                 print(f"render: {mesh_perf_end - mesh_perf_start}")
@@ -672,12 +693,20 @@ class Projector(object):
                 # cuda.memcpy_htod(self.additive_densities, color.astype(np.float32))
 
                 prim_hit_alphas = np.zeros((num_rays, self.max_mesh_depth), dtype=np.float32)
-                prim_hit_alphas[:,0] = front.flatten()
-                prim_hit_alphas[:,1] = back.flatten()
+                # prim_hit_alphas[:,0] = rendered_layers[0].flatten()
+                # prim_hit_alphas[:,1] = rendered_layers[1].flatten()
+                # for i in range(2):
+                len_rendered = len(rendered_layers)
+                for i in range(len_rendered):
+                    prim_hit_alphas[:,i] = rendered_layers[i].flatten()
 
                 prim_hit_facing = np.zeros((num_rays, self.max_mesh_depth), dtype=np.int8)
-                prim_hit_facing[:,0] = np.ones(num_rays, dtype=np.int8)
-                prim_hit_facing[:,1] = -np.ones(num_rays, dtype=np.int8) #TODO: might need to reverse
+                # prim_hit_facing[:,0] = np.ones(num_rays, dtype=np.int8)
+                # prim_hit_facing[:,1] = -np.ones(num_rays, dtype=np.int8) #TODO: might need to reverse
+                for i in range(len_rendered // 2):
+                    prim_hit_facing[:,i] = np.ones(num_rays, dtype=np.int8)
+                for i in range(len_rendered // 2, len_rendered):
+                    prim_hit_facing[:,i] = -np.ones(num_rays, dtype=np.int8)
 
                 mesh_hit_counts_ptr = int(self.mesh_hit_counts_gpu) + mesh_i * num_rays * NUMBYTES_INT32
                 mesh_hit_alphas_ptr = int(self.mesh_hit_alphas_gpu) + mesh_i * num_rays * self.max_mesh_depth * NUMBYTES_FLOAT32
