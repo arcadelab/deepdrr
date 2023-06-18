@@ -19,6 +19,18 @@ from .utils import format_color_vector
 from OpenGL.GL import *
 
 
+GL_COLOR_ATTACHMENT_LIST = [
+    GL_COLOR_ATTACHMENT0,
+    GL_COLOR_ATTACHMENT1,
+    GL_COLOR_ATTACHMENT2,
+    GL_COLOR_ATTACHMENT3,
+    GL_COLOR_ATTACHMENT4,
+    GL_COLOR_ATTACHMENT5,
+    GL_COLOR_ATTACHMENT6,
+    GL_COLOR_ATTACHMENT7,
+]
+
+
 class Renderer(object):
     """Class for handling all rendering operations on a scene.
 
@@ -37,7 +49,7 @@ class Renderer(object):
         Size of points in pixels. Defaults to 1.0.
     """
 
-    def __init__(self, viewport_width, viewport_height, point_size=1.0):
+    def __init__(self, viewport_width, viewport_height, point_size=1.0, max_dual_peel_layers=8):
         self.dpscale = 1
         # Scaling needed on retina displays
         if sys.platform == 'darwin':
@@ -46,6 +58,7 @@ class Renderer(object):
         self.viewport_width = viewport_width
         self.viewport_height = viewport_height
         self.point_size = point_size
+        self.max_dual_peel_layers = max_dual_peel_layers
 
         # Optional framebuffer for offscreen renders
         self._main_fb = None
@@ -146,9 +159,11 @@ class Renderer(object):
         # print(f"{int(GL_MAX_COLOR_ATTACHMENTS)=}")
 
         # Make forward pass
-        retval = self._forward_pass(scene, flags, seg_node_map=seg_node_map, drr_mode=drr_mode, zfar=zfar, peelnum=0)
-        retval = self._forward_pass(scene, flags, seg_node_map=seg_node_map, drr_mode=drr_mode, zfar=zfar, peelnum=1)
-        retval = self._forward_pass(scene, flags, seg_node_map=seg_node_map, drr_mode=drr_mode, zfar=zfar, peelnum=2)
+        # retval = self._forward_pass(scene, flags, seg_node_map=seg_node_map, drr_mode=drr_mode, zfar=zfar, peelnum=0)
+        # retval = self._forward_pass(scene, flags, seg_node_map=seg_node_map, drr_mode=drr_mode, zfar=zfar, peelnum=1)
+        # retval = self._forward_pass(scene, flags, seg_node_map=seg_node_map, drr_mode=drr_mode, zfar=zfar, peelnum=2)
+        for i in range(self.max_dual_peel_layers):
+            retval = self._forward_pass(scene, flags, seg_node_map=seg_node_map, drr_mode=drr_mode, zfar=zfar, peelnum=i)
 
         # # If necessary, make normals pass
         # if flags & (RenderFlags.VERTEX_NORMALS | RenderFlags.FACE_NORMALS):
@@ -414,14 +429,18 @@ class Renderer(object):
         # Unbind the shader and flush the output
         if program is not None:
             program._unbind()
-        glFlush()
+        # glFlush() # TODO: I don't think this is needed for offscreen
 
-        # If doing offscreen render, copy result from framebuffer and return
-        if flags & RenderFlags.OFFSCREEN:
+        if peelnum == self.max_dual_peel_layers-1:
             return self._read_main_framebuffer(scene, flags)
-        else:
-            raise ValueError('TODO')
-            return
+
+        # # If doing offscreen render, copy result from framebuffer and return
+        # if flags & RenderFlags.OFFSCREEN:
+        #     return self._read_main_framebuffer(scene, flags)
+        # else:
+        #     raise ValueError('TODO')
+        #     glFlush() # Maybe?
+        #     return
 
     # def _shadow_mapping_pass(self, scene, light_node, flags):
     #     light = light_node.light
@@ -1099,18 +1118,7 @@ class Renderer(object):
         #     glBindFramebuffer(GL_DRAW_FRAMEBUFFER, 0)
         glBindFramebuffer(GL_FRAMEBUFFER, self.g_dualPeelingSingleFboId)
 
-        attach_array = [
-            GL_COLOR_ATTACHMENT0,
-            GL_COLOR_ATTACHMENT1,
-            GL_COLOR_ATTACHMENT2,
-            GL_COLOR_ATTACHMENT3,
-            GL_COLOR_ATTACHMENT4,
-            GL_COLOR_ATTACHMENT5,
-            GL_COLOR_ATTACHMENT6,
-            GL_COLOR_ATTACHMENT7,
-        ]
-
-        glDrawBuffer(attach_array[peelnum])
+        glDrawBuffer(GL_COLOR_ATTACHMENT_LIST[peelnum])
 
         glViewport(0, 0, self.viewport_width, self.viewport_height)
         # glEnable(GL_DEPTH_TEST)
@@ -1168,10 +1176,10 @@ class Renderer(object):
 
         # If framebuffer doesn't exist, create it
         if self._main_fb is None:
-            self.g_dualDepthTexId = glGenTextures(4)
+            self.g_dualDepthTexId = glGenTextures(self.max_dual_peel_layers)
             self.g_dualPeelingSingleFboId = glGenFramebuffers(1)
 
-            for i in range(4):
+            for i in range(self.max_dual_peel_layers):
                 glBindTexture(GL_TEXTURE_RECTANGLE, self.g_dualDepthTexId[i])
                 glTexParameteri(GL_TEXTURE_RECTANGLE, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE)
                 glTexParameteri(GL_TEXTURE_RECTANGLE, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE)
@@ -1181,13 +1189,8 @@ class Renderer(object):
 
 
             glBindFramebuffer(GL_FRAMEBUFFER, self.g_dualPeelingSingleFboId)
-            # glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_RECTANGLE, self.g_dualDepthTexId[0], 0)
-            # glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT1, GL_TEXTURE_RECTANGLE, self.g_dualDepthTexId[1], 0)
-            glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_RECTANGLE, self.g_dualDepthTexId[0], 0)
-            glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT1, GL_TEXTURE_RECTANGLE, self.g_dualDepthTexId[1], 0)
-            glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT2, GL_TEXTURE_RECTANGLE, self.g_dualDepthTexId[2], 0)
-            glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT3, GL_TEXTURE_RECTANGLE, self.g_dualDepthTexId[3], 0)
-
+            for i in range(self.max_dual_peel_layers):
+                glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT_LIST[i], GL_TEXTURE_RECTANGLE, self.g_dualDepthTexId[i], 0)
 
             # Generate standard buffer
             self._main_cb, self._main_db = glGenRenderbuffers(2)
@@ -1326,32 +1329,21 @@ class Renderer(object):
         # if sys.platform == 'darwin':
         #     color_im = self._resize_image(color_im, True)
 
-        glReadBuffer(GL_COLOR_ATTACHMENT0)
+        ims = []
 
-        color_buf = glReadPixels(
-            0, 0, width, height, GL_RGB, GL_FLOAT
-        )
-        color_im = np.frombuffer(color_buf, dtype=np.float32)
-        color_im = color_im.reshape((height, width, 3))
+        for i in range(self.max_dual_peel_layers):
 
-        glReadBuffer(GL_COLOR_ATTACHMENT1)
+            glReadBuffer(GL_COLOR_ATTACHMENT_LIST[i])
 
-        color_buf = glReadPixels(
-            0, 0, width, height, GL_RGB, GL_FLOAT
-        )
-        color_im2 = np.frombuffer(color_buf, dtype=np.float32)
-        color_im2 = color_im2.reshape((height, width, 3))
+            color_buf = glReadPixels(
+                0, 0, width, height, GL_RGB, GL_FLOAT
+            )
+            color_im = np.frombuffer(color_buf, dtype=np.float32)
+            color_im = color_im.reshape((height, width, 3))
+            color_im = np.flip(color_im, axis=0)
+            ims.append(color_im)
 
-        glReadBuffer(GL_COLOR_ATTACHMENT2)
-
-        color_buf = glReadPixels(
-            0, 0, width, height, GL_RGB, GL_FLOAT
-        )
-        color_im3 = np.frombuffer(color_buf, dtype=np.float32)
-        color_im3 = color_im3.reshape((height, width, 3))
-
-        return color_im, color_im2, color_im3
-        # return color_im, depth_im
+        return ims
 
     def _resize_image(self, value, antialias=False):
         """If needed, rescale the render for MacOS."""

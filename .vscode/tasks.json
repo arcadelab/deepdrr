@@ -1,0 +1,13 @@
+{
+    "version": "2.0.0",
+    "tasks": [{
+        "label": "echotest",
+        "command": "python", // Could be any other shell command
+        "args": ["duck.py"],
+        "type": "shell",
+        // cd to examples
+        "options": {
+            "cwd": "${workspaceFolder}/examples"
+        },
+    }]
+}

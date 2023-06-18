@@ -57,7 +57,7 @@ randval = random.uniform(-1, 1)
 
 cam_pose = np.array([
     [1.0, 0.0, 0.0, 0.0],
-    [0.0, 1.0, 0.0, 0.0],
+    [0.0, 1.0, 0.0, randval],
     [0.0, 0.0, -1.0, -2.0],
     [0.0, 0.0, 0.0, 1.0]
 ])
@@ -66,7 +66,8 @@ scene.add(cam, pose=cam_pose)
 
 r = pyrender.OffscreenRenderer(viewport_width=640,
                                 viewport_height=480,
-                                point_size=1.0)
+                                point_size=1.0,
+                                max_dual_peel_layers=8)
 zfar = 10
 def render():
     # color, depth = r.render(scene, drr_mode=DRRMode.ERROR)
@@ -79,15 +80,15 @@ def render():
     
     # color[error_mask] = 0
 
-    color, depth, dfsa = r.render(scene, drr_mode=DRRMode.BACKDIST, flags=RenderFlags.RGBA, zfar=zfar)
+    ims = r.render(scene, drr_mode=DRRMode.BACKDIST, flags=RenderFlags.RGBA, zfar=zfar)
     # color, depth = r.render(scene, drr_mode=DRRMode.FRONTDIST)
 
 
 
-    return color, depth, dfsa
+    return ims
 
 
-color, depth, dfsa = render()
+ims = render()
 
 
 # N=1000
@@ -140,7 +141,8 @@ import cv2
 
 # print("done")
 
-ims = [color[:,:,0], color[:,:,1], depth[:,:,0], depth[:,:,1], dfsa[:,:,0], dfsa[:,:,1]]
+# ims = [color[:,:,0], color[:,:,1], depth[:,:,0], depth[:,:,1], dfsa[:,:,0], dfsa[:,:,1]]
+ims = [x for im in ims for x in [im[:,:,0], im[:,:,1]] ]
 for i, im in enumerate(ims):
     print(f"")
     print(f"{i=}")
@@ -148,5 +150,8 @@ for i, im in enumerate(ims):
     print(f"{np.amin(im)=} {np.amax(im)=}")
     print(f"{np.unique(im, return_counts=True)=}")
 
-    remapped = np.interp(im, (np.amin(im[im>-zfar+.001]), np.amax(im)), (0, 255)).astype(np.uint8)
+    above_zfar = im[im>-zfar+.001]
+    if len(above_zfar) == 0:
+        above_zfar = im
+    remapped = np.interp(im, (np.amin(above_zfar), np.amax(im)), (0, 255)).astype(np.uint8)
     cv2.imwrite(f'asdfsa{i}.png', remapped)
