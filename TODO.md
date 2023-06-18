@@ -1,3 +1,9 @@
+# TODO
+- Return peeling array up to 8
+- Support multi material
+- Support more than 8 peels
+- Zero copy buffers to cuda
+
 # Questions
 - Scatter?
 - Worth having a high-density mode, renders much faster, to handle nearly all cases?
