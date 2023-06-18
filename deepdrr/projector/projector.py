@@ -639,28 +639,16 @@ class Projector(object):
             # for mesh_i, _mesh in enumerate(self.primitives):
 
                 def render():
-                    color, depth = self.gl_renderer.render(self.scene, drr_mode=DRRMode.BACKDIST, flags=RenderFlags.RGBA, zfar=self.device.source_to_detector_distance)
+                    rendered_layers = self.gl_renderer.render(self.scene, drr_mode=DRRMode.BACKDIST, flags=RenderFlags.RGBA, zfar=self.device.source_to_detector_distance)
 
+                    color = rendered_layers[0]
 
-                     # print(f"{color.shape=} {color.dtype=}")
-
-                    # print(f"{np.amin(color)=} {np.amax(color)=}")
-                    # print(f"{np.unique(color, return_counts=True)=}")
-
-                    # print(f"{depth.shape=} {depth.dtype=}")
-
-                    # print(f"{np.amin(depth)=} {np.amax(depth)=}")
-                    # print(f"{np.unique(depth, return_counts=True)=}")
-
-                    # # save to file
-                    # import cv2
-                    # # remapped = np.interp(color[:,:,::-1], (1, 5), (0, 255)).astype(np.uint8)
-                    front = color[:,:,0]
-                    back = color[:,:,3]
-                    # remapped = np.interp(front, (np.amin(front), np.amax(front)), (0, 255)).astype(np.uint8)
-                    # remapped_depth = np.interp(back, (np.amin(back), np.amax(back)), (0, 255)).astype(np.uint8)
-                    # cv2.imwrite('duck.png', remapped)
-                    # cv2.imwrite('duck_depth.png', remapped_depth)
+                    front = -color[:,:,0]
+                    back = color[:,:,1]
+                    remapped = np.interp(front, (np.amin(front), np.amax(front)), (0, 255)).astype(np.uint8)
+                    remapped_depth = np.interp(back, (np.amin(back), np.amax(back)), (0, 255)).astype(np.uint8)
+                    cv2.imwrite('dfssdfa.png', remapped)
+                    cv2.imwrite('dfssdfa_back.png', remapped_depth)
 
                     front = np.swapaxes(front, 0, 1)
                     back = np.swapaxes(back, 0, 1)
