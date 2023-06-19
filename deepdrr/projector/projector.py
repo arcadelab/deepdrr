@@ -49,18 +49,28 @@ from ..pycuda_ray_surface.pycuda_ray_surface_intersect import PyCudaRSI, RSISurf
 
 log = logging.getLogger(__name__)
 
-try:
-    import pycuda.autoprimaryctx
+# try:
+from ..pyrender.platforms import egl
+device_id = int(os.environ.get('EGL_DEVICE_ID', '0'))
+egl_device = egl.get_device_by_index(device_id)
+_platform = egl.EGLPlatform(246,
+                                    246,
+                                    device=egl_device)
+_platform.init_context()
+_platform.make_current()
+    # self._renderer = Renderer(self.viewport_width, self.viewport_height, max_dual_peel_layers=self.max_dual_peel_layers)
+import pycuda.autoprimaryctx
 
-    # import pycuda.autoinit # causes problems when running with pytorch concurrently
-    import pycuda.driver as cuda
-    from pycuda.autoinit import context # TODO: only this works on my machine
-    # from pycuda.autoprimaryctx import context  # retains context across multiple calls
-    from pycuda.compiler import SourceModule
-except ImportError:
-    log.warning(f"Running without pycuda: projector operations will fail.")
-except RuntimeError as e:
-    log.warning(f"Running without pycuda, possibly in subprocess: {e}")
+# import pycuda.autoinit # causes problems when running with pytorch concurrently
+import pycuda.driver as cuda
+# from pycuda.autoinit import context # TODO: only this works on my machine
+from pycuda.gl.autoinit import context # TODO: only this works on my machine
+# from pycuda.autoprimaryctx import context  # retains context across multiple calls
+from pycuda.compiler import SourceModule
+# except ImportError:
+#     log.warning(f"Running without pycuda: projector operations will fail.")
+# except RuntimeError as e:
+#     log.warning(f"Running without pycuda, possibly in subprocess: {e}")
 
 
 def import_pycuda():
