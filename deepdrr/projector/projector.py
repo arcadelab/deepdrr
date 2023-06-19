@@ -646,69 +646,67 @@ class Projector(object):
             print(f"init arrays: {mesh_perf_end - mesh_perf_start}")
             mesh_perf_start = mesh_perf_end
 
-            for mesh_i, _mesh in enumerate(self.primitives[:1]):
+            # for mesh_i, _mesh in enumerate(self.primitives[:1]):
             # for mesh_i, _mesh in enumerate(self.primitives):
 
-                rendered_layers = self.gl_renderer.render(self.scene, drr_mode=DRRMode.BACKDIST, flags=RenderFlags.RGBA, zfar=self.device.source_to_detector_distance)
+            rendered_layers = self.gl_renderer.render(self.scene, drr_mode=DRRMode.BACKDIST, flags=RenderFlags.RGBA, zfar=self.device.source_to_detector_distance)
 
-                rendered_layers = [[-layer[:,:,0], layer[:,:,1]] for layer in rendered_layers]
-                rendered_layers = [x[0] for x in rendered_layers] + [x[1] for x in rendered_layers]
-                rendered_layers = [np.swapaxes(x, 0, 1) for x in rendered_layers]
-                
-                rendered_layers = render()
+            rendered_layers = [[-layer[:,:,0], layer[:,:,1]] for layer in rendered_layers]
+            rendered_layers = [x[0] for x in rendered_layers] + [x[1] for x in rendered_layers]
+            rendered_layers = [np.swapaxes(x, 0, 1) for x in rendered_layers]
+            
+            mesh_perf_end = time.perf_counter()
+            print(f"render: {mesh_perf_end - mesh_perf_start}")
+            mesh_perf_start = mesh_perf_end
 
-                mesh_perf_end = time.perf_counter()
-                print(f"render: {mesh_perf_end - mesh_perf_start}")
-                mesh_perf_start = mesh_perf_end
+            # cuda.memcpy_htod(self.additive_densities, color.astype(np.float32))
 
-                # cuda.memcpy_htod(self.additive_densities, color.astype(np.float32))
+            prim_hit_alphas = np.zeros((num_rays, self.max_mesh_depth), dtype=np.float32)
+            len_rendered = len(rendered_layers)
+            for i in range(len_rendered):
+                prim_hit_alphas[:,i] = rendered_layers[i].flatten()
 
-                prim_hit_alphas = np.zeros((num_rays, self.max_mesh_depth), dtype=np.float32)
-                len_rendered = len(rendered_layers)
-                for i in range(len_rendered):
-                    prim_hit_alphas[:,i] = rendered_layers[i].flatten()
+            prim_hit_facing = np.zeros((num_rays, self.max_mesh_depth), dtype=np.int8)
+            # prim_hit_facing[:,0] = np.ones(num_rays, dtype=np.int8)
+            # prim_hit_facing[:,1] = -np.ones(num_rays, dtype=np.int8) #TODO: might need to reverse
+            for i in range(len_rendered // 2):
+                prim_hit_facing[:,i] = np.ones(num_rays, dtype=np.int8)
+            for i in range(len_rendered // 2, len_rendered):
+                prim_hit_facing[:,i] = -np.ones(num_rays, dtype=np.int8)
 
-                prim_hit_facing = np.zeros((num_rays, self.max_mesh_depth), dtype=np.int8)
-                # prim_hit_facing[:,0] = np.ones(num_rays, dtype=np.int8)
-                # prim_hit_facing[:,1] = -np.ones(num_rays, dtype=np.int8) #TODO: might need to reverse
-                for i in range(len_rendered // 2):
-                    prim_hit_facing[:,i] = np.ones(num_rays, dtype=np.int8)
-                for i in range(len_rendered // 2, len_rendered):
-                    prim_hit_facing[:,i] = -np.ones(num_rays, dtype=np.int8)
+            # mesh_hit_counts_ptr = int() + mesh_i * num_rays * NUMBYTES_INT32
+            # mesh_hit_alphas_ptr = int() + mesh_i * num_rays * self.max_mesh_depth * NUMBYTES_FLOAT32
+            # mesh_hit_facing_ptr = int() + mesh_i * num_rays * self.max_mesh_depth * NUMBYTES_INT8
 
-                mesh_hit_counts_ptr = int(self.mesh_hit_counts_gpu) + mesh_i * num_rays * NUMBYTES_INT32
-                mesh_hit_alphas_ptr = int(self.mesh_hit_alphas_gpu) + mesh_i * num_rays * self.max_mesh_depth * NUMBYTES_FLOAT32
-                mesh_hit_facing_ptr = int(self.mesh_hit_facing_gpu) + mesh_i * num_rays * self.max_mesh_depth * NUMBYTES_INT8
+            cuda.memcpy_htod(self.mesh_hit_counts_gpu, np.zeros(num_rays, dtype=np.int32))
+            cuda.memcpy_htod(self.mesh_hit_alphas_gpu, prim_hit_alphas)
+            cuda.memcpy_htod(self.mesh_hit_facing_gpu, prim_hit_facing)
 
-                cuda.memcpy_htod(mesh_hit_counts_ptr, np.zeros(num_rays, dtype=np.int32))
-                cuda.memcpy_htod(mesh_hit_alphas_ptr, prim_hit_alphas)
-                cuda.memcpy_htod(mesh_hit_facing_ptr, prim_hit_facing)
-
-                mesh_perf_end = time.perf_counter()
-                print(f"transfer: {mesh_perf_end - mesh_perf_start}")
-                mesh_perf_start = mesh_perf_end
+            mesh_perf_end = time.perf_counter()
+            print(f"transfer: {mesh_perf_end - mesh_perf_start}")
+            mesh_perf_start = mesh_perf_end
 
 
-                self.grid_xLambda = 16
-                self.block_dims = (self.rsi_manager.block_x,1,1)
-                self.grid_lambda = (self.grid_xLambda,1)
+            self.grid_xLambda = 16
+            self.block_dims = (self.rsi_manager.block_x,1,1)
+            self.grid_lambda = (self.grid_xLambda,1)
 
-                self.rsi_manager.kernel_tide(
-                    np.uint64(mesh_hit_counts_ptr),
-                    np.uint64(mesh_hit_alphas_ptr),
-                    np.uint64(mesh_hit_facing_ptr),
-                    np.int32(self.n_rays), 
-                    np.float32(self.device.source_to_detector_distance),
-                    block=(int(self.rsi_manager.block_x/2),1,1),  # TODO ??
-                    # block=self.block_dims,  # TODO ??
-                    grid=self.grid_lambda
-                )
+            self.rsi_manager.kernel_tide(
+                np.uint64(self.mesh_hit_counts_gpu),
+                np.uint64(self.mesh_hit_alphas_gpu),
+                np.uint64(self.mesh_hit_facing_gpu),
+                np.int32(self.n_rays), 
+                np.float32(self.device.source_to_detector_distance),
+                block=(int(self.rsi_manager.block_x/2),1,1),  # TODO ??
+                # block=self.block_dims,  # TODO ??
+                grid=self.grid_lambda
+            )
 
-                context.synchronize()
+            context.synchronize()
 
-                mesh_perf_end = time.perf_counter()
-                print(f"tide: {mesh_perf_end - mesh_perf_start}")
-                mesh_perf_start = mesh_perf_end
+            mesh_perf_end = time.perf_counter()
+            print(f"tide: {mesh_perf_end - mesh_perf_start}")
+            mesh_perf_start = mesh_perf_end
 
 
 
