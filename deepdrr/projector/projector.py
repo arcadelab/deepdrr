@@ -649,15 +649,12 @@ class Projector(object):
             for mesh_i, _mesh in enumerate(self.primitives[:1]):
             # for mesh_i, _mesh in enumerate(self.primitives):
 
-                def render():
-                    rendered_layers = self.gl_renderer.render(self.scene, drr_mode=DRRMode.BACKDIST, flags=RenderFlags.RGBA, zfar=self.device.source_to_detector_distance)
+                rendered_layers = self.gl_renderer.render(self.scene, drr_mode=DRRMode.BACKDIST, flags=RenderFlags.RGBA, zfar=self.device.source_to_detector_distance)
 
-                    rendered_layers = [[-layer[:,:,0], layer[:,:,1]] for layer in rendered_layers]
-                    rendered_layers = [x[0] for x in rendered_layers] + [x[1] for x in rendered_layers]
-                    rendered_layers = [np.swapaxes(x, 0, 1) for x in rendered_layers]
-
-                    return rendered_layers
-
+                rendered_layers = [[-layer[:,:,0], layer[:,:,1]] for layer in rendered_layers]
+                rendered_layers = [x[0] for x in rendered_layers] + [x[1] for x in rendered_layers]
+                rendered_layers = [np.swapaxes(x, 0, 1) for x in rendered_layers]
+                
                 rendered_layers = render()
 
                 mesh_perf_end = time.perf_counter()
