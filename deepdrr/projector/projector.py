@@ -1289,7 +1289,7 @@ class Projector(object):
         self.prim_meshes = []
         self.prim_meshes_by_mat = defaultdict(list)
         for prim in self.primitives:
-            mesh = Mesh([Primitive(positions=prim.compute_vertices().copy(), indices=prim.triangles(flip_winding_order=False).copy())])
+            mesh = Mesh([Primitive(positions=prim.compute_vertices().copy(), indices=prim.triangles(flip_winding_order=False).copy(), density=prim.density)])
             node = self.scene.add(mesh)
             self.prim_nodes.append(node)
             self.prim_meshes_by_mat[prim.material].append(mesh)

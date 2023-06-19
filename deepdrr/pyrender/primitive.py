@@ -67,7 +67,8 @@ class Primitive(object):
                  material=None,
                  mode=None,
                  targets=None,
-                 poses=None):
+                 poses=None,
+                 density=1):
 
         if mode is None:
             mode = GLTF.TRIANGLES
@@ -85,6 +86,7 @@ class Primitive(object):
         self.mode = mode
         self.targets = targets
         self.poses = poses
+        self.density = density
 
         self._bounds = None
         self._vaid = None

@@ -103,6 +103,8 @@ uniform int n_spot_lights;
 uniform vec3 cam_pos;
 uniform vec3 ambient_light;
 
+uniform float density;
+
 #ifdef USE_IBL
 uniform samplerCube diffuse_env;
 uniform samplerCube specular_env;
@@ -445,7 +447,7 @@ void main()
 
     // frag_color = clamp(vec4(pow(color.xyz, vec3(1.0/2.2)), color.a * base_color.a), 0.0, 1.0);
     float mult = gl_FrontFacing ? -1 : 1;
-    frag_color = vec4(length(frag_position-cam_pos)*mult,mult,0,0);
+    frag_color = vec4(length(frag_position-cam_pos)*mult*density,mult,0,0);
     // frag_color = vec4(mult,0,0,1);
     // frag_color = vec4(gl_FrontFacing ? 0 : 1,0,0,1);
     // cam_pos

@@ -648,6 +648,7 @@ class Renderer(object):
                 glBlendEquation(GL_MAX)
                 glBlendFunc(GL_ONE, GL_ONE)
             else:
+                program.set_uniform('density', float(primitive.density))
                 glEnable(GL_BLEND)
                 glBlendEquation(GL_FUNC_ADD)
                 glBlendFunc(GL_ONE, GL_ONE)
