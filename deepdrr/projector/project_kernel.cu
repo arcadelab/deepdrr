@@ -2638,22 +2638,22 @@ __global__ void projectKernel(
     area_density[m] *= step;
   }
 
-#if NUM_MESHES > 0
-  // Render meshes exact (without depth pixellation)
-  for (int i = 0; i < NUM_MESHES; i++) {
-    int local_mesh_hit_index = 0;
-    int hit_arr_index = 0;
-    while (true) {
-      hit_arr_index = i*(out_height*out_width)*max_mesh_depth+img_dx*max_mesh_depth+local_mesh_hit_index;
-      if (!(
-        local_mesh_hit_index < max_mesh_depth &&
-          mesh_hit_facing[hit_arr_index] != 0
-      )) break;
-      area_density[mesh_materials[i]] += mesh_densities[i] * mesh_hit_alphas[hit_arr_index] * -mesh_hit_facing[hit_arr_index];
-      local_mesh_hit_index += 1;
-    }
-  }
-#endif
+// #if NUM_MESHES > 0
+//   // Render meshes exact (without depth pixellation)
+//   for (int i = 0; i < NUM_MESHES; i++) {
+//     int local_mesh_hit_index = 0;
+//     int hit_arr_index = 0;
+//     while (true) {
+//       hit_arr_index = i*(out_height*out_width)*max_mesh_depth+img_dx*max_mesh_depth+local_mesh_hit_index;
+//       if (!(
+//         local_mesh_hit_index < max_mesh_depth &&
+//           mesh_hit_facing[hit_arr_index] != 0
+//       )) break;
+//       area_density[mesh_materials[i]] += mesh_densities[i] * mesh_hit_alphas[hit_arr_index] * -mesh_hit_facing[hit_arr_index];
+//       local_mesh_hit_index += 1;
+//     }
+//   }
+// #endif
   for (int i = 0; i < mesh_unique_material_count; i++) {
     area_density[mesh_unique_materials_gpu[i]] += additive_densities[vdx * out_width + udx];
     // area_density[mesh_unique_materials_gpu[i]] += additive_densities[i*(out_height*out_width)+img_dx];
