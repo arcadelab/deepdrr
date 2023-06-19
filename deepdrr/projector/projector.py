@@ -652,35 +652,11 @@ class Projector(object):
                 def render():
                     rendered_layers = self.gl_renderer.render(self.scene, drr_mode=DRRMode.BACKDIST, flags=RenderFlags.RGBA, zfar=self.device.source_to_detector_distance)
 
-
-
                     rendered_layers = [[-layer[:,:,0], layer[:,:,1]] for layer in rendered_layers]
-                    # rendered_layers = [x for y in rendered_layers for x in y]
                     rendered_layers = [x[0] for x in rendered_layers] + [x[1] for x in rendered_layers]
                     rendered_layers = [np.swapaxes(x, 0, 1) for x in rendered_layers]
 
                     return rendered_layers
-
-                    # color = rendered_layers[0]
-
-                    # front = -color[:,:,0]
-                    # back = color[:,:,1]
-
-                    # # # remapped = np.interp(front, (np.amin(front), np.amax(front)), (0, 255)).astype(np.uint8)
-                    # # # remapped_depth = np.interp(back, (np.amin(back), np.amax(back)), (0, 255)).astype(np.uint8)
-                    # # # cv2.imwrite('dfssdfa.png', remapped)
-                    # # # cv2.imwrite('dfssdfa_back.png', remapped_depth)
-
-                    # front = np.swapaxes(front, 0, 1)
-                    # back = np.swapaxes(back, 0, 1)
-
-                    # return front, back
-
-                    # return color, depth
-
-                # def stuff():
-                #     color, depth = render()
-                #     return color[:,:,0], depth
 
                 rendered_layers = render()
 
@@ -688,14 +664,9 @@ class Projector(object):
                 print(f"render: {mesh_perf_end - mesh_perf_start}")
                 mesh_perf_start = mesh_perf_end
 
-                
-
                 # cuda.memcpy_htod(self.additive_densities, color.astype(np.float32))
 
                 prim_hit_alphas = np.zeros((num_rays, self.max_mesh_depth), dtype=np.float32)
-                # prim_hit_alphas[:,0] = rendered_layers[0].flatten()
-                # prim_hit_alphas[:,1] = rendered_layers[1].flatten()
-                # for i in range(2):
                 len_rendered = len(rendered_layers)
                 for i in range(len_rendered):
                     prim_hit_alphas[:,i] = rendered_layers[i].flatten()
