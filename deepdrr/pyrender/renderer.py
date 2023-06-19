@@ -162,8 +162,11 @@ class Renderer(object):
         # retval = self._forward_pass(scene, flags, seg_node_map=seg_node_map, drr_mode=drr_mode, zfar=zfar, peelnum=0)
         # retval = self._forward_pass(scene, flags, seg_node_map=seg_node_map, drr_mode=drr_mode, zfar=zfar, peelnum=1)
         # retval = self._forward_pass(scene, flags, seg_node_map=seg_node_map, drr_mode=drr_mode, zfar=zfar, peelnum=2)
-        for i in range(self.max_dual_peel_layers):
-            retval = self._forward_pass(scene, flags, seg_node_map=seg_node_map, drr_mode=drr_mode, zfar=zfar, peelnum=i)
+        if drr_mode != DRRMode.DENSITY:
+            for i in range(self.max_dual_peel_layers):
+                retval = self._forward_pass(scene, flags, seg_node_map=seg_node_map, drr_mode=drr_mode, zfar=zfar, peelnum=i)
+        else:
+            retval = self._forward_pass(scene, flags, seg_node_map=seg_node_map, drr_mode=drr_mode, zfar=zfar, peelnum=0)
 
         # # If necessary, make normals pass
         # if flags & (RenderFlags.VERTEX_NORMALS | RenderFlags.FACE_NORMALS):
@@ -355,8 +358,10 @@ class Renderer(object):
         #         seg_node_map = {}
         # else:
         #     glClearColor(*scene.bg_color)
-        glClearColor(-zfar, -zfar, -zfar, -zfar)
-        # glClearColor(0, 0, 0, 0);
+        if drr_mode != DRRMode.DENSITY:
+            glClearColor(-zfar, -zfar, -zfar, -zfar)
+        else:
+            glClearColor(0, 0, 0, 0);
 
 
         # glClear(GL_COLOR_BUFFER_BIT) # TODO
@@ -431,8 +436,8 @@ class Renderer(object):
             program._unbind()
         # glFlush() # TODO: I don't think this is needed for offscreen
 
-        if peelnum == self.max_dual_peel_layers-1:
-            return self._read_main_framebuffer(scene, flags)
+        if peelnum == self.max_dual_peel_layers-1 or drr_mode == DRRMode.DENSITY:
+            return self._read_main_framebuffer(scene, flags, drr_mode=drr_mode)
 
         # # If doing offscreen render, copy result from framebuffer and return
         # if flags & RenderFlags.OFFSCREEN:
@@ -637,9 +642,15 @@ class Renderer(object):
             #     glEnable(GL_BLEND)
             #     glBlendFunc(GL_ONE, GL_ONE)
             # glDisable(GL_BLEND)
-            glEnable(GL_BLEND)
-            glBlendEquation(GL_MAX)
-            glBlendFunc(GL_ONE, GL_ONE)
+
+            if drr_mode != DRRMode.DENSITY:
+                glEnable(GL_BLEND)
+                glBlendEquation(GL_MAX)
+                glBlendFunc(GL_ONE, GL_ONE)
+            else:
+                glEnable(GL_BLEND)
+                glBlendEquation(GL_FUNC_ADD)
+                glBlendFunc(GL_ONE, GL_ONE)
             
 
 
@@ -996,12 +1007,16 @@ class Renderer(object):
         # fragment_shader = 'front.frag'
         # vertex_shader = 'segmentation.vert'
         # fragment_shader = 'segmentation.frag'
-        if peelnum == 0:
-            vertex_shader = 'dual_peeling_init_vertex.glsl'
-            fragment_shader = 'dual_peeling_init_fragment.glsl'
+        if drr_mode != DRRMode.DENSITY:
+            if peelnum == 0:
+                vertex_shader = 'dual_peeling_init_vertex.glsl'
+                fragment_shader = 'dual_peeling_init_fragment.glsl'
+            else:
+                vertex_shader = 'dual_peeling_peel_vertex.glsl'
+                fragment_shader = 'dual_peeling_peel_fragment.glsl'
         else:
-            vertex_shader = 'dual_peeling_peel_vertex.glsl'
-            fragment_shader = 'dual_peeling_peel_fragment.glsl'
+            vertex_shader = 'density.vert'
+            fragment_shader = 'density.frag'
         # if (bool(program_flags & ProgramFlags.USE_MATERIAL) and
         #         not flags & RenderFlags.DEPTH_ONLY and
         #         not flags & RenderFlags.FLAT and
@@ -1265,7 +1280,7 @@ class Renderer(object):
         self._main_db_ms = None
         self._main_fb_dims = (None, None)
 
-    def _read_main_framebuffer(self, scene, flags):
+    def _read_main_framebuffer(self, scene, flags, drr_mode=DRRMode.NONE):
         width, height = self._main_fb_dims[0], self._main_fb_dims[1]
 
         # Bind framebuffer and blit buffers
@@ -1331,7 +1346,11 @@ class Renderer(object):
 
         ims = []
 
-        for i in range(self.max_dual_peel_layers):
+        numbufs = self.max_dual_peel_layers
+        if drr_mode == DRRMode.DENSITY:
+            numbufs = 1
+
+        for i in range(numbufs):
 
             glReadBuffer(GL_COLOR_ATTACHMENT_LIST[i])
 

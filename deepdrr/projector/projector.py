@@ -10,6 +10,7 @@ import warnings
 os.environ['PYOPENGL_PLATFORM'] = 'egl' # TODO
 
 
+from collections import defaultdict
 import math
 from pyparsing import alphas
 import torch
@@ -646,8 +647,32 @@ class Projector(object):
             print(f"init arrays: {mesh_perf_end - mesh_perf_start}")
             mesh_perf_start = mesh_perf_end
 
+            for mesh in self.prim_meshes:
+                mesh.is_visible = False
+
+            self.additive_densities = np.zeros((len(self.mesh_unique_materials), self.n_rays), dtype=np.float32)
+
             # for mesh_i, _mesh in enumerate(self.primitives[:1]):
             # for mesh_i, _mesh in enumerate(self.primitives):
+            for i in range(len(self.prim_meshes_by_mat_list)):
+                meshes_to_show = self.prim_meshes_by_mat_list[i]
+                
+                for node in meshes_to_show:
+                    node.is_visible = True
+
+                rendered_layers = self.gl_renderer.render(self.scene, drr_mode=DRRMode.DENSITY, flags=RenderFlags.RGBA, zfar=self.device.source_to_detector_distance)
+                rendered_layers = [x for im in rendered_layers for x in [im[:,:,0], im[:,:,1]] ]
+                rendered_layers[0][rendered_layers[1]!=0] = 0 
+                self.additive_densities[i] = rendered_layers[0].flatten()
+                
+                for node in meshes_to_show:
+                    node.is_visible = False
+            
+            cuda.memcpy_htod(self.additive_densities_gpu, self.additive_densities)
+
+
+            for mesh in self.prim_meshes:
+                mesh.is_visible = True
 
             rendered_layers = self.gl_renderer.render(self.scene, drr_mode=DRRMode.BACKDIST, flags=RenderFlags.RGBA, zfar=self.device.source_to_detector_distance)
 
@@ -658,8 +683,6 @@ class Projector(object):
             mesh_perf_end = time.perf_counter()
             print(f"render: {mesh_perf_end - mesh_perf_start}")
             mesh_perf_start = mesh_perf_end
-
-            # cuda.memcpy_htod(self.additive_densities, color.astype(np.float32))
 
             prim_hit_alphas = np.zeros((num_rays, self.max_mesh_depth), dtype=np.float32)
             len_rendered = len(rendered_layers)
@@ -755,7 +778,7 @@ class Projector(object):
                 self.solid_angle_gpu,  # solid_angle
                 np.uint64(self.mesh_hit_alphas_gpu),
                 np.uint64(self.mesh_hit_facing_gpu),
-                np.uint64(self.additive_densities),
+                np.uint64(self.additive_densities_gpu),
                 np.uint64(self.mesh_unique_materials_gpu),
                 np.int32(len(self.mesh_unique_materials)),
                 np.int32(self.max_mesh_depth),
@@ -1261,7 +1284,19 @@ class Projector(object):
 
         self.scene = Scene(bg_color=[0.0, 0.0, 0.0])
 
-        self.prim_nodes = [self.scene.add(Mesh([Primitive(positions=prim.compute_vertices().copy(), indices=prim.triangles(flip_winding_order=False).copy())])) for prim in self.primitives]
+        # self.prim_nodes = [self.scene.add(Mesh([Primitive(positions=prim.compute_vertices().copy(), indices=prim.triangles(flip_winding_order=False).copy())])) for prim in self.primitives]
+        self.prim_nodes = []
+        self.prim_meshes = []
+        self.prim_meshes_by_mat = defaultdict(list)
+        for prim in self.primitives:
+            mesh = Mesh([Primitive(positions=prim.compute_vertices().copy(), indices=prim.triangles(flip_winding_order=False).copy())])
+            node = self.scene.add(mesh)
+            self.prim_nodes.append(node)
+            self.prim_meshes_by_mat[prim.material].append(mesh)
+            self.prim_meshes.append(mesh)
+
+        self.prim_meshes_by_mat_list = [self.prim_meshes_by_mat[mat] for mat in self.mesh_unique_materials]
+        
         # duckmesh = Mesh.from_trimesh(trimesh.load("./models/suzanne_stress.stl"))
         # self.scene.add(duckmesh)
 
@@ -1283,7 +1318,7 @@ class Projector(object):
 
         self.gl_renderer = OffscreenRenderer(viewport_width=width, viewport_height=height, point_size=1.0)
 
-        self.additive_densities = cuda.mem_alloc(len(self.mesh_unique_materials) * self.n_rays * NUMBYTES_FLOAT32)
+        self.additive_densities_gpu = cuda.mem_alloc(len(self.mesh_unique_materials) * self.n_rays * NUMBYTES_FLOAT32)
 
         # allocate volumes' priority level on the GPU
         self.priorities_gpu = cuda.mem_alloc(len(self.volumes) * NUMBYTES_INT32)
@@ -1830,7 +1865,7 @@ class Projector(object):
                 for seg in self.segmentations_gpu[vol_id]:
                     seg.free()
 
-            self.additive_densities.free()
+            self.additive_densities_gpu.free()
             self.mesh_unique_materials_gpu.free()
 
             self.priorities_gpu.free()
