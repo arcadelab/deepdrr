@@ -80,8 +80,8 @@ def render():
     
     # color[error_mask] = 0
 
-    ims = r.render(scene, drr_mode=DRRMode.DENSITY, flags=RenderFlags.RGBA, zfar=zfar)
-    # ims = r.render(scene, drr_mode=DRRMode.BACKDIST, flags=RenderFlags.RGBA, zfar=zfar)
+    # ims = r.render(scene, drr_mode=DRRMode.DENSITY, flags=RenderFlags.RGBA, zfar=zfar)
+    ims = r.render(scene, drr_mode=DRRMode.BACKDIST, flags=RenderFlags.RGBA, zfar=zfar)
     # color, depth = r.render(scene, drr_mode=DRRMode.FRONTDIST)
 
 
@@ -92,12 +92,14 @@ def render():
 ims = render()
 
 
-# N=1000
-# start_time = time.perf_counter()
-# for i in range(N):
-#     color, depth = render()
+N=1000
+start_time = time.perf_counter()
+for i in range(N):
+    ims = render()
 
-# print("FPS: ", N / (time.perf_counter() - start_time))
+print("FPS: ", N / (time.perf_counter() - start_time))
+
+exit()
 
 r.delete()
 
