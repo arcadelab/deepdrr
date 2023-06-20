@@ -17,6 +17,8 @@ import torch
 import numpy as np
 import cv2 # TODO
 import trimesh
+
+from OpenGL.GL import GL_TEXTURE_RECTANGLE
  
 
 import pyvista as pv
@@ -60,6 +62,7 @@ log = logging.getLogger(__name__)
 # cuda.init()
 
 # import pycuda.autoprimaryctx
+import pycuda.gl
 
 # from pycuda.gl import make_context
 # from pycuda.autoinit import context # TODO: only this works on my machine
@@ -633,26 +636,38 @@ class Projector(object):
             mesh_perf_start = mesh_perf_end
 
             for mesh in self.prim_meshes:
-                mesh.is_visible = False
+                mesh.is_visible = True
 
             self.additive_densities = np.zeros((len(self.mesh_unique_materials), self.n_rays), dtype=np.float32)
 
-            # for mesh_i, _mesh in enumerate(self.primitives[:1]):
-            # for mesh_i, _mesh in enumerate(self.primitives):
-            for i in range(len(self.prim_meshes_by_mat_list)):
-                meshes_to_show = self.prim_meshes_by_mat_list[i]
-                
-                for node in meshes_to_show:
-                    node.is_visible = True
-
-                rendered_layers = self.gl_renderer.render(self.scene, drr_mode=DRRMode.DENSITY, flags=RenderFlags.RGBA, zfar=self.device.source_to_detector_distance)
-                rendered_layers = [x for im in rendered_layers for x in [im[:,:,0], im[:,:,1]] ]
-                rendered_layers[0][rendered_layers[1]!=0] = 0 
-                self.additive_densities[i] = rendered_layers[0].flatten()
-                
-                for node in meshes_to_show:
-                    node.is_visible = False
+            # for i in range(len(self.prim_meshes_by_mat_list)):
+            # meshes_to_show = self.prim_meshes_by_mat_list[i]
             
+            # for node in meshes_to_show:
+            #     node.is_visible = True
+
+            rendered_layers = self.gl_renderer.render(self.scene, drr_mode=DRRMode.DENSITY, flags=RenderFlags.RGBA, zfar=self.device.source_to_detector_distance)
+            rendered_layers = [x for im in rendered_layers for x in [im[:,:,0], im[:,:,1]] ]
+            rendered_layers[0][rendered_layers[1]!=0] = 0 
+            self.additive_densities[i] = rendered_layers[0].flatten()
+
+            reg_img = pycuda.gl.RegisteredImage(int(self.gl_renderer.g_dualDepthTexId[0]), GL_TEXTURE_RECTANGLE, pycuda.gl.graphics_map_flags.READ_ONLY)
+            mapping_obj = reg_img.map() # Map the GlBuffer
+            data, sz = mapping_obj.device_ptr_and_size() # Got the CUDA pointer to GlBuffer
+
+            np_tmp = np.zeros((self.n_rays, 2), dtype=np.float32)
+            self.cuda_driver.memcopy_dtoh(np_tmp, data)
+
+            # save img to sdfa.png
+            img = Image.fromarray(np_tmp)
+            img.save('sdfa.png')
+
+            mapping_obj.unmap() # Unmap the GlBuffer
+            reg_img.unregister()
+            
+            # for node in meshes_to_show:
+            #     node.is_visible = False
+        
             self.cuda_driver.memcpy_htod(self.additive_densities_gpu, self.additive_densities)
 
 
