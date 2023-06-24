@@ -2655,8 +2655,11 @@ __global__ void projectKernel(
 //   }
 // #endif
   for (int i = 0; i < mesh_unique_material_count; i++) {
-    area_density[mesh_unique_materials_gpu[i]] += additive_densities[vdx * out_width + udx];
-    // area_density[mesh_unique_materials_gpu[i]] += additive_densities[i*(out_height*out_width)+img_dx];
+    // area_density[mesh_unique_materials_gpu[i]] += additive_densities[vdx * out_width + udx];
+    int add_dens_idx = i*(out_height*out_width*2)+(vdx * out_width + udx)*2;
+    if (fabs(additive_densities[add_dens_idx+1]) < 0.00001) {
+        area_density[mesh_unique_materials_gpu[i]] += additive_densities[add_dens_idx];
+    }
   }
 
   // Convert to centimeters
