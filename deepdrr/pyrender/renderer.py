@@ -1202,6 +1202,7 @@ class Renderer(object):
                 glTexParameteri(GL_TEXTURE_RECTANGLE, GL_TEXTURE_MIN_FILTER, GL_NEAREST)
                 glTexParameteri(GL_TEXTURE_RECTANGLE, GL_TEXTURE_MAG_FILTER, GL_NEAREST)
                 glTexImage2D(GL_TEXTURE_RECTANGLE, 0, GL_RG32F, self.viewport_width, self.viewport_height, 0, GL_RG, GL_FLOAT, None)
+                print(f"self.g_dualDepthTexId[{i}] = {self.g_dualDepthTexId[i]} {self.viewport_width} {self.viewport_height}")
 
 
             glBindFramebuffer(GL_FRAMEBUFFER, self.g_dualPeelingSingleFboId)
@@ -1354,6 +1355,7 @@ class Renderer(object):
         for i in range(numbufs):
 
             glReadBuffer(GL_COLOR_ATTACHMENT_LIST[i])
+            print(f"Reading buffer {i}")
 
             color_buf = glReadPixels(
                 0, 0, width, height, GL_RGB, GL_FLOAT

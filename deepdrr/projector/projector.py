@@ -19,6 +19,9 @@ import cv2 # TODO
 import trimesh
 
 from OpenGL.GL import GL_TEXTURE_RECTANGLE
+from OpenGL.GL import *
+
+from PIL import Image
  
 
 import pyvista as pv
@@ -648,22 +651,52 @@ class Projector(object):
 
             rendered_layers = self.gl_renderer.render(self.scene, drr_mode=DRRMode.DENSITY, flags=RenderFlags.RGBA, zfar=self.device.source_to_detector_distance)
             rendered_layers = [x for im in rendered_layers for x in [im[:,:,0], im[:,:,1]] ]
-            rendered_layers[0][rendered_layers[1]!=0] = 0 
-            self.additive_densities[i] = rendered_layers[0].flatten()
+            target = rendered_layers[0].flatten()
+            # rendered_layers[0][rendered_layers[1]!=0] = 0 
+            # self.additive_densities[i] = rendered_layers[0].flatten()
 
+            glBindTexture(GL_TEXTURE_RECTANGLE, self.gl_renderer.g_dualDepthTexId[0])
+
+            # reg_img = pycuda.gl.RegisteredImage(int(10), GL_TEXTURE_RECTANGLE, pycuda.gl.graphics_map_flags.READ_ONLY)
+            # reg_img = pycuda.gl.RegisteredBuffer(int(self.gl_renderer.g_dualDepthTexId[0]), pycuda.gl.graphics_map_flags.READ_ONLY)
             reg_img = pycuda.gl.RegisteredImage(int(self.gl_renderer.g_dualDepthTexId[0]), GL_TEXTURE_RECTANGLE, pycuda.gl.graphics_map_flags.READ_ONLY)
-            mapping_obj = reg_img.map() # Map the GlBuffer
-            data, sz = mapping_obj.device_ptr_and_size() # Got the CUDA pointer to GlBuffer
+            mapping = reg_img.map() # Map the GlBuffer
+            # data, sz = mapping_obj.device_ptr_and_size() # Got the CUDA pointer to GlBuffer
+            # reg_img.register()
 
             np_tmp = np.zeros((self.n_rays, 2), dtype=np.float32)
-            self.cuda_driver.memcopy_dtoh(np_tmp, data)
 
-            # save img to sdfa.png
-            img = Image.fromarray(np_tmp)
-            img.save('sdfa.png')
 
-            mapping_obj.unmap() # Unmap the GlBuffer
+            src = mapping.array(0,0)
+
+            cpy = pycuda.driver.Memcpy2D()
+
+            # cuda malloc
+            cuda_tmp = self.cuda_driver.mem_alloc(np_tmp.nbytes)
+
+            cpy.set_src_array(src)
+            # cpy.set_dst_host(np_tmp)
+            cpy.set_dst_device(cuda_tmp)
+            # cpy.width_in_bytes = cpy.src_pitch = cpy.dst_pitch = int(self.width * NUMBYTES_FLOAT32)
+            # cpy.height = int(self.height)
+
+            cpy.width_in_bytes = cpy.src_pitch = cpy.dst_pitch = int(self.width * 2 * NUMBYTES_FLOAT32)
+            cpy.height = int(self.height)
+            cpy(aligned=False)
+
+
+            self.cuda_driver.memcpy_dtoh(np_tmp, cuda_tmp)
+
+            # free
+            cuda_tmp.free()
+
+
+            mapping.unmap()
             reg_img.unregister()
+
+            im = np.reshape(np_tmp[:,0], (self.height, self.width))
+            remapped = np.interp(im, (np.amin(im), np.amax(im)), (0, 255)).astype(np.uint8)
+            cv2.imwrite(f'dffasdds.png', remapped)
             
             # for node in meshes_to_show:
             #     node.is_visible = False
@@ -1194,6 +1227,9 @@ class Projector(object):
 
         width = self.device.sensor_width # TODO: was deepdrr not locked to fixed resolution before?
         height = self.device.sensor_height
+
+        self.width = width
+        self.height = height
 
         # self.cuda_driver.init()
         # assert self.cuda_driver.Device.count() >= 1
