@@ -8,7 +8,8 @@ dependencies:
   - pytorch
   - torchvision
   - cudatoolkit=11.1
-  - pycuda
+  - cudatoolkit-dev=11.1
+  - pycuda # https://github.com/harskish/ganspace/issues/9#issuecomment-730056660
   - pip
   - pip:
       - -r requirements.txt

@@ -62,12 +62,12 @@ class TestSingleVolume:
             neglog=True,
         ) as projector:
             image = projector.project()
-            # from timer_util import FPS
-            # fps = FPS()
-            # for i in range(1000):
-            #     image = projector.project()
-            #     if fps_count := fps():
-            #         print(f"FPS2 {fps_count}")
+            from timer_util import FPS
+            fps = FPS()
+            for i in range(100):
+                image = projector.project()
+                if fps_count := fps():
+                    print(f"FPS2 {fps_count}")
 
         image = (image * 255).astype(np.uint8)
         Image.fromarray(image).save(self.output_dir / name)

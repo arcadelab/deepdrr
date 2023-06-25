@@ -503,6 +503,9 @@ class Projector(object):
                     IJK_from_world,
                 )
 
+            mesh_perf_entire_start = time.perf_counter()
+            mesh_perf_start = time.perf_counter()
+
             for vol_id, prim in enumerate(self.primitives): # TODO: duplicated code
                 _vol = prim.get_parent_mesh()
                 source_ijk = np.array(
@@ -606,7 +609,6 @@ class Projector(object):
             #         mesh_perf_start = mesh_perf_end
 
 
-            mesh_perf_start = time.perf_counter()
 
 
             self.cam.fx = proj.intrinsic.fx
@@ -734,6 +736,10 @@ class Projector(object):
                 mapping.unmap()
                 reg_img.unregister()
 
+
+            mesh_perf_end = time.perf_counter()
+            print(f"peel copy: {mesh_perf_end - mesh_perf_start}")
+            mesh_perf_start = mesh_perf_end
             
             self.rsi_manager.kernel_reorder(
                 np.uint64(self.mesh_hit_alphas_gpua),
@@ -745,7 +751,7 @@ class Projector(object):
             )
 
             mesh_perf_end = time.perf_counter()
-            print(f"peel copy: {mesh_perf_end - mesh_perf_start}")
+            print(f"peel reorder: {mesh_perf_end - mesh_perf_start}")
             mesh_perf_start = mesh_perf_end
 
             # prim_hit_facing[:,0] = np.ones(num_rays, dtype=np.int8)
@@ -796,6 +802,8 @@ class Projector(object):
             mesh_perf_end = time.perf_counter()
             print(f"tide: {mesh_perf_end - mesh_perf_start}")
             mesh_perf_start = mesh_perf_end
+
+            print(f"entire mesh: {time.perf_counter() - mesh_perf_entire_start}")
 
 
 
