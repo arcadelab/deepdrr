@@ -2593,7 +2593,7 @@ __global__ void projectKernel(
       }
 
       if (mesh_hit_depth[i]) {
-        // area_density[mesh_materials[i]] += mesh_densities[i];
+        area_density[mesh_materials[i]] += 7; // debug
         mesh_hit_this_step = true; // TODO mesh priorities?
       }
     }

@@ -904,7 +904,7 @@ __device__ void tide(
     (*interceptCounts) = 0;
     float cutoffEpsilon = 0.00001;
     for (int i = 0; i < MAX_INTERSECTIONS; i++) {
-        if (interceptTs[i] < cutoffEpsilon || interceptTs[i] > sourceToDetectorDistance-1) {
+        if (interceptTs[i] < cutoffEpsilon || interceptTs[i] > sourceToDetectorDistance-0.001) {
             interceptTs[i] = INFINITY;
             interceptFacing[i] = 0;
         } else {

@@ -49,7 +49,7 @@ class Renderer(object):
         Size of points in pixels. Defaults to 1.0.
     """
 
-    def __init__(self, viewport_width, viewport_height, point_size=1.0, max_dual_peel_layers=8):
+    def __init__(self, viewport_width, viewport_height, point_size=1.0, max_dual_peel_layers=4):
         self.dpscale = 1
         # Scaling needed on retina displays
         if sys.platform == 'darwin':
@@ -164,7 +164,10 @@ class Renderer(object):
         # retval = self._forward_pass(scene, flags, seg_node_map=seg_node_map, drr_mode=drr_mode, zfar=zfar, peelnum=2)
         if drr_mode != DRRMode.DENSITY:
             for i in range(self.max_dual_peel_layers):
-                retval = self._forward_pass(scene, flags, seg_node_map=seg_node_map, drr_mode=drr_mode, zfar=zfar, peelnum=i)
+                retvala = self._forward_pass(scene, flags, seg_node_map=seg_node_map, drr_mode=drr_mode, zfar=zfar, peelnum=i, front=True)
+            for i in range(self.max_dual_peel_layers):
+                retvalb = self._forward_pass(scene, flags, seg_node_map=seg_node_map, drr_mode=drr_mode, zfar=zfar, peelnum=i, front=False)
+            retval = retvala + retvalb
         else:
             retval = self._forward_pass(scene, flags, seg_node_map=seg_node_map, drr_mode=drr_mode, zfar=zfar, peelnum=0)
 
@@ -347,9 +350,9 @@ class Renderer(object):
     # Rendering passes
     ###########################################################################
 
-    def _forward_pass(self, scene, flags, seg_node_map=None, drr_mode=DRRMode.NONE, zfar=0, peelnum=0):
+    def _forward_pass(self, scene, flags, seg_node_map=None, drr_mode=DRRMode.NONE, zfar=0, peelnum=0, front=True):
         # Set up viewport for render
-        self._configure_forward_pass_viewport(flags, drr_mode=drr_mode, peelnum=peelnum)
+        self._configure_forward_pass_viewport(flags, drr_mode=drr_mode, peelnum=peelnum, front=front)
 
         # Clear it
         # if bool(flags & RenderFlags.SEG):
@@ -427,7 +430,8 @@ class Renderer(object):
                     flags=flags,
                     drr_mode=drr_mode,
                     zfar=zfar,
-                    peelnum=peelnum
+                    peelnum=peelnum,
+                    front=front
                 )
                 self._reset_active_textures()
 
@@ -437,7 +441,7 @@ class Renderer(object):
         # glFlush() # TODO: I don't think this is needed for offscreen
 
         if peelnum == self.max_dual_peel_layers-1 or drr_mode == DRRMode.DENSITY:
-            return self._read_main_framebuffer(scene, flags, drr_mode=drr_mode)
+            return self._read_main_framebuffer(scene, flags, drr_mode=drr_mode, front=front)
 
         # # If doing offscreen render, copy result from framebuffer and return
         # if flags & RenderFlags.OFFSCREEN:
@@ -550,7 +554,7 @@ class Renderer(object):
     # Handlers for binding uniforms and drawing primitives
     ###########################################################################
 
-    def _bind_and_draw_primitive(self, primitive, pose, program, flags, drr_mode=DRRMode.NONE, zfar=3, peelnum=0):
+    def _bind_and_draw_primitive(self, primitive, pose, program, flags, drr_mode=DRRMode.NONE, zfar=3, peelnum=0, front=True):
         # Set model pose matrix
         program.set_uniform('M', pose)
 
@@ -609,7 +613,7 @@ class Renderer(object):
 
             if peelnum > 0:
                 glActiveTexture(GL_TEXTURE0 + 0)
-                glBindTexture(GL_TEXTURE_RECTANGLE, self.g_dualDepthTexId[peelnum-1])
+                glBindTexture(GL_TEXTURE_RECTANGLE, self.g_dualDepthTexId[peelnum-1+(0 if front else self.max_dual_peel_layers)])
                 # setTextureUnit("DepthBlenderTex", 0)
                 program.set_uniform('DepthBlenderTex', 0)
                 program.set_uniform('MaxDepth', float(zfar))
@@ -646,12 +650,24 @@ class Renderer(object):
             if drr_mode != DRRMode.DENSITY:
                 glEnable(GL_BLEND)
                 glBlendEquation(GL_MAX)
+                # glBlendFunc(GL_ZERO, GL_ZERO)
+                # glBlendFunc(GL_ONE, GL_ZERO)
                 glBlendFunc(GL_ONE, GL_ONE)
+
+                glPolygonMode(GL_FRONT_AND_BACK, GL_FILL)
+
+                glEnable(GL_CULL_FACE)
+                glCullFace(GL_FRONT if not front else GL_BACK)
+                # glDisable(GL_CULL_FACE)
             else:
                 program.set_uniform('density', float(primitive.density))
                 glEnable(GL_BLEND)
                 glBlendEquation(GL_FUNC_ADD)
                 glBlendFunc(GL_ONE, GL_ONE)
+
+                glPolygonMode(GL_FRONT_AND_BACK, GL_FILL)
+
+                glDisable(GL_CULL_FACE)
             
 
 
@@ -664,9 +680,7 @@ class Renderer(object):
             # else:
             #     glPolygonMode(GL_FRONT_AND_BACK, GL_FILL)
 
-            glPolygonMode(GL_FRONT_AND_BACK, GL_FILL)
 
-            glDisable(GL_CULL_FACE)
 
             # # Set culling mode
             # if material.doubleSided or flags & RenderFlags.SKIP_CULL_FACES:
@@ -686,6 +700,8 @@ class Renderer(object):
             # glCullFace(GL_BACK)
             # glBlendFunc(GL_ZERO, GL_ZERO)
             # glPolygonMode(GL_FRONT_AND_BACK, GL_FILL)
+
+            raise ValueError('TODO')
             pass
 
         # Set point size if needed
@@ -1124,7 +1140,7 @@ class Renderer(object):
     # Viewport Management
     ###########################################################################
 
-    def _configure_forward_pass_viewport(self, flags, drr_mode=DRRMode.NONE, peelnum=0):
+    def _configure_forward_pass_viewport(self, flags, drr_mode=DRRMode.NONE, peelnum=0, front=True):
 
         # If using offscreen render, bind main framebuffer
         # if flags & RenderFlags.OFFSCREEN:
@@ -1134,7 +1150,7 @@ class Renderer(object):
         #     glBindFramebuffer(GL_DRAW_FRAMEBUFFER, 0)
         glBindFramebuffer(GL_FRAMEBUFFER, self.g_dualPeelingSingleFboId)
 
-        glDrawBuffer(GL_COLOR_ATTACHMENT_LIST[peelnum])
+        glDrawBuffer(GL_COLOR_ATTACHMENT_LIST[peelnum+(0 if front else self.max_dual_peel_layers)])
 
         glViewport(0, 0, self.viewport_width, self.viewport_height)
         # glEnable(GL_DEPTH_TEST)
@@ -1192,10 +1208,10 @@ class Renderer(object):
 
         # If framebuffer doesn't exist, create it
         if self._main_fb is None:
-            self.g_dualDepthTexId = glGenTextures(self.max_dual_peel_layers)
+            self.g_dualDepthTexId = glGenTextures(self.max_dual_peel_layers*2)
             self.g_dualPeelingSingleFboId = glGenFramebuffers(1)
 
-            for i in range(self.max_dual_peel_layers):
+            for i in range(self.max_dual_peel_layers*2):
                 glBindTexture(GL_TEXTURE_RECTANGLE, self.g_dualDepthTexId[i])
                 glTexParameteri(GL_TEXTURE_RECTANGLE, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE)
                 glTexParameteri(GL_TEXTURE_RECTANGLE, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE)
@@ -1206,7 +1222,7 @@ class Renderer(object):
 
 
             glBindFramebuffer(GL_FRAMEBUFFER, self.g_dualPeelingSingleFboId)
-            for i in range(self.max_dual_peel_layers):
+            for i in range(self.max_dual_peel_layers*2):
                 glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT_LIST[i], GL_TEXTURE_RECTANGLE, self.g_dualDepthTexId[i], 0)
 
             # Generate standard buffer
@@ -1282,7 +1298,7 @@ class Renderer(object):
         self._main_db_ms = None
         self._main_fb_dims = (None, None)
 
-    def _read_main_framebuffer(self, scene, flags, drr_mode=DRRMode.NONE):
+    def _read_main_framebuffer(self, scene, flags, drr_mode=DRRMode.NONE, front=True):
         width, height = self._main_fb_dims[0], self._main_fb_dims[1]
 
         # Bind framebuffer and blit buffers
@@ -1353,9 +1369,9 @@ class Renderer(object):
             numbufs = 1
 
         for i in range(numbufs):
-
-            glReadBuffer(GL_COLOR_ATTACHMENT_LIST[i])
-            print(f"Reading buffer {i}")
+            bufferidx = i + (0 if front else self.max_dual_peel_layers)
+            glReadBuffer(GL_COLOR_ATTACHMENT_LIST[bufferidx])
+            print(f"Reading buffer {bufferidx}")
 
             color_buf = glReadPixels(
                 0, 0, width, height, GL_RGB, GL_FLOAT

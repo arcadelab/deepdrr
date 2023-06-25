@@ -97,7 +97,7 @@ class TestSingleVolume:
         # stl2.translate([0, 30, 0], inplace=True)
         stl = pv.read("tests/resources/suzanne.stl")
         stl.scale([200]*3, inplace=True)
-        # stl.translate([0, -200, 0], inplace=True)
+        stl.translate([0, -200, 0], inplace=True)
         # stl = pv.read("tests/resources/suzanne.stl")
         morph_targets = np.array([
             [1, 0, 0],

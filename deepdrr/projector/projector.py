@@ -641,79 +641,91 @@ class Projector(object):
             for mesh in self.prim_meshes:
                 mesh.is_visible = True
 
-            self.additive_densities = np.zeros((len(self.mesh_unique_materials), self.n_rays), dtype=np.float32)
+            self.additive_densities = np.zeros((len(self.mesh_unique_materials), self.n_rays, 2), dtype=np.float32)
 
             self.cuda_driver.memcpy_htod(self.additive_densities_gpu, self.additive_densities) # TODO: not needed
 
             # layout of additive_densities_gpu
             # [# materials, # height, # width, 2 (density, even/odd sum), float32]
 
-            for mat_idx in range(len(self.prim_meshes_by_mat_list)):
-                meshes_to_show = self.prim_meshes_by_mat_list[i]
+            # for mat_idx in range(len(self.prim_meshes_by_mat_list)):
+            #     meshes_to_show = self.prim_meshes_by_mat_list[i]
                 
-                for node in meshes_to_show:
-                    node.is_visible = True
+            #     for node in meshes_to_show:
+            #         node.is_visible = True
 
-                rendered_layers = self.gl_renderer.render(self.scene, drr_mode=DRRMode.DENSITY, flags=RenderFlags.RGBA, zfar=self.device.source_to_detector_distance)
-                rendered_layers = [x for im in rendered_layers for x in [im[:,:,0], im[:,:,1]] ]
-                target = rendered_layers[0].flatten() # TODO: not needed
-                # rendered_layers[0][rendered_layers[1]!=0] = 0 
-                # self.additive_densities[i] = rendered_layers[0].flatten()
+            #     rendered_layers = self.gl_renderer.render(self.scene, drr_mode=DRRMode.DENSITY, flags=RenderFlags.RGBA, zfar=self.device.source_to_detector_distance)
+            #     rendered_layers = [x for im in rendered_layers for x in [im[:,:,0], im[:,:,1]] ]
+            #     target = rendered_layers[0].flatten() # TODO: not needed
+            #     rendered_layers[0][rendered_layers[1]!=0] = 0 
+            #     self.additive_densities[i, :, 0] = rendered_layers[0].flatten()
 
-                glBindTexture(GL_TEXTURE_RECTANGLE, self.gl_renderer.g_dualDepthTexId[0])
+            #     # glBindTexture(GL_TEXTURE_RECTANGLE, self.gl_renderer.g_dualDepthTexId[0])
 
-                reg_img = pycuda.gl.RegisteredImage(int(self.gl_renderer.g_dualDepthTexId[0]), GL_TEXTURE_RECTANGLE, pycuda.gl.graphics_map_flags.READ_ONLY)
-                mapping = reg_img.map()
+            #     reg_img = pycuda.gl.RegisteredImage(int(self.gl_renderer.g_dualDepthTexId[0]), GL_TEXTURE_RECTANGLE, pycuda.gl.graphics_map_flags.READ_ONLY)
+            #     mapping = reg_img.map()
 
-                src = mapping.array(0,0)
-                cpy = pycuda.driver.Memcpy2D()
-                cpy.set_src_array(src)
-                pointer_into_additive_densities = int(self.additive_densities_gpu) + mat_idx * self.n_rays * 2 * NUMBYTES_FLOAT32
-                cpy.set_dst_device(int(pointer_into_additive_densities))
-                cpy.width_in_bytes = cpy.src_pitch = cpy.dst_pitch = int(self.width * 2 * NUMBYTES_FLOAT32)
-                cpy.height = int(self.height)
-                cpy(aligned=False)
+            #     src = mapping.array(0,0)
+            #     cpy = pycuda.driver.Memcpy2D()
+            #     cpy.set_src_array(src)
+            #     pointer_into_additive_densities = int(self.additive_densities_gpu) + mat_idx * self.n_rays * 2 * NUMBYTES_FLOAT32
+            #     cpy.set_dst_device(int(pointer_into_additive_densities))
+            #     cpy.width_in_bytes = cpy.src_pitch = cpy.dst_pitch = int(self.width * 2 * NUMBYTES_FLOAT32)
+            #     cpy.height = int(self.height)
+            #     cpy(aligned=False)
 
-                mapping.unmap()
-                reg_img.unregister()
+            #     mapping.unmap()
+            #     reg_img.unregister()
                 
-                for node in meshes_to_show:
-                    node.is_visible = False
+            #     for node in meshes_to_show:
+            #         node.is_visible = False
         
-            # self.cuda_driver.memcpy_htod(self.additive_densities_gpu, self.additive_densities) # TODO: not needed
+            # # self.cuda_driver.memcpy_htod(self.additive_densities_gpu, self.additive_densities) # TODO: not needed
 
-            for mesh in self.prim_meshes:
-                mesh.is_visible = True
+            # for mesh in self.prim_meshes:
+            #     mesh.is_visible = True
 
             prim_hit_counts = np.zeros(num_rays, dtype=np.int32)
             prim_hit_alphas = np.zeros((num_rays, self.max_mesh_depth), dtype=np.float32)
             prim_hit_facing = np.zeros((num_rays, self.max_mesh_depth), dtype=np.int8)
 
-            # rendered_layers = self.gl_renderer.render(self.scene, drr_mode=DRRMode.BACKDIST, flags=RenderFlags.RGBA, zfar=self.device.source_to_detector_distance)
+            rendered_layers = self.gl_renderer.render(self.scene, drr_mode=DRRMode.BACKDIST, flags=RenderFlags.RGBA, zfar=self.device.source_to_detector_distance*2)
 
-            # rendered_layers = [[-layer[:,:,0], layer[:,:,1]] for layer in rendered_layers]
-            # rendered_layers = [x[0] for x in rendered_layers] + [x[1] for x in rendered_layers]
-            # rendered_layers = [np.swapaxes(x, 0, 1) for x in rendered_layers]
+            rendered_layers = [[-layer[:,:,0], layer[:,:,1]] for layer in rendered_layers]
+            # rendered_layers = [x[0] for x in rendered_layers] + list(reversed([x[1] for x in rendered_layers]))
+            rendered_layers = [y for x in rendered_layers for y in [x[0], x[1]]]
+            rendered_layers = [np.swapaxes(x, 0, 1) for x in rendered_layers]
             
-            # mesh_perf_end = time.perf_counter()
-            # print(f"render: {mesh_perf_end - mesh_perf_start}")
-            # mesh_perf_start = mesh_perf_end
+            mesh_perf_end = time.perf_counter()
+            print(f"render: {mesh_perf_end - mesh_perf_start}")
+            mesh_perf_start = mesh_perf_end
 
 
-            # len_rendered = len(rendered_layers)
-            # for i in range(len_rendered):
-            #     prim_hit_alphas[:,i] = rendered_layers[i].flatten()
+            len_rendered = len(rendered_layers)
+            for i in range(len_rendered):
+                prim_hit_alphas[:,i] = rendered_layers[i].flatten()
 
-            # # prim_hit_facing[:,0] = np.ones(num_rays, dtype=np.int8)
-            # # prim_hit_facing[:,1] = -np.ones(num_rays, dtype=np.int8) #TODO: might need to reverse
-            # for i in range(len_rendered // 2):
-            #     prim_hit_facing[:,i] = np.ones(num_rays, dtype=np.int8)
-            # for i in range(len_rendered // 2, len_rendered):
-            #     prim_hit_facing[:,i] = -np.ones(num_rays, dtype=np.int8)
+            # prim_hit_facing[:,0] = np.ones(num_rays, dtype=np.int8)
+            # prim_hit_facing[:,1] = -np.ones(num_rays, dtype=np.int8) #TODO: might need to reverse
+            for i in range(len_rendered // 2):
+                prim_hit_facing[:,i] = np.ones(num_rays, dtype=np.int8)
+            for i in range(len_rendered // 2, len_rendered):
+                prim_hit_facing[:,i] = -np.ones(num_rays, dtype=np.int8)
 
-            # # mesh_hit_counts_ptr = int() + mesh_i * num_rays * NUMBYTES_INT32
-            # # mesh_hit_alphas_ptr = int() + mesh_i * num_rays * self.max_mesh_depth * NUMBYTES_FLOAT32
-            # # mesh_hit_facing_ptr = int() + mesh_i * num_rays * self.max_mesh_depth * NUMBYTES_INT8
+            ims = rendered_layers
+            for i, im in enumerate(ims):
+                zfar = self.device.source_to_detector_distance*2
+                above_zfar = im[im>-zfar+.001]
+                if len(above_zfar) == 0:
+                    above_zfar = im
+                remapped = np.interp(im, (np.amin(above_zfar), np.amax(im)), (0, 255)).astype(np.uint8)
+                cv2.imwrite(f'fdsfd{i}.png', remapped)
+
+            
+
+            # mesh_hit_counts_ptr = int() + mesh_i * num_rays * NUMBYTES_INT32
+            # mesh_hit_alphas_ptr = int() + mesh_i * num_rays * self.max_mesh_depth * NUMBYTES_FLOAT32
+            # mesh_hit_facing_ptr = int() + mesh_i * num_rays * self.max_mesh_depth * NUMBYTES_INT8
 
             self.cuda_driver.memcpy_htod(self.mesh_hit_counts_gpu, prim_hit_counts)
             self.cuda_driver.memcpy_htod(self.mesh_hit_alphas_gpu, prim_hit_alphas)
@@ -733,7 +745,7 @@ class Projector(object):
                 np.uint64(self.mesh_hit_alphas_gpu),
                 np.uint64(self.mesh_hit_facing_gpu),
                 np.int32(self.n_rays), 
-                np.float32(self.device.source_to_detector_distance),
+                np.float32(self.device.source_to_detector_distance*2),
                 block=(int(self.rsi_manager.block_x/2),1,1),  # TODO ??
                 # block=self.block_dims,  # TODO ??
                 grid=self.grid_lambda
@@ -1395,7 +1407,7 @@ class Projector(object):
         self.cam_node = self.scene.add(self.cam)
 
         # self.gl_renderer = OffscreenRenderer(viewport_width=width, viewport_height=height, point_size=1.0)
-        self._renderer = Renderer(viewport_width=width, viewport_height=height, max_dual_peel_layers=8)
+        self._renderer = Renderer(viewport_width=width, viewport_height=height, max_dual_peel_layers=4)
         self.gl_renderer = self._renderer
 
         self.additive_densities_gpu = self.cuda_driver.mem_alloc(len(self.mesh_unique_materials) * self.n_rays * 2 * NUMBYTES_FLOAT32)
