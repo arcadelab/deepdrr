@@ -4,7 +4,7 @@
 // Component 1: Ray-surface intersection geometry tests
 //-----------------------------------------------------------
 #define EPSILON TOLERANCE
-#define MAX_INTERSECTIONS 32 // TODO: parameter
+#define MAX_INTERSECTIONS 16 // TODO: parameter
 MOLLER_DOUBLE_PRECISION_DIRECTIVE
 
 using namespace std;
@@ -901,14 +901,22 @@ __device__ void tide(
     float sourceToDetectorDistance
 )
 {
-    (*interceptCounts) = 0;
-    float cutoffEpsilon = 0.00001;
-    for (int i = 0; i < MAX_INTERSECTIONS; i++) {
-        if (interceptTs[i] < cutoffEpsilon || interceptTs[i] > sourceToDetectorDistance-0.001) {
-            interceptTs[i] = INFINITY;
-            interceptFacing[i] = 0;
-        } else {
-            (*interceptCounts) += 1;
+    {
+        for (int i = 0; i < MAX_INTERSECTIONS; i++) { // TODO
+            interceptFacing[i] = i < MAX_INTERSECTIONS / 2 ? 1 : -1;
+        }
+    }
+
+    {
+        (*interceptCounts) = 0;
+        float cutoffEpsilon = 0.00001;
+        for (int i = 0; i < MAX_INTERSECTIONS; i++) {
+            if (interceptTs[i] < cutoffEpsilon || interceptTs[i] > sourceToDetectorDistance-0.001) {
+                interceptTs[i] = INFINITY;
+                interceptFacing[i] = 0;
+            } else {
+                (*interceptCounts) += 1;
+            }
         }
     }
 

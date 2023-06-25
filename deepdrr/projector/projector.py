@@ -343,8 +343,9 @@ class Projector(object):
         # Might want to disallow using intensity_upper_bound, due to nonsensicalness
 
 
-        self.max_mesh_depth = max_mesh_depth
-        if self.max_mesh_depth != 32:
+        self.max_mesh_depth = 16
+        # self.max_mesh_depth = max_mesh_depth
+        if self.max_mesh_depth != 16:
             raise ValueError("max_mesh_depth must be 32") # TODO: remove this restriction
         # if self.max_mesh_depth % 2 != 0:
         #     raise ValueError("max_mesh_depth must be even")
@@ -743,10 +744,10 @@ class Projector(object):
 
             # prim_hit_facing[:,0] = np.ones(num_rays, dtype=np.int8)
             # prim_hit_facing[:,1] = -np.ones(num_rays, dtype=np.int8) #TODO: might need to reverse
-            for i in range(len_rendered // 2):
-                prim_hit_facing[:,i] = np.ones(num_rays, dtype=np.int8)
-            for i in range(len_rendered // 2, len_rendered):
-                prim_hit_facing[:,i] = -np.ones(num_rays, dtype=np.int8)
+            # for i in range(len_rendered // 2):
+            #     prim_hit_facing[:,i] = np.ones(num_rays, dtype=np.int8)
+            # for i in range(len_rendered // 2, len_rendered):
+            #     prim_hit_facing[:,i] = -np.ones(num_rays, dtype=np.int8)
 
             ims = rendered_layers
             for i, im in enumerate(ims):
@@ -765,7 +766,7 @@ class Projector(object):
 
             # self.cuda_driver.memcpy_htod(self.mesh_hit_counts_gpu, prim_hit_counts)
             # self.cuda_driver.memcpy_htod(self.mesh_hit_alphas_gpu, prim_hit_alphas)
-            self.cuda_driver.memcpy_htod(self.mesh_hit_facing_gpu, prim_hit_facing)
+            # self.cuda_driver.memcpy_htod(self.mesh_hit_facing_gpu, prim_hit_facing)
 
             mesh_perf_end = time.perf_counter()
             print(f"transfer: {mesh_perf_end - mesh_perf_start}")
