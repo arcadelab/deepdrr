@@ -1010,5 +1010,42 @@ __global__ void kernelTide(
         }
     }
 }
+
+__device__ void reorder(
+    float* __restrict__ rayInterceptTsIn,
+    float* __restrict__ rayInterceptTsOut,
+    int numRays,
+    int rayIdx
+)
+{
+    int num_layers = 2;
+    for (int i = 0; i < MAX_INTERSECTIONS / num_layers; i++) {
+        for (int j = 0; j < num_layers; j++) {
+            // rayInterceptTsOut[rayIdx * MAX_INTERSECTIONS + i] = rayInterceptTsIn[rayIdx * MAX_INTERSECTIONS + i];
+            rayInterceptTsOut[rayIdx * MAX_INTERSECTIONS + i * num_layers + j] = rayInterceptTsIn[i * numRays * num_layers + rayIdx * num_layers + j];
+        }
+    }
+}
+
+__global__ void kernelReorder(
+    float* __restrict__ rayInterceptTsIn,
+    float* __restrict__ rayInterceptTsOut,
+    int numRays
+)
+{
+    __shared__ int stride;
+    if (threadIdx.x == 0) {
+        stride = gridDim.x * blockDim.x;
+    }
+    __syncthreads();
+
+    int threadStartIdx = blockIdx.x * blockDim.x + threadIdx.x;
+
+    for (int idx = threadStartIdx; idx < numRays; idx += stride) {
+        if (idx < numRays) {
+            reorder(rayInterceptTsIn, rayInterceptTsOut, numRays, idx);
+        }
+    }
+}
     
 

@@ -246,6 +246,7 @@ class PyCudaRSIManager(object):
         # self.kernel_bvh_find_intersections2 = bind("kernelBVHIntersection2")
         self.kernel_bvh_find_intersections3 = bind("kernelBVHIntersection3")
         self.kernel_tide = bind("kernelTide")
+        self.kernel_reorder = bind("kernelReorder")
         try:
             self.kernel_intersect_distances = bind("kernelIntersectDistances")
             self.kernel_intersect_points = bind("kernelIntersectPoints")

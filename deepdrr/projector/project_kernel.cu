@@ -2582,7 +2582,7 @@ __global__ void projectKernel(
     for (int i = 0; i < NUM_MESHES; i++) {
       int hit_arr_index = 0;
       while (true) {
-        hit_arr_index = i*(out_height*out_width)*max_mesh_depth+img_dx*max_mesh_depth+mesh_hit_index[i];
+        hit_arr_index = i*(out_height*out_width)*max_mesh_depth+(vdx * out_width + udx)*max_mesh_depth+mesh_hit_index[i];
         if (!(
             mesh_hit_index[i] < max_mesh_depth &&
             mesh_hit_facing[hit_arr_index] != 0 &&

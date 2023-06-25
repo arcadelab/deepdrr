@@ -634,6 +634,11 @@ class Projector(object):
             # self.cuda_driver.memcpy_htod(self.mesh_hit_alphas_gpu, self.mesh_hit_alphas)
             # self.cuda_driver.memcpy_htod(self.mesh_hit_facing_gpu, self.mesh_hit_facing)
 
+
+            self.grid_xLambda = 16
+            self.block_dims = (self.rsi_manager.block_x,1,1)
+            self.grid_lambda = (self.grid_xLambda,1)
+
             mesh_perf_end = time.perf_counter()
             print(f"init arrays: {mesh_perf_end - mesh_perf_start}")
             mesh_perf_start = mesh_perf_end
@@ -689,6 +694,11 @@ class Projector(object):
             prim_hit_alphas = np.zeros((num_rays, self.max_mesh_depth), dtype=np.float32)
             prim_hit_facing = np.zeros((num_rays, self.max_mesh_depth), dtype=np.int8)
 
+            self.cuda_driver.memcpy_htod(self.mesh_hit_counts_gpu, prim_hit_counts) # TODO: remove
+            self.cuda_driver.memcpy_htod(self.mesh_hit_alphas_gpua, prim_hit_alphas) # TODO: remove
+            self.cuda_driver.memcpy_htod(self.mesh_hit_alphas_gpu, prim_hit_alphas) # TODO: remove
+            self.cuda_driver.memcpy_htod(self.mesh_hit_facing_gpu, prim_hit_facing) # TODO: remove
+
             rendered_layers = self.gl_renderer.render(self.scene, drr_mode=DRRMode.BACKDIST, flags=RenderFlags.RGBA, zfar=self.device.source_to_detector_distance*2)
 
             rendered_layers = [[-layer[:,:,0], layer[:,:,1]] for layer in rendered_layers]
@@ -704,6 +714,32 @@ class Projector(object):
             len_rendered = len(rendered_layers)
             for i in range(len_rendered):
                 prim_hit_alphas[:,i] = rendered_layers[i].flatten()
+
+            for tex_idx in range(self.gl_renderer.max_dual_peel_layers*2):
+                reg_img = pycuda.gl.RegisteredImage(int(self.gl_renderer.g_dualDepthTexId[tex_idx]), GL_TEXTURE_RECTANGLE, pycuda.gl.graphics_map_flags.READ_ONLY)
+                mapping = reg_img.map()
+
+                src = mapping.array(0,0)
+                cpy = pycuda.driver.Memcpy2D()
+                cpy.set_src_array(src)
+                pointer_into_additive_densities = int(self.mesh_hit_alphas_gpua) + tex_idx * self.n_rays * 2 * NUMBYTES_FLOAT32
+                cpy.set_dst_device(int(pointer_into_additive_densities))
+                cpy.width_in_bytes = cpy.src_pitch = cpy.dst_pitch = int(self.width * 2 * NUMBYTES_FLOAT32)
+                cpy.height = int(self.height)
+                cpy(aligned=False)
+
+                mapping.unmap()
+                reg_img.unregister()
+
+            
+            self.rsi_manager.kernel_reorder(
+                np.uint64(self.mesh_hit_alphas_gpua),
+                np.uint64(self.mesh_hit_alphas_gpu),
+                np.int32(self.n_rays), 
+                block=(int(self.rsi_manager.block_x/2),1,1),  # TODO ??
+                # block=self.block_dims,  # TODO ??
+                grid=self.grid_lambda
+            )
 
             # prim_hit_facing[:,0] = np.ones(num_rays, dtype=np.int8)
             # prim_hit_facing[:,1] = -np.ones(num_rays, dtype=np.int8) #TODO: might need to reverse
@@ -727,8 +763,8 @@ class Projector(object):
             # mesh_hit_alphas_ptr = int() + mesh_i * num_rays * self.max_mesh_depth * NUMBYTES_FLOAT32
             # mesh_hit_facing_ptr = int() + mesh_i * num_rays * self.max_mesh_depth * NUMBYTES_INT8
 
-            self.cuda_driver.memcpy_htod(self.mesh_hit_counts_gpu, prim_hit_counts)
-            self.cuda_driver.memcpy_htod(self.mesh_hit_alphas_gpu, prim_hit_alphas)
+            # self.cuda_driver.memcpy_htod(self.mesh_hit_counts_gpu, prim_hit_counts)
+            # self.cuda_driver.memcpy_htod(self.mesh_hit_alphas_gpu, prim_hit_alphas)
             self.cuda_driver.memcpy_htod(self.mesh_hit_facing_gpu, prim_hit_facing)
 
             mesh_perf_end = time.perf_counter()
@@ -736,9 +772,6 @@ class Projector(object):
             mesh_perf_start = mesh_perf_end
 
 
-            self.grid_xLambda = 16
-            self.block_dims = (self.rsi_manager.block_x,1,1)
-            self.grid_lambda = (self.grid_xLambda,1)
 
             self.rsi_manager.kernel_tide(
                 np.uint64(self.mesh_hit_counts_gpu),
@@ -1537,6 +1570,7 @@ class Projector(object):
 
         self.mesh_hit_counts_gpu = safe_mem_alloc(math.prod((len(self.primitives), width * height)) * NUMBYTES_INT32)
         self.mesh_hit_alphas_gpu = safe_mem_alloc(math.prod((len(self.primitives), width * height, self.max_mesh_depth)) * NUMBYTES_FLOAT32)
+        self.mesh_hit_alphas_gpua = safe_mem_alloc(math.prod((len(self.primitives), width * height, self.max_mesh_depth)) * NUMBYTES_FLOAT32)
         self.mesh_hit_facing_gpu = safe_mem_alloc(math.prod((len(self.primitives), width * height, self.max_mesh_depth)) * NUMBYTES_INT8)
         self.ray_directions_gpu = safe_mem_alloc(math.prod((len(self.primitives), width * height, 3)) * NUMBYTES_FLOAT32)
 
@@ -1957,6 +1991,8 @@ class Projector(object):
                 for seg in self.segmentations_gpu[vol_id]:
                     seg.free()
 
+            self.mesh_hit_alphas_gpua.free()
+            self.mesh_hit_facing_gpu.free()
             self.additive_densities_gpu.free()
             self.mesh_unique_materials_gpu.free()
 
