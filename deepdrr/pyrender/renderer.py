@@ -440,8 +440,9 @@ class Renderer(object):
             program._unbind()
         # glFlush() # TODO: I don't think this is needed for offscreen
 
-        if peelnum == self.max_dual_peel_layers-1 or drr_mode == DRRMode.DENSITY:
-            return self._read_main_framebuffer(scene, flags, drr_mode=drr_mode, front=front)
+        # if peelnum == self.max_dual_peel_layers-1 or drr_mode == DRRMode.DENSITY:
+        #     return self._read_main_framebuffer(scene, flags, drr_mode=drr_mode, front=front)
+        return []
 
         # # If doing offscreen render, copy result from framebuffer and return
         # if flags & RenderFlags.OFFSCREEN:
@@ -1218,7 +1219,7 @@ class Renderer(object):
                 glTexParameteri(GL_TEXTURE_RECTANGLE, GL_TEXTURE_MIN_FILTER, GL_NEAREST)
                 glTexParameteri(GL_TEXTURE_RECTANGLE, GL_TEXTURE_MAG_FILTER, GL_NEAREST)
                 glTexImage2D(GL_TEXTURE_RECTANGLE, 0, GL_RG32F, self.viewport_width, self.viewport_height, 0, GL_RG, GL_FLOAT, None)
-                print(f"self.g_dualDepthTexId[{i}] = {self.g_dualDepthTexId[i]} {self.viewport_width} {self.viewport_height}")
+                # print(f"self.g_dualDepthTexId[{i}] = {self.g_dualDepthTexId[i]} {self.viewport_width} {self.viewport_height}")
 
 
             glBindFramebuffer(GL_FRAMEBUFFER, self.g_dualPeelingSingleFboId)
