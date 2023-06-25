@@ -654,42 +654,42 @@ class Projector(object):
             # layout of additive_densities_gpu
             # [# materials, # height, # width, 2 (density, even/odd sum), float32]
 
-            # for mat_idx in range(len(self.prim_meshes_by_mat_list)):
-            #     meshes_to_show = self.prim_meshes_by_mat_list[i]
+            for mat_idx in range(len(self.prim_meshes_by_mat_list)):
+                meshes_to_show = self.prim_meshes_by_mat_list[i]
                 
-            #     for node in meshes_to_show:
-            #         node.is_visible = True
+                for node in meshes_to_show:
+                    node.is_visible = True
 
-            #     rendered_layers = self.gl_renderer.render(self.scene, drr_mode=DRRMode.DENSITY, flags=RenderFlags.RGBA, zfar=self.device.source_to_detector_distance)
-            #     rendered_layers = [x for im in rendered_layers for x in [im[:,:,0], im[:,:,1]] ]
-            #     target = rendered_layers[0].flatten() # TODO: not needed
-            #     rendered_layers[0][rendered_layers[1]!=0] = 0 
-            #     self.additive_densities[i, :, 0] = rendered_layers[0].flatten()
+                rendered_layers = self.gl_renderer.render(self.scene, drr_mode=DRRMode.DENSITY, flags=RenderFlags.RGBA, zfar=self.device.source_to_detector_distance)
+                rendered_layers = [x for im in rendered_layers for x in [im[:,:,0], im[:,:,1]] ]
+                target = rendered_layers[0].flatten() # TODO: not needed
+                rendered_layers[0][rendered_layers[1]!=0] = 0 
+                self.additive_densities[i, :, 0] = rendered_layers[0].flatten()
 
-            #     # glBindTexture(GL_TEXTURE_RECTANGLE, self.gl_renderer.g_dualDepthTexId[0])
+                # glBindTexture(GL_TEXTURE_RECTANGLE, self.gl_renderer.g_dualDepthTexId[0])
 
-            #     reg_img = pycuda.gl.RegisteredImage(int(self.gl_renderer.g_dualDepthTexId[0]), GL_TEXTURE_RECTANGLE, pycuda.gl.graphics_map_flags.READ_ONLY)
-            #     mapping = reg_img.map()
+                reg_img = pycuda.gl.RegisteredImage(int(self.gl_renderer.g_dualDepthTexId[0]), GL_TEXTURE_RECTANGLE, pycuda.gl.graphics_map_flags.READ_ONLY)
+                mapping = reg_img.map()
 
-            #     src = mapping.array(0,0)
-            #     cpy = pycuda.driver.Memcpy2D()
-            #     cpy.set_src_array(src)
-            #     pointer_into_additive_densities = int(self.additive_densities_gpu) + mat_idx * self.n_rays * 2 * NUMBYTES_FLOAT32
-            #     cpy.set_dst_device(int(pointer_into_additive_densities))
-            #     cpy.width_in_bytes = cpy.src_pitch = cpy.dst_pitch = int(self.width * 2 * NUMBYTES_FLOAT32)
-            #     cpy.height = int(self.height)
-            #     cpy(aligned=False)
+                src = mapping.array(0,0)
+                cpy = pycuda.driver.Memcpy2D()
+                cpy.set_src_array(src)
+                pointer_into_additive_densities = int(self.additive_densities_gpu) + mat_idx * self.n_rays * 2 * NUMBYTES_FLOAT32
+                cpy.set_dst_device(int(pointer_into_additive_densities))
+                cpy.width_in_bytes = cpy.src_pitch = cpy.dst_pitch = int(self.width * 2 * NUMBYTES_FLOAT32)
+                cpy.height = int(self.height)
+                cpy(aligned=False)
 
-            #     mapping.unmap()
-            #     reg_img.unregister()
+                mapping.unmap()
+                reg_img.unregister()
                 
-            #     for node in meshes_to_show:
-            #         node.is_visible = False
+                for node in meshes_to_show:
+                    node.is_visible = False
         
-            # # self.cuda_driver.memcpy_htod(self.additive_densities_gpu, self.additive_densities) # TODO: not needed
+            # self.cuda_driver.memcpy_htod(self.additive_densities_gpu, self.additive_densities) # TODO: not needed
 
-            # for mesh in self.prim_meshes:
-            #     mesh.is_visible = True
+            for mesh in self.prim_meshes:
+                mesh.is_visible = True
 
             prim_hit_counts = np.zeros(num_rays, dtype=np.int32)
             prim_hit_alphas = np.zeros((num_rays, self.max_mesh_depth), dtype=np.float32)
