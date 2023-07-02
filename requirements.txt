@@ -7,7 +7,7 @@ scikit-image
 pydicom
 scipy
 pyvista
-pycuda
+pycuda# --config-settings "CUDA_ENABLE_GL=True"
 pynrrd
 rich
 opencv-python
