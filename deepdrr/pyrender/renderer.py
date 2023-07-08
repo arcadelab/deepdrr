@@ -164,10 +164,10 @@ class Renderer(object):
         # retval = self._forward_pass(scene, flags, seg_node_map=seg_node_map, drr_mode=drr_mode, zfar=zfar, peelnum=2)
         if drr_mode != DRRMode.DENSITY:
             for i in range(self.max_dual_peel_layers):
-                retvala = self._forward_pass(scene, flags, seg_node_map=seg_node_map, drr_mode=drr_mode, zfar=zfar, peelnum=i, front=True)
-            for i in range(self.max_dual_peel_layers):
-                retvalb = self._forward_pass(scene, flags, seg_node_map=seg_node_map, drr_mode=drr_mode, zfar=zfar, peelnum=i, front=False)
-            retval = retvala + retvalb
+                retval = self._forward_pass(scene, flags, seg_node_map=seg_node_map, drr_mode=drr_mode, zfar=zfar, peelnum=i, front=True)
+            # for i in range(self.max_dual_peel_layers):
+            #     retvalb = self._forward_pass(scene, flags, seg_node_map=seg_node_map, drr_mode=drr_mode, zfar=zfar, peelnum=i, front=False)
+            # retval = retvala + retvalb
         else:
             retval = self._forward_pass(scene, flags, seg_node_map=seg_node_map, drr_mode=drr_mode, zfar=zfar, peelnum=0)
 
@@ -440,8 +440,8 @@ class Renderer(object):
             program._unbind()
         # glFlush() # TODO: I don't think this is needed for offscreen
 
-        # if peelnum == self.max_dual_peel_layers-1 or drr_mode == DRRMode.DENSITY:
-        #     return self._read_main_framebuffer(scene, flags, drr_mode=drr_mode, front=front)
+        if peelnum == self.max_dual_peel_layers-1 or drr_mode == DRRMode.DENSITY:
+            return self._read_main_framebuffer(scene, flags, drr_mode=drr_mode, front=front)
         return []
 
         # # If doing offscreen render, copy result from framebuffer and return
@@ -1382,7 +1382,8 @@ class Renderer(object):
         for i in range(numbufs):
             bufferidx = i + (0 if front else self.max_dual_peel_layers)
             glBindFramebuffer(GL_READ_FRAMEBUFFER, self.g_dualPeelingFboIds[bufferidx])
-            glReadBuffer(GL_COLOR_ATTACHMENT_LIST[bufferidx])
+            glReadBuffer(GL_COLOR_ATTACHMENT_LIST[0])
+            # glReadBuffer(GL_COLOR_ATTACHMENT_LIST[bufferidx])
             print(f"Reading buffer {bufferidx}")
 
             color_buf = glReadPixels(

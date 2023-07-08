@@ -567,6 +567,7 @@ class Projector(object):
             for mesh in self.prim_meshes:
                 mesh.is_visible = True
 
+            zfar = self.device.source_to_detector_distance*2
 
             for mat_idx in range(len(self.prim_meshes_by_mat_list)):
                 meshes_to_show = self.prim_meshes_by_mat_list[i]
@@ -574,7 +575,7 @@ class Projector(object):
                 for node in meshes_to_show:
                     node.is_visible = True
 
-                rendered_layers = self.gl_renderer.render(self.scene, drr_mode=DRRMode.DENSITY, flags=RenderFlags.RGBA, zfar=self.device.source_to_detector_distance)
+                rendered_layers = self.gl_renderer.render(self.scene, drr_mode=DRRMode.DENSITY, flags=RenderFlags.RGBA, zfar=zfar)
 
                 reg_img = pycuda.gl.RegisteredImage(int(self.gl_renderer.g_dualDepthTexId[0]), GL_TEXTURE_RECTANGLE, pycuda.gl.graphics_map_flags.READ_ONLY)
                 mapping = reg_img.map()
@@ -601,7 +602,22 @@ class Projector(object):
             print(f"density: {mesh_perf_end - mesh_perf_start}")
             mesh_perf_start = mesh_perf_end
 
-            rendered_layers = self.gl_renderer.render(self.scene, drr_mode=DRRMode.BACKDIST, flags=RenderFlags.RGBA, zfar=self.device.source_to_detector_distance*2)
+            rendered_layers = self.gl_renderer.render(self.scene, drr_mode=DRRMode.BACKDIST, flags=RenderFlags.RGBA, zfar=zfar)
+
+            rendered_layers = [[layer[:,:,0], layer[:,:,1], layer[:,:,2], layer[:,:,3]] for layer in rendered_layers]
+            # rendered_layers = [x[0] for x in rendered_layers] + list(reversed([x[1] for x in rendered_layers]))
+            rendered_layers = [y for x in rendered_layers for y in x]
+            rendered_layers = [np.swapaxes(x, 0, 1) for x in rendered_layers]
+
+            np.save("peeledlayers.npy", np.array(rendered_layers))
+
+
+            # for i, im in enumerate(rendered_layers):
+            #     above_zfar = im[im>-zfar+.001]
+            #     if len(above_zfar) == 0:
+            #         above_zfar = im
+            #     remapped = np.interp(im, (np.amin(above_zfar), np.amax(im)), (0, 255)).astype(np.uint8)
+            #     cv2.imwrite(f'asdfsa{i}.png', remapped)
 
             mesh_perf_end = time.perf_counter()
             print(f"peel: {mesh_perf_end - mesh_perf_start}")
