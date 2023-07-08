@@ -62,20 +62,24 @@ void main(void)
 
 	if (fragDepth < nearestDepth || fragDepth > farthestDepth) {
 		// Skip this depth in the peeling algorithm
-		gl_FragData[0].xy = vec2(-MaxDepth);
+		gl_FragData[0].rgba = vec4(-MaxDepth);
 		return;
 	}
 	
 	if (fragDepth > nearestDepth && fragDepth < farthestDepth) {
 		// This fragment needs to be peeled again
-		gl_FragData[0].xy = vec2(-fragDepth, fragDepth);
+        if (gl_FrontFacing) {
+            gl_FragData[0].rgba = vec4(-fragDepth, fragDepth, -MaxDepth, -MaxDepth);
+        } else {
+            gl_FragData[0].rgba = vec4(-MaxDepth, -MaxDepth, -fragDepth, fragDepth);
+        }
 		return;
 	}
 	
 	// If we made it here, this fragment is on the peeled layer from last pass
 	// therefore, we need to shade it, and make sure it is not peeled any farther
 	// vec4 color = ShadeFragment();
-	gl_FragData[0].xy = vec2(-MaxDepth);
+	gl_FragData[0].rgba = vec4(-MaxDepth);
 	
 	// if (fragDepth == nearestDepth) {
 	// 	gl_FragData[1].xyz += color.rgb * color.a * alphaMultiplier;

@@ -343,9 +343,9 @@ class Projector(object):
         # Might want to disallow using intensity_upper_bound, due to nonsensicalness
 
 
-        self.max_mesh_depth = 16
+        self.max_mesh_depth = 32
         # self.max_mesh_depth = max_mesh_depth
-        if self.max_mesh_depth != 16:
+        if self.max_mesh_depth != 32:
             raise ValueError("max_mesh_depth must be 32") # TODO: remove this restriction
         # if self.max_mesh_depth % 2 != 0:
         #     raise ValueError("max_mesh_depth must be even")
@@ -607,16 +607,16 @@ class Projector(object):
             print(f"peel: {mesh_perf_end - mesh_perf_start}")
             mesh_perf_start = mesh_perf_end
 
-            for tex_idx in range(self.gl_renderer.max_dual_peel_layers*2):
+            for tex_idx in range(self.gl_renderer.max_dual_peel_layers):
                 reg_img = pycuda.gl.RegisteredImage(int(self.gl_renderer.g_dualDepthTexId[tex_idx]), GL_TEXTURE_RECTANGLE, pycuda.gl.graphics_map_flags.READ_ONLY)
                 mapping = reg_img.map()
 
                 src = mapping.array(0,0)
                 cpy = pycuda.driver.Memcpy2D()
                 cpy.set_src_array(src)
-                pointer_into_additive_densities = int(self.mesh_hit_alphas_gpua) + tex_idx * self.n_rays * 2 * NUMBYTES_FLOAT32
+                pointer_into_additive_densities = int(self.mesh_hit_alphas_gpua) + tex_idx * self.n_rays * 4 * NUMBYTES_FLOAT32
                 cpy.set_dst_device(int(pointer_into_additive_densities))
-                cpy.width_in_bytes = cpy.src_pitch = cpy.dst_pitch = int(self.width * 2 * NUMBYTES_FLOAT32)
+                cpy.width_in_bytes = cpy.src_pitch = cpy.dst_pitch = int(self.width * 4 * NUMBYTES_FLOAT32)
                 cpy.height = int(self.height)
                 cpy(aligned=False)
 
