@@ -604,7 +604,7 @@ class Projector(object):
 
             rendered_layers = self.gl_renderer.render(self.scene, drr_mode=DRRMode.BACKDIST, flags=RenderFlags.RGBA, zfar=zfar)
 
-            rendered_layers = [[layer[:,:,0], layer[:,:,1], layer[:,:,2], layer[:,:,3]] for layer in rendered_layers]
+            rendered_layers = [[-layer[:,:,0], layer[:,:,1], -layer[:,:,2], layer[:,:,3]] for layer in rendered_layers]
             # rendered_layers = [x[0] for x in rendered_layers] + list(reversed([x[1] for x in rendered_layers]))
             rendered_layers = [y for x in rendered_layers for y in x]
             rendered_layers = [np.swapaxes(x, 0, 1) for x in rendered_layers]
