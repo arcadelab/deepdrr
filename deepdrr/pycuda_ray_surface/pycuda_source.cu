@@ -4,7 +4,7 @@
 // Component 1: Ray-surface intersection geometry tests
 //-----------------------------------------------------------
 #define EPSILON TOLERANCE
-#define MAX_INTERSECTIONS 16 // TODO: parameter
+#define MAX_INTERSECTIONS MAX_INTERSECTIONS_SUB // TODO: parameter
 MOLLER_DOUBLE_PRECISION_DIRECTIVE
 
 using namespace std;
@@ -902,8 +902,18 @@ __device__ void tide(
 )
 {
     {
-        for (int i = 0; i < MAX_INTERSECTIONS; i++) { // TODO
-            interceptFacing[i] = i < MAX_INTERSECTIONS / 2 ? 1 : -1;
+        // for (int i = 0; i < MAX_INTERSECTIONS; i++) { // TODO
+        //     interceptFacing[i] = i < MAX_INTERSECTIONS / 2 ? 1 : -1;
+        // }
+        for (int i = 0; i < MAX_INTERSECTIONS; i+=4) {
+            interceptFacing[i] = 1;
+            interceptFacing[i+1] = 1;
+            interceptFacing[i+2] = -1;
+            interceptFacing[i+3] = -1;
+            interceptTs[i] = -interceptTs[i];
+            interceptTs[i+1] = interceptTs[i+1];
+            interceptTs[i+2] = -interceptTs[i+2];
+            interceptTs[i+3] = interceptTs[i+3];
         }
     }
 
@@ -943,8 +953,51 @@ __device__ void tide(
         }
     }
 
+    // remove t duplicates
     {
-        int altitudes[MAX_INTERSECTIONS];
+        int dstIdx = 0;
+        int srcIdx = 1;
+        while (srcIdx < MAX_INTERSECTIONS) {
+            if (interceptTs[srcIdx] == interceptTs[dstIdx]) {
+                interceptTs[srcIdx] = INFINITY;
+                interceptFacing[srcIdx] = 0;
+                (*interceptCounts) -= 1;
+                srcIdx++;
+            } else {
+                dstIdx = srcIdx;
+                srcIdx++;
+            }
+        }
+    }
+
+    {
+        // Fill gaps
+        int dstIdx = 0;
+        int srcIdx = 0;
+
+        while (dstIdx < MAX_INTERSECTIONS && interceptFacing[dstIdx] != 0) {
+            dstIdx++;
+        }
+        srcIdx = dstIdx + 1;
+
+        while (srcIdx < MAX_INTERSECTIONS && dstIdx < MAX_INTERSECTIONS) {
+            while (srcIdx < MAX_INTERSECTIONS && interceptFacing[srcIdx] == 0) {
+                srcIdx++;
+            }
+            if (srcIdx < MAX_INTERSECTIONS) {
+                interceptTs[dstIdx] = interceptTs[srcIdx];
+                interceptFacing[dstIdx] = interceptFacing[srcIdx];
+                interceptTs[srcIdx] = INFINITY;
+                interceptFacing[srcIdx] = 0;
+            }
+            srcIdx++;
+            dstIdx++;
+        }
+    }
+
+    {
+        
+        int altitudes[64]; // TODO
         int altitude = 0;
         
         for (int i = 0; i < MAX_INTERSECTIONS; i++) {
@@ -1026,7 +1079,7 @@ __device__ void reorder(
     int rayIdx
 )
 {
-    int num_layers = 2;
+    int num_layers = 4;
     for (int i = 0; i < MAX_INTERSECTIONS / num_layers; i++) {
         for (int j = 0; j < num_layers; j++) {
             // rayInterceptTsOut[rayIdx * MAX_INTERSECTIONS + i] = rayInterceptTsIn[rayIdx * MAX_INTERSECTIONS + i];

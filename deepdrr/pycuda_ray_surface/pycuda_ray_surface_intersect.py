@@ -162,7 +162,7 @@ class RSISurface(object):
 
 
 class PyCudaRSIManager(object):
-    def __init__(self, params=None):
+    def __init__(self, params=None, max_intersections=4):
         # - The constant parameters QUANT_LEVELS and LARGE_POS_VALUE
         #   represent design choices that ought to be fixed.
         # - PATH, LD_LIBRARY_PATH, CUDA_INC_DIR are environment variables
@@ -209,7 +209,7 @@ class PyCudaRSIManager(object):
         # module = importlib.import_module(name)
 
         subst_dict = {
-            'MORTON': 'uint64_t', 'COORD': 'unsigned int', 'TOLERANCE': self.tolerance,
+            'MORTON': 'uint64_t', 'COORD': 'unsigned int', 'TOLERANCE': self.tolerance, 'MAX_INTERSECTIONS_SUB': str(int(max_intersections)),
             'MOLLER_DOUBLE_PRECISION_DIRECTIVE': '#define COMPILE_DOUBLE_PRECISION_MOLLER 1' \
                 if self.params['USE_DOUBLE_PRECISION_MOLLER'] else '',
             'BVH_PREPROCESSOR_DIRECTIVE': '#define COMPILE_NON_ESSENTIAL 1' \

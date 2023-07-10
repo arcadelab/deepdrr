@@ -605,19 +605,9 @@ class Projector(object):
             rendered_layers = self.gl_renderer.render(self.scene, drr_mode=DRRMode.BACKDIST, flags=RenderFlags.RGBA, zfar=zfar)
 
             rendered_layers = [[-layer[:,:,0], layer[:,:,1], -layer[:,:,2], layer[:,:,3]] for layer in rendered_layers]
-            # rendered_layers = [x[0] for x in rendered_layers] + list(reversed([x[1] for x in rendered_layers]))
             rendered_layers = [y for x in rendered_layers for y in x]
             rendered_layers = [np.swapaxes(x, 0, 1) for x in rendered_layers]
-
             np.save("peeledlayers.npy", np.array(rendered_layers))
-
-
-            # for i, im in enumerate(rendered_layers):
-            #     above_zfar = im[im>-zfar+.001]
-            #     if len(above_zfar) == 0:
-            #         above_zfar = im
-            #     remapped = np.interp(im, (np.amin(above_zfar), np.amax(im)), (0, 255)).astype(np.uint8)
-            #     cv2.imwrite(f'asdfsa{i}.png', remapped)
 
             mesh_perf_end = time.perf_counter()
             print(f"peel: {mesh_perf_end - mesh_perf_start}")
@@ -648,14 +638,23 @@ class Projector(object):
                 np.uint64(self.mesh_hit_alphas_gpua),
                 np.uint64(self.mesh_hit_alphas_gpu),
                 np.int32(self.n_rays), 
+                # np.int32(self.max_mesh_depth),
                 block=(int(self.rsi_manager.block_x/2),1,1),  # TODO ??
                 # block=self.block_dims,  # TODO ??
                 grid=self.grid_lambda
             )
 
+            self.context.synchronize()
             mesh_perf_end = time.perf_counter()
             print(f"peel reorder: {mesh_perf_end - mesh_perf_start}")
             mesh_perf_start = mesh_perf_end
+
+            self.cuda_driver.memcpy_dtoh(self.mesh_hit_alphas, self.mesh_hit_alphas_gpu)
+            self.cuda_driver.memcpy_dtoh(self.mesh_hit_alphas_a, self.mesh_hit_alphas_gpua)
+            self.cuda_driver.memcpy_dtoh(self.mesh_hit_facing, self.mesh_hit_facing_gpu)
+            np.save("alphas.npy", self.mesh_hit_alphas)
+            np.save("alphasa.npy", self.mesh_hit_alphas_a)
+            np.save("facing.npy", self.mesh_hit_facing)
 
             self.rsi_manager.kernel_tide(
                 np.uint64(self.mesh_hit_counts_gpu),
@@ -663,10 +662,19 @@ class Projector(object):
                 np.uint64(self.mesh_hit_facing_gpu),
                 np.int32(self.n_rays), 
                 np.float32(self.device.source_to_detector_distance*2),
+                # np.int32(self.max_mesh_depth),
                 block=(int(self.rsi_manager.block_x/2),1,1),  # TODO ??
                 # block=self.block_dims,  # TODO ??
                 grid=self.grid_lambda
             )
+            self.context.synchronize()
+
+            self.cuda_driver.memcpy_dtoh(self.mesh_hit_alphas, self.mesh_hit_alphas_gpu)
+            self.cuda_driver.memcpy_dtoh(self.mesh_hit_alphas_a, self.mesh_hit_alphas_gpua)
+            self.cuda_driver.memcpy_dtoh(self.mesh_hit_facing, self.mesh_hit_facing_gpu)
+            np.save("alphas.npy", self.mesh_hit_alphas)
+            np.save("alphasa.npy", self.mesh_hit_alphas_a)
+            np.save("facing.npy", self.mesh_hit_facing)
 
             self.context.synchronize()
 
@@ -1277,7 +1285,7 @@ class Projector(object):
 
         self.n_rays = height * width # TODO: move this
 
-        self.rsi_manager = PyCudaRSIManager()
+        self.rsi_manager = PyCudaRSIManager(max_intersections = self.max_mesh_depth)
         self.pycuda_rsi = PyCudaRSI(self.rsi_manager, n_rays=self.n_rays)  # TODO: max mesh depth parameter
         self.prim_surfs = [RSISurface(self.rsi_manager, prim.compute_vertices().copy(), prim.triangles().copy()) for prim in self.primitives]
 
@@ -1444,11 +1452,14 @@ class Projector(object):
         )
 
 
-        self.mesh_hit_counts_gpu = safe_mem_alloc(math.prod((len(self.primitives), width * height)) * NUMBYTES_INT32)
-        self.mesh_hit_alphas_gpu = safe_mem_alloc(math.prod((len(self.primitives), width * height, self.max_mesh_depth)) * NUMBYTES_FLOAT32)
-        self.mesh_hit_alphas_gpua = safe_mem_alloc(math.prod((len(self.primitives), width * height, self.max_mesh_depth)) * NUMBYTES_FLOAT32)
-        self.mesh_hit_facing_gpu = safe_mem_alloc(math.prod((len(self.primitives), width * height, self.max_mesh_depth)) * NUMBYTES_INT8)
-        self.ray_directions_gpu = safe_mem_alloc(math.prod((len(self.primitives), width * height, 3)) * NUMBYTES_FLOAT32)
+        self.mesh_hit_counts_gpu = safe_mem_alloc(math.prod((width * height, )) * NUMBYTES_INT32)
+        self.mesh_hit_alphas_gpu = safe_mem_alloc(math.prod((width * height, self.max_mesh_depth)) * NUMBYTES_FLOAT32)
+        self.mesh_hit_alphas_gpua = safe_mem_alloc(math.prod((width * height, self.max_mesh_depth)) * NUMBYTES_FLOAT32)
+        self.mesh_hit_facing_gpu = safe_mem_alloc(math.prod((width * height, self.max_mesh_depth)) * NUMBYTES_INT8)
+        # self.ray_directions_gpu = safe_mem_alloc(math.prod((len(self.primitives), width * height, 3)) * NUMBYTES_FLOAT32)
+        self.mesh_hit_alphas = np.zeros((width * height, self.max_mesh_depth), dtype=np.float32)
+        self.mesh_hit_alphas_a = np.zeros((width * height, self.max_mesh_depth), dtype=np.float32)
+        self.mesh_hit_facing = np.zeros((width * height, self.max_mesh_depth), dtype=np.int8)
 
         # Scatter-specific initializations
 
