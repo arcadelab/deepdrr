@@ -610,8 +610,8 @@ class Projector(object):
             print(f"peel: {mesh_perf_end - mesh_perf_start}")
             mesh_perf_start = mesh_perf_end
 
-            for tex_idx in range(self.gl_renderer.max_dual_peel_layers):
-                reg_img = pycuda.gl.RegisteredImage(int(self.gl_renderer.g_dualDepthTexId[tex_idx]), GL_TEXTURE_RECTANGLE, pycuda.gl.graphics_map_flags.READ_ONLY)
+            for tex_idx in range(self.gl_renderer.max_peel_layers):
+                reg_img = pycuda.gl.RegisteredImage(int(self.gl_renderer.g_peelTexId[tex_idx]), GL_TEXTURE_RECTANGLE, pycuda.gl.graphics_map_flags.READ_ONLY)
                 mapping = reg_img.map()
 
                 src = mapping.array(0,0)

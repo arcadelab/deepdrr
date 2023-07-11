@@ -57,23 +57,13 @@ class Renderer(object):
         self.viewport_width = viewport_width
         self.viewport_height = viewport_height
         self.point_size = point_size
-        self.max_dual_peel_layers = max_dual_peel_layers
+        self.max_peel_layers = max_dual_peel_layers
 
         # Optional framebuffer for offscreen renders
         self._fb_initialized = False
-        self._main_fb = None
-        self._main_cb = None
-        self._main_db = None
-        self._main_fb_ms = None
-        self._main_cb_ms = None
-        self._main_db_ms = None
         self._main_fb_dims = (None, None)
-        self._shadow_fb = None
-        self._latest_znear = DEFAULT_Z_NEAR
-        self._latest_zfar = DEFAULT_Z_FAR
-        self.g_dualDepthTexId = None
-        self.g_dualPeelingSingleFboId = None
-        self.g_dualPeelingFboIds = None
+        self.g_peelTexId = None
+        self.g_peelFboIds = None
         self.g_densityTexId = None
         self.g_densityFboId = None
 
@@ -119,7 +109,7 @@ class Renderer(object):
         self._update_context(scene, flags)
 
         if drr_mode != DRRMode.DENSITY:
-            for i in range(self.max_dual_peel_layers):
+            for i in range(self.max_peel_layers):
                 retval = self._forward_pass(scene, flags, seg_node_map=seg_node_map, drr_mode=drr_mode, zfar=zfar, peelnum=i, front=True)
         else:
             retval = self._forward_pass(scene, flags, seg_node_map=seg_node_map, drr_mode=drr_mode, zfar=zfar, peelnum=0)
@@ -157,7 +147,7 @@ class Renderer(object):
         self._texture_alloc_idx = 0
 
         self._delete_main_framebuffer()
-        self._delete_shadow_framebuffer()
+        # self._delete_shadow_framebuffer()
 
     def __del__(self):
         try:
@@ -285,7 +275,7 @@ class Renderer(object):
         if drr_mode == DRRMode.DIST:
             if peelnum > 0:
                 glActiveTexture(GL_TEXTURE0 + 0)
-                glBindTexture(GL_TEXTURE_RECTANGLE, self.g_dualDepthTexId[peelnum-1])
+                glBindTexture(GL_TEXTURE_RECTANGLE, self.g_peelTexId[peelnum-1])
                 program.set_uniform('DepthBlenderTex', 0)
                 glActiveTexture(GL_TEXTURE0)
             
@@ -587,7 +577,7 @@ class Renderer(object):
         if drr_mode == DRRMode.DENSITY:
             glBindFramebuffer(GL_FRAMEBUFFER, self.g_densityFboId)
         else:
-            glBindFramebuffer(GL_FRAMEBUFFER, self.g_dualPeelingFboIds[peelnum])
+            glBindFramebuffer(GL_FRAMEBUFFER, self.g_peelFboIds[peelnum])
 
         glDrawBuffer(GL_COLOR_ATTACHMENT_LIST[0])
 
@@ -601,14 +591,6 @@ class Renderer(object):
     # Framebuffer Management
     ###########################################################################
 
-    def _configure_shadow_framebuffer(self):
-        if self._shadow_fb is None:
-            self._shadow_fb = glGenFramebuffers(1)
-
-    def _delete_shadow_framebuffer(self):
-        if self._shadow_fb is not None:
-            glDeleteFramebuffers(1, [self._shadow_fb])
-
     def _configure_main_framebuffer(self):
         # If mismatch with prior framebuffer, delete it
         if (self._fb_initialized and
@@ -620,20 +602,20 @@ class Renderer(object):
         if not self._fb_initialized:
             self._fb_initialized = True
 
-            self.g_dualDepthTexId = glGenTextures(self.max_dual_peel_layers)
-            self.g_dualPeelingFboIds = glGenFramebuffers(self.max_dual_peel_layers)
+            self.g_peelTexId = glGenTextures(self.max_peel_layers)
+            self.g_peelFboIds = glGenFramebuffers(self.max_peel_layers)
 
-            for i in range(self.max_dual_peel_layers):
-                glBindTexture(GL_TEXTURE_RECTANGLE, self.g_dualDepthTexId[i])
+            for i in range(self.max_peel_layers):
+                glBindTexture(GL_TEXTURE_RECTANGLE, self.g_peelTexId[i])
                 glTexParameteri(GL_TEXTURE_RECTANGLE, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE)
                 glTexParameteri(GL_TEXTURE_RECTANGLE, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE)
                 glTexParameteri(GL_TEXTURE_RECTANGLE, GL_TEXTURE_MIN_FILTER, GL_NEAREST)
                 glTexParameteri(GL_TEXTURE_RECTANGLE, GL_TEXTURE_MAG_FILTER, GL_NEAREST)
                 glTexImage2D(GL_TEXTURE_RECTANGLE, 0, GL_RGBA32F, self.viewport_width, self.viewport_height, 0, GL_RGBA, GL_FLOAT, None)
 
-            for i in range(self.max_dual_peel_layers):
-                glBindFramebuffer(GL_FRAMEBUFFER, self.g_dualPeelingFboIds[i])
-                glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT_LIST[0], GL_TEXTURE_RECTANGLE, self.g_dualDepthTexId[i], 0)
+            for i in range(self.max_peel_layers):
+                glBindFramebuffer(GL_FRAMEBUFFER, self.g_peelFboIds[i])
+                glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT_LIST[0], GL_TEXTURE_RECTANGLE, self.g_peelTexId[i], 0)
 
             self.g_densityTexId = glGenTextures(1)
             self.g_densityFboId = glGenFramebuffers(1)
@@ -651,21 +633,12 @@ class Renderer(object):
             self._main_fb_dims = (self.viewport_width, self.viewport_height)
 
     def _delete_main_framebuffer(self):
-        if self._main_fb is not None:
-            glDeleteFramebuffers(2, [self._main_fb, self._main_fb_ms])
-        if self._main_cb is not None:
-            glDeleteRenderbuffers(2, [self._main_cb, self._main_cb_ms])
-        if self._main_db is not None:
-            glDeleteRenderbuffers(2, [self._main_db, self._main_db_ms])
-        if self.g_dualDepthTexId is not None:
-            glDeleteTextures(2, self.g_dualDepthTexId)
-            self.g_dualDepthTexId = None # TODO: needed?
-        if self.g_dualPeelingSingleFboId is not None:
-            glDeleteFramebuffers(1, self.g_dualPeelingSingleFboId)
-            self.g_dualPeelingSingleFboId = None #TODO: needed?
-        if self.g_dualPeelingFboIds is not None:
-            glDeleteFramebuffers(self.max_dual_peel_layers, self.g_dualPeelingFboIds)
-            self.g_dualPeelingFboIds = None
+        if self.g_peelTexId is not None:
+            glDeleteTextures(2, self.g_peelTexId)
+            self.g_peelTexId = None
+        if self.g_peelFboIds is not None:
+            glDeleteFramebuffers(self.max_peel_layers, self.g_peelFboIds)
+            self.g_peelFboIds = None
         if self.g_densityTexId is not None:
             glDeleteTextures(1, [self.g_densityTexId])
             self.g_densityTexId = None
@@ -674,12 +647,6 @@ class Renderer(object):
             self.g_densityFboId = None
 
         self._fb_initialized = False
-        self._main_fb = None
-        self._main_cb = None
-        self._main_db = None
-        self._main_fb_ms = None
-        self._main_cb_ms = None
-        self._main_db_ms = None
         self._main_fb_dims = (None, None)
 
     # def _read_main_framebuffer(self, scene, flags, drr_mode=DRRMode.NONE, front=True):
