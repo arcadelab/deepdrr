@@ -421,57 +421,6 @@ class Renderer(object):
     # Shader Program Management
     ###########################################################################
 
-    def _get_text_program(self):
-        program = self._program_cache.get_program(
-            vertex_shader='text.vert',
-            fragment_shader='text.frag'
-        )
-
-        if not program._in_context():
-            program._add_to_context()
-
-        return program
-
-    def _compute_max_n_lights(self, flags):
-        max_n_lights = [MAX_N_LIGHTS, MAX_N_LIGHTS, MAX_N_LIGHTS]
-        n_tex_units = glGetIntegerv(GL_MAX_TEXTURE_IMAGE_UNITS)
-
-        # Reserved texture units: 6
-        #   Normal Map
-        #   Occlusion Map
-        #   Emissive Map
-        #   Base Color or Diffuse Map
-        #   MR or SG Map
-        #   Environment cubemap
-
-        n_reserved_textures = 6
-        n_available_textures = n_tex_units - n_reserved_textures
-
-        # Distribute textures evenly among lights with shadows, with
-        # a preference for directional lights
-        n_shadow_types = 0
-        if flags & RenderFlags.SHADOWS_DIRECTIONAL:
-            n_shadow_types += 1
-        if flags & RenderFlags.SHADOWS_SPOT:
-            n_shadow_types += 1
-        if flags & RenderFlags.SHADOWS_POINT:
-            n_shadow_types += 1
-
-        if n_shadow_types > 0:
-            tex_per_light = n_available_textures // n_shadow_types
-
-            if flags & RenderFlags.SHADOWS_DIRECTIONAL:
-                max_n_lights[0] = (
-                    tex_per_light +
-                    (n_available_textures - tex_per_light * n_shadow_types)
-                )
-            if flags & RenderFlags.SHADOWS_SPOT:
-                max_n_lights[1] = tex_per_light
-            if flags & RenderFlags.SHADOWS_POINT:
-                max_n_lights[2] = tex_per_light
-
-        return max_n_lights
-
     def _get_primitive_program(self, primitive, flags, program_flags, drr_mode=DRRMode.NONE, peelnum=0):
         vertex_shader = None
         fragment_shader = None
@@ -492,68 +441,7 @@ class Renderer(object):
         # Set up vertex buffer DEFINES
         bf = primitive.buf_flags
         buf_idx = 1
-        if bf & BufFlags.NORMAL:
-            defines['NORMAL_LOC'] = buf_idx
-            buf_idx += 1
-        if bf & BufFlags.TANGENT:
-            defines['TANGENT_LOC'] = buf_idx
-            buf_idx += 1
-        if bf & BufFlags.TEXCOORD_0:
-            defines['TEXCOORD_0_LOC'] = buf_idx
-            buf_idx += 1
-        if bf & BufFlags.TEXCOORD_1:
-            defines['TEXCOORD_1_LOC'] = buf_idx
-            buf_idx += 1
-        if bf & BufFlags.COLOR_0:
-            defines['COLOR_0_LOC'] = buf_idx
-            buf_idx += 1
-        if bf & BufFlags.JOINTS_0:
-            defines['JOINTS_0_LOC'] = buf_idx
-            buf_idx += 1
-        if bf & BufFlags.WEIGHTS_0:
-            defines['WEIGHTS_0_LOC'] = buf_idx
-            buf_idx += 1
         defines['INST_M_LOC'] = buf_idx
-
-        # Set up shadow mapping defines
-        if flags & RenderFlags.SHADOWS_DIRECTIONAL:
-            defines['DIRECTIONAL_LIGHT_SHADOWS'] = 1
-        if flags & RenderFlags.SHADOWS_SPOT:
-            defines['SPOT_LIGHT_SHADOWS'] = 1
-        if flags & RenderFlags.SHADOWS_POINT:
-            defines['POINT_LIGHT_SHADOWS'] = 1
-        max_n_lights = self._compute_max_n_lights(flags)
-        defines['MAX_DIRECTIONAL_LIGHTS'] = max_n_lights[0]
-        defines['MAX_SPOT_LIGHTS'] = max_n_lights[1]
-        defines['MAX_POINT_LIGHTS'] = max_n_lights[2]
-
-        # Set up vertex normal defines
-        if program_flags & ProgramFlags.VERTEX_NORMALS:
-            defines['VERTEX_NORMALS'] = 1
-        if program_flags & ProgramFlags.FACE_NORMALS:
-            defines['FACE_NORMALS'] = 1
-
-        # Set up material texture defines
-        if bool(program_flags & ProgramFlags.USE_MATERIAL):
-            tf = primitive.material.tex_flags
-            if tf & TexFlags.NORMAL:
-                defines['HAS_NORMAL_TEX'] = 1
-            if tf & TexFlags.OCCLUSION:
-                defines['HAS_OCCLUSION_TEX'] = 1
-            if tf & TexFlags.EMISSIVE:
-                defines['HAS_EMISSIVE_TEX'] = 1
-            if tf & TexFlags.BASE_COLOR:
-                defines['HAS_BASE_COLOR_TEX'] = 1
-            if tf & TexFlags.METALLIC_ROUGHNESS:
-                defines['HAS_METALLIC_ROUGHNESS_TEX'] = 1
-            if tf & TexFlags.DIFFUSE:
-                defines['HAS_DIFFUSE_TEX'] = 1
-            if tf & TexFlags.SPECULAR_GLOSSINESS:
-                defines['HAS_SPECULAR_GLOSSINESS_TEX'] = 1
-            if isinstance(primitive.material, MetallicRoughnessMaterial):
-                defines['USE_METALLIC_MATERIAL'] = 1
-            elif isinstance(primitive.material, SpecularGlossinessMaterial):
-                defines['USE_GLOSSY_MATERIAL'] = 1
 
         program = self._program_cache.get_program(
             vertex_shader=vertex_shader,
