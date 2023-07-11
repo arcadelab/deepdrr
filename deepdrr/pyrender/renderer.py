@@ -60,6 +60,7 @@ class Renderer(object):
         self.max_dual_peel_layers = max_dual_peel_layers
 
         # Optional framebuffer for offscreen renders
+        self._fb_initialized = False
         self._main_fb = None
         self._main_cb = None
         self._main_db = None
@@ -610,18 +611,17 @@ class Renderer(object):
 
     def _configure_main_framebuffer(self):
         # If mismatch with prior framebuffer, delete it
-        if (self._main_fb is not None and
+        if (self._fb_initialized and
                 self.viewport_width != self._main_fb_dims[0] or
                 self.viewport_height != self._main_fb_dims[1]):
             self._delete_main_framebuffer()
 
         # If framebuffer doesn't exist, create it
-        if self._main_fb is None:
+        if not self._fb_initialized:
+            self._fb_initialized = True
+
             self.g_dualDepthTexId = glGenTextures(self.max_dual_peel_layers)
-            # self.g_dualPeelingSingleFboId = glGenFramebuffers(1)
             self.g_dualPeelingFboIds = glGenFramebuffers(self.max_dual_peel_layers)
-
-
 
             for i in range(self.max_dual_peel_layers):
                 glBindTexture(GL_TEXTURE_RECTANGLE, self.g_dualDepthTexId[i])
@@ -630,15 +630,10 @@ class Renderer(object):
                 glTexParameteri(GL_TEXTURE_RECTANGLE, GL_TEXTURE_MIN_FILTER, GL_NEAREST)
                 glTexParameteri(GL_TEXTURE_RECTANGLE, GL_TEXTURE_MAG_FILTER, GL_NEAREST)
                 glTexImage2D(GL_TEXTURE_RECTANGLE, 0, GL_RGBA32F, self.viewport_width, self.viewport_height, 0, GL_RGBA, GL_FLOAT, None)
-                # print(f"self.g_dualDepthTexId[{i}] = {self.g_dualDepthTexId[i]} {self.viewport_width} {self.viewport_height}")
 
-
-            # glBindFramebuffer(GL_FRAMEBUFFER, self.g_dualPeelingSingleFboId)
             for i in range(self.max_dual_peel_layers):
                 glBindFramebuffer(GL_FRAMEBUFFER, self.g_dualPeelingFboIds[i])
                 glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT_LIST[0], GL_TEXTURE_RECTANGLE, self.g_dualDepthTexId[i], 0)
-                # glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT_LIST[i], GL_TEXTURE_RECTANGLE, self.g_dualDepthTexId[i], 0)
-
 
             self.g_densityTexId = glGenTextures(1)
             self.g_densityFboId = glGenFramebuffers(1)
@@ -727,6 +722,7 @@ class Renderer(object):
             glDeleteFramebuffers(1, [self.g_densityFboId])
             self.g_densityFboId = None
 
+        self._fb_initialized = False
         self._main_fb = None
         self._main_cb = None
         self._main_db = None
