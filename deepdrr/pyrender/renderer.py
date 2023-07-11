@@ -2,21 +2,11 @@
 
 Author: Matthew Matl
 """
-import sys
 import numpy as np
-import PIL
-
-from .constants import (RenderFlags, TextAlign, GLTF, BufFlags, TexFlags,
-                        ProgramFlags, DEFAULT_Z_FAR, DEFAULT_Z_NEAR,
-                        SHADOW_TEX_SZ, MAX_N_LIGHTS, DRRMode)
-from .shader_program import ShaderProgramCache
-from .material import MetallicRoughnessMaterial, SpecularGlossinessMaterial
-from .light import PointLight, SpotLight, DirectionalLight
-from .font import FontCache
-from .utils import format_color_vector
-
 from OpenGL.GL import *
 
+from .constants import (RenderFlags, ProgramFlags, DRRMode)
+from .shader_program import ShaderProgramCache
 
 GL_COLOR_ATTACHMENT_LIST = [
     GL_COLOR_ATTACHMENT0,
