@@ -95,7 +95,7 @@ class Renderer(object):
 
         if drr_mode != DRRMode.DENSITY:
             for i in range(self.max_peel_layers):
-                retval = self._forward_pass(scene, flags, seg_node_map=seg_node_map, drr_mode=drr_mode, zfar=zfar, peelnum=i, front=True)
+                retval = self._forward_pass(scene, flags, seg_node_map=seg_node_map, drr_mode=drr_mode, zfar=zfar, peelnum=i)
         else:
             retval = self._forward_pass(scene, flags, seg_node_map=seg_node_map, drr_mode=drr_mode, zfar=zfar, peelnum=0)
 
@@ -134,9 +134,9 @@ class Renderer(object):
     # Rendering passes
     ###########################################################################
 
-    def _forward_pass(self, scene, flags, seg_node_map=None, drr_mode=DRRMode.NONE, zfar=0, peelnum=0, front=True):
+    def _forward_pass(self, scene, flags, seg_node_map=None, drr_mode=DRRMode.NONE, zfar=0, peelnum=0):
         # Set up viewport for render
-        self._configure_forward_pass_viewport(flags, drr_mode=drr_mode, peelnum=peelnum, front=front)
+        self._configure_forward_pass_viewport(flags, drr_mode=drr_mode, peelnum=peelnum)
 
         # Clear it
         if drr_mode == DRRMode.DIST:
@@ -198,8 +198,7 @@ class Renderer(object):
                     flags=flags,
                     drr_mode=drr_mode,
                     zfar=zfar,
-                    peelnum=peelnum,
-                    front=front
+                    peelnum=peelnum
                 )
                 self._reset_active_textures()
 
@@ -213,7 +212,7 @@ class Renderer(object):
         # return []
 
 
-    def _bind_and_draw_primitive(self, primitive, pose, program, flags, drr_mode=DRRMode.NONE, zfar=3, peelnum=0, front=True):
+    def _bind_and_draw_primitive(self, primitive, pose, program, flags, drr_mode=DRRMode.NONE, zfar=3, peelnum=0):
         # Set model pose matrix
         program.set_uniform('M', pose)
 
@@ -410,7 +409,7 @@ class Renderer(object):
     # Viewport Management
     ###########################################################################
 
-    def _configure_forward_pass_viewport(self, flags, drr_mode=DRRMode.NONE, peelnum=0, front=True):
+    def _configure_forward_pass_viewport(self, flags, drr_mode=DRRMode.NONE, peelnum=0):
         self._configure_main_framebuffer()
 
         if drr_mode == DRRMode.DENSITY:
