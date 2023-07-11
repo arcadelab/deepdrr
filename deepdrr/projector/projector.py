@@ -576,8 +576,11 @@ class Projector(object):
                     node.is_visible = True
 
                 rendered_layers = self.gl_renderer.render(self.scene, drr_mode=DRRMode.DENSITY, flags=RenderFlags.RGBA, zfar=zfar)
+                
+                np.save(f"density{mat_idx}.npy", rendered_layers[0])
 
-                reg_img = pycuda.gl.RegisteredImage(int(self.gl_renderer.g_dualDepthTexId[0]), GL_TEXTURE_RECTANGLE, pycuda.gl.graphics_map_flags.READ_ONLY)
+                # reg_img = pycuda.gl.RegisteredImage(int(self.gl_renderer.g_dualDepthTexId[0]), GL_TEXTURE_RECTANGLE, pycuda.gl.graphics_map_flags.READ_ONLY)
+                reg_img = pycuda.gl.RegisteredImage(int(self.gl_renderer.g_densityTexId), GL_TEXTURE_RECTANGLE, pycuda.gl.graphics_map_flags.READ_ONLY)
                 mapping = reg_img.map()
 
                 src = mapping.array(0,0)
@@ -737,6 +740,8 @@ class Projector(object):
                 f"Running: {blocks_w}x{blocks_h} blocks with {self.threads}x{self.threads} threads each"
             )
 
+            self.context.synchronize()
+
             # log.info("args: {}".format('\n'.join(map(str, args))))
             # log.info(f"offset_w: {offset_w}, offset_h: {offset_h}")
             # log.info(f"block: {block}, grid: {(blocks_w, blocks_h)}")
@@ -760,6 +765,8 @@ class Projector(object):
                             grid=(self.max_block_index, self.max_block_index),
                         )
                         self.context.synchronize()
+
+            self.context.synchronize()
 
             project_tock = time.perf_counter()
             log.debug(

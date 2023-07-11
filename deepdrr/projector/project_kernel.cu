@@ -2579,7 +2579,7 @@ __global__ void projectKernel(
     bool mesh_hit_this_step = false;
 
 #if NUM_MESHES > 0
-    for (int i = 0; i < NUM_MESHES; i++) {
+    for (int i = 0; i < 1; i++) { // TODO no loop
       int hit_arr_index = 0;
       while (true) {
         hit_arr_index = i*(out_height*out_width)*max_mesh_depth+(vdx * out_width + udx)*max_mesh_depth+mesh_hit_index[i];

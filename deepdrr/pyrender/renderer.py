@@ -73,6 +73,8 @@ class Renderer(object):
         self.g_dualDepthTexId = None
         self.g_dualPeelingSingleFboId = None
         self.g_dualPeelingFboIds = None
+        self.g_densityTexId = None
+        self.g_densityFboId = None
 
         # Shader Program Cache
         self._program_cache = ShaderProgramCache()
@@ -364,7 +366,7 @@ class Renderer(object):
         if drr_mode != DRRMode.DENSITY:
             glClearColor(-zfar, -zfar, -zfar, -zfar)
         else:
-            glClearColor(0, 0, 0, 0);
+            glClearColor(0, 0, 0, 0)
 
 
         # glClear(GL_COLOR_BUFFER_BIT) # TODO
@@ -1152,7 +1154,11 @@ class Renderer(object):
         # else:
         #     glBindFramebuffer(GL_DRAW_FRAMEBUFFER, 0)
         # glBindFramebuffer(GL_FRAMEBUFFER, self.g_dualPeelingSingleFboId)
-        glBindFramebuffer(GL_FRAMEBUFFER, self.g_dualPeelingFboIds[peelnum])
+
+        if drr_mode == DRRMode.DENSITY:
+            glBindFramebuffer(GL_FRAMEBUFFER, self.g_densityFboId)
+        else:
+            glBindFramebuffer(GL_FRAMEBUFFER, self.g_dualPeelingFboIds[peelnum])
 
         glDrawBuffer(GL_COLOR_ATTACHMENT_LIST[0])
         # glDrawBuffer(GL_COLOR_ATTACHMENT_LIST[peelnum+(0 if front else self.max_dual_peel_layers)])
@@ -1217,6 +1223,8 @@ class Renderer(object):
             # self.g_dualPeelingSingleFboId = glGenFramebuffers(1)
             self.g_dualPeelingFboIds = glGenFramebuffers(self.max_dual_peel_layers)
 
+
+
             for i in range(self.max_dual_peel_layers):
                 glBindTexture(GL_TEXTURE_RECTANGLE, self.g_dualDepthTexId[i])
                 glTexParameteri(GL_TEXTURE_RECTANGLE, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE)
@@ -1232,6 +1240,20 @@ class Renderer(object):
                 glBindFramebuffer(GL_FRAMEBUFFER, self.g_dualPeelingFboIds[i])
                 glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT_LIST[0], GL_TEXTURE_RECTANGLE, self.g_dualDepthTexId[i], 0)
                 # glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT_LIST[i], GL_TEXTURE_RECTANGLE, self.g_dualDepthTexId[i], 0)
+
+
+            self.g_densityTexId = glGenTextures(1)
+            self.g_densityFboId = glGenFramebuffers(1)
+            
+            glBindTexture(GL_TEXTURE_RECTANGLE, self.g_densityTexId)
+            glTexParameteri(GL_TEXTURE_RECTANGLE, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE)
+            glTexParameteri(GL_TEXTURE_RECTANGLE, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE)
+            glTexParameteri(GL_TEXTURE_RECTANGLE, GL_TEXTURE_MIN_FILTER, GL_NEAREST)
+            glTexParameteri(GL_TEXTURE_RECTANGLE, GL_TEXTURE_MAG_FILTER, GL_NEAREST)
+            glTexImage2D(GL_TEXTURE_RECTANGLE, 0, GL_RG32F, self.viewport_width, self.viewport_height, 0, GL_RG, GL_FLOAT, None)
+
+            glBindFramebuffer(GL_FRAMEBUFFER, self.g_densityFboId)
+            glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT_LIST[0], GL_TEXTURE_RECTANGLE, self.g_densityTexId, 0)            
 
             # Generate standard buffer
             self._main_cb, self._main_db = glGenRenderbuffers(2)
@@ -1300,6 +1322,12 @@ class Renderer(object):
         if self.g_dualPeelingFboIds is not None:
             glDeleteFramebuffers(self.max_dual_peel_layers, self.g_dualPeelingFboIds)
             self.g_dualPeelingFboIds = None
+        if self.g_densityTexId is not None:
+            glDeleteTextures(1, [self.g_densityTexId])
+            self.g_densityTexId = None
+        if self.g_densityFboId is not None:
+            glDeleteFramebuffers(1, [self.g_densityFboId])
+            self.g_densityFboId = None
 
         self._main_fb = None
         self._main_cb = None
@@ -1377,22 +1405,32 @@ class Renderer(object):
 
         numbufs = self.max_dual_peel_layers
         if drr_mode == DRRMode.DENSITY:
-            numbufs = 1
-
-        for i in range(numbufs):
-            bufferidx = i + (0 if front else self.max_dual_peel_layers)
-            glBindFramebuffer(GL_READ_FRAMEBUFFER, self.g_dualPeelingFboIds[bufferidx])
+            glBindFramebuffer(GL_READ_FRAMEBUFFER, self.g_densityFboId)
             glReadBuffer(GL_COLOR_ATTACHMENT_LIST[0])
-            # glReadBuffer(GL_COLOR_ATTACHMENT_LIST[bufferidx])
-            print(f"Reading buffer {bufferidx}")
 
             color_buf = glReadPixels(
-                0, 0, width, height, GL_RGBA, GL_FLOAT
+                0, 0, width, height, GL_RGB, GL_FLOAT
             )
             color_im = np.frombuffer(color_buf, dtype=np.float32)
-            color_im = color_im.reshape((height, width, 4))
+            color_im = color_im.reshape((height, width, 3))
             color_im = np.flip(color_im, axis=0)
             ims.append(color_im)
+
+        else:
+            for i in range(numbufs):
+                bufferidx = i + (0 if front else self.max_dual_peel_layers)
+                glBindFramebuffer(GL_READ_FRAMEBUFFER, self.g_dualPeelingFboIds[bufferidx])
+                glReadBuffer(GL_COLOR_ATTACHMENT_LIST[0])
+                # glReadBuffer(GL_COLOR_ATTACHMENT_LIST[bufferidx])
+                print(f"Reading buffer {bufferidx}")
+
+                color_buf = glReadPixels(
+                    0, 0, width, height, GL_RGBA, GL_FLOAT
+                )
+                color_im = np.frombuffer(color_buf, dtype=np.float32)
+                color_im = color_im.reshape((height, width, 4))
+                color_im = np.flip(color_im, axis=0)
+                ims.append(color_im)
 
         return ims
 
