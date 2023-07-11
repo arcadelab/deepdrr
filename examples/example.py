@@ -1,4 +1,4 @@
-"""Examples of using pyrender for viewing and offscreen rendering.
+"""Examples of using pyrenderdrr for viewing and offscreen rendering.
 """
 import pyglet
 pyglet.options['shadow_window'] = False

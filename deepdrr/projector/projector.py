@@ -27,12 +27,12 @@ from PIL import Image
 import pyvista as pv
 import pyvista
 
-from ..pyrender import IntrinsicsCamera,\
+from ..pyrenderdrr import IntrinsicsCamera,\
                      DirectionalLight, SpotLight, PointLight,\
                      MetallicRoughnessMaterial,\
                      Primitive, Mesh, Node, Scene,\
                      Viewer, OffscreenRenderer, RenderFlags, PerspectiveCamera
-from ..pyrender.constants import DRRMode
+from ..pyrenderdrr.constants import DRRMode
 
 from .. import geo, utils, vol
 from ..device import Device, MobileCArm
@@ -50,8 +50,8 @@ from .mcgpu_mfp_data import MFP_DATA
 from .mcgpu_rita_samplers import rita_samplers
 
 from ..pycuda_ray_surface.pycuda_ray_surface_intersect import PyCudaRSI, RSISurface, PyCudaRSIManager
-from ..pyrender.platforms import egl
-from ..pyrender.renderer import Renderer
+from ..pyrenderdrr.platforms import egl
+from ..pyrenderdrr.renderer import Renderer
 
 
 log = logging.getLogger(__name__)

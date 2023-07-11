@@ -2,10 +2,10 @@ import os
 os.environ['PYOPENGL_PLATFORM'] = 'egl'
 # os.environ['PYOPENGL_PLATFORM'] = 'osmesa'
 # sudo apt-get install llvm-6.0 freeglut3 freeglut3-dev
-from deepdrr.pyrender import Mesh, Scene, Viewer
-import deepdrr.pyrender as pyrender
+from deepdrr.pyrenderdrr import Mesh, Scene, Viewer
+import deepdrr.pyrenderdrr as pyrender
 
-from deepdrr.pyrender import PerspectiveCamera,\
+from deepdrr.pyrenderdrr import PerspectiveCamera,\
                      DirectionalLight, SpotLight, PointLight,\
                      MetallicRoughnessMaterial,\
                      Primitive, Mesh, Node, Scene,\
@@ -15,7 +15,7 @@ import numpy as np
 import trimesh
 import requests
 import time
-from deepdrr.pyrender.constants import DRRMode
+from deepdrr.pyrenderdrr.constants import DRRMode
 
 
 duck_source = "https://github.com/KhronosGroup/glTF-Sample-Models/raw/master/2.0/Duck/glTF-Binary/Duck.glb"
@@ -64,10 +64,10 @@ cam_pose = np.array([
 
 scene.add(cam, pose=cam_pose)
 
-r = pyrender.OffscreenRenderer(viewport_width=640,
-                                viewport_height=480,
-                                point_size=1.0,
-                                max_dual_peel_layers=8)
+r = pyrenderdrr.OffscreenRenderer(viewport_width=640,
+                                  viewport_height=480,
+                                  point_size=1.0,
+                                  max_dual_peel_layers=8)
 zfar = 10
 def render():
     # color, depth = r.render(scene, drr_mode=DRRMode.ERROR)

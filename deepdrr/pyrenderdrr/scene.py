@@ -570,14 +570,14 @@ class Scene(object):
         scene_pr : :class:`Scene`
             A scene containing the same geometry as the trimesh scene.
         """
-        # convert trimesh geometries to pyrender geometries
+        # convert trimesh geometries to pyrenderdrr geometries
         geometries = {name: Mesh.from_trimesh(geom)
                       for name, geom in trimesh_scene.geometry.items()}
 
-        # create the pyrender scene object
+        # create the pyrenderdrr scene object
         scene_pr = Scene(bg_color=bg_color, ambient_light=ambient_light)
 
-        # add every node with geometry to the pyrender scene
+        # add every node with geometry to the pyrenderdrr scene
         for node in trimesh_scene.graph.nodes_geometry:
             pose, geom_name = trimesh_scene.graph[node]
             scene_pr.add(geometries[geom_name], pose=pose)
