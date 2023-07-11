@@ -604,7 +604,7 @@ class Projector(object):
             print(f"density: {mesh_perf_end - mesh_perf_start}")
             mesh_perf_start = mesh_perf_end
 
-            rendered_layers = self.gl_renderer.render(self.scene, drr_mode=DRRMode.BACKDIST, flags=RenderFlags.RGBA, zfar=zfar)
+            rendered_layers = self.gl_renderer.render(self.scene, drr_mode=DRRMode.DIST, flags=RenderFlags.RGBA, zfar=zfar)
 
             mesh_perf_end = time.perf_counter()
             print(f"peel: {mesh_perf_end - mesh_perf_start}")

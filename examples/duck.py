@@ -81,7 +81,7 @@ def render():
     # color[error_mask] = 0
 
     # ims = r.render(scene, drr_mode=DRRMode.DENSITY, flags=RenderFlags.RGBA, zfar=zfar)
-    ims = r.render(scene, drr_mode=DRRMode.BACKDIST, flags=RenderFlags.RGBA, zfar=zfar)
+    ims = r.render(scene, drr_mode=DRRMode.DIST, flags=RenderFlags.RGBA, zfar=zfar)
     # color, depth = r.render(scene, drr_mode=DRRMode.FRONTDIST)
 
 

@@ -148,9 +148,7 @@ class ProgramFlags:
 
 class DRRMode:
     NONE = 0
-    ERROR = 1
-    DENSITY = 2
-    FRONTDIST = 3
-    BACKDIST = 4
+    DENSITY = 1
+    DIST = 2
 
 __all__ = ['RenderFlags', 'TextAlign', 'GLTF']

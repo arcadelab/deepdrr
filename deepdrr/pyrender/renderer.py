@@ -288,9 +288,8 @@ class Renderer(object):
             glActiveTexture(GL_TEXTURE0)
 
         program.set_uniform('MaxDepth', float(zfar))
-        
 
-        if drr_mode == DRRMode.BACKDIST:
+        if drr_mode == DRRMode.DIST:
             glEnable(GL_BLEND)
             glBlendEquation(GL_MAX)
             glBlendFunc(GL_ONE, GL_ONE)
