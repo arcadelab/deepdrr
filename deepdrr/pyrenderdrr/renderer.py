@@ -101,7 +101,6 @@ class Renderer(object):
 
         return retval
 
-
     def delete(self):
         """Free all allocated OpenGL resources.
         """
@@ -185,7 +184,7 @@ class Renderer(object):
                 program.set_uniform('V', V)
                 program.set_uniform('P', P)
                 program.set_uniform(
-                    'cam_pos', scene.get_pose(scene.main_camera_node)[:3,3]
+                    'cam_pos', scene.get_pose(scene.main_camera_node)[:3, 3]
                 )
                 if bool(flags & RenderFlags.SEG):
                     program.set_uniform('color', color)
@@ -211,7 +210,6 @@ class Renderer(object):
         #     return self._read_main_framebuffer(scene, flags, drr_mode=drr_mode, front=front)
         # return []
 
-
     def _bind_and_draw_primitive(self, primitive, pose, program, flags, drr_mode=DRRMode.NONE, zfar=3, peelnum=0):
         # Set model pose matrix
         program.set_uniform('M', pose)
@@ -225,10 +223,10 @@ class Renderer(object):
         if drr_mode == DRRMode.DIST:
             if peelnum > 0:
                 glActiveTexture(GL_TEXTURE0 + 0)
-                glBindTexture(GL_TEXTURE_RECTANGLE, self.g_peelTexId[peelnum-1])
+                glBindTexture(GL_TEXTURE_RECTANGLE, self.g_peelTexId[peelnum - 1])
                 program.set_uniform('DepthBlenderTex', 0)
                 glActiveTexture(GL_TEXTURE0)
-            
+
             program.set_uniform('MaxDepth', float(zfar))
 
             glEnable(GL_BLEND)
@@ -265,7 +263,7 @@ class Renderer(object):
         primitive._unbind()
 
     def _sorted_mesh_nodes(self, scene):
-        cam_loc = scene.get_pose(scene.main_camera_node)[:3,3]
+        cam_loc = scene.get_pose(scene.main_camera_node)[:3, 3]
         solid_nodes = []
         trans_nodes = []
         for node in scene.mesh_nodes:
@@ -277,20 +275,20 @@ class Renderer(object):
 
         # TODO BETTER SORTING METHOD
         trans_nodes.sort(
-            key=lambda n: -np.linalg.norm(scene.get_pose(n)[:3,3] - cam_loc)
+            key=lambda n: -np.linalg.norm(scene.get_pose(n)[:3, 3] - cam_loc)
         )
         solid_nodes.sort(
-            key=lambda n: -np.linalg.norm(scene.get_pose(n)[:3,3] - cam_loc)
+            key=lambda n: -np.linalg.norm(scene.get_pose(n)[:3, 3] - cam_loc)
         )
 
         return solid_nodes + trans_nodes
 
     def _sorted_nodes_by_distance(self, scene, nodes, compare_node):
         nodes = list(nodes)
-        compare_posn = scene.get_pose(compare_node)[:3,3]
+        compare_posn = scene.get_pose(compare_node)[:3, 3]
         nodes.sort(key=lambda n: np.linalg.norm(
-            scene.get_pose(n)[:3,3] - compare_posn)
-        )
+            scene.get_pose(n)[:3, 3] - compare_posn)
+                   )
         return nodes
 
     ###########################################################################
@@ -329,7 +327,6 @@ class Renderer(object):
             texture.delete()
 
         self._mesh_textures = mesh_textures.copy()
-
 
     ###########################################################################
     # Texture Management
@@ -424,7 +421,6 @@ class Renderer(object):
         glDepthFunc(GL_ALWAYS)
         glDepthRange(0.0, 1.0)
 
-
     ###########################################################################
     # Framebuffer Management
     ###########################################################################
@@ -457,7 +453,7 @@ class Renderer(object):
 
             self.g_densityTexId = glGenTextures(1)
             self.g_densityFboId = glGenFramebuffers(1)
-            
+
             glBindTexture(GL_TEXTURE_RECTANGLE, self.g_densityTexId)
             glTexParameteri(GL_TEXTURE_RECTANGLE, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE)
             glTexParameteri(GL_TEXTURE_RECTANGLE, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE)
@@ -466,7 +462,7 @@ class Renderer(object):
             glTexImage2D(GL_TEXTURE_RECTANGLE, 0, GL_RG32F, self.viewport_width, self.viewport_height, 0, GL_RG, GL_FLOAT, None)
 
             glBindFramebuffer(GL_FRAMEBUFFER, self.g_densityFboId)
-            glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT_LIST[0], GL_TEXTURE_RECTANGLE, self.g_densityTexId, 0)            
+            glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT_LIST[0], GL_TEXTURE_RECTANGLE, self.g_densityTexId, 0)
 
             self._main_fb_dims = (self.viewport_width, self.viewport_height)
 
@@ -535,4 +531,3 @@ class Renderer(object):
     #             ims.append(color_im)
 
     #     return ims
-
