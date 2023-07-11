@@ -74,6 +74,7 @@ class TestSingleVolume:
         try: 
             truth_img = np.array(Image.open(self.truth / name))
             assert np.allclose(image, truth_img, atol=1)
+            print(f"Test {name} passed")
         except FileNotFoundError:
             print(f"Truth image not found: {self.truth / name}")
         return image
@@ -118,7 +119,7 @@ class TestSingleVolume:
         prim2 = deepdrr.Primitive("titanium", 2, stl2)
         mesh2 = deepdrr.Mesh([prim2], world_from_anatomical=geo.FrameTransform.from_translation([30, 50, 200]))
 
-        prim3 = deepdrr.Primitive("titanium", 7, stl2)
+        prim3 = deepdrr.Primitive("titanium", 0, stl2)
         mesh3 = deepdrr.Mesh([prim3], world_from_anatomical=geo.FrameTransform.from_translation([-30, 20, -70]))
         # mesh = deepdrr.Mesh("polyethylene", 1.05, stl)
         # mesh.morph_weights = np.array([-10])
