@@ -281,15 +281,15 @@ class Renderer(object):
         # Bind mesh material
         material = primitive.material
 
-        if peelnum > 0:
-            glActiveTexture(GL_TEXTURE0 + 0)
-            glBindTexture(GL_TEXTURE_RECTANGLE, self.g_dualDepthTexId[peelnum-1])
-            program.set_uniform('DepthBlenderTex', 0)
-            glActiveTexture(GL_TEXTURE0)
-
-        program.set_uniform('MaxDepth', float(zfar))
-
         if drr_mode == DRRMode.DIST:
+            if peelnum > 0:
+                glActiveTexture(GL_TEXTURE0 + 0)
+                glBindTexture(GL_TEXTURE_RECTANGLE, self.g_dualDepthTexId[peelnum-1])
+                program.set_uniform('DepthBlenderTex', 0)
+                glActiveTexture(GL_TEXTURE0)
+            
+            program.set_uniform('MaxDepth', float(zfar))
+
             glEnable(GL_BLEND)
             glBlendEquation(GL_MAX)
             glBlendFunc(GL_ONE, GL_ONE)
