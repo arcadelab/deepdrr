@@ -150,5 +150,6 @@ class DRRMode:
     NONE = 0
     DENSITY = 1
     DIST = 2
+    SEG = 3
 
 __all__ = ['RenderFlags', 'TextAlign', 'GLTF']

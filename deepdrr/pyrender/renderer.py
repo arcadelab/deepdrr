@@ -50,9 +50,6 @@ class Renderer(object):
 
     def __init__(self, viewport_width, viewport_height, point_size=1.0, max_dual_peel_layers=4):
         self.dpscale = 1
-        # Scaling needed on retina displays
-        if sys.platform == 'darwin':
-            self.dpscale = 2
 
         self.viewport_width = viewport_width
         self.viewport_height = viewport_height
@@ -69,10 +66,8 @@ class Renderer(object):
 
         # Shader Program Cache
         self._program_cache = ShaderProgramCache()
-        self._font_cache = FontCache()
         self._meshes = set()
         self._mesh_textures = set()
-        self._shadow_textures = set()
         self._texture_alloc_idx = 0
 
     @property
@@ -114,9 +109,6 @@ class Renderer(object):
         else:
             retval = self._forward_pass(scene, flags, seg_node_map=seg_node_map, drr_mode=drr_mode, zfar=zfar, peelnum=0)
 
-        self._latest_znear = scene.main_camera_node.camera.znear
-        self._latest_zfar = scene.main_camera_node.camera.zfar
-
         return retval
 
 
@@ -125,9 +117,6 @@ class Renderer(object):
         """
         # Free shaders
         self._program_cache.clear()
-
-        # Free fonts
-        self._font_cache.clear()
 
         # Free meshes
         for mesh in self._meshes:
@@ -138,12 +127,8 @@ class Renderer(object):
         for mesh_texture in self._mesh_textures:
             mesh_texture.delete()
 
-        for shadow_texture in self._shadow_textures:
-            shadow_texture.delete()
-
         self._meshes = set()
         self._mesh_textures = set()
-        self._shadow_textures = set()
         self._texture_alloc_idx = 0
 
         self._delete_main_framebuffer()
@@ -164,26 +149,16 @@ class Renderer(object):
         self._configure_forward_pass_viewport(flags, drr_mode=drr_mode, peelnum=peelnum, front=front)
 
         # Clear it
-        # if bool(flags & RenderFlags.SEG):
-        #     glClearColor(0.0, 0.0, 0.0, 1.0)
-        #     if seg_node_map is None:
-        #         seg_node_map = {}
-        # else:
-        #     glClearColor(*scene.bg_color)
-        if drr_mode != DRRMode.DENSITY:
+        if drr_mode == DRRMode.DIST:
             glClearColor(-zfar, -zfar, -zfar, -zfar)
-        else:
+        elif drr_mode == DRRMode.DENSITY:
             glClearColor(0, 0, 0, 0)
+        elif drr_mode == DRRMode.SEG:
+            glClearColor(0.0, 0.0, 0.0, 1.0)
+            if seg_node_map is None:
+                seg_node_map = {}
 
-
-        # glClear(GL_COLOR_BUFFER_BIT) # TODO
-        # glClear(GL_DEPTH_BUFFER_BIT) # TODO
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT)
-
-        # if not bool(flags & RenderFlags.SEG):
-        #     glEnable(GL_MULTISAMPLE)
-        # else:
-        #     glDisable(GL_MULTISAMPLE)
         glDisable(GL_MULTISAMPLE)
 
         # Set up camera matrices
@@ -199,7 +174,7 @@ class Renderer(object):
                 continue
 
             # If SEG, set color
-            if bool(flags & RenderFlags.SEG):
+            if drr_mode == DRRMode.SEG:
                 if node not in seg_node_map:
                     continue
                 color = seg_node_map[node]
@@ -210,7 +185,6 @@ class Renderer(object):
                 color = color / 255.0
 
             for primitive in mesh.primitives:
-
                 # First, get and bind the appropriate program
                 program = self._get_primitive_program(
                     primitive, flags, ProgramFlags.USE_MATERIAL, drr_mode=drr_mode, peelnum=peelnum
@@ -225,11 +199,6 @@ class Renderer(object):
                 )
                 if bool(flags & RenderFlags.SEG):
                     program.set_uniform('color', color)
-
-                # # Next, bind the lighting
-                # if not (flags & RenderFlags.DEPTH_ONLY or flags & RenderFlags.FLAT or
-                #         flags & RenderFlags.SEG):
-                #     self._bind_lighting(scene, program, node, flags)
 
                 # Finally, bind and draw the primitive
                 self._bind_and_draw_primitive(
@@ -251,15 +220,7 @@ class Renderer(object):
 
         # if peelnum == self.max_dual_peel_layers-1 or drr_mode == DRRMode.DENSITY:
         #     return self._read_main_framebuffer(scene, flags, drr_mode=drr_mode, front=front)
-        return []
-
-        # # If doing offscreen render, copy result from framebuffer and return
-        # if flags & RenderFlags.OFFSCREEN:
-        #     return self._read_main_framebuffer(scene, flags)
-        # else:
-        #     raise ValueError('TODO')
-        #     glFlush() # Maybe?
-        #     return
+        # return []
 
 
     def _bind_and_draw_primitive(self, primitive, pose, program, flags, drr_mode=DRRMode.NONE, zfar=3, peelnum=0, front=True):
