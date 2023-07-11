@@ -442,8 +442,8 @@ class Renderer(object):
             program._unbind()
         # glFlush() # TODO: I don't think this is needed for offscreen
 
-        if peelnum == self.max_dual_peel_layers-1 or drr_mode == DRRMode.DENSITY:
-            return self._read_main_framebuffer(scene, flags, drr_mode=drr_mode, front=front)
+        # if peelnum == self.max_dual_peel_layers-1 or drr_mode == DRRMode.DENSITY:
+        #     return self._read_main_framebuffer(scene, flags, drr_mode=drr_mode, front=front)
         return []
 
         # # If doing offscreen render, copy result from framebuffer and return

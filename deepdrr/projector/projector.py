@@ -503,9 +503,6 @@ class Projector(object):
                     IJK_from_world,
                 )
 
-            mesh_perf_entire_start = time.perf_counter()
-            mesh_perf_start = time.perf_counter()
-
             for vol_id, prim in enumerate(self.primitives): # TODO: duplicated code
                 _vol = prim.get_parent_mesh()
                 source_ijk = np.array(
@@ -537,6 +534,10 @@ class Projector(object):
                     + (IJK_from_world.size * NUMBYTES_FLOAT32) * vol_id,
                     IJK_from_world,
                 )
+
+            
+            mesh_perf_entire_start = time.perf_counter()
+            mesh_perf_start = time.perf_counter()
 
             num_rays = proj.sensor_width * proj.sensor_height
 
@@ -577,8 +578,6 @@ class Projector(object):
 
                 rendered_layers = self.gl_renderer.render(self.scene, drr_mode=DRRMode.DENSITY, flags=RenderFlags.RGBA, zfar=zfar)
                 
-                np.save(f"density{mat_idx}.npy", rendered_layers[0])
-
                 # reg_img = pycuda.gl.RegisteredImage(int(self.gl_renderer.g_dualDepthTexId[0]), GL_TEXTURE_RECTANGLE, pycuda.gl.graphics_map_flags.READ_ONLY)
                 reg_img = pycuda.gl.RegisteredImage(int(self.gl_renderer.g_densityTexId), GL_TEXTURE_RECTANGLE, pycuda.gl.graphics_map_flags.READ_ONLY)
                 mapping = reg_img.map()
@@ -606,11 +605,6 @@ class Projector(object):
             mesh_perf_start = mesh_perf_end
 
             rendered_layers = self.gl_renderer.render(self.scene, drr_mode=DRRMode.BACKDIST, flags=RenderFlags.RGBA, zfar=zfar)
-
-            rendered_layers = [[-layer[:,:,0], layer[:,:,1], -layer[:,:,2], layer[:,:,3]] for layer in rendered_layers]
-            rendered_layers = [y for x in rendered_layers for y in x]
-            rendered_layers = [np.swapaxes(x, 0, 1) for x in rendered_layers]
-            np.save("peeledlayers.npy", np.array(rendered_layers))
 
             mesh_perf_end = time.perf_counter()
             print(f"peel: {mesh_perf_end - mesh_perf_start}")
@@ -647,17 +641,9 @@ class Projector(object):
                 grid=self.grid_lambda
             )
 
-            self.context.synchronize()
             mesh_perf_end = time.perf_counter()
             print(f"peel reorder: {mesh_perf_end - mesh_perf_start}")
             mesh_perf_start = mesh_perf_end
-
-            self.cuda_driver.memcpy_dtoh(self.mesh_hit_alphas, self.mesh_hit_alphas_gpu)
-            self.cuda_driver.memcpy_dtoh(self.mesh_hit_alphas_a, self.mesh_hit_alphas_gpua)
-            self.cuda_driver.memcpy_dtoh(self.mesh_hit_facing, self.mesh_hit_facing_gpu)
-            np.save("alphas.npy", self.mesh_hit_alphas)
-            np.save("alphasa.npy", self.mesh_hit_alphas_a)
-            np.save("facing.npy", self.mesh_hit_facing)
 
             self.rsi_manager.kernel_tide(
                 np.uint64(self.mesh_hit_counts_gpu),
@@ -670,20 +656,12 @@ class Projector(object):
                 # block=self.block_dims,  # TODO ??
                 grid=self.grid_lambda
             )
-            self.context.synchronize()
-
-            self.cuda_driver.memcpy_dtoh(self.mesh_hit_alphas, self.mesh_hit_alphas_gpu)
-            self.cuda_driver.memcpy_dtoh(self.mesh_hit_alphas_a, self.mesh_hit_alphas_gpua)
-            self.cuda_driver.memcpy_dtoh(self.mesh_hit_facing, self.mesh_hit_facing_gpu)
-            np.save("alphas.npy", self.mesh_hit_alphas)
-            np.save("alphasa.npy", self.mesh_hit_alphas_a)
-            np.save("facing.npy", self.mesh_hit_facing)
-
-            self.context.synchronize()
 
             mesh_perf_end = time.perf_counter()
             print(f"tide: {mesh_perf_end - mesh_perf_start}")
             mesh_perf_start = mesh_perf_end
+
+            self.context.synchronize()
 
             print(f"entire mesh: {time.perf_counter() - mesh_perf_entire_start}")
 
@@ -740,8 +718,6 @@ class Projector(object):
                 f"Running: {blocks_w}x{blocks_h} blocks with {self.threads}x{self.threads} threads each"
             )
 
-            self.context.synchronize()
-
             # log.info("args: {}".format('\n'.join(map(str, args))))
             # log.info(f"offset_w: {offset_w}, offset_h: {offset_h}")
             # log.info(f"block: {block}, grid: {(blocks_w, blocks_h)}")
@@ -764,9 +740,7 @@ class Projector(object):
                             block=block,
                             grid=(self.max_block_index, self.max_block_index),
                         )
-                        self.context.synchronize()
-
-            self.context.synchronize()
+                        self.context.synchronize() # TODO: necessary?
 
             project_tock = time.perf_counter()
             log.debug(
