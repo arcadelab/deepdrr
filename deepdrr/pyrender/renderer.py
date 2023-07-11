@@ -648,55 +648,6 @@ class Renderer(object):
             glBindFramebuffer(GL_FRAMEBUFFER, self.g_densityFboId)
             glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT_LIST[0], GL_TEXTURE_RECTANGLE, self.g_densityTexId, 0)            
 
-            # Generate standard buffer
-            self._main_cb, self._main_db = glGenRenderbuffers(2)
-
-            glBindRenderbuffer(GL_RENDERBUFFER, self._main_cb)
-            glRenderbufferStorage(
-                GL_RENDERBUFFER, GL_RGBA32F,
-                self.viewport_width, self.viewport_height
-            )
-
-            glBindRenderbuffer(GL_RENDERBUFFER, self._main_db)
-            glRenderbufferStorage(
-                GL_RENDERBUFFER, GL_DEPTH_COMPONENT24,
-                self.viewport_width, self.viewport_height
-            )
-
-            self._main_fb = glGenFramebuffers(1)
-            glBindFramebuffer(GL_DRAW_FRAMEBUFFER, self._main_fb)
-            glFramebufferRenderbuffer(
-                GL_DRAW_FRAMEBUFFER, GL_COLOR_ATTACHMENT0,
-                GL_RENDERBUFFER, self._main_cb
-            )
-            glFramebufferRenderbuffer(
-                GL_DRAW_FRAMEBUFFER, GL_DEPTH_ATTACHMENT,
-                GL_RENDERBUFFER, self._main_db
-            )
-
-            # Generate multisample buffer
-            self._main_cb_ms, self._main_db_ms = glGenRenderbuffers(2)
-            glBindRenderbuffer(GL_RENDERBUFFER, self._main_cb_ms)
-            glRenderbufferStorageMultisample(
-                GL_RENDERBUFFER, 4, GL_RGBA32F,
-                self.viewport_width, self.viewport_height
-            )
-            glBindRenderbuffer(GL_RENDERBUFFER, self._main_db_ms)
-            glRenderbufferStorageMultisample(
-                GL_RENDERBUFFER, 4, GL_DEPTH_COMPONENT24,
-                self.viewport_width, self.viewport_height
-            )
-            self._main_fb_ms = glGenFramebuffers(1)
-            glBindFramebuffer(GL_DRAW_FRAMEBUFFER, self._main_fb_ms)
-            glFramebufferRenderbuffer(
-                GL_DRAW_FRAMEBUFFER, GL_COLOR_ATTACHMENT0,
-                GL_RENDERBUFFER, self._main_cb_ms
-            )
-            glFramebufferRenderbuffer(
-                GL_DRAW_FRAMEBUFFER, GL_DEPTH_ATTACHMENT,
-                GL_RENDERBUFFER, self._main_db_ms
-            )
-
             self._main_fb_dims = (self.viewport_width, self.viewport_height)
 
     def _delete_main_framebuffer(self):
