@@ -2358,15 +2358,8 @@ __global__ void projectKernel(
 
 
 #if NUM_MESHES > 0
-  int mesh_hit_depth[NUM_MESHES];
-  for (int i = 0; i < NUM_MESHES; i++) {
-    mesh_hit_depth[i] = 0;
-  }
-
-  int mesh_hit_index[NUM_MESHES];
-  for (int i = 0; i < NUM_MESHES; i++) {
-      mesh_hit_index[i] = 0;
-  }
+  int mesh_hit_depth = 0;
+  int mesh_hit_index = 0;
 #endif
 
 
@@ -2418,23 +2411,20 @@ __global__ void projectKernel(
     bool mesh_hit_this_step = false;
 
 #if NUM_MESHES > 0
-    for (int i = 0; i < 1; i++) { // TODO no loop
-      int hit_arr_index = 0;
-      while (true) {
-        hit_arr_index = i*(out_height*out_width)*max_mesh_depth+(vdx * out_width + udx)*max_mesh_depth+mesh_hit_index[i];
+    int hit_arr_index = 0;
+    while (true) {
+        hit_arr_index = (vdx * out_width + udx)*max_mesh_depth+mesh_hit_index;
         if (!(
-            mesh_hit_index[i] < max_mesh_depth &&
+            mesh_hit_index < max_mesh_depth &&
             mesh_hit_facing[hit_arr_index] != 0 &&
             mesh_hit_alphas[hit_arr_index] < alpha
         )) break;
-        mesh_hit_depth[i] += mesh_hit_facing[hit_arr_index];
-        mesh_hit_index[i] += 1;
-      }
+        mesh_hit_depth += mesh_hit_facing[hit_arr_index];
+        mesh_hit_index += 1;
+    }
 
-      if (mesh_hit_depth[i]) {
-        // area_density[mesh_materials[i]] += 7; // debug
+    if (mesh_hit_depth) {
         mesh_hit_this_step = true; // TODO mesh priorities?
-      }
     }
 #endif
 
@@ -2477,25 +2467,9 @@ __global__ void projectKernel(
     area_density[m] *= step;
   }
 
-// #if NUM_MESHES > 0
-//   // Render meshes exact (without depth pixellation)
-//   for (int i = 0; i < NUM_MESHES; i++) {
-//     int local_mesh_hit_index = 0;
-//     int hit_arr_index = 0;
-//     while (true) {
-//       hit_arr_index = i*(out_height*out_width)*max_mesh_depth+img_dx*max_mesh_depth+local_mesh_hit_index;
-//       if (!(
-//         local_mesh_hit_index < max_mesh_depth &&
-//           mesh_hit_facing[hit_arr_index] != 0
-//       )) break;
-//       area_density[mesh_materials[i]] += mesh_densities[i] * mesh_hit_alphas[hit_arr_index] * -mesh_hit_facing[hit_arr_index];
-//       local_mesh_hit_index += 1;
-//     }
-//   }
-// #endif
   for (int i = 0; i < mesh_unique_material_count; i++) {
-    // area_density[mesh_unique_materials[i]] += additive_densities[vdx * out_width + udx];
     int add_dens_idx = i*(out_height*out_width*2)+(vdx * out_width + udx)*2;
+    // If there is a matching number of front and back hits, add the density
     if (fabs(additive_densities[add_dens_idx+1]) < 0.00001) {
         area_density[mesh_unique_materials[i]] += additive_densities[add_dens_idx];
     }
