@@ -54,6 +54,7 @@ import pycuda.driver as cuda
 
 # import pycuda.autoprimaryctx
 import pycuda.gl
+import pycuda
 
 # from pycuda.gl import make_context
 # from pycuda.autoinit import context # TODO: only this works on my machine
@@ -1121,8 +1122,7 @@ class Projector(object):
 
         #setup pycuda gl interop
         import pycuda.gl.autoinit
-        import pycuda.gl
-        import pycuda
+
 
         # cuda.Context = make_default_context()
         # from pycuda.autoinit import context # TODO ??
