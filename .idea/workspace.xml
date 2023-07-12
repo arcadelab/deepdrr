@@ -5,7 +5,38 @@
   </component>
   <component name="ChangeListManager">
     <list default="true" id="d224661f-3d1d-405a-bb6c-b20e94b538b0" name="Changes" comment="">
-      <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/.idea/inspectionProfiles/Project_Default.xml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/examples/duck.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/examples/example.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/examples/models/WaterBottle.glb" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/examples/models/drill.obj" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/examples/models/drill.obj.mtl" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/examples/models/drill_uv.png" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/examples/models/fuze.obj" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/examples/models/fuze.obj.mtl" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/examples/models/fuze_uv.jpg" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/examples/models/stress80k.glb" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/examples/models/suzanne.stl" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/examples/models/suzanne_stress.stl" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/examples/models/wood.obj" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/examples/models/wood.obj.mtl" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/examples/models/wood_uv.png" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/models/WaterBottle.glb" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/models/drill.obj" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/models/drill.obj.mtl" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/models/drill_uv.png" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/models/fuze.obj" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/models/fuze.obj.mtl" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/models/fuze_uv.jpg" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/models/stress80k.glb" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/models/suzanne.stl" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/models/suzanne_stress.stl" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/models/wood.obj" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/models/wood.obj.mtl" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/models/wood_uv.png" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/tests/asdf.stl" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/tests/out.png" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/tests/points.npy" beforeDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -98,5 +129,16 @@
   </component>
   <component name="TypeScriptGeneratedFilesManager">
     <option name="version" value="3" />
+  </component>
+  <component name="Vcs.Log.Tabs.Properties">
+    <option name="TAB_STATES">
+      <map>
+        <entry key="MAIN">
+          <value>
+            <State />
+          </value>
+        </entry>
+      </map>
+    </option>
   </component>
 </project>
