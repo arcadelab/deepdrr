@@ -2171,7 +2171,6 @@ __global__ void projectKernel(
                              // transform for the camera
     float *ijk_from_world, // (NUM_VOLUMES, 3, 4) transform giving the transform
                            // from world to IJK coordinates for each volume.
-    // float *mesh_ijk_from_world, // (NUM_VOLUMES, 3, 4) transform giving the transform
     int n_bins,            // the number of spectral bins
     float *energies,       // 1-D array -- size is the n_bins. Units: [keV]
     float *pdf, // 1-D array -- probability density function over the energies
@@ -2186,11 +2185,11 @@ __global__ void projectKernel(
     float *mesh_hit_alphas,
     int8_t *mesh_hit_facing,
     float *additive_densities,
-    int *mesh_unique_materials_gpu,
+    int *mesh_unique_materials,
     int mesh_unique_material_count,
     int max_mesh_depth,
-    int *mesh_materials,
-    float *mesh_densities,
+    // int *mesh_materials,
+    // float *mesh_densities,
     int offsetW, int offsetH) {
   // The output image has the following coordinate system, with cell-centered
   // sampling. y is along the fast axis (columns), x along the slow (rows).
@@ -2495,10 +2494,10 @@ __global__ void projectKernel(
 //   }
 // #endif
   for (int i = 0; i < mesh_unique_material_count; i++) {
-    // area_density[mesh_unique_materials_gpu[i]] += additive_densities[vdx * out_width + udx];
+    // area_density[mesh_unique_materials[i]] += additive_densities[vdx * out_width + udx];
     int add_dens_idx = i*(out_height*out_width*2)+(vdx * out_width + udx)*2;
     if (fabs(additive_densities[add_dens_idx+1]) < 0.00001) {
-        area_density[mesh_unique_materials_gpu[i]] += additive_densities[add_dens_idx];
+        area_density[mesh_unique_materials[i]] += additive_densities[add_dens_idx];
     }
   }
 
