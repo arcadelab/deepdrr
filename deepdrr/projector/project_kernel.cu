@@ -2142,167 +2142,6 @@ __device__ static void calculate_solid_angle(
 
   solid_angle[img_dx] = solid_angle_012 + solid_angle_023;
 }
-
-
-
-__device__ void generateRays(
-    int out_width,  // width of the output image
-    int out_height, // height of the output image
-    float *sx_ijk, // x-coordinate of source point in IJK space for each volume (NUM_VOLUMES,)
-    float *sy_ijk, // y-coordinate of source point in IJK space for each volume (NUM_VOLUMES,)
-    float *sz_ijk, // z-coordinate of source point in IJK space for each volume (NUM_VOLUMES,)
-    float *world_from_index, // (3, 3) array giving the world_from_index ray transform for the camera
-    float *ijk_from_world, // (NUM_VOLUMES, 3, 4) transform giving the transform from world to IJK coordinates for each volume.
-    float *ray_directions,
-    int numRays,
-    float traceDist,
-    int rayIdx
-) {
-#if NUM_MESHES > 0
-  // The output image has the following coordinate system, with cell-centered
-  // sampling. y is along the fast axis (columns), x along the slow (rows).
-  //
-  //      x -->
-  //    y *---------------------------*
-  //    | |                           |
-  //    V |                           |
-  //      |        output image       |
-  //      |                           |
-  //      |                           |
-  //      *---------------------------*
-  //
-  //
-//   int udx = threadIdx.x + (blockIdx.x + offsetW) *
-//                               blockDim.x; // index into output image width
-//   int vdx = threadIdx.y + (blockIdx.y + offsetH) *
-//                               blockDim.y; // index into output image height
-
-//   int udx = rayIdx % out_width;
-//   int vdx = rayIdx / out_width;
-  int udx = rayIdx / out_height;
-  int vdx = rayIdx % out_height;
-  // int debug = (udx == 973) && (vdx == 598); // larger image size
-  // int debug = (udx == 243) && (vdx == 149); // 4x4 binning
-
-  // if (udx == 40) printf("udx: %d, vdx: %d\n", udx, vdx);
-
-  // if the current point is outside the output image, no computation needed
-  if (udx >= out_width || vdx >= out_height)
-    return;
-
-  // flat index to pixel in *intensity and *photon_prob
-  // int img_dx = vdx * out_width + udx;
-  int img_dx = (udx * out_height) + vdx;
-
-//   // initialize intensity and photon_prob to 0
-//   intensity[img_dx] = 0;
-//   photon_prob[img_dx] = 0;
-
-
-  // cell-centered sampling point corresponding to pixel index, in
-  // index-space.
-  float u = (float)udx + 0.5;
-  float v = (float)vdx + 0.5;
-
-  // Vector in world-space along ray from source-point to pixel at [u,v] on
-  // the detector plane.
-  float rx =
-      u * world_from_index[0] + v * world_from_index[1] + world_from_index[2];
-  float ry =
-      u * world_from_index[3] + v * world_from_index[4] + world_from_index[5];
-  float rz =
-      u * world_from_index[6] + v * world_from_index[7] + world_from_index[8];
-
-  /* make the ray a unit vector */
-  float ray_length = sqrtf(rx * rx + ry * ry + rz * rz);
-  float inv_ray_norm = 1.0f / ray_length;
-  rx *= inv_ray_norm;
-  ry *= inv_ray_norm;
-  rz *= inv_ray_norm;
-
-  // calculate projections
-  // Part 1: compute alpha value at entry and exit point of all volumes on
-  // either side of the ray, in world-space. minAlpha: the distance from
-  // source point to all-volumes entry point of the ray, in world-space.
-  // maxAlpha: the distance from source point to all-volumes exit point of the
-  // ray.
-  float minAlpha = INFINITY; // the furthest along the ray we want to consider
-                             // is the start point.
-  float maxAlpha = 0;        // closest point to consider is at the detector
-  float minAlpha_vol[NUM_MESHES],
-      maxAlpha_vol[NUM_MESHES]; // same, but just for each volume.
-  float alpha0, alpha1, reci;
-  int do_trace[NUM_MESHES]; // for each volume, whether or not to perform the
-                             // ray-tracing
-  int do_return = 1;
-
-  // Get the ray direction in the IJK space for each volume.
-  float rx_ijk[NUM_MESHES];
-  float ry_ijk[NUM_MESHES];
-  float rz_ijk[NUM_MESHES];
-  int offs = 12; // TODO: fix bad style
-  for (int i = 0; i < NUM_MESHES; i++) {
-    // Homogeneous transform of a vector.
-    rx_ijk[i] =
-        ijk_from_world[offs * i + 0] * rx + ijk_from_world[offs * i + 1] * ry +
-        ijk_from_world[offs * i + 2] * rz + ijk_from_world[offs * i + 3] * 0;
-    ry_ijk[i] =
-        ijk_from_world[offs * i + 4] * rx + ijk_from_world[offs * i + 5] * ry +
-        ijk_from_world[offs * i + 6] * rz + ijk_from_world[offs * i + 7] * 0;
-    rz_ijk[i] =
-        ijk_from_world[offs * i + 8] * rx + ijk_from_world[offs * i + 9] * ry +
-        ijk_from_world[offs * i + 10] * rz + ijk_from_world[offs * i + 11] * 0;
-
-    ray_directions[i*numRays*3 + rayIdx*3 + 0] = rx_ijk[i] * traceDist;
-    ray_directions[i*numRays*3 + rayIdx*3 + 1] = ry_ijk[i] * traceDist;
-    ray_directions[i*numRays*3 + rayIdx*3 + 2] = rz_ijk[i] * traceDist;
-
-    // ray_directions[i*numRays*3 + rayIdx*3 + 0] = udx;
-    // ray_directions[i*numRays*3 + rayIdx*3 + 1] = vdx;
-    // ray_directions[i*numRays*3 + rayIdx*3 + 2] = numRays;
-  }
-#endif
-}
-
-__global__ void kernelGenerateRays(
-    int out_width,  // width of the output image
-    int out_height, // height of the output image
-    float *sx_ijk, // x-coordinate of source point in IJK space for each volume (NUM_VOLUMES,)
-    float *sy_ijk, // y-coordinate of source point in IJK space for each volume (NUM_VOLUMES,)
-    float *sz_ijk, // z-coordinate of source point in IJK space for each volume (NUM_VOLUMES,)
-    float *world_from_index, // (3, 3) array giving the world_from_index ray transform for the camera
-    float *ijk_from_world, // (NUM_VOLUMES, 3, 4) transform giving the transform from world to IJK coordinates for each volume.
-    float *ray_directions, // (NUM_MESHES, out_height, out_width, 3) array giving the ray direction for each pixel in the output image
-    int numRays,
-    float traceDist
-)
-{
-    __shared__ int stride;
-    if (threadIdx.x == 0) {
-        stride = gridDim.x * blockDim.x;
-    }
-    __syncthreads();
-
-    int threadStartIdx = blockIdx.x * blockDim.x + threadIdx.x;
-
-    for (int idx = threadStartIdx; idx < numRays; idx += stride) {
-        if (idx < numRays) {
-            generateRays(
-                out_width,
-                out_height,
-                sx_ijk,
-                sy_ijk,
-                sz_ijk,
-                world_from_index,
-                ijk_from_world,
-                ray_directions,
-                numRays,
-                traceDist,
-                idx
-            );
-        }
-    }
-}
     
 __global__ void projectKernel(
     int out_width,  // width of the output image
@@ -2320,12 +2159,13 @@ __global__ void projectKernel(
     float sx,      // TODO: NOT USED!! x-coordinate of source point for rays in world-space
     float sy,      // TODO: NOT USED!! y-coordinate of source point for rays in world-space
     float sz,      // TODO: NOT USED!! z-coordinate of source point for rays in world-space
-    float *sx_ijk, // x-coordinate of source point in IJK space for each volume (NUM_VOLUMES,)
-    float *sy_ijk, // y-coordinate of source point in IJK space for each volume (NUM_VOLUMES,)
-    float *sz_ijk, // z-coordinate of source point in IJK space for each volume (NUM_VOLUMES,) (passed in to avoid re-computing on every thread)
-    // float *mesh_sx_ijk, // x-coordinate of source point in IJK space for each volume (NUM_VOLUMES,)
-    // float *mesh_sy_ijk, // y-coordinate of source point in IJK space for each volume (NUM_VOLUMES,)
-    // float *mesh_sz_ijk, // z-coordinate of source point in IJK space for each volume (NUM_VOLUMES,) (passed in to avoid re-computing on every thread)
+    float *sx_ijk, // x-coordinate of source point in IJK space for each
+                   // volume (NUM_VOLUMES,)
+    float *sy_ijk, // y-coordinate of source point in IJK space for each
+                   // volume (NUM_VOLUMES,)
+    float *sz_ijk, // z-coordinate of source point in IJK space for each
+                   // volume (NUM_VOLUMES,) (passed in to avoid re-computing
+                   // on every thread)
     float max_ray_length,    // max distance a ray can travel
     float *world_from_index, // (3, 3) array giving the world_from_index ray
                              // transform for the camera

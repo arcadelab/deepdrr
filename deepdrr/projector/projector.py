@@ -552,36 +552,7 @@ class Projector(object):
 
             for vol_id, prim in enumerate(self.primitives): # TODO: duplicated code
                 _vol = prim.get_parent_mesh()
-                source_ijk = np.array(
-                    _vol.IJK_from_world @ proj.center_in_world
-                ).astype(np.float32)
-
                 self.prim_nodes[vol_id].matrix = np.linalg.inv(np.array(_vol.IJK_from_world))
-                self.cuda_driver.memcpy_htod(
-                    int(self.mesh_sourceX_gpu) + int(NUMBYTES_INT32 * vol_id),
-                    np.array([source_ijk[0]]),
-                )
-                self.cuda_driver.memcpy_htod(
-                    int(self.mesh_sourceY_gpu) + int(NUMBYTES_INT32 * vol_id),
-                    np.array([source_ijk[1]]),
-                )
-                self.cuda_driver.memcpy_htod(
-                    int(self.mesh_sourceZ_gpu) + int(NUMBYTES_INT32 * vol_id),
-                    np.array([source_ijk[2]]),
-                )
-                sx_ijk[vol_id] = source_ijk[0]
-                sy_ijk[vol_id] = source_ijk[1]
-                sz_ijk[vol_id] = source_ijk[2]
-
-                # TODO: prefer toarray() to get transform throughout
-                IJK_from_world = _vol.IJK_from_world.toarray()
-                mesh_ijk_from_world[(IJK_from_world.size * vol_id) : (IJK_from_world.size * (vol_id + 1))] = IJK_from_world.flatten()
-                self.cuda_driver.memcpy_htod(
-                    int(self.mesh_ijk_from_world_gpu)
-                    + (IJK_from_world.size * NUMBYTES_FLOAT32) * vol_id,
-                    IJK_from_world,
-                )
-
             
             mesh_perf_entire_start = time.perf_counter()
             mesh_perf_start = time.perf_counter()
@@ -1196,7 +1167,6 @@ class Projector(object):
             attenuate_outside_volume=self.attenuate_outside_volume,
         )
         self.project_kernel = self.mod.get_function("projectKernel")
-        self.generate_rays = self.mod.get_function("kernelGenerateRays")
 
         self.peel_postprocess_mod = _get_kernel_peel_postprocess_module(
             num_intersections=self.max_mesh_depth
@@ -1411,9 +1381,9 @@ class Projector(object):
         self.sourceX_gpu = self.cuda_driver.mem_alloc(len(self.volumes) * NUMBYTES_FLOAT32)
         self.sourceY_gpu = self.cuda_driver.mem_alloc(len(self.volumes) * NUMBYTES_FLOAT32)
         self.sourceZ_gpu = self.cuda_driver.mem_alloc(len(self.volumes) * NUMBYTES_FLOAT32)
-        self.mesh_sourceX_gpu = safe_mem_alloc(len(self.primitives) * NUMBYTES_FLOAT32)
-        self.mesh_sourceY_gpu = safe_mem_alloc(len(self.primitives) * NUMBYTES_FLOAT32)
-        self.mesh_sourceZ_gpu = safe_mem_alloc(len(self.primitives) * NUMBYTES_FLOAT32)
+        # self.mesh_sourceX_gpu = safe_mem_alloc(len(self.primitives) * NUMBYTES_FLOAT32)
+        # self.mesh_sourceY_gpu = safe_mem_alloc(len(self.primitives) * NUMBYTES_FLOAT32)
+        # self.mesh_sourceZ_gpu = safe_mem_alloc(len(self.primitives) * NUMBYTES_FLOAT32)
 
         init_tock = time.perf_counter()
         log.debug(
@@ -1428,9 +1398,9 @@ class Projector(object):
             len(self.volumes) * 3 * 4 * NUMBYTES_FLOAT32
         )
         
-        self.mesh_ijk_from_world_gpu = safe_mem_alloc(
-            len(self.primitives) * 3 * 4 * NUMBYTES_FLOAT32
-        )
+        # self.mesh_ijk_from_world_gpu = safe_mem_alloc(
+        #     len(self.primitives) * 3 * 4 * NUMBYTES_FLOAT32
+        # )
 
         # Initializes the output_shape as well.
         self.initialize_output_arrays(self.camera_intrinsics.sensor_size)
@@ -1926,13 +1896,13 @@ class Projector(object):
             self.sourceX_gpu.free()
             self.sourceY_gpu.free()
             self.sourceZ_gpu.free()
-            safe_free(self.mesh_sourceX_gpu)
-            safe_free(self.mesh_sourceY_gpu)
-            safe_free(self.mesh_sourceZ_gpu)
+            # safe_free(self.mesh_sourceX_gpu)
+            # safe_free(self.mesh_sourceY_gpu)
+            # safe_free(self.mesh_sourceZ_gpu)
 
             self.world_from_index_gpu.free()
             self.ijk_from_world_gpu.free()
-            safe_free(self.mesh_ijk_from_world_gpu)
+            # safe_free(self.mesh_ijk_from_world_gpu)
             self.intensity_gpu.free()
             self.photon_prob_gpu.free()
 
