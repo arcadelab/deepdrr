@@ -11,7 +11,7 @@ log = logging.getLogger(__name__)
 
 
 class KWire(Volume):
-    _mesh_material = "titanium"
+    _mesh_material = "iron"
 
     diameter = 2.0  # mm
     tip_in_IJK: geo.Point3D

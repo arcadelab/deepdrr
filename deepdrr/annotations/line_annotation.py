@@ -7,6 +7,7 @@ import numpy as np
 import json
 import pyvista as pv
 
+from .fiducials import FiducialList
 from .. import geo, utils
 from ..vol import Volume
 
@@ -50,18 +51,16 @@ class LineAnnotation(object):
         self.endpoint = geo.point(endpoint)
         self.volume = volume
         if volume is None:
-            assert (
-                world_from_anatomical is not None
-                and anatomical_coordinate_system.upper() in ["RAS", "LPS"]
-            )
+            assert world_from_anatomical is not None and anatomical_coordinate_system.upper() in [
+                "RAS",
+                "LPS",
+            ]
             self._anatomical_coordinate_system = anatomical_coordinate_system.upper()
             self._world_from_anatomical = geo.frame_transform(world_from_anatomical)
         else:
             self.volume = volume
 
-        assert (
-            self.startpoint.dim == self.endpoint.dim
-        ), "annotation points must have matching dim"
+        assert self.startpoint.dim == self.endpoint.dim, "annotation points must have matching dim"
 
     def __str__(self):
         return f"LineAnnotation({self.startpoint}, {self.endpoint})"
@@ -93,8 +92,7 @@ class LineAnnotation(object):
 
         if volume is None:
             assert (
-                world_from_anatomical is not None
-                and anatomical_coordinate_system is not None
+                world_from_anatomical is not None and anatomical_coordinate_system is not None
             ), "must supply the anatomical transform"
         else:
             anatomical_coordinate_system = volume.anatomical_coordinate_system
@@ -139,6 +137,25 @@ class LineAnnotation(object):
     @classmethod
     def from_markup(cls, *args, **kwargs):
         return cls.from_json(*args, **kwargs)
+
+    @classmethod
+    def from_fcsv(cls, path: Path, **kwargs) -> LineAnnotation:
+        """Load a LineAnnotation from a .fcsv file.
+
+        Args:
+            path (Path): Path to the .fcsv file.
+            world_from_anatomical (Optional[geo.FrameTransform], optional): The pose of the volume in world coordinates. Defaults to None.
+
+        Returns:
+            LineAnnotation: The loaded annotation.
+        """
+        fiducial_list = FiducialList.from_fcsv(path)
+        assert len(fiducial_list) == 2, "fcsv file must contain exactly two points"
+        return cls(
+            fiducial_list[0],
+            fiducial_list[1],
+            **kwargs,
+        )
 
     def save(
         self,
@@ -287,6 +304,9 @@ class LineAnnotation(object):
     def direction_in_world(self) -> geo.Vector3D:
         return self.trajectory_in_world.normalized()
 
+    def get_direction(self) -> geo.Vector3D:
+        return self.direction_in_world
+
     def get_mesh(self):
         """Get the mesh in anatomical coordinates."""
         u = self.startpoint
@@ -297,9 +317,7 @@ class LineAnnotation(object):
         mesh += pv.Sphere(2.5, v)
         return mesh
 
-    def get_mesh_in_world(
-        self, full: bool = True, use_cached: bool = False
-    ) -> pv.PolyData:
+    def get_mesh_in_world(self, full: bool = True, use_cached: bool = False) -> pv.PolyData:
         u = self.startpoint_in_world
         v = self.endpoint_in_world
 
