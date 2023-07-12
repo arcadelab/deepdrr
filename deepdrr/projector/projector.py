@@ -53,6 +53,8 @@ from ..pycuda_ray_surface.pycuda_ray_surface_intersect import PyCudaRSI, RSISurf
 from ..pyrenderdrr.platforms import egl
 from ..pyrenderdrr.renderer import Renderer
 
+from functools import lru_cache
+
 
 log = logging.getLogger(__name__)
 
@@ -122,6 +124,24 @@ def _get_spectrum(spectrum: Union[np.ndarray, str]):
         raise TypeError(f"unrecognized spectrum type: {type(spectrum)}")
 
 
+@lru_cache(maxsize=1)
+def max_block_dim():
+    ret = np.inf
+    for devicenum in range(cuda.Device.count()):
+        attrs = cuda.Device(devicenum).get_attributes()
+        ret = min(attrs[cuda.device_attribute.MAX_BLOCK_DIM_X], ret)
+    return ret
+
+@lru_cache(maxsize=1)
+def max_grid_dim():
+    ret = np.inf
+    for devicenum in range(cuda.Device.count()):
+        attrs = cuda.Device(devicenum).get_attributes()
+        ret = min(attrs[cuda.device_attribute.MAX_GRID_DIM_X], ret)
+    return ret
+        
+
+
 def _get_kernel_projector_module(
     num_volumes: int,
     num_meshes: int,
@@ -182,6 +202,33 @@ def _get_kernel_projector_module(
         include_dirs=[bicubic_path, str(d)],
         options=options,
         no_extern_c=True,
+    )
+
+
+def _get_kernel_peel_postprocess_module(
+    num_intersections: int,
+) -> SourceModule:
+    d = Path(__file__).resolve().parent
+    # source_path = str(d / "../pycuda_ray_surface/pycuda_source.cu")
+    source_path = str(d / "peel_postprocess_kernel.cu")
+
+    with open(source_path, "r") as file:
+        source = file.read()
+
+    options = []
+    if os.name == "nt":
+        log.warning("running on windows is not thoroughly tested")
+
+    options += [
+        "-D",
+        f"NUM_INTERSECTIONS={num_intersections}",
+    ]
+    assert num_intersections % 4 == 0, "num_intersections must be a multiple of 4"
+
+    return SourceModule(
+        source,
+        options=options,
+        no_extern_c=False,
     )
 
 
@@ -557,10 +604,6 @@ class Projector(object):
 
             self.cam_node.matrix = np.array(proj.extrinsic.inv) @ deepdrr_to_opengl_cam
 
-            self.grid_xLambda = 16
-            self.block_dims = (self.rsi_manager.block_x,1,1)
-            self.grid_lambda = (self.grid_xLambda,1)
-
             mesh_perf_end = time.perf_counter()
             print(f"init arrays: {mesh_perf_end - mesh_perf_start}")
             mesh_perf_start = mesh_perf_end
@@ -631,30 +674,26 @@ class Projector(object):
             print(f"peel copy: {mesh_perf_end - mesh_perf_start}")
             mesh_perf_start = mesh_perf_end
             
-            self.rsi_manager.kernel_reorder(
+            self.kernel_reorder(
                 np.uint64(self.mesh_hit_alphas_gpua),
                 np.uint64(self.mesh_hit_alphas_gpu),
                 np.int32(self.n_rays), 
-                # np.int32(self.max_mesh_depth),
-                block=(int(self.rsi_manager.block_x/2),1,1),  # TODO ??
-                # block=self.block_dims,  # TODO ??
-                grid=self.grid_lambda
+                block=(256,1,1), # TODO
+                grid=(16,1) # TODO
             )
 
             mesh_perf_end = time.perf_counter()
             print(f"peel reorder: {mesh_perf_end - mesh_perf_start}")
             mesh_perf_start = mesh_perf_end
 
-            self.rsi_manager.kernel_tide(
+            self.kernel_tide(
                 np.uint64(self.mesh_hit_counts_gpu),
                 np.uint64(self.mesh_hit_alphas_gpu),
                 np.uint64(self.mesh_hit_facing_gpu),
                 np.int32(self.n_rays), 
                 np.float32(self.device.source_to_detector_distance*2),
-                # np.int32(self.max_mesh_depth),
-                block=(int(self.rsi_manager.block_x/2),1,1),  # TODO ??
-                # block=self.block_dims,  # TODO ??
-                grid=self.grid_lambda
+                block=(256,1,1), # TODO
+                grid=(16,1) # TODO
             )
 
             mesh_perf_end = time.perf_counter()
@@ -1159,6 +1198,12 @@ class Projector(object):
         self.project_kernel = self.mod.get_function("projectKernel")
         self.generate_rays = self.mod.get_function("kernelGenerateRays")
 
+        self.peel_postprocess_mod = _get_kernel_peel_postprocess_module(
+            num_intersections=self.max_mesh_depth
+        )
+        self.kernel_tide = self.peel_postprocess_mod.get_function("kernelTide")
+        self.kernel_reorder = self.peel_postprocess_mod.get_function("kernelReorder")
+
         if self.scatter_num > 0:
             self.scatter_mod = _get_kernel_scatter_module(len(self.all_materials))
             self.simulate_scatter = self.scatter_mod.get_function("simulate_scatter")
@@ -1266,9 +1311,9 @@ class Projector(object):
 
         self.n_rays = height * width # TODO: move this
 
-        self.rsi_manager = PyCudaRSIManager(max_intersections = self.max_mesh_depth)
-        self.pycuda_rsi = PyCudaRSI(self.rsi_manager, n_rays=self.n_rays)  # TODO: max mesh depth parameter
-        self.prim_surfs = [RSISurface(self.rsi_manager, prim.compute_vertices().copy(), prim.triangles().copy()) for prim in self.primitives]
+        # self.rsi_manager = PyCudaRSIManager(max_intersections = self.max_mesh_depth)
+        # self.pycuda_rsi = PyCudaRSI(self.rsi_manager, n_rays=self.n_rays)  # TODO: max mesh depth parameter
+        # self.prim_surfs = [RSISurface(self.rsi_manager, prim.compute_vertices().copy(), prim.triangles().copy()) for prim in self.primitives]
 
         self.scene = Scene(bg_color=[0.0, 0.0, 0.0])
 
