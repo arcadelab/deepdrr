@@ -48,7 +48,8 @@ log = logging.getLogger(__name__)
     # self._renderer = Renderer(self.viewport_width, self.viewport_height, max_dual_peel_layers=self.max_dual_peel_layers)
 
 # import pycuda.autoinit # causes problems when running with pytorch concurrently
-# import pycuda.driver as cuda
+
+import pycuda.driver as cuda
 # cuda.init()
 
 # import pycuda.autoprimaryctx
@@ -69,7 +70,7 @@ def import_pycuda():
     """
     if "pycuda" not in globals():
         import pycuda.autoprimaryctx
-        import pycuda.driver as cuda
+        import cuda as cuda
         import pycuda.autoinit
         import pycuda.compiler
 
@@ -495,7 +496,7 @@ class Projector(object):
             world_from_index = np.array(proj.world_from_index[:-1, :]).astype(
                 np.float32
             )
-            pycuda.driver.memcpy_htod(self.world_from_index_gpu, world_from_index)
+            cuda.memcpy_htod(self.world_from_index_gpu, world_from_index)
 
             mesh_ijk_from_world = np.zeros(len(self.primitives) * 3 * 4, dtype=np.float32)
             sx_ijk = np.zeros(len(self.primitives), dtype=np.float32)
@@ -506,22 +507,22 @@ class Projector(object):
                 source_ijk = np.array(
                     _vol.IJK_from_world @ proj.center_in_world # TODO: Remove unused center arguments
                 ).astype(np.float32)
-                pycuda.driver.memcpy_htod(
+                cuda.memcpy_htod(
                     int(self.sourceX_gpu) + int(NUMBYTES_INT32 * vol_id),
                     np.array([source_ijk[0]]),
                 )
-                pycuda.driver.memcpy_htod(
+                cuda.memcpy_htod(
                     int(self.sourceY_gpu) + int(NUMBYTES_INT32 * vol_id),
                     np.array([source_ijk[1]]),
                 )
-                pycuda.driver.memcpy_htod(
+                cuda.memcpy_htod(
                     int(self.sourceZ_gpu) + int(NUMBYTES_INT32 * vol_id),
                     np.array([source_ijk[2]]),
                 )
 
                 # TODO: prefer toarray() to get transform throughout
                 IJK_from_world = _vol.IJK_from_world.toarray()
-                pycuda.driver.memcpy_htod(
+                cuda.memcpy_htod(
                     int(self.ijk_from_world_gpu)
                     + (IJK_from_world.size * NUMBYTES_FLOAT32) * vol_id,
                     IJK_from_world,
@@ -574,7 +575,7 @@ class Projector(object):
                 mapping = reg_img.map()
 
                 src = mapping.array(0,0)
-                cpy = pycuda.driver.Memcpy2D()
+                cpy = cuda.Memcpy2D()
                 cpy.set_src_array(src)
                 pointer_into_additive_densities = int(self.additive_densities_gpu) + mat_idx * self.n_rays * 2 * NUMBYTES_FLOAT32
                 cpy.set_dst_device(int(pointer_into_additive_densities))
@@ -606,7 +607,7 @@ class Projector(object):
                 mapping = reg_img.map()
 
                 src = mapping.array(0,0)
-                cpy = pycuda.driver.Memcpy2D()
+                cpy = cuda.Memcpy2D()
                 cpy.set_src_array(src)
                 pointer_into_additive_densities = int(self.mesh_hit_alphas_gpua) + tex_idx * self.n_rays * 4 * NUMBYTES_FLOAT32
                 cpy.set_dst_device(int(pointer_into_additive_densities))
@@ -735,14 +736,14 @@ class Projector(object):
             )
 
             intensity = np.zeros(self.output_shape, dtype=np.float32)
-            pycuda.driver.memcpy_dtoh(intensity, self.intensity_gpu)
+            cuda.memcpy_dtoh(intensity, self.intensity_gpu)
             # transpose the axes, which previously have width on the slow dimension
             log.debug("copied intensity from gpu")
             intensity = np.swapaxes(intensity, 0, 1).copy()
             log.debug("swapped intensity")
 
             photon_prob = np.zeros(self.output_shape, dtype=np.float32)
-            pycuda.driver.memcpy_dtoh(photon_prob, self.photon_prob_gpu)
+            cuda.memcpy_dtoh(photon_prob, self.photon_prob_gpu)
             log.debug("copied photon_prob")
             photon_prob = np.swapaxes(photon_prob, 0, 1).copy()
             log.debug("swapped photon_prob")
@@ -764,9 +765,9 @@ class Projector(object):
                 # ).inv
                 # index_from_ijk = np.array(index_from_ijk).astype(np.float32) # 2x4 matrix
                 # print(f"index_from_ijk on GPU:\n{index_from_ijk}")
-                # pycuda.driver.memcpy_htod(self.index_from_ijk_gpu, index_from_ijk)
+                # cuda.memcpy_htod(self.index_from_ijk_gpu, index_from_ijk)
                 print(f"index_from_world on GPU:\n{np.array(proj.index_from_world)}")
-                pycuda.driver.memcpy_htod(
+                cuda.memcpy_htod(
                     self.index_from_world_gpu, np.array(proj.index_from_world)
                 )
 
@@ -831,11 +832,11 @@ class Projector(object):
                     print(f"\t{corner}")
 
                 world_from_ijk_arr = np.array(self.megavol_ijk_from_world.inv)[:-1]
-                pycuda.driver.memcpy_htod(self.world_from_ijk_gpu, world_from_ijk_arr)
+                cuda.memcpy_htod(self.world_from_ijk_gpu, world_from_ijk_arr)
                 # print(f"world_from_ijk_arr:\n{world_from_ijk_arr}")
 
                 ijk_from_world_arr = np.array(self.megavol_ijk_from_world)[:-1]
-                pycuda.driver.memcpy_htod(self.ijk_from_world_gpu, ijk_from_world_arr)
+                cuda.memcpy_htod(self.ijk_from_world_gpu, ijk_from_world_arr)
                 # print(f"ijk_from_world_arr:\n{ijk_from_world_arr}")
 
                 E_abs_keV = 5  # E_abs == 5000 eV
@@ -907,16 +908,16 @@ class Projector(object):
 
                 # Copy results from the GPU
                 scatter_intensity = np.zeros(self.output_shape, dtype=np.float32)
-                pycuda.driver.memcpy_dtoh(scatter_intensity, self.scatter_deposits_gpu)
+                cuda.memcpy_dtoh(scatter_intensity, self.scatter_deposits_gpu)
                 scatter_intensity = np.swapaxes(scatter_intensity, 0, 1).copy()
                 # Here, scatter_intensity is just the recorded deposited_energy. Will need to adjust later
 
                 n_sc = np.zeros(self.output_shape, dtype=np.int32)
-                pycuda.driver.memcpy_dtoh(n_sc, self.num_scattered_hits_gpu)
+                cuda.memcpy_dtoh(n_sc, self.num_scattered_hits_gpu)
                 n_sc = np.swapaxes(n_sc, 0, 1).copy()
 
                 n_pri = np.zeros(self.output_shape, dtype=np.int32)
-                pycuda.driver.memcpy_dtoh(n_pri, self.num_unscattered_hits_gpu)
+                cuda.memcpy_dtoh(n_pri, self.num_unscattered_hits_gpu)
                 n_pri = np.swapaxes(n_pri, 0, 1).copy()
 
                 # TODO TEMP -- save the scatter outputs to .npy files
@@ -966,7 +967,7 @@ class Projector(object):
             if self.collected_energy:
                 assert np.int32(0) != self.solid_angle_gpu
                 solid_angle = np.zeros(self.output_shape, dtype=np.float32)
-                pycuda.driver.memcpy_dtoh(solid_angle, self.solid_angle_gpu)
+                cuda.memcpy_dtoh(solid_angle, self.solid_angle_gpu)
                 solid_angle = np.swapaxes(solid_angle, 0, 1).copy()
 
                 # TODO (mjudish): is this calculation valid? SDD is in [mm], what does f{x,y} measure?
@@ -1071,20 +1072,20 @@ class Projector(object):
         self.output_shape = sensor_size
 
         # allocate intensity array on GPU (4 bytes to a float32)
-        self.intensity_gpu = pycuda.driver.mem_alloc(self.output_size * NUMBYTES_FLOAT32)
+        self.intensity_gpu = cuda.mem_alloc(self.output_size * NUMBYTES_FLOAT32)
         log.debug(
             f"bytes alloc'd for {self.output_shape} self.intensity_gpu: {self.output_size * NUMBYTES_FLOAT32}"
         )
 
         # allocate photon_prob array on GPU (4 bytes to a float32)
-        self.photon_prob_gpu = pycuda.driver.mem_alloc(self.output_size * NUMBYTES_FLOAT32)
+        self.photon_prob_gpu = cuda.mem_alloc(self.output_size * NUMBYTES_FLOAT32)
         log.debug(
             f"bytes alloc'd for {self.output_shape} self.photon_prob_gpu: {self.output_size * NUMBYTES_FLOAT32}"
         )
 
         # allocate solid_angle array on GPU as needed (4 bytes to a float32)
         if self.collected_energy:
-            self.solid_angle_gpu = pycuda.driver.mem_alloc(self.output_size * NUMBYTES_FLOAT32)
+            self.solid_angle_gpu = cuda.mem_alloc(self.output_size * NUMBYTES_FLOAT32)
             log.debug(
                 f"bytes alloc'd for {self.output_shape} self.solid_angle_gpu: {self.output_size * NUMBYTES_FLOAT32}"
             )
@@ -1109,8 +1110,8 @@ class Projector(object):
         self.width = width
         self.height = height
 
-        # pycuda.driver.init()
-        # assert pycuda.driver.Device.count() >= 1
+        # cuda.init()
+        # assert cuda.Device.count() >= 1
 
         device_id = int(os.environ.get('EGL_DEVICE_ID', '0'))
         egl_device = egl.get_device_by_index(device_id)
@@ -1127,7 +1128,7 @@ class Projector(object):
         # self.context = make_default_context()
         # from pycuda.autoinit import context # TODO ??
         # from pycuda.gl.autoinit import context # TODO ??
-        self.context = pycuda.driver.Context
+        self.context = cuda.Context
         # self.context = make_default_context(lambda dev: pycuda.make_context(dev))
         # self.context = make_default_context(lambda dev: pycuda.gl.make_context(dev))
         # self.device = self.context.get_device()
@@ -1178,9 +1179,9 @@ class Projector(object):
         for vol_id, volume in enumerate(self.volumes):
             volume = np.array(volume)
             volume = np.moveaxis(volume, [0, 1, 2], [2, 1, 0]).copy()
-            vol_gpu = pycuda.driver.np_to_array(volume, order="C")
+            vol_gpu = cuda.np_to_array(volume, order="C")
             vol_texref = self.mod.get_texref(f"volume_{vol_id}")
-            pycuda.driver.bind_array_to_texref(vol_gpu, vol_texref)
+            cuda.bind_array_to_texref(vol_gpu, vol_texref)
             self.volumes_gpu.append(vol_gpu)
             self.volumes_texref.append(vol_texref)
 
@@ -1190,7 +1191,7 @@ class Projector(object):
         # set the interpolation mode
         if self.mode == "linear":
             for texref in self.volumes_texref:
-                texref.set_filter_mode(pycuda.driver.filter_mode.LINEAR)
+                texref.set_filter_mode(cuda.filter_mode.LINEAR)
         else:
             raise RuntimeError
 
@@ -1208,7 +1209,7 @@ class Projector(object):
                 else:
                     seg = np.zeros(_vol.shape).astype(np.float32) # TODO: Wasted VRAM
                 seg_for_vol.append(
-                    pycuda.driver.np_to_array(
+                    cuda.np_to_array(
                         np.moveaxis(seg, [0, 1, 2], [2, 1, 0]).copy(), order="C"
                     )
                 ) # TODO: 8 bit textures to save VRAM?
@@ -1216,9 +1217,9 @@ class Projector(object):
                 texref_for_vol.append(texref)
 
             for seg, texref in zip(seg_for_vol, texref_for_vol):
-                pycuda.driver.bind_array_to_texref(seg, texref)
+                cuda.bind_array_to_texref(seg, texref)
                 if self.mode == "linear":
-                    texref.set_filter_mode(pycuda.driver.filter_mode.LINEAR)
+                    texref.set_filter_mode(cuda.filter_mode.LINEAR)
                 else:
                     raise RuntimeError("Invalid texref filter mode")
 
@@ -1228,25 +1229,25 @@ class Projector(object):
         def safe_mem_alloc(size):
             if size == 0:
                 return 0
-            return pycuda.driver.mem_alloc(size)
+            return cuda.mem_alloc(size)
 
         self.mesh_materials_gpu = safe_mem_alloc(len(self.primitives) * NUMBYTES_INT32)
         self.mesh_unique_materials = list(set([mesh.material for mesh in self.primitives]))
         self.mesh_unique_materials_indices = [self.all_materials.index(mat) for mat in self.mesh_unique_materials]
         self.mesh_unique_materials_gpu = safe_mem_alloc(len(self.mesh_unique_materials) * NUMBYTES_INT32)
-        pycuda.driver.memcpy_htod(self.mesh_unique_materials_gpu, np.array(self.mesh_unique_materials_indices).astype(np.int32))
+        cuda.memcpy_htod(self.mesh_unique_materials_gpu, np.array(self.mesh_unique_materials_indices).astype(np.int32))
         mesh_materials = []
         for mesh in self.primitives:
             mesh_materials.append(self.all_materials.index(mesh.material))
         mesh_materials = np.array(mesh_materials).astype(np.int32)
-        pycuda.driver.memcpy_htod(self.mesh_materials_gpu, mesh_materials)
+        cuda.memcpy_htod(self.mesh_materials_gpu, mesh_materials)
 
         self.mesh_densities_gpu = safe_mem_alloc(len(self.primitives) * NUMBYTES_FLOAT32)
         mesh_densities = []
         for mesh in self.primitives:
             mesh_densities.append(mesh.density)
         mesh_densities = np.array(mesh_densities).astype(np.float32)
-        pycuda.driver.memcpy_htod(self.mesh_densities_gpu, mesh_densities)
+        cuda.memcpy_htod(self.mesh_densities_gpu, mesh_densities)
 
         init_tock = time.perf_counter()
         log.debug(
@@ -1298,64 +1299,64 @@ class Projector(object):
         self._renderer = Renderer(viewport_width=width, viewport_height=height, max_dual_peel_layers=4)
         self.gl_renderer = self._renderer
 
-        self.additive_densities_gpu = pycuda.driver.mem_alloc(len(self.mesh_unique_materials) * self.n_rays * 2 * NUMBYTES_FLOAT32)
+        self.additive_densities_gpu = cuda.mem_alloc(len(self.mesh_unique_materials) * self.n_rays * 2 * NUMBYTES_FLOAT32)
 
         # allocate volumes' priority level on the GPU
-        self.priorities_gpu = pycuda.driver.mem_alloc(len(self.volumes) * NUMBYTES_INT32)
+        self.priorities_gpu = cuda.mem_alloc(len(self.volumes) * NUMBYTES_INT32)
         for vol_id, prio in enumerate(self.priorities):
-            pycuda.driver.memcpy_htod(
+            cuda.memcpy_htod(
                 int(self.priorities_gpu) + (NUMBYTES_INT32 * vol_id), np.int32(prio)
             )
 
         # allocate gVolumeEdge{Min,Max}Point{X,Y,Z} and gVoxelElementSize{X,Y,Z} on the GPU
-        self.minPointX_gpu = pycuda.driver.mem_alloc(len(self.volumes) * NUMBYTES_FLOAT32)
-        self.minPointY_gpu = pycuda.driver.mem_alloc(len(self.volumes) * NUMBYTES_FLOAT32)
-        self.minPointZ_gpu = pycuda.driver.mem_alloc(len(self.volumes) * NUMBYTES_FLOAT32)
+        self.minPointX_gpu = cuda.mem_alloc(len(self.volumes) * NUMBYTES_FLOAT32)
+        self.minPointY_gpu = cuda.mem_alloc(len(self.volumes) * NUMBYTES_FLOAT32)
+        self.minPointZ_gpu = cuda.mem_alloc(len(self.volumes) * NUMBYTES_FLOAT32)
 
-        self.maxPointX_gpu = pycuda.driver.mem_alloc(len(self.volumes) * NUMBYTES_FLOAT32)
-        self.maxPointY_gpu = pycuda.driver.mem_alloc(len(self.volumes) * NUMBYTES_FLOAT32)
-        self.maxPointZ_gpu = pycuda.driver.mem_alloc(len(self.volumes) * NUMBYTES_FLOAT32)
+        self.maxPointX_gpu = cuda.mem_alloc(len(self.volumes) * NUMBYTES_FLOAT32)
+        self.maxPointY_gpu = cuda.mem_alloc(len(self.volumes) * NUMBYTES_FLOAT32)
+        self.maxPointZ_gpu = cuda.mem_alloc(len(self.volumes) * NUMBYTES_FLOAT32)
 
-        self.voxelSizeX_gpu = pycuda.driver.mem_alloc(len(self.volumes) * NUMBYTES_FLOAT32)
-        self.voxelSizeY_gpu = pycuda.driver.mem_alloc(len(self.volumes) * NUMBYTES_FLOAT32)
-        self.voxelSizeZ_gpu = pycuda.driver.mem_alloc(len(self.volumes) * NUMBYTES_FLOAT32)
+        self.voxelSizeX_gpu = cuda.mem_alloc(len(self.volumes) * NUMBYTES_FLOAT32)
+        self.voxelSizeY_gpu = cuda.mem_alloc(len(self.volumes) * NUMBYTES_FLOAT32)
+        self.voxelSizeZ_gpu = cuda.mem_alloc(len(self.volumes) * NUMBYTES_FLOAT32)
 
         for i, _vol in enumerate(self.volumes):
             gpu_ptr_offset = NUMBYTES_FLOAT32 * i
-            pycuda.driver.memcpy_htod(int(self.minPointX_gpu) + gpu_ptr_offset, np.float32(-0.5))
-            pycuda.driver.memcpy_htod(int(self.minPointY_gpu) + gpu_ptr_offset, np.float32(-0.5))
-            pycuda.driver.memcpy_htod(int(self.minPointZ_gpu) + gpu_ptr_offset, np.float32(-0.5))
+            cuda.memcpy_htod(int(self.minPointX_gpu) + gpu_ptr_offset, np.float32(-0.5))
+            cuda.memcpy_htod(int(self.minPointY_gpu) + gpu_ptr_offset, np.float32(-0.5))
+            cuda.memcpy_htod(int(self.minPointZ_gpu) + gpu_ptr_offset, np.float32(-0.5))
 
-            pycuda.driver.memcpy_htod(
+            cuda.memcpy_htod(
                 int(self.maxPointX_gpu) + gpu_ptr_offset,
                 np.float32(_vol.shape[0] - 0.5),
             )
-            pycuda.driver.memcpy_htod(
+            cuda.memcpy_htod(
                 int(self.maxPointY_gpu) + gpu_ptr_offset,
                 np.float32(_vol.shape[1] - 0.5),
             )
-            pycuda.driver.memcpy_htod(
+            cuda.memcpy_htod(
                 int(self.maxPointZ_gpu) + gpu_ptr_offset,
                 np.float32(_vol.shape[2] - 0.5),
             )
-            pycuda.driver.memcpy_htod(
+            cuda.memcpy_htod(
                 int(self.voxelSizeX_gpu) + gpu_ptr_offset,
                 np.float32(_vol.spacing[0]),
             )
-            pycuda.driver.memcpy_htod(
+            cuda.memcpy_htod(
                 int(self.voxelSizeY_gpu) + gpu_ptr_offset,
                 np.float32(_vol.spacing[1]),
             )
-            pycuda.driver.memcpy_htod(
+            cuda.memcpy_htod(
                 int(self.voxelSizeZ_gpu) + gpu_ptr_offset,
                 np.float32(_vol.spacing[2]),
             )
         log.debug(f"gVolume information allocated and copied to GPU")
 
         # allocate source coord.s on GPU (4 bytes for each of {x,y,z} for each volume)
-        self.sourceX_gpu = pycuda.driver.mem_alloc(len(self.volumes) * NUMBYTES_FLOAT32)
-        self.sourceY_gpu = pycuda.driver.mem_alloc(len(self.volumes) * NUMBYTES_FLOAT32)
-        self.sourceZ_gpu = pycuda.driver.mem_alloc(len(self.volumes) * NUMBYTES_FLOAT32)
+        self.sourceX_gpu = cuda.mem_alloc(len(self.volumes) * NUMBYTES_FLOAT32)
+        self.sourceY_gpu = cuda.mem_alloc(len(self.volumes) * NUMBYTES_FLOAT32)
+        self.sourceZ_gpu = cuda.mem_alloc(len(self.volumes) * NUMBYTES_FLOAT32)
         # self.mesh_sourceX_gpu = safe_mem_alloc(len(self.primitives) * NUMBYTES_FLOAT32)
         # self.mesh_sourceY_gpu = safe_mem_alloc(len(self.primitives) * NUMBYTES_FLOAT32)
         # self.mesh_sourceZ_gpu = safe_mem_alloc(len(self.primitives) * NUMBYTES_FLOAT32)
@@ -1366,10 +1367,10 @@ class Projector(object):
         )
 
         # allocate world_from_index matrix array on GPU (3x3 array x 4 bytes per float32)
-        self.world_from_index_gpu = pycuda.driver.mem_alloc(3 * 3 * NUMBYTES_FLOAT32)
+        self.world_from_index_gpu = cuda.mem_alloc(3 * 3 * NUMBYTES_FLOAT32)
 
         # allocate ijk_from_world for each volume.
-        self.ijk_from_world_gpu = pycuda.driver.mem_alloc(
+        self.ijk_from_world_gpu = cuda.mem_alloc(
             len(self.volumes) * 3 * 4 * NUMBYTES_FLOAT32
         )
         
@@ -1385,8 +1386,8 @@ class Projector(object):
         noncont_energies = self.spectrum[:, 0].copy() / 1000
         contiguous_energies = np.ascontiguousarray(noncont_energies, dtype=np.float32)
         n_bins = contiguous_energies.shape[0]
-        self.energies_gpu = pycuda.driver.mem_alloc(n_bins * NUMBYTES_FLOAT32)
-        pycuda.driver.memcpy_htod(self.energies_gpu, contiguous_energies)
+        self.energies_gpu = cuda.mem_alloc(n_bins * NUMBYTES_FLOAT32)
+        cuda.memcpy_htod(self.energies_gpu, contiguous_energies)
         log.debug(f"bytes alloc'd for self.energies_gpu: {n_bins * NUMBYTES_FLOAT32}")
 
         # allocate and transfer spectrum pdf (4 bytes to a float32)
@@ -1394,8 +1395,8 @@ class Projector(object):
         contiguous_pdf = np.ascontiguousarray(noncont_pdf.copy(), dtype=np.float32)
         assert contiguous_pdf.shape == contiguous_energies.shape
         assert contiguous_pdf.shape[0] == n_bins
-        self.pdf_gpu = pycuda.driver.mem_alloc(n_bins * NUMBYTES_FLOAT32)
-        pycuda.driver.memcpy_htod(self.pdf_gpu, contiguous_pdf)
+        self.pdf_gpu = cuda.mem_alloc(n_bins * NUMBYTES_FLOAT32)
+        cuda.memcpy_htod(self.pdf_gpu, contiguous_pdf)
         log.debug(f"bytes alloc'd for self.pdf_gpu {n_bins * NUMBYTES_FLOAT32}")
 
         # precompute, allocate, and transfer the get_absorption_coef(energy, material) table (4 bytes to a float32)
@@ -1409,10 +1410,10 @@ class Projector(object):
                 ] = mass_attenuation.get_absorption_coefs(
                     contiguous_energies[bin], mat_name
                 )
-        self.absorption_coef_table_gpu = pycuda.driver.mem_alloc(
+        self.absorption_coef_table_gpu = cuda.mem_alloc(
             n_bins * len(self.all_materials) * NUMBYTES_FLOAT32
         )
-        pycuda.driver.memcpy_htod(self.absorption_coef_table_gpu, absorption_coef_table)
+        cuda.memcpy_htod(self.absorption_coef_table_gpu, absorption_coef_table)
         log.debug(
             f"size alloc'd for self.absorption_coef_table_gpu: {n_bins * len(self.all_materials) * NUMBYTES_FLOAT32}"
         )
@@ -1539,20 +1540,20 @@ class Projector(object):
                 )
 
                 # allocate megavolume data and labeled (i.e., not binary) segmentation
-                self.megavol_density_gpu = pycuda.driver.mem_alloc(
+                self.megavol_density_gpu = cuda.mem_alloc(
                     NUMBYTES_FLOAT32 * mega_x_len * mega_y_len * mega_z_len
                 )
-                self.megavol_labeled_seg_gpu = pycuda.driver.mem_alloc(
+                self.megavol_labeled_seg_gpu = cuda.mem_alloc(
                     NUMBYTES_INT8 * mega_x_len * mega_y_len * mega_z_len
                 )
 
                 # TODO: discuss whether it is stylistically fine that these are allocated
                 # and freed entirely within the Projector.initialized function
-                inp_priority_gpu = pycuda.driver.mem_alloc(NUMBYTES_INT32 * len(self.volumes))
-                inp_voxelBoundX_gpu = pycuda.driver.mem_alloc(NUMBYTES_INT32 * len(self.volumes))
-                inp_voxelBoundY_gpu = pycuda.driver.mem_alloc(NUMBYTES_INT32 * len(self.volumes))
-                inp_voxelBoundZ_gpu = pycuda.driver.mem_alloc(NUMBYTES_INT32 * len(self.volumes))
-                inp_ijk_from_world_gpu = pycuda.driver.mem_alloc(
+                inp_priority_gpu = cuda.mem_alloc(NUMBYTES_INT32 * len(self.volumes))
+                inp_voxelBoundX_gpu = cuda.mem_alloc(NUMBYTES_INT32 * len(self.volumes))
+                inp_voxelBoundY_gpu = cuda.mem_alloc(NUMBYTES_INT32 * len(self.volumes))
+                inp_voxelBoundZ_gpu = cuda.mem_alloc(NUMBYTES_INT32 * len(self.volumes))
+                inp_ijk_from_world_gpu = cuda.mem_alloc(
                     NUMBYTES_INT32
                     * np.array(self.volumes[0].ijk_from_world).size
                     * len(self.volumes)
@@ -1563,25 +1564,25 @@ class Projector(object):
                     arr_offset = (
                         NUMBYTES_INT32 * np.array(_vol.ijk_from_world).size * vol_id
                     )
-                    pycuda.driver.memcpy_htod(
+                    cuda.memcpy_htod(
                         int(inp_priority_gpu) + int_offset,
                         np.int32(self.priorities[vol_id]),
                     )
-                    pycuda.driver.memcpy_htod(
+                    cuda.memcpy_htod(
                         int(inp_voxelBoundX_gpu) + int_offset, np.int32(_vol.shape[0])
                     )
-                    pycuda.driver.memcpy_htod(
+                    cuda.memcpy_htod(
                         int(inp_voxelBoundY_gpu) + int_offset, np.int32(_vol.shape[1])
                     )
-                    pycuda.driver.memcpy_htod(
+                    cuda.memcpy_htod(
                         int(inp_voxelBoundZ_gpu) + int_offset, np.int32(_vol.shape[2])
                     )
                     inp_ijk_from_world = np.ascontiguousarray(
                         np.array(_vol.ijk_from_world).astype(np.float32)
                     )
                     log.debug(inp_ijk_from_world)
-                    # pycuda.driver.memcpy_htod(int(inp_ijk_from_world_gpu) + arr_offset, inp_ijk_from_world)
-                    pycuda.driver.memcpy_htod(
+                    # cuda.memcpy_htod(int(inp_ijk_from_world_gpu) + arr_offset, inp_ijk_from_world)
+                    cuda.memcpy_htod(
                         int(inp_ijk_from_world_gpu) + arr_offset, np.int32(12345)
                     )
 
@@ -1690,8 +1691,8 @@ class Projector(object):
 
                 self.megavol_shape = (mega_x_len, mega_y_len, mega_z_len)
 
-                self.megavol_density_gpu = pycuda.driver.mem_alloc(NUMBYTES_FLOAT32 * num_voxels)
-                self.megavol_labeled_seg_gpu = pycuda.driver.mem_alloc(
+                self.megavol_density_gpu = cuda.mem_alloc(NUMBYTES_FLOAT32 * num_voxels)
+                self.megavol_labeled_seg_gpu = cuda.mem_alloc(
                     NUMBYTES_INT8 * num_voxels
                 )
 
@@ -1714,11 +1715,11 @@ class Projector(object):
                     labeled_seg, len(self.all_materials) * null_seg
                 ).astype(np.int8)
                 # NOTE: axis swap not necessary because using raw array, not texture
-                pycuda.driver.memcpy_htod(self.megavol_labeled_seg_gpu, labeled_seg)
+                cuda.memcpy_htod(self.megavol_labeled_seg_gpu, labeled_seg)
 
                 # Copy volume density info to self.megavol_density_gpu
                 # NOTE: axis swap not necessary because using raw array, not texture
-                pycuda.driver.memcpy_htod(self.megavol_density_gpu, self.volumes[0].data)
+                cuda.memcpy_htod(self.megavol_density_gpu, self.volumes[0].data)
 
                 init_tock = time.perf_counter()
                 log.debug(
@@ -1728,7 +1729,7 @@ class Projector(object):
 
             # Material MFP structs
             self.mat_mfp_struct_dict = dict()
-            self.mat_mfp_structs_gpu = pycuda.driver.mem_alloc(
+            self.mat_mfp_structs_gpu = cuda.mem_alloc(
                 len(self.all_materials) * CudaMatMfpStruct.MEMSIZE
             )
             for i, mat in enumerate(self.all_materials):
@@ -1746,7 +1747,7 @@ class Projector(object):
 
             # Woodcock MFP struct
             wc_np_arr = scatter.make_woodcock_mfp(self.all_materials)
-            self.woodcock_struct_gpu = pycuda.driver.mem_alloc(CudaWoodcockStruct.MEMSIZE)
+            self.woodcock_struct_gpu = cuda.mem_alloc(CudaWoodcockStruct.MEMSIZE)
             self.woodcock_struct = CudaWoodcockStruct(
                 wc_np_arr, int(self.woodcock_struct_gpu)
             )
@@ -1758,7 +1759,7 @@ class Projector(object):
 
             # Material Compton structs
             self.compton_struct_dict = dict()
-            self.compton_structs_gpu = pycuda.driver.mem_alloc(
+            self.compton_structs_gpu = cuda.mem_alloc(
                 len(self.all_materials) * CudaComptonStruct.MEMSIZE
             )
             for i, mat in enumerate(self.all_materials):
@@ -1776,7 +1777,7 @@ class Projector(object):
 
             # Material Rayleigh structs
             self.rayleigh_struct_dict = dict()
-            self.rayleigh_structs_gpu = pycuda.driver.mem_alloc(
+            self.rayleigh_structs_gpu = cuda.mem_alloc(
                 len(self.all_materials) * CudaRayleighStruct.MEMSIZE
             )
             for i, mat in enumerate(self.all_materials):
@@ -1793,14 +1794,14 @@ class Projector(object):
             )
 
             # Detector plane
-            self.detector_plane_gpu = pycuda.driver.mem_alloc(CudaPlaneSurfaceStruct.MEMSIZE)
+            self.detector_plane_gpu = cuda.mem_alloc(CudaPlaneSurfaceStruct.MEMSIZE)
 
             # world_from_ijk
-            self.world_from_ijk_gpu = pycuda.driver.mem_alloc(3 * 4 * NUMBYTES_FLOAT32)
+            self.world_from_ijk_gpu = cuda.mem_alloc(3 * 4 * NUMBYTES_FLOAT32)
 
             # index_from_world
             # TODO: get the factor of "2 x 4" from a more abstract source
-            self.index_from_world_gpu = pycuda.driver.mem_alloc(
+            self.index_from_world_gpu = cuda.mem_alloc(
                 2 * 4 * NUMBYTES_FLOAT32
             )  # (2, 4) array of floats
 
@@ -1812,17 +1813,17 @@ class Projector(object):
                 [np.sum(contiguous_pdf[0 : i + 1]) for i in range(n_bins)]
             )
             # log.debug(f"spectrum CDF:\n{spectrum_cdf}")
-            self.cdf_gpu = pycuda.driver.mem_alloc(n_bins * NUMBYTES_FLOAT32)
-            pycuda.driver.memcpy_htod(self.cdf_gpu, spectrum_cdf)
+            self.cdf_gpu = cuda.mem_alloc(n_bins * NUMBYTES_FLOAT32)
+            cuda.memcpy_htod(self.cdf_gpu, spectrum_cdf)
 
             # output
-            self.scatter_deposits_gpu = pycuda.driver.mem_alloc(
+            self.scatter_deposits_gpu = cuda.mem_alloc(
                 self.output_size * NUMBYTES_FLOAT32
             )
-            self.num_scattered_hits_gpu = pycuda.driver.mem_alloc(
+            self.num_scattered_hits_gpu = cuda.mem_alloc(
                 self.output_size * NUMBYTES_INT32
             )
-            self.num_unscattered_hits_gpu = pycuda.driver.mem_alloc(
+            self.num_unscattered_hits_gpu = cuda.mem_alloc(
                 self.output_size * NUMBYTES_INT32
             )
 
@@ -1841,7 +1842,7 @@ class Projector(object):
             self.gl_renderer.delete()
 
             def safe_free(gpu_ptr):
-                if isinstance(gpu_ptr, pycuda.driver.DeviceAllocation):
+                if isinstance(gpu_ptr, cuda.DeviceAllocation):
                     gpu_ptr.free()
 
             for vol_id, vol_gpu in enumerate(self.volumes_gpu):
