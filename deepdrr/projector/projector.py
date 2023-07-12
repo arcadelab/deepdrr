@@ -41,39 +41,13 @@ from ..pyrenderdrr.renderer import Renderer
 from functools import lru_cache
 
 
-log = logging.getLogger(__name__)
-
-# try:
-
-    # self._renderer = Renderer(self.viewport_width, self.viewport_height, max_dual_peel_layers=self.max_dual_peel_layers)
-
-# import pycuda.autoinit # causes problems when running with pytorch concurrently
-
 import pycuda.driver as cuda
-# cuda.init()
-
-# import pycuda.autoprimaryctx
 import pycuda.gl
 import pycuda
-
-# from pycuda.gl import make_context
-# from pycuda.autoinit import context # TODO: only this works on my machine
-# from pycuda.gl.autoinit import context # TODO: only this works on my machine
-# from pycuda.autoprimaryctx import context  # retains context across multiple calls
 from pycuda.compiler import SourceModule
-from pycuda.tools import make_default_context  # noqa: E402
 
-def import_pycuda():
-    """Import pycuda and return the context.
+log = logging.getLogger(__name__)
 
-    Returns:
-        pycuda.autoinit.context: The pycuda context.
-    """
-    if "pycuda" not in globals():
-        import pycuda.autoprimaryctx
-        import cuda as cuda
-        import pycuda.autoinit
-        import pycuda.compiler
 
 
 NUMBYTES_INT8 = 1
@@ -104,7 +78,7 @@ def _get_spectrum(spectrum: Union[np.ndarray, str]):
 
 
 @lru_cache(maxsize=1)
-def max_block_dim():
+def max_block_dim(): # TODO: use this maybe?
     ret = np.inf
     for devicenum in range(cuda.Device.count()):
         attrs = cuda.Device(devicenum).get_attributes()
@@ -112,13 +86,40 @@ def max_block_dim():
     return ret
 
 @lru_cache(maxsize=1)
-def max_grid_dim():
+def max_grid_dim(): # TODO: use this maybe?
     ret = np.inf
     for devicenum in range(cuda.Device.count()):
         attrs = cuda.Device(devicenum).get_attributes()
         ret = min(attrs[cuda.device_attribute.MAX_GRID_DIM_X], ret)
     return ret
         
+
+
+def _get_kernel_peel_postprocess_module(
+    num_intersections: int,
+) -> SourceModule:
+    d = Path(__file__).resolve().parent
+    # source_path = str(d / "../pycuda_ray_surface/pycuda_source.cu")
+    source_path = str(d / "peel_postprocess_kernel.cu")
+
+    with open(source_path, "r") as file:
+        source = file.read()
+
+    options = []
+    if os.name == "nt":
+        log.warning("running on windows is not thoroughly tested")
+
+    options += [
+        "-D",
+        f"NUM_INTERSECTIONS={num_intersections}",
+    ]
+    assert num_intersections % 4 == 0, "num_intersections must be a multiple of 4"
+
+    return SourceModule(
+        source,
+        options=options,
+        no_extern_c=False,
+    )
 
 
 def _get_kernel_projector_module(
@@ -184,33 +185,6 @@ def _get_kernel_projector_module(
     )
 
 
-def _get_kernel_peel_postprocess_module(
-    num_intersections: int,
-) -> SourceModule:
-    d = Path(__file__).resolve().parent
-    # source_path = str(d / "../pycuda_ray_surface/pycuda_source.cu")
-    source_path = str(d / "peel_postprocess_kernel.cu")
-
-    with open(source_path, "r") as file:
-        source = file.read()
-
-    options = []
-    if os.name == "nt":
-        log.warning("running on windows is not thoroughly tested")
-
-    options += [
-        "-D",
-        f"NUM_INTERSECTIONS={num_intersections}",
-    ]
-    assert num_intersections % 4 == 0, "num_intersections must be a multiple of 4"
-
-    return SourceModule(
-        source,
-        options=options,
-        no_extern_c=False,
-    )
-
-
 def _get_kernel_scatter_module(num_materials) -> SourceModule:
     """Compile the cuda code for the scatter simulation.
 
@@ -259,7 +233,6 @@ class Projector(object):
         source_to_detector_distance: float = -1,
         carm: Optional[Device] = None,
         max_mesh_depth = 32
-        # max_mesh_depth = 16
     ) -> None:
         """Create the projector, which has info for simulating the DRR.
 
@@ -294,7 +267,7 @@ class Projector(object):
             carm (MobileCArm, optional): Deprecated alias for `device`. See `device`.
         """
 
-        self._platform = None
+        self._egl_platform = None
 
         # set variables
         volume = utils.listify(volume)
@@ -329,7 +302,6 @@ class Projector(object):
                 ), "invalid priority outside range [0, NUM_VOLUMES)"
                 self.priorities.append(prio)
         assert len(self.volumes) == len(self.priorities)
-
 
         if carm is not None:
             warnings.warn("carm is deprecated, use device instead", DeprecationWarning)
@@ -367,17 +339,9 @@ class Projector(object):
         # TODO (mjudish): handle intensity_upper_bound when [collected_energy is True]
         # Might want to disallow using intensity_upper_bound, due to nonsensicalness
 
-
-        self.max_mesh_depth = 32
-        # self.max_mesh_depth = max_mesh_depth
-        if self.max_mesh_depth != 32:
-            raise ValueError("max_mesh_depth must be 32") # TODO: remove this restriction
-        # if self.max_mesh_depth % 2 != 0:
-        #     raise ValueError("max_mesh_depth must be even")
-        # if self.max_mesh_depth > 16:
-        #     raise ValueError("max_mesh_depth must be <= 16")
-        # if self.max_mesh_depth < 2:
-        #     raise ValueError("max_mesh_depth must be >= 2")
+        self.max_mesh_depth = max_mesh_depth
+        if self.max_mesh_depth < 4 or self.max_mesh_depth % 4 != 0:
+            raise ValueError("max_mesh_depth must be a multiple of 4 and >= 4")
 
         assert len(self.volumes) > 0
 
@@ -498,10 +462,10 @@ class Projector(object):
             )
             cuda.memcpy_htod(self.world_from_index_gpu, world_from_index)
 
-            mesh_ijk_from_world = np.zeros(len(self.primitives) * 3 * 4, dtype=np.float32)
-            sx_ijk = np.zeros(len(self.primitives), dtype=np.float32)
-            sy_ijk = np.zeros(len(self.primitives), dtype=np.float32)
-            sz_ijk = np.zeros(len(self.primitives), dtype=np.float32)
+            # mesh_ijk_from_world = np.zeros(len(self.primitives) * 3 * 4, dtype=np.float32)
+            # sx_ijk = np.zeros(len(self.primitives), dtype=np.float32)
+            # sy_ijk = np.zeros(len(self.primitives), dtype=np.float32)
+            # sz_ijk = np.zeros(len(self.primitives), dtype=np.float32)
 
             for vol_id, _vol in enumerate(self.volumes):
                 source_ijk = np.array(
@@ -528,12 +492,12 @@ class Projector(object):
                     IJK_from_world,
                 )
 
-            for vol_id, prim in enumerate(self.primitives): # TODO: duplicated code
-                _vol = prim.get_parent_mesh()
-                self.prim_nodes[vol_id].matrix = np.linalg.inv(np.array(_vol.IJK_from_world))
+            for prim_id, prim in enumerate(self.primitives):
+                prim_parent = prim.get_parent_mesh()
+                self.prim_nodes[prim_id].matrix = np.linalg.inv(np.array(prim_parent.IJK_from_world))
             
-            mesh_perf_entire_start = time.perf_counter()
-            mesh_perf_start = time.perf_counter()
+            # mesh_perf_entire_start = time.perf_counter()
+            # mesh_perf_start = time.perf_counter()
 
             num_rays = proj.sensor_width * proj.sensor_height
 
@@ -553,9 +517,9 @@ class Projector(object):
 
             self.cam_node.matrix = np.array(proj.extrinsic.inv) @ deepdrr_to_opengl_cam
 
-            mesh_perf_end = time.perf_counter()
-            print(f"init arrays: {mesh_perf_end - mesh_perf_start}")
-            mesh_perf_start = mesh_perf_end
+            # mesh_perf_end = time.perf_counter()
+            # print(f"init arrays: {mesh_perf_end - mesh_perf_start}")
+            # mesh_perf_start = mesh_perf_end
 
             for mesh in self.prim_meshes:
                 mesh.is_visible = True
@@ -592,15 +556,15 @@ class Projector(object):
             for mesh in self.prim_meshes:
                 mesh.is_visible = True
 
-            mesh_perf_end = time.perf_counter()
-            print(f"density: {mesh_perf_end - mesh_perf_start}")
-            mesh_perf_start = mesh_perf_end
+            # mesh_perf_end = time.perf_counter()
+            # print(f"density: {mesh_perf_end - mesh_perf_start}")
+            # mesh_perf_start = mesh_perf_end
 
             rendered_layers = self.gl_renderer.render(self.scene, drr_mode=DRRMode.DIST, flags=RenderFlags.RGBA, zfar=zfar)
 
-            mesh_perf_end = time.perf_counter()
-            print(f"peel: {mesh_perf_end - mesh_perf_start}")
-            mesh_perf_start = mesh_perf_end
+            # mesh_perf_end = time.perf_counter()
+            # print(f"peel: {mesh_perf_end - mesh_perf_start}")
+            # mesh_perf_start = mesh_perf_end
 
             for tex_idx in range(self.gl_renderer.max_peel_layers):
                 reg_img = pycuda.gl.RegisteredImage(int(self.gl_renderer.g_peelTexId[tex_idx]), GL_TEXTURE_RECTANGLE, pycuda.gl.graphics_map_flags.READ_ONLY)
@@ -619,9 +583,9 @@ class Projector(object):
                 reg_img.unregister()
 
 
-            mesh_perf_end = time.perf_counter()
-            print(f"peel copy: {mesh_perf_end - mesh_perf_start}")
-            mesh_perf_start = mesh_perf_end
+            # mesh_perf_end = time.perf_counter()
+            # print(f"peel copy: {mesh_perf_end - mesh_perf_start}")
+            # mesh_perf_start = mesh_perf_end
             
             self.kernel_reorder(
                 np.uint64(self.mesh_hit_alphas_gpua),
@@ -631,9 +595,9 @@ class Projector(object):
                 grid=(16,1) # TODO
             )
 
-            mesh_perf_end = time.perf_counter()
-            print(f"peel reorder: {mesh_perf_end - mesh_perf_start}")
-            mesh_perf_start = mesh_perf_end
+            # mesh_perf_end = time.perf_counter()
+            # print(f"peel reorder: {mesh_perf_end - mesh_perf_start}")
+            # mesh_perf_start = mesh_perf_end
 
             self.kernel_tide(
                 np.uint64(self.mesh_hit_counts_gpu),
@@ -645,13 +609,13 @@ class Projector(object):
                 grid=(16,1) # TODO
             )
 
-            mesh_perf_end = time.perf_counter()
-            print(f"tide: {mesh_perf_end - mesh_perf_start}")
-            mesh_perf_start = mesh_perf_end
+            # mesh_perf_end = time.perf_counter()
+            # print(f"tide: {mesh_perf_end - mesh_perf_start}")
+            # mesh_perf_start = mesh_perf_end
 
-            cuda.Context.synchronize()
+            # cuda.Context.synchronize()
 
-            print(f"entire mesh: {time.perf_counter() - mesh_perf_entire_start}")
+            # print(f"entire mesh: {time.perf_counter() - mesh_perf_entire_start}")
 
 
             args = [
@@ -1116,14 +1080,14 @@ class Projector(object):
 
         device_id = int(os.environ.get('EGL_DEVICE_ID', '0'))
         egl_device = egl.get_device_by_index(device_id)
-        self._platform = egl.EGLPlatform(viewport_width=width, viewport_height=height,
+        self._egl_platform = egl.EGLPlatform(viewport_width=width, viewport_height=height,
                                             device=egl_device)
-        self._platform.init_context()
-        self._platform.make_current()
+        self._egl_platform.init_context()
+        self._egl_platform.make_current()
 
         import pycuda.gl.autoinit # must happen after egl context is created
 
-        # compile the module
+        # compile the module, moved to to initialize because it needs to happen after the context is created
         self.mod = _get_kernel_projector_module(
             len(self.volumes),
             len(self.primitives),
