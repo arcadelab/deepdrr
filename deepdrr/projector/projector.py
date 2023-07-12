@@ -7,31 +7,17 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple, Union
 import os
 import warnings
-os.environ['PYOPENGL_PLATFORM'] = 'egl' # TODO
 
-
-from collections import defaultdict
 import math
-from pyparsing import alphas
 import torch
 import numpy as np
-import cv2 # TODO
-import trimesh
+from pyparsing import alphas
+from collections import defaultdict
 
 from OpenGL.GL import GL_TEXTURE_RECTANGLE
 from OpenGL.GL import *
 
-from PIL import Image
- 
-
-import pyvista as pv
-import pyvista
-
-from ..pyrenderdrr import IntrinsicsCamera,\
-                     DirectionalLight, SpotLight, PointLight,\
-                     MetallicRoughnessMaterial,\
-                     Primitive, Mesh, Node, Scene,\
-                     Viewer, OffscreenRenderer, RenderFlags, PerspectiveCamera
+from ..pyrenderdrr import IntrinsicsCamera, Primitive, Mesh, Node, Scene, RenderFlags
 from ..pyrenderdrr.constants import DRRMode
 
 from .. import geo, utils, vol
@@ -49,7 +35,6 @@ from .mcgpu_compton_data import COMPTON_DATA
 from .mcgpu_mfp_data import MFP_DATA
 from .mcgpu_rita_samplers import rita_samplers
 
-from ..pycuda_ray_surface.pycuda_ray_surface_intersect import PyCudaRSI, RSISurface, PyCudaRSIManager
 from ..pyrenderdrr.platforms import egl
 from ..pyrenderdrr.renderer import Renderer
 
@@ -75,14 +60,6 @@ import pycuda.gl
 # from pycuda.autoprimaryctx import context  # retains context across multiple calls
 from pycuda.compiler import SourceModule
 from pycuda.tools import make_default_context  # noqa: E402
-# import pycuda.driver as cuda
-# import pycuda.gl as cudagl
-
-# except ImportError:
-#     log.warning(f"Running without pycuda: projector operations will fail.")
-# except RuntimeError as e:
-#     log.warning(f"Running without pycuda, possibly in subprocess: {e}")
-
 
 def import_pycuda():
     """Import pycuda and return the context.
