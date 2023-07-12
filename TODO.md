@@ -1,8 +1,8 @@
 # TODO
 <!-- - Return peeling array up to 8 -->
 <!-- - Support multi material -->
-- Support more than 8 peels
-- Zero copy buffers to cuda
+<!-- - Support more than 8 peels -->
+<!-- - Zero copy buffers to cuda -->
 
 # Questions
 - Scatter?
@@ -10,6 +10,7 @@
 - Mesh priorities?
 
 # Ops
+- Remove todo, .idea, .vscode
 - Implement in PelvisVR
 - Cleanup
 - Add tests
@@ -23,8 +24,8 @@
 <!-- - Morph targets -->
 <!-- - Min/max alpha -->
 <!-- - Integrate API for meshes and volumes -->
+<!-- - Fix attenuate outside volume -->
 - Mesh priorities (is necessary?)
-- Fix attenuate outside volume
 - scatter?
 - better zero mesh handling
 - zero volume handling
@@ -32,14 +33,14 @@
 # Optimizations
 <!-- - On gpu sort -->
 <!-- - On gpu ray generation -->
-- Mesh instancing
+<!-- - Mesh instancing -->
 - Primitive merging
-- On gpu ray from and to gen
-- Save memory by merging same-material mesh raycast hits
+<!-- - On gpu ray from and to gen -->
+<!-- - Save memory by merging same-material mesh raycast hits -->
 - Save memory by using signed distances to represent front/back hits
-- Data stay on GPU
-- Reuse tree for non blend meshes
-- Use rasterization method
-- Fast mode rasterization
+<!-- - Data stay on GPU -->
+<!-- - Reuse tree for non blend meshes -->
+<!-- - Use rasterization method -->
+<!-- - Fast mode rasterization -->
 - Free all new allocs
-- On GPU morph targets
+<!-- - On GPU morph targets -->
