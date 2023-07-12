@@ -225,7 +225,7 @@ class Projector(object):
         add_noise: bool = False,
         photon_count: int = 10000,
         threads: int = 8,
-        max_block_index: int = 1024,
+        max_block_index: int = 1024, # TODO: why not 65535?
         collected_energy: bool = False,
         neglog: bool = True,
         intensity_upper_bound: Optional[float] = None,
@@ -638,13 +638,9 @@ class Projector(object):
                 self.sourceX_gpu,  # sx_ijk
                 self.sourceY_gpu,  # sy_ijk
                 self.sourceZ_gpu,  # sz_ijk
-                # self.mesh_sourceX_gpu,  # sx_ijk
-                # self.mesh_sourceY_gpu,  # sy_ijk
-                # self.mesh_sourceZ_gpu,  # sz_ijk
                 np.float32(max_ray_length),  # max_ray_length
                 self.world_from_index_gpu,  # world_from_index
                 self.ijk_from_world_gpu,  # ijk_from_world
-                # self.mesh_ijk_from_world_gpu,  # ijk_from_world
                 np.int32(self.spectrum.shape[0]),  # n_bins
                 self.energies_gpu,  # energies
                 self.pdf_gpu,  # pdf
@@ -658,8 +654,6 @@ class Projector(object):
                 np.uint64(self.mesh_unique_materials_gpu),
                 np.int32(len(self.mesh_unique_materials)),
                 np.int32(self.max_mesh_depth),
-                # np.uint64(self.mesh_materials_gpu),
-                # np.uint64(self.mesh_densities_gpu),
             ]
 
             # Calculate required blocks
@@ -680,7 +674,7 @@ class Projector(object):
                     *args, offset_w, offset_h, block=block, grid=(blocks_w, blocks_h)
                 )
             else:
-                log.debug("Running kernel patchwise") # TODO: what?
+                log.debug("Running kernel patchwise") # TODO: are there really sensors larger than 65535*self.threads pixels in one dimension?
                 for w in range((blocks_w - 1) // (self.max_block_index + 1)):
                     for h in range((blocks_h - 1) // (self.max_block_index + 1)):
                         offset_w = np.int32(w * self.max_block_index)
@@ -692,7 +686,7 @@ class Projector(object):
                             block=block,
                             grid=(self.max_block_index, self.max_block_index),
                         )
-                        cuda.Context.synchronize() # TODO: necessary?
+                        cuda.Context.synchronize() # TODO: why is this necessary?
 
             project_tock = time.perf_counter()
             log.debug(
@@ -1058,7 +1052,6 @@ class Projector(object):
             self.solid_angle_gpu = np.int32(0)
 
     def initialize(self):
-
         """Allocate GPU memory and transfer the volume, segmentations to GPU."""
         if self.initialized:
             raise RuntimeError("Close projector before initializing again.")
@@ -1074,9 +1067,6 @@ class Projector(object):
 
         self.width = width
         self.height = height
-
-        # cuda.init()
-        # assert cuda.Device.count() >= 1
 
         device_id = int(os.environ.get('EGL_DEVICE_ID', '0'))
         egl_device = egl.get_device_by_index(device_id)
@@ -1210,13 +1200,8 @@ class Projector(object):
 
         self.n_rays = height * width # TODO: move this
 
-        # self.rsi_manager = PyCudaRSIManager(max_intersections = self.max_mesh_depth)
-        # self.pycuda_rsi = PyCudaRSI(self.rsi_manager, n_rays=self.n_rays)  # TODO: max mesh depth parameter
-        # self.prim_surfs = [RSISurface(self.rsi_manager, prim.compute_vertices().copy(), prim.triangles().copy()) for prim in self.primitives]
-
         self.scene = Scene(bg_color=[0.0, 0.0, 0.0])
 
-        # self.prim_nodes = [self.scene.add(Mesh([Primitive(positions=prim.compute_vertices().copy(), indices=prim.triangles(flip_winding_order=False).copy())])) for prim in self.primitives]
         self.prim_nodes = []
         self.prim_meshes = []
         self.prim_meshes_by_mat = defaultdict(list)
@@ -1229,9 +1214,6 @@ class Projector(object):
 
         self.prim_meshes_by_mat_list = [self.prim_meshes_by_mat[mat] for mat in self.mesh_unique_materials]
         
-        # duckmesh = Mesh.from_trimesh(trimesh.load("./models/suzanne_stress.stl"))
-        # self.scene.add(duckmesh)
-
         cam_intr = self.device.camera_intrinsics
 
         self.cam = IntrinsicsCamera(
@@ -1239,16 +1221,12 @@ class Projector(object):
             fy=cam_intr.fy,
             cx=cam_intr.cx,
             cy=cam_intr.cy,
-            # znear=self.device.source_to_detector_distance/1000,
-            znear=1,
-            # zfar=self.device.source_to_detector_distance
-            zfar=5000 #TODO
+            znear=self.device.source_to_detector_distance/1000, # TODO
+            zfar=self.device.source_to_detector_distance
             )
-        # self.cam = PerspectiveCamera(yfov=(np.pi / 12.0), znear=1, zfar=5000)
         
         self.cam_node = self.scene.add(self.cam)
 
-        # self.gl_renderer = OffscreenRenderer(viewport_width=width, viewport_height=height, point_size=1.0)
         self._renderer = Renderer(viewport_width=width, viewport_height=height, max_dual_peel_layers=4)
         self.gl_renderer = self._renderer
 
@@ -1310,9 +1288,6 @@ class Projector(object):
         self.sourceX_gpu = cuda.mem_alloc(len(self.volumes) * NUMBYTES_FLOAT32)
         self.sourceY_gpu = cuda.mem_alloc(len(self.volumes) * NUMBYTES_FLOAT32)
         self.sourceZ_gpu = cuda.mem_alloc(len(self.volumes) * NUMBYTES_FLOAT32)
-        # self.mesh_sourceX_gpu = safe_mem_alloc(len(self.primitives) * NUMBYTES_FLOAT32)
-        # self.mesh_sourceY_gpu = safe_mem_alloc(len(self.primitives) * NUMBYTES_FLOAT32)
-        # self.mesh_sourceZ_gpu = safe_mem_alloc(len(self.primitives) * NUMBYTES_FLOAT32)
 
         init_tock = time.perf_counter()
         log.debug(
@@ -1326,10 +1301,6 @@ class Projector(object):
         self.ijk_from_world_gpu = cuda.mem_alloc(
             len(self.volumes) * 3 * 4 * NUMBYTES_FLOAT32
         )
-        
-        # self.mesh_ijk_from_world_gpu = safe_mem_alloc(
-        #     len(self.primitives) * 3 * 4 * NUMBYTES_FLOAT32
-        # )
 
         # Initializes the output_shape as well.
         self.initialize_output_arrays(self.camera_intrinsics.sensor_size)
@@ -1376,12 +1347,11 @@ class Projector(object):
             f"time elapsed after intializing rest of primary-signal stuff: {init_tock - init_tick}"
         )
 
-
         self.mesh_hit_counts_gpu = safe_mem_alloc(math.prod((width * height, )) * NUMBYTES_INT32)
         self.mesh_hit_alphas_gpu = safe_mem_alloc(math.prod((width * height, self.max_mesh_depth)) * NUMBYTES_FLOAT32)
         self.mesh_hit_alphas_gpua = safe_mem_alloc(math.prod((width * height, self.max_mesh_depth)) * NUMBYTES_FLOAT32)
         self.mesh_hit_facing_gpu = safe_mem_alloc(math.prod((width * height, self.max_mesh_depth)) * NUMBYTES_INT8)
-        # self.ray_directions_gpu = safe_mem_alloc(math.prod((len(self.primitives), width * height, 3)) * NUMBYTES_FLOAT32)
+
         self.mesh_hit_alphas = np.zeros((width * height, self.max_mesh_depth), dtype=np.float32)
         self.mesh_hit_alphas_a = np.zeros((width * height, self.max_mesh_depth), dtype=np.float32)
         self.mesh_hit_facing = np.zeros((width * height, self.max_mesh_depth), dtype=np.int8)
@@ -1855,11 +1825,6 @@ class Projector(object):
                 self.scatter_deposits_gpu.free()
                 self.num_scattered_hits_gpu.free()
                 self.num_unscattered_hits_gpu.free()
-
-            # self._platform.make_current()
-            # self._renderer.delete()
-            # self._platform.delete_context()
-            # cuda.Context.pop()
 
         self.initialized = False
 
