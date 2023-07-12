@@ -294,7 +294,6 @@ class Projector(object):
         """
 
         self._platform = None
-        self.context = None
 
         # set variables
         volume = utils.listify(volume)
@@ -649,7 +648,7 @@ class Projector(object):
             print(f"tide: {mesh_perf_end - mesh_perf_start}")
             mesh_perf_start = mesh_perf_end
 
-            self.context.synchronize()
+            cuda.Context.synchronize()
 
             print(f"entire mesh: {time.perf_counter() - mesh_perf_entire_start}")
 
@@ -728,7 +727,7 @@ class Projector(object):
                             block=block,
                             grid=(self.max_block_index, self.max_block_index),
                         )
-                        self.context.synchronize() # TODO: necessary?
+                        cuda.Context.synchronize() # TODO: necessary?
 
             project_tock = time.perf_counter()
             log.debug(
@@ -904,7 +903,7 @@ class Projector(object):
                         self.simulate_scatter(
                             *scatter_args, block=block, grid=(blocks_for_grid, 1)
                         )
-                        self.context.synchronize()
+                        cuda.Context.synchronize()
 
                 # Copy results from the GPU
                 scatter_intensity = np.zeros(self.output_shape, dtype=np.float32)
@@ -1125,13 +1124,13 @@ class Projector(object):
         import pycuda.gl
         import pycuda
 
-        # self.context = make_default_context()
+        # cuda.Context = make_default_context()
         # from pycuda.autoinit import context # TODO ??
         # from pycuda.gl.autoinit import context # TODO ??
-        self.context = cuda.Context
-        # self.context = make_default_context(lambda dev: pycuda.make_context(dev))
-        # self.context = make_default_context(lambda dev: pycuda.gl.make_context(dev))
-        # self.device = self.context.get_device()
+        # cuda.Context = cuda.Context
+        # cuda.Context = make_default_context(lambda dev: pycuda.make_context(dev))
+        # cuda.Context = make_default_context(lambda dev: pycuda.gl.make_context(dev))
+        # self.device = cuda.Context.get_device()
 
 
         # compile the module
@@ -1664,7 +1663,7 @@ class Projector(object):
                                         self.max_block_index,
                                     ),
                                 )
-                                self.context.synchronize()
+                                cuda.Context.synchronize()
 
                 inp_priority_gpu.free()
                 inp_voxelBoundX_gpu.free()
@@ -1906,7 +1905,7 @@ class Projector(object):
             # self._platform.make_current()
             # self._renderer.delete()
             # self._platform.delete_context()
-            # self.context.pop()
+            # cuda.Context.pop()
 
         self.initialized = False
 
