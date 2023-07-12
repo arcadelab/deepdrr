@@ -1094,6 +1094,7 @@ class Projector(object):
             self.solid_angle_gpu = np.int32(0)
 
     def initialize(self):
+
         """Allocate GPU memory and transfer the volume, segmentations to GPU."""
         if self.initialized:
             raise RuntimeError("Close projector before initializing again.")
@@ -1120,18 +1121,7 @@ class Projector(object):
         self._platform.init_context()
         self._platform.make_current()
 
-        #setup pycuda gl interop
-        import pycuda.gl.autoinit
-
-
-        # cuda.Context = make_default_context()
-        # from pycuda.autoinit import context # TODO ??
-        # from pycuda.gl.autoinit import context # TODO ??
-        # cuda.Context = cuda.Context
-        # cuda.Context = make_default_context(lambda dev: pycuda.make_context(dev))
-        # cuda.Context = make_default_context(lambda dev: pycuda.gl.make_context(dev))
-        # self.device = cuda.Context.get_device()
-
+        import pycuda.gl.autoinit # must happen after egl context is created
 
         # compile the module
         self.mod = _get_kernel_projector_module(
