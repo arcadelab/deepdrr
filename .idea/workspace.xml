@@ -5,18 +5,30 @@
   </component>
   <component name="ChangeListManager">
     <list default="true" id="d224661f-3d1d-405a-bb6c-b20e94b538b0" name="Changes" comment="">
-      <change beforePath="$PROJECT_DIR$/deepdrr/pyrenderdrr/renderer.py" beforeDir="false" afterPath="$PROJECT_DIR$/deepdrr/pyrenderdrr/renderer.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
     <option name="HIGHLIGHT_NON_ACTIVE_CHANGELIST" value="false" />
     <option name="LAST_RESOLUTION" value="IGNORE" />
   </component>
+  <component name="FlaskConsoleOptions" custom-start-script="import sys&#10;sys.path.extend([WORKING_DIR_AND_PYTHON_PATHS])&#10;from flask.cli import ScriptInfo&#10;locals().update(ScriptInfo(create_app=None).load_app().make_shell_context())&#10;print(&quot;Python %s on %s\nApp: %s [%s]\nInstance: %s&quot; % (sys.version, sys.platform, app.import_name, app.env, app.instance_path))">
+    <envs>
+      <env key="FLASK_APP" value="app" />
+    </envs>
+    <option name="myCustomStartScript" value="import sys&#10;sys.path.extend([WORKING_DIR_AND_PYTHON_PATHS])&#10;from flask.cli import ScriptInfo&#10;locals().update(ScriptInfo(create_app=None).load_app().make_shell_context())&#10;print(&quot;Python %s on %s\nApp: %s [%s]\nInstance: %s&quot; % (sys.version, sys.platform, app.import_name, app.env, app.instance_path))" />
+    <option name="myEnvs">
+      <map>
+        <entry key="FLASK_APP" value="app" />
+      </map>
+    </option>
+  </component>
   <component name="Git.Settings">
     <option name="RECENT_GIT_ROOT_PATH" value="$PROJECT_DIR$" />
   </component>
   <component name="HighlightingSettingsPerFile">
     <setting file="file://$USER_HOME$/.cache/JetBrains/RemoteDev-PY/_home_pelvisvr_repos_deepdrr/python_stubs/-1972649723/builtins.py" root0="SKIP_INSPECTION" />
+    <setting file="file://$USER_HOME$/mambaforge/envs/deepdrr-dev/lib/python3.8/site-packages/pycuda-2022.2.2-py3.8-linux-x86_64.egg/pycuda/driver.py" root0="SKIP_INSPECTION" />
   </component>
   <component name="MarkdownSettingsMigration">
     <option name="stateVersion" value="1" />
@@ -49,7 +61,7 @@
       <window_info id="Space Code Reviews" order="0" />
       <window_info id="Bookmarks" order="0" side_tool="true" />
       <window_info id="Pull Requests" order="0" />
-      <window_info active="true" content_ui="combo" id="Project" order="0" visible="true" weight="0.14605978" />
+      <window_info active="true" content_ui="combo" id="Project" order="0" visible="true" weight="0.16796875" />
       <window_info id="Commit" order="0" />
       <window_info id="Learn" order="0" show_stripe_button="false" />
       <window_info id="Structure" order="0" side_tool="true" />
@@ -80,7 +92,7 @@
       <updated>1689107900140</updated>
       <workItem from="1689107902653" duration="399000" />
       <workItem from="1689108308254" duration="549000" />
-      <workItem from="1689110942052" duration="785000" />
+      <workItem from="1689110942052" duration="2618000" />
     </task>
     <servers />
   </component>
