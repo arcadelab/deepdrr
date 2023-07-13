@@ -1751,9 +1751,11 @@ class Projector(object):
                 for seg in self.segmentations_gpu[vol_id]:
                     seg.free()
 
+            self.mesh_hit_alphas_gpu.free()
             self.mesh_hit_alphas_tex_gpu.free()
             self.mesh_hit_facing_gpu.free()
             self.additive_densities_gpu.free()
+            self.mesh_materials_gpu.free()
             self.mesh_unique_materials_gpu.free()
 
             self.priorities_gpu.free()
