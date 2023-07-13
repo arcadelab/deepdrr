@@ -42,6 +42,7 @@ from functools import lru_cache
 
 
 import pycuda.driver as cuda
+from pycuda.driver import Context as context
 import pycuda.gl
 import pycuda
 from pycuda.compiler import SourceModule
@@ -613,7 +614,7 @@ class Projector(object):
             # print(f"tide: {mesh_perf_end - mesh_perf_start}")
             # mesh_perf_start = mesh_perf_end
 
-            # cuda.Context.synchronize()
+            # context.synchronize()
 
             # print(f"entire mesh: {time.perf_counter() - mesh_perf_entire_start}")
 
@@ -686,7 +687,7 @@ class Projector(object):
                             block=block,
                             grid=(self.max_block_index, self.max_block_index),
                         )
-                        cuda.Context.synchronize() # TODO: why is this necessary?
+                        context.synchronize() # TODO: why is this necessary?
 
             project_tock = time.perf_counter()
             log.debug(
@@ -862,7 +863,7 @@ class Projector(object):
                         self.simulate_scatter(
                             *scatter_args, block=block, grid=(blocks_for_grid, 1)
                         )
-                        cuda.Context.synchronize()
+                        context.synchronize()
 
                 # Copy results from the GPU
                 scatter_intensity = np.zeros(self.output_shape, dtype=np.float32)
@@ -1587,7 +1588,7 @@ class Projector(object):
                                         self.max_block_index,
                                     ),
                                 )
-                                cuda.Context.synchronize()
+                                context.synchronize()
 
                 inp_priority_gpu.free()
                 inp_voxelBoundX_gpu.free()
