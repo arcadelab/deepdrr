@@ -14,12 +14,7 @@ opencv-python
 seaborn
 graphviz
 
-# development requirements
-black # proper python style
-pytest
-
-
-# pyrender
+# pyrender requirements
 freetype-py
 imageio
 networkx
@@ -30,7 +25,10 @@ PyOpenGL
 PyOpenGL_accelerate
 six
 trimesh
-sphinx
-sphinx_rtd_theme
-sphinx-automodapi
+# sphinx
+# sphinx_rtd_theme
+# sphinx-automodapi
 
+# development requirements
+black # proper python style
+pytest
