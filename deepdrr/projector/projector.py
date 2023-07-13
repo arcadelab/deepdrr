@@ -610,7 +610,6 @@ class Projector(object):
             # mesh_perf_start = mesh_perf_end
 
             # context.synchronize()
-
             # print(f"entire mesh: {time.perf_counter() - mesh_perf_entire_start}")
 
 
