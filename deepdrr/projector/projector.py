@@ -1338,10 +1338,6 @@ class Projector(object):
         self.mesh_hit_alphas_tex_gpu = cuda.mem_alloc(total_pixels * self.max_mesh_depth * NUMBYTES_FLOAT32)
         self.mesh_hit_facing_gpu = cuda.mem_alloc(total_pixels * self.max_mesh_depth * NUMBYTES_INT8)
 
-        self.mesh_hit_alphas = np.zeros((total_pixels, self.max_mesh_depth), dtype=np.float32)
-        self.mesh_hit_alphas_a = np.zeros((total_pixels, self.max_mesh_depth), dtype=np.float32)
-        self.mesh_hit_facing = np.zeros((total_pixels, self.max_mesh_depth), dtype=np.int8)
-
         # Scatter-specific initializations
 
         if self.scatter_num > 0:
@@ -1750,10 +1746,6 @@ class Projector(object):
 
             self.gl_renderer.delete()
 
-            def safe_free(gpu_ptr):
-                if isinstance(gpu_ptr, cuda.DeviceAllocation):
-                    gpu_ptr.free()
-
             for vol_id, vol_gpu in enumerate(self.volumes_gpu):
                 vol_gpu.free()
                 for seg in self.segmentations_gpu[vol_id]:
@@ -1781,13 +1773,9 @@ class Projector(object):
             self.sourceX_gpu.free()
             self.sourceY_gpu.free()
             self.sourceZ_gpu.free()
-            # safe_free(self.mesh_sourceX_gpu)
-            # safe_free(self.mesh_sourceY_gpu)
-            # safe_free(self.mesh_sourceZ_gpu)
 
             self.world_from_index_gpu.free()
             self.ijk_from_world_gpu.free()
-            # safe_free(self.mesh_ijk_from_world_gpu)
             self.intensity_gpu.free()
             self.photon_prob_gpu.free()
 
