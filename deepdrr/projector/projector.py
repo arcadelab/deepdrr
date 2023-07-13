@@ -166,7 +166,6 @@ def _get_kernel_projector_module(
         "-D",
         f"NUM_VOLUMES={num_volumes}",
         "-D",
-        # f"NUM_MESHES={0}",
         f"NUM_MESHES={num_meshes}",
         "-D",
         f"NUM_MATERIALS={num_materials}",
@@ -444,6 +443,10 @@ class Projector(object):
 
         log.debug("Initiating projection and attenuation...")
 
+        width = self.device.sensor_width # TODO: was deepdrr not locked to fixed resolution before?
+        height = self.device.sensor_height
+        total_pixels = width * height
+
         project_tick = time.perf_counter()
 
         intensities = []
@@ -462,11 +465,6 @@ class Projector(object):
                 np.float32
             )
             cuda.memcpy_htod(self.world_from_index_gpu, world_from_index)
-
-            # mesh_ijk_from_world = np.zeros(len(self.primitives) * 3 * 4, dtype=np.float32)
-            # sx_ijk = np.zeros(len(self.primitives), dtype=np.float32)
-            # sy_ijk = np.zeros(len(self.primitives), dtype=np.float32)
-            # sz_ijk = np.zeros(len(self.primitives), dtype=np.float32)
 
             for vol_id, _vol in enumerate(self.volumes):
                 source_ijk = np.array(
@@ -525,7 +523,7 @@ class Projector(object):
             for mesh in self.prim_meshes:
                 mesh.is_visible = True
 
-            zfar = self.device.source_to_detector_distance*2
+            zfar = self.device.source_to_detector_distance*2 # TODO
 
             for mat_idx in range(len(self.prim_meshes_by_mat_list)):
                 meshes_to_show = self.prim_meshes_by_mat_list[i]
@@ -535,17 +533,16 @@ class Projector(object):
 
                 rendered_layers = self.gl_renderer.render(self.scene, drr_mode=DRRMode.DENSITY, flags=RenderFlags.RGBA, zfar=zfar)
                 
-                # reg_img = pycuda.gl.RegisteredImage(int(self.gl_renderer.g_dualDepthTexId[0]), GL_TEXTURE_RECTANGLE, pycuda.gl.graphics_map_flags.READ_ONLY)
                 reg_img = pycuda.gl.RegisteredImage(int(self.gl_renderer.g_densityTexId), GL_TEXTURE_RECTANGLE, pycuda.gl.graphics_map_flags.READ_ONLY)
                 mapping = reg_img.map()
 
                 src = mapping.array(0,0)
                 cpy = cuda.Memcpy2D()
                 cpy.set_src_array(src)
-                pointer_into_additive_densities = int(self.additive_densities_gpu) + mat_idx * self.n_rays * 2 * NUMBYTES_FLOAT32
+                pointer_into_additive_densities = int(self.additive_densities_gpu) + mat_idx * total_pixels * 2 * NUMBYTES_FLOAT32
                 cpy.set_dst_device(int(pointer_into_additive_densities))
-                cpy.width_in_bytes = cpy.src_pitch = cpy.dst_pitch = int(self.width * 2 * NUMBYTES_FLOAT32)
-                cpy.height = int(self.height)
+                cpy.width_in_bytes = cpy.src_pitch = cpy.dst_pitch = int(width * 2 * NUMBYTES_FLOAT32)
+                cpy.height = int(height)
                 cpy(aligned=False)
 
                 mapping.unmap()
@@ -574,10 +571,10 @@ class Projector(object):
                 src = mapping.array(0,0)
                 cpy = cuda.Memcpy2D()
                 cpy.set_src_array(src)
-                pointer_into_additive_densities = int(self.mesh_hit_alphas_gpua) + tex_idx * self.n_rays * 4 * NUMBYTES_FLOAT32
+                pointer_into_additive_densities = int(self.mesh_hit_alphas_gpua) + tex_idx * total_pixels * 4 * NUMBYTES_FLOAT32
                 cpy.set_dst_device(int(pointer_into_additive_densities))
-                cpy.width_in_bytes = cpy.src_pitch = cpy.dst_pitch = int(self.width * 4 * NUMBYTES_FLOAT32)
-                cpy.height = int(self.height)
+                cpy.width_in_bytes = cpy.src_pitch = cpy.dst_pitch = int(width * 4 * NUMBYTES_FLOAT32)
+                cpy.height = int(height)
                 cpy(aligned=False)
 
                 mapping.unmap()
@@ -591,7 +588,7 @@ class Projector(object):
             self.kernel_reorder(
                 np.uint64(self.mesh_hit_alphas_gpua),
                 np.uint64(self.mesh_hit_alphas_gpu),
-                np.int32(self.n_rays), 
+                np.int32(total_pixels), 
                 block=(256,1,1), # TODO
                 grid=(16,1) # TODO
             )
@@ -604,7 +601,7 @@ class Projector(object):
                 np.uint64(self.mesh_hit_counts_gpu),
                 np.uint64(self.mesh_hit_alphas_gpu),
                 np.uint64(self.mesh_hit_facing_gpu),
-                np.int32(self.n_rays), 
+                np.int32(total_pixels), 
                 np.float32(self.device.source_to_detector_distance*2),
                 block=(256,1,1), # TODO
                 grid=(16,1) # TODO
@@ -1065,9 +1062,7 @@ class Projector(object):
 
         width = self.device.sensor_width # TODO: was deepdrr not locked to fixed resolution before?
         height = self.device.sensor_height
-
-        self.width = width
-        self.height = height
+        total_pixels = width * height
 
         device_id = int(os.environ.get('EGL_DEVICE_ID', '0'))
         egl_device = egl.get_device_by_index(device_id)
@@ -1199,8 +1194,6 @@ class Projector(object):
         )
 
 
-        self.n_rays = height * width # TODO: move this
-
         self.scene = Scene(bg_color=[0.0, 0.0, 0.0])
 
         self.prim_nodes = []
@@ -1222,7 +1215,7 @@ class Projector(object):
             fy=cam_intr.fy,
             cx=cam_intr.cx,
             cy=cam_intr.cy,
-            znear=self.device.source_to_detector_distance/1000, # TODO
+            znear=self.device.source_to_detector_distance/1000, # TODO near clipping plane parameter
             zfar=self.device.source_to_detector_distance
             )
         
@@ -1231,7 +1224,7 @@ class Projector(object):
         self._renderer = Renderer(viewport_width=width, viewport_height=height, max_dual_peel_layers=4)
         self.gl_renderer = self._renderer
 
-        self.additive_densities_gpu = cuda.mem_alloc(len(self.mesh_unique_materials) * self.n_rays * 2 * NUMBYTES_FLOAT32)
+        self.additive_densities_gpu = cuda.mem_alloc(len(self.mesh_unique_materials) * total_pixels * 2 * NUMBYTES_FLOAT32)
 
         # allocate volumes' priority level on the GPU
         self.priorities_gpu = cuda.mem_alloc(len(self.volumes) * NUMBYTES_INT32)
@@ -1348,14 +1341,14 @@ class Projector(object):
             f"time elapsed after intializing rest of primary-signal stuff: {init_tock - init_tick}"
         )
 
-        self.mesh_hit_counts_gpu = safe_mem_alloc(math.prod((width * height, )) * NUMBYTES_INT32)
-        self.mesh_hit_alphas_gpu = safe_mem_alloc(math.prod((width * height, self.max_mesh_depth)) * NUMBYTES_FLOAT32)
-        self.mesh_hit_alphas_gpua = safe_mem_alloc(math.prod((width * height, self.max_mesh_depth)) * NUMBYTES_FLOAT32)
-        self.mesh_hit_facing_gpu = safe_mem_alloc(math.prod((width * height, self.max_mesh_depth)) * NUMBYTES_INT8)
+        self.mesh_hit_counts_gpu = safe_mem_alloc(math.prod((total_pixels, )) * NUMBYTES_INT32)
+        self.mesh_hit_alphas_gpu = safe_mem_alloc(math.prod((total_pixels, self.max_mesh_depth)) * NUMBYTES_FLOAT32)
+        self.mesh_hit_alphas_gpua = safe_mem_alloc(math.prod((total_pixels, self.max_mesh_depth)) * NUMBYTES_FLOAT32)
+        self.mesh_hit_facing_gpu = safe_mem_alloc(math.prod((total_pixels, self.max_mesh_depth)) * NUMBYTES_INT8)
 
-        self.mesh_hit_alphas = np.zeros((width * height, self.max_mesh_depth), dtype=np.float32)
-        self.mesh_hit_alphas_a = np.zeros((width * height, self.max_mesh_depth), dtype=np.float32)
-        self.mesh_hit_facing = np.zeros((width * height, self.max_mesh_depth), dtype=np.int8)
+        self.mesh_hit_alphas = np.zeros((total_pixels, self.max_mesh_depth), dtype=np.float32)
+        self.mesh_hit_alphas_a = np.zeros((total_pixels, self.max_mesh_depth), dtype=np.float32)
+        self.mesh_hit_facing = np.zeros((total_pixels, self.max_mesh_depth), dtype=np.int8)
 
         # Scatter-specific initializations
 

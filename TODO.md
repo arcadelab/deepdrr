@@ -44,3 +44,6 @@
 <!-- - Fast mode rasterization -->
 - Free all new allocs
 <!-- - On GPU morph targets -->
+
+# Questions
+- was deepdrr not locked to fixed resolution before?
