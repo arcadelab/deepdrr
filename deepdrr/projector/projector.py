@@ -79,7 +79,7 @@ def _get_spectrum(spectrum: Union[np.ndarray, str]):
 
 
 @lru_cache(maxsize=1)
-def max_block_dim(): # TODO: use this maybe?
+def max_block_dim(): # TODO (liam): use this maybe?
     ret = np.inf
     for devicenum in range(cuda.Device.count()):
         attrs = cuda.Device(devicenum).get_attributes()
@@ -87,7 +87,7 @@ def max_block_dim(): # TODO: use this maybe?
     return ret
 
 @lru_cache(maxsize=1)
-def max_grid_dim(): # TODO: use this maybe?
+def max_grid_dim(): # TODO (liam): use this maybe?
     ret = np.inf
     for devicenum in range(cuda.Device.count()):
         attrs = cuda.Device(devicenum).get_attributes()
@@ -225,7 +225,7 @@ class Projector(object):
         add_noise: bool = False,
         photon_count: int = 10000,
         threads: int = 8,
-        max_block_index: int = 1024, # TODO: why not 65535?
+        max_block_index: int = 1024, # TODO (liam): why not 65535?
         collected_energy: bool = False,
         neglog: bool = True,
         intensity_upper_bound: Optional[float] = None,
@@ -443,7 +443,7 @@ class Projector(object):
 
         log.debug("Initiating projection and attenuation...")
 
-        width = self.device.sensor_width # TODO: was deepdrr not locked to fixed resolution before?
+        width = self.device.sensor_width # TODO (liam): was deepdrr not locked to fixed resolution before?
         height = self.device.sensor_height
         total_pixels = width * height
 
@@ -468,7 +468,7 @@ class Projector(object):
 
             for vol_id, _vol in enumerate(self.volumes):
                 source_ijk = np.array(
-                    _vol.IJK_from_world @ proj.center_in_world # TODO: Remove unused center arguments
+                    _vol.IJK_from_world @ proj.center_in_world # TODO (liam): Remove unused center arguments
                 ).astype(np.float32)
                 cuda.memcpy_htod(
                     int(self.sourceX_gpu) + int(NUMBYTES_INT32 * vol_id),
@@ -523,7 +523,7 @@ class Projector(object):
             for mesh in self.prim_meshes:
                 mesh.is_visible = True
 
-            zfar = self.device.source_to_detector_distance*2 # TODO
+            zfar = self.device.source_to_detector_distance*2 # TODO (liam)
 
             for mat_idx in range(len(self.prim_meshes_by_mat_list)):
                 meshes_to_show = self.prim_meshes_by_mat_list[i]
@@ -588,8 +588,8 @@ class Projector(object):
                 np.uint64(self.mesh_hit_alphas_tex_gpu),
                 np.uint64(self.mesh_hit_alphas_gpu),
                 np.int32(total_pixels), 
-                block=(256,1,1), # TODO
-                grid=(16,1) # TODO
+                block=(256,1,1), # TODO (liam)
+                grid=(16,1) # TODO (liam)
             )
 
             # mesh_perf_end = time.perf_counter()
@@ -601,8 +601,8 @@ class Projector(object):
                 np.uint64(self.mesh_hit_facing_gpu),
                 np.int32(total_pixels), 
                 np.float32(self.device.source_to_detector_distance*2),
-                block=(256,1,1), # TODO
-                grid=(16,1) # TODO
+                block=(256,1,1), # TODO (liam)
+                grid=(16,1) # TODO (liam)
             )
 
             # mesh_perf_end = time.perf_counter()
@@ -627,9 +627,9 @@ class Projector(object):
                 self.voxelSizeX_gpu,  # gVoxelElementSizeX
                 self.voxelSizeY_gpu,  # gVoxelElementSizeY
                 self.voxelSizeZ_gpu,  # gVoxelElementSizeZ
-                np.float32(sx),  # sx TODO: Unused
-                np.float32(sy),  # sy TODO: Unused
-                np.float32(sz),  # sz TODO: Unused
+                np.float32(sx),  # sx TODO (liam): Unused
+                np.float32(sy),  # sy TODO (liam): Unused
+                np.float32(sz),  # sz TODO (liam): Unused
                 self.sourceX_gpu,  # sx_ijk
                 self.sourceY_gpu,  # sy_ijk
                 self.sourceZ_gpu,  # sz_ijk
@@ -669,7 +669,7 @@ class Projector(object):
                     *args, offset_w, offset_h, block=block, grid=(blocks_w, blocks_h)
                 )
             else:
-                log.debug("Running kernel patchwise") # TODO: are there really sensors larger than 65535*self.threads pixels in one dimension?
+                log.debug("Running kernel patchwise") # TODO (liam): are there really sensors larger than 65535*self.threads pixels in one dimension?
                 for w in range((blocks_w - 1) // (self.max_block_index + 1)):
                     for h in range((blocks_h - 1) // (self.max_block_index + 1)):
                         offset_w = np.int32(w * self.max_block_index)
@@ -681,7 +681,7 @@ class Projector(object):
                             block=block,
                             grid=(self.max_block_index, self.max_block_index),
                         )
-                        context.synchronize() # TODO: why is this necessary?
+                        context.synchronize() # TODO (liam): why is this necessary?
 
             project_tock = time.perf_counter()
             log.debug(
@@ -1057,7 +1057,7 @@ class Projector(object):
         log.debug(f"beginning call to Projector.initialize")
         init_tick = time.perf_counter()
 
-        width = self.device.sensor_width # TODO: was deepdrr not locked to fixed resolution before?
+        width = self.device.sensor_width # TODO (liam): was deepdrr not locked to fixed resolution before?
         height = self.device.sensor_height
         total_pixels = width * height
 
@@ -1143,12 +1143,12 @@ class Projector(object):
                 if mat in _vol.materials:
                     seg = _vol.materials[mat]
                 else:
-                    seg = np.zeros(_vol.shape).astype(np.float32) # TODO: Wasted VRAM
+                    seg = np.zeros(_vol.shape).astype(np.float32) # TODO (liam): Wasted VRAM
                 seg_for_vol.append(
                     cuda.np_to_array(
                         np.moveaxis(seg, [0, 1, 2], [2, 1, 0]).copy(), order="C"
                     )
-                ) # TODO: 8 bit textures to save VRAM?
+                ) # TODO (liam): 8 bit textures to save VRAM?
                 texref = self.mod.get_texref(f"seg_{vol_id}_{mat_id}")
                 texref_for_vol.append(texref)
 
@@ -1207,7 +1207,7 @@ class Projector(object):
             fy=cam_intr.fy,
             cx=cam_intr.cx,
             cy=cam_intr.cy,
-            znear=self.device.source_to_detector_distance/1000, # TODO near clipping plane parameter
+            znear=self.device.source_to_detector_distance/1000, # TODO (liam) near clipping plane parameter
             zfar=self.device.source_to_detector_distance
             )
         
