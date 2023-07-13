@@ -571,8 +571,7 @@ class Projector(object):
                 src = mapping.array(0,0)
                 cpy = cuda.Memcpy2D()
                 cpy.set_src_array(src)
-                pointer_into_additive_densities = int(self.mesh_hit_alphas_gpua) + tex_idx * total_pixels * 4 * NUMBYTES_FLOAT32
-                cpy.set_dst_device(int(pointer_into_additive_densities))
+                cpy.set_dst_device(int(int(self.mesh_hit_alphas_tex_gpu) + tex_idx * total_pixels * 4 * NUMBYTES_FLOAT32))
                 cpy.width_in_bytes = cpy.src_pitch = cpy.dst_pitch = int(width * 4 * NUMBYTES_FLOAT32)
                 cpy.height = int(height)
                 cpy(aligned=False)
@@ -586,7 +585,7 @@ class Projector(object):
             # mesh_perf_start = mesh_perf_end
             
             self.kernel_reorder(
-                np.uint64(self.mesh_hit_alphas_gpua),
+                np.uint64(self.mesh_hit_alphas_tex_gpu),
                 np.uint64(self.mesh_hit_alphas_gpu),
                 np.int32(total_pixels), 
                 block=(256,1,1), # TODO
@@ -1164,15 +1163,10 @@ class Projector(object):
             self.segmentations_gpu.append(seg_for_vol)
             self.segmentations_texref.append(texref)
 
-        def safe_mem_alloc(size):
-            if size == 0:
-                return 0
-            return cuda.mem_alloc(size)
-
-        self.mesh_materials_gpu = safe_mem_alloc(len(self.primitives) * NUMBYTES_INT32)
+        self.mesh_materials_gpu = cuda.mem_alloc(len(self.primitives) * NUMBYTES_INT32)
         self.mesh_unique_materials = list(set([mesh.material for mesh in self.primitives]))
         self.mesh_unique_materials_indices = [self.all_materials.index(mat) for mat in self.mesh_unique_materials]
-        self.mesh_unique_materials_gpu = safe_mem_alloc(len(self.mesh_unique_materials) * NUMBYTES_INT32)
+        self.mesh_unique_materials_gpu = cuda.mem_alloc(len(self.mesh_unique_materials) * NUMBYTES_INT32)
         cuda.memcpy_htod(self.mesh_unique_materials_gpu, np.array(self.mesh_unique_materials_indices).astype(np.int32))
         mesh_materials = []
         for mesh in self.primitives:
@@ -1180,7 +1174,7 @@ class Projector(object):
         mesh_materials = np.array(mesh_materials).astype(np.int32)
         cuda.memcpy_htod(self.mesh_materials_gpu, mesh_materials)
 
-        self.mesh_densities_gpu = safe_mem_alloc(len(self.primitives) * NUMBYTES_FLOAT32)
+        self.mesh_densities_gpu = cuda.mem_alloc(len(self.primitives) * NUMBYTES_FLOAT32)
         mesh_densities = []
         for mesh in self.primitives:
             mesh_densities.append(mesh.density)
@@ -1340,9 +1334,9 @@ class Projector(object):
             f"time elapsed after intializing rest of primary-signal stuff: {init_tock - init_tick}"
         )
 
-        self.mesh_hit_alphas_gpu = safe_mem_alloc(math.prod((total_pixels, self.max_mesh_depth)) * NUMBYTES_FLOAT32)
-        self.mesh_hit_alphas_gpua = safe_mem_alloc(math.prod((total_pixels, self.max_mesh_depth)) * NUMBYTES_FLOAT32)
-        self.mesh_hit_facing_gpu = safe_mem_alloc(math.prod((total_pixels, self.max_mesh_depth)) * NUMBYTES_INT8)
+        self.mesh_hit_alphas_gpu = cuda.mem_alloc(total_pixels * self.max_mesh_depth * NUMBYTES_FLOAT32)
+        self.mesh_hit_alphas_tex_gpu = cuda.mem_alloc(total_pixels * self.max_mesh_depth * NUMBYTES_FLOAT32)
+        self.mesh_hit_facing_gpu = cuda.mem_alloc(total_pixels * self.max_mesh_depth * NUMBYTES_INT8)
 
         self.mesh_hit_alphas = np.zeros((total_pixels, self.max_mesh_depth), dtype=np.float32)
         self.mesh_hit_alphas_a = np.zeros((total_pixels, self.max_mesh_depth), dtype=np.float32)
@@ -1765,7 +1759,7 @@ class Projector(object):
                 for seg in self.segmentations_gpu[vol_id]:
                     seg.free()
 
-            self.mesh_hit_alphas_gpua.free()
+            self.mesh_hit_alphas_tex_gpu.free()
             self.mesh_hit_facing_gpu.free()
             self.additive_densities_gpu.free()
             self.mesh_unique_materials_gpu.free()
