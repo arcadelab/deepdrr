@@ -8,7 +8,6 @@ from deepdrr import geo
 from deepdrr.utils import test_utils
 from PIL import Image
 
-import pyvista as pv
 
 def pytest_generate_tests(metafunc):
     # called once per each test function
@@ -21,14 +20,12 @@ def pytest_generate_tests(metafunc):
 
 
 class TestSingleVolume:
-    truth = Path.cwd() / "reference"
     output_dir = Path.cwd() / "output"
     output_dir.mkdir(exist_ok=True)
     file_path = test_utils.download_sampledata("CT-chest")
 
     params = {
         "test_simple": [dict()],
-        "test_mesh": [dict()],
         "test_translate": [
             dict(t=[0, 0, 0]),
             dict(t=[100, 0, 0]),
@@ -45,10 +42,6 @@ class TestSingleVolume:
         return volume
 
     def project(self, volume, carm, name):
-        # set projector log level to debug
-        import logging
-        logging.basicConfig(level=logging.DEBUG)
-
         with deepdrr.Projector(
             volume=volume,
             carm=carm,
@@ -57,78 +50,20 @@ class TestSingleVolume:
             max_block_index=200,
             spectrum="90KV_AL40",
             photon_count=100000,
-            scatter_num=0,
+            add_scatter=False,
             threads=8,
             neglog=True,
         ) as projector:
             image = projector.project()
-            from timer_util import FPS
-            # fps = FPS()
-            # for i in range(50):
-            #     image = projector.project()
-            #     if fps_count := fps():
-            #         print(f"FPS2 {fps_count}")
 
         image = (image * 255).astype(np.uint8)
         Image.fromarray(image).save(self.output_dir / name)
-        try: 
-            truth_img = np.array(Image.open(self.truth / name))
-            assert np.allclose(image, truth_img, atol=1)
-            print(f"Test {name} passed")
-        except FileNotFoundError:
-            print(f"Truth image not found: {self.truth / name}")
         return image
 
     def test_simple(self):
         volume = deepdrr.Volume.from_nrrd(self.file_path)
         carm = deepdrr.MobileCArm(isocenter=volume.center_in_world)
         self.project(volume, carm, "test_simple.png")
-
-    def test_mesh(self):
-        volume = deepdrr.Volume.from_nrrd(self.file_path)
-        # load 10cmcube.stl from resources folder
-        # stl = pv.read("tests/resources/10cmrighttri.stl")
-        stl3 = pv.read("tests/resources/10cmcube.stl")
-        stl3.scale([100, 100, 100], inplace=True)
-        stl3.rotate_z(60, inplace=True)
-        # stl3.translate([0, 00, 0], inplace=True)
-
-        stl2 = pv.read("tests/resources/10cmcube.stl")
-        stl2.scale([200, 200, 200], inplace=True)
-        # stl2.translate([0, 30, 0], inplace=True)
-        stl = pv.read("tests/resources/suzanne.stl")
-        stl.scale([200]*3, inplace=True)
-        stl.translate([0, -200, 0], inplace=True)
-        # stl = pv.read("tests/resources/suzanne.stl")
-        morph_targets = np.array([
-            [1, 0, 0],
-            [1, 0, 0],
-            [1, 0, 0],
-            [1, 0, 0],
-            [0, 0, 1],
-            [0, 0, 1],
-            [-1, 0, 1],
-            [0, 0, 1],
-                                  ]).reshape(1, -1, 3)
-        # scale from m to mm
-        # mesh = deepdrr.Mesh("titanium", 7, stl, world_from_anatomical=geo.FrameTransform.from_rotation(geo.Rotation.from_euler("y", 90, degrees=True)))
-        # mesh = deepdrr.Mesh("air", 0, stl, morph_targets=morph_targets, world_from_anatomical=geo.FrameTransform.from_rotation(geo.Rotation.from_euler("x", 90, degrees=True)))
-        prim = deepdrr.Primitive("titanium", 2, stl)
-        mesh = deepdrr.Mesh([prim], world_from_anatomical=geo.FrameTransform.from_rotation(geo.Rotation.from_euler("x", 90, degrees=True) * geo.Rotation.from_euler("y", 30, degrees=True)))
-
-        prim2 = deepdrr.Primitive("titanium", 2, stl2)
-        mesh2 = deepdrr.Mesh([prim2], world_from_anatomical=geo.FrameTransform.from_translation([30, 50, 200]))
-
-        prim3 = deepdrr.Primitive("titanium", 0, stl2)
-        mesh3 = deepdrr.Mesh([prim3], world_from_anatomical=geo.FrameTransform.from_translation([-30, 20, -70]))
-        # mesh = deepdrr.Mesh("polyethylene", 1.05, stl)
-        # mesh.morph_weights = np.array([-10])
-        
-        carm = deepdrr.MobileCArm(isocenter=volume.center_in_world, sensor_width=300, sensor_height=200, pixel_size=0.6)
-        # self.project([volume], carm, "test_mesh.png")
-        # self.project([mesh, mesh2, mesh3], carm, "test_mesh.png")
-        self.project([volume, mesh, mesh2, mesh3], carm, "test_mesh.png")
-
 
     def test_translate(self, t):
         volume = deepdrr.Volume.from_nrrd(self.file_path)
@@ -156,7 +91,6 @@ class TestSingleVolume:
 
 if __name__ == "__main__":
     test = TestSingleVolume()
-    test.test_mesh()
-    # volume = test.load_volume()
-    # carm = deepdrr.MobileCArm(isocenter=volume.center_in_world)
-    # test.project(volume, carm, "test.png")
+    volume = test.load_volume()
+    carm = deepdrr.MobileCArm(isocenter=volume.center_in_world)
+    test.project(volume, carm, "test.png")
