@@ -320,6 +320,7 @@ class Projector(object):
             log.warning("add_scatter is deprecated. Set scatter_num instead.")
             if scatter_num != 0:
                 raise ValueError("Only set scatter_num.")
+
             self.scatter_num = 1e7 if add_scatter else 0
         elif scatter_num < 0:
             raise ValueError(f"scatter_num must be non-negative.")
