@@ -598,7 +598,6 @@ class Projector(object):
             # mesh_perf_start = mesh_perf_end
 
             self.kernel_tide(
-                np.uint64(self.mesh_hit_counts_gpu),
                 np.uint64(self.mesh_hit_alphas_gpu),
                 np.uint64(self.mesh_hit_facing_gpu),
                 np.int32(total_pixels), 
@@ -1341,7 +1340,6 @@ class Projector(object):
             f"time elapsed after intializing rest of primary-signal stuff: {init_tock - init_tick}"
         )
 
-        self.mesh_hit_counts_gpu = safe_mem_alloc(math.prod((total_pixels, )) * NUMBYTES_INT32)
         self.mesh_hit_alphas_gpu = safe_mem_alloc(math.prod((total_pixels, self.max_mesh_depth)) * NUMBYTES_FLOAT32)
         self.mesh_hit_alphas_gpua = safe_mem_alloc(math.prod((total_pixels, self.max_mesh_depth)) * NUMBYTES_FLOAT32)
         self.mesh_hit_facing_gpu = safe_mem_alloc(math.prod((total_pixels, self.max_mesh_depth)) * NUMBYTES_INT8)

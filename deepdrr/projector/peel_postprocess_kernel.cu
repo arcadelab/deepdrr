@@ -12,7 +12,6 @@
 // Then loop through to fill gaps
 // Keep a pointer at at the highest filled index, and another that sweeps forward palcing into the lowest index
 __device__ void tide(
-    int *interceptCounts,
     float *interceptTs,
     int8_t *interceptFacing,
     int rayIdx,
@@ -36,14 +35,11 @@ __device__ void tide(
     }
 
     {
-        (*interceptCounts) = 0;
         float cutoffEpsilon = 0.00001;
         for (int i = 0; i < NUM_INTERSECTIONS; i++) {
             if (interceptTs[i] < cutoffEpsilon || interceptTs[i] > sourceToDetectorDistance-0.001) {
                 interceptTs[i] = INFINITY;
                 interceptFacing[i] = 0;
-            } else {
-                (*interceptCounts) += 1;
             }
         }
     }
@@ -79,7 +75,6 @@ __device__ void tide(
             if (interceptTs[srcIdx] == interceptTs[dstIdx]) {
                 interceptTs[srcIdx] = INFINITY;
                 interceptFacing[srcIdx] = 0;
-                (*interceptCounts) -= 1;
                 srcIdx++;
             } else {
                 dstIdx = srcIdx;
@@ -130,7 +125,6 @@ __device__ void tide(
             int currentAltitude = altitudes[i];
             if (currentAltitude < seaLevel || prevAltitide < seaLevel) {
                 interceptTs[i] = INFINITY;
-                (*interceptCounts) -= interceptFacing[i] != 0;
                 interceptFacing[i] = 0;
             }
             prevAltitide = currentAltitude;
@@ -163,7 +157,6 @@ __device__ void tide(
 }
 
 __global__ void kernelTide(
-    int* __restrict__ rayInterceptCounts,
     float* __restrict__ rayInterceptTs,
     int8_t* __restrict__ rayInterceptFacing,
     // int* __restrict__ detected,
@@ -182,10 +175,9 @@ __global__ void kernelTide(
 
     for (int idx = threadStartIdx; idx < numRays; idx += stride) {
         if (idx < numRays) {
-            int *interceptCounts = rayInterceptCounts + idx;
             float *interceptTs = rayInterceptTs + idx * NUM_INTERSECTIONS;
             int8_t *interceptFacing = rayInterceptFacing + idx * NUM_INTERSECTIONS;
-            tide(interceptCounts, interceptTs, interceptFacing, idx, sourceToDetectorDistance);
+            tide(interceptTs, interceptFacing, idx, sourceToDetectorDistance);
         }
     }
 }
