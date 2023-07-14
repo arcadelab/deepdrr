@@ -188,8 +188,8 @@ class Device(ABC):
             + pv.Line(s, ur)
             + pv.Line(s, bl)
             + pv.Line(s, br)
-            + pv.Line(c, s)
-            + pv.Sphere(5, c)
+            # + pv.Line(c, s) # Line along principle ray
+            # + pv.Sphere(5, c) # Sphere in center of image.
         )
         mesh.transform(geo.get_data(self.world_from_camera3d), inplace=True)
         return mesh

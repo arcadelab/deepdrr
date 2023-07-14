@@ -11,7 +11,7 @@ log = logging.getLogger(__name__)
 
 
 class KWire(Volume):
-    _mesh_material = "titanium"
+    _mesh_material = "iron"
 
     diameter = 2.0  # mm
     tip_in_IJK: geo.Point3D
@@ -54,7 +54,7 @@ class KWire(Volume):
         Returns:
             KWire: The example KWire built into DeepDRR.
         """
-        url = "https://livejohnshopkins-my.sharepoint.com/:u:/g/personal/bkillee1_jh_edu/Ec2XGMXg_ItGtYWR_FfqHmUBwXJ1LmLBbbs4J_-3rJJQZg?e=fFWq6f&download=1"
+        url = "https://livejohnshopkins-my.sharepoint.com/:u:/g/personal/bkillee1_jh_edu/ERoEsDbaFj9InktoRKnrT-MBSF2oCOrZ9uyOeWViRx4-Qg?e=s5fofv&download=1"
         md5 = "83ba7b63ebc0912d34ed5880460f81bd"
         filename = "Kwire2.nii.gz"
         path = data_utils.download(url, filename, md5=md5)

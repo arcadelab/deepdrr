@@ -147,11 +147,12 @@ def voxelize(
     ijk_from_world = world_from_ijk.inv
 
     data = np.zeros((x, y, z), dtype=np.uint8)
-    for p in track(voxels.points, "Rasterizing..."):
-        p = geo.point(p)
-        ijk = ijk_from_world @ p
-        i, j, k = np.array(ijk).astype(int)
-        data[i, j, k] = 1
+    vectors = np.array(voxels.points)
+    A_h = np.hstack((vectors, np.ones((vectors.shape[0], 1))))
+    transform = np.array(ijk_from_world)
+    B = (transform @ A_h.T).T[:, :3]
+    B = np.round(B).astype(int)
+    data[B[:, 0], B[:, 1], B[:, 2]] = 1
 
     return data, world_from_ijk
 
