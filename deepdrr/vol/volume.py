@@ -1107,7 +1107,7 @@ class Volume(object):
         dmc.Update()
 
         surface = pv.wrap(dmc.GetOutput())
-        if surface.is_all_triangles():
+        if surface.is_all_triangles:
             surface.triangulate(inplace=True)
 
         surface.decimate_pro(
