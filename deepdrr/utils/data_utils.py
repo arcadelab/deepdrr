@@ -50,7 +50,10 @@ def download(
     Returns:
         Path: The path of the downloaded file, or the extracted directory.
     """
-    root = deepdrr_data_dir()
+    if root is None:
+        root = deepdrr_data_dir()
+    else:
+        root = Path(root)
 
     if filename is None:
         filename = os.path.basename(url)
@@ -60,14 +63,12 @@ def download(
     except urllib.error.HTTPError:
         log.warning(f"Pretty download failed. Attempting with wget...")
         subprocess.call(["wget", "-O", str(root / filename), url])
-    except FileNotFoundError:
-        log.warning(
+    except FileNotFoundError as e:
+        raise RuntimeError(
             f"Download failed. Try installing wget. This is probably because you are on windows."
         )
-        exit()
     except Exception as e:
-        log.error(f"Download failed: {e}")
-        exit()
+        raise RuntimeError(f"Download failed: {e}")
 
     path = root / filename
     if extract_name is not None:

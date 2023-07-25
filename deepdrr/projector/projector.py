@@ -229,7 +229,7 @@ class Projector(object):
         self.volumes = []
         self.priorities = []
         for _vol in volume:
-            assert isinstance(_vol, vol.Volume)
+            assert isinstance(_vol, vol.Volume), f"Unknown object: {_vol}"
             self.volumes.append(_vol)
 
         if len(self.volumes) > 20:
