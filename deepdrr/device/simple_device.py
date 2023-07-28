@@ -30,9 +30,9 @@ class SimpleDevice(Device):
 
     def __init__(
         self,
-        sensor_height: int = 300,
-        sensor_width: int = 300,
-        pixel_size: float = 0.1,
+        sensor_height: int = 384,
+        sensor_width: int = 384,
+        pixel_size: float = 1.0,
         source_to_detector_distance: float = 1000.0,
         world_from_device: Optional[geo.FrameTransform] = None,
     ):

@@ -10,17 +10,24 @@ from deepdrr.projector import Projector
 def main():
     output_dir = test_utils.get_output_dir()
     data_dir = test_utils.download_sampledata("CTPelvic1K_sample")
-    patient = deepdrr.Volume.from_nifti(
+    ct = deepdrr.Volume.from_nifti(
         data_dir / "dataset6_CLINIC_0001_data.nii.gz", use_thresholding=True
     )
-    patient.faceup()
+    ct.supine()
 
     # define the simulated C-arm
-    carm = deepdrr.MobileCArm(patient.center_in_world + geo.v(0, 0, -300))
+    carm = deepdrr.device.SimpleDevice()
 
-    # project in the AP view
-    with Projector(patient, carm=carm) as projector:
-        carm.move_to(alpha=0, beta=0)
+    # project in the anterior direction
+    with Projector(ct, device=carm, intensity_upper_bound=4) as projector:
+        p = ct.center_in_world
+        v = ct.world_from_anatomical @ geo.vector(0, 1, 0)
+        carm.set_view(
+            p,
+            v,
+            up=ct.world_from_anatomical @ geo.vector(0, 0, 1),
+            source_to_point_fraction=0.7,
+        )
         image = projector()
 
     path = output_dir / "example_projector.png"
