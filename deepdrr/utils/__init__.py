@@ -384,3 +384,7 @@ def mappable(
         return wrapper
 
     return decorator
+
+
+def kwargs_to_dict(**kwargs):
+    return kwargs

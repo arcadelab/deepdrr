@@ -1,18 +1,1 @@
-# general (redundant) requirements
-numpy
-torch
-torchvision
-nibabel
-scikit-image
-pydicom
-scipy
-pyvista
-pycuda
-pynrrd
-rich
-opencv-python
-seaborn
-
-# development requirements
-black # proper python style
-pytest
+.[dev, cuda11x]

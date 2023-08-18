@@ -22,6 +22,7 @@ from ..utils import data_utils
 from ..utils import mesh_utils
 from ..device import Device
 from ..projector.material_coefficients import material_coefficients
+from .renderable import Renderable
 
 vtk, nps, vtk_available = utils.try_import_vtk()
 
@@ -29,11 +30,9 @@ vtk, nps, vtk_available = utils.try_import_vtk()
 log = logging.getLogger(__name__)
 
 
-class Volume(object):
+class Volume(Renderable):
     data: np.ndarray
     materials: Dict[str, np.ndarray]
-    anatomical_from_IJK: geo.FrameTransform
-    world_from_anatomical: geo.FrameTransform
     anatomical_coordinate_system: Optional[str]
 
     cache_dir: Optional[Path] = None
@@ -50,7 +49,6 @@ class Volume(object):
         anatomical_coordinate_system: Optional[str] = None,
         cache_dir: Optional[str] = None,
         config: Dict[str, Any] = dict(),
-        anatomical_from_ijk: Optional[geo.FrameTransform] = None,
     ) -> None:
         """A deepdrr Volume object with materials segmentation and orientation in world-space.
 
@@ -66,17 +64,9 @@ class Volume(object):
                 This may be useful for ensuring compatibility with other data, but it is not checked or used internally (yet). Defaults to None.
             cache_dir ()
         """
+        Renderable.__init__(self, anatomical_from_IJK, world_from_anatomical)
         self.data = np.array(data).astype(np.float32)
         self.materials = self._format_materials(materials)
-        if anatomical_from_ijk is not None:
-            # Deprecation warning
-            anatomical_from_IJK = anatomical_from_ijk
-        self.anatomical_from_IJK = geo.frame_transform(anatomical_from_IJK)
-        self.world_from_anatomical = (
-            geo.FrameTransform.identity(3)
-            if world_from_anatomical is None
-            else geo.frame_transform(world_from_anatomical)
-        )
         self.anatomical_coordinate_system = anatomical_coordinate_system
         assert self.anatomical_coordinate_system in ["LPS", "RAS", None]
         self.cache_dir = None if cache_dir is None else Path(cache_dir).expanduser()
@@ -732,51 +722,22 @@ class Volume(object):
             anatomical_coordinate_system=anatomical_coordinate_system,
             **kwargs,
         )
+    
 
-    @property
-    def world_from_IJK(self) -> geo.FrameTransform:
-        return self.world_from_anatomical @ self.anatomical_from_IJK
+    @classmethod
+    def from_meshes(
+        cls,
+        voxel_size: float = 0.1,
+        world_from_anatomical: Optional[geo.FrameTransform] = None,
+        surfaces: List[Tuple[str, float, pv.PolyData]] = [], # material, density, surface
+    ):
+        volume_args = mesh_utils.voxelize_multisurface(voxel_size=voxel_size, surfaces=surfaces)
+        return cls(
+            world_from_anatomical=world_from_anatomical,
+            anatomical_coordinate_system=None,
+            **volume_args,
+        )
 
-    @property
-    def world_from_ijk(self) -> geo.FrameTransform:
-        return self.world_from_IJK
-
-    @property
-    def IJK_from_world(self) -> geo.FrameTransform:
-        return self.world_from_IJK.inverse()
-
-    @property
-    def ijk_from_world(self) -> geo.FrameTransform:
-        return self.world_from_IJK.inv
-
-    @property
-    def anatomical_from_world(self):
-        return self.world_from_anatomical.inv
-
-    @property
-    def ijk_from_anatomical(self):
-        return self.anatomical_from_IJK.inv
-
-    @property
-    def IJK_from_anatomical(self):
-        return self.anatomical_from_IJK.inv
-
-    @property
-    def origin(self) -> geo.Point3D:
-        """The origin of the volume in anatomical space."""
-        return geo.point(self.anatomical_from_ijk.t)
-
-    origin_in_anatomical = origin
-
-    @property
-    def origin_in_world(self) -> geo.Point3D:
-        """The origin of the volume in world space."""
-        return geo.point(self.world_from_ijk.t)
-
-    @property
-    def center_in_world(self) -> geo.Point3D:
-        """The center of the volume in world coorindates. Useful for debugging."""
-        return self.world_from_ijk @ geo.point(np.array(self.shape) / 2)
 
     def get_bounding_box_in_world(self) -> Tuple[geo.Point3D, geo.Point3D]:
         """Get the corners of a bounding box enclosing the volume in world coordinates.

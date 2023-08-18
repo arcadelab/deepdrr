@@ -28,25 +28,21 @@
 
 DeepDRR provides state-of-the-art tools to generate realistic radiographs and fluoroscopy from 3D CTs on a training set scale.
 
-## Installation
+## Installation (Ubuntu)
 
-DeepDRR requires an NVIDIA GPU, preferably with >11 GB of memory.
+DeepDRR requires an NVIDIA GPU.
 
-1. Install CUDA. Version 11 is recommended, but DeepDRR has been used with 8.0
-2. Make sure your C compiler is on the path. DeepDRR has been used with `gcc 9.3.0`
-3. We recommend installing pycuda separately, as it may need to be built. If you are using [Anaconda](https://www.anaconda.com/), run
-
-```bash
-conda install -c conda-forge pycuda
-```
-
-to install it in your environment.
-
-4. You may also wish to [install PyTorch](https://pytorch.org/get-started/locally/) separately, depending on your setup.
-5. Install from `PyPI`
+1. Install the required apt packages from `scripts/ubuntu_setup.sh` in this repository.
+2. Install the CUDA Toolkit and PyTorch. We recommend using [Anaconda](https://www.anaconda.com/). See the `environment.yml` file in this repository for the packages you should add to your environment. DeepDRR is tested with CUDA 11.8.0 and Python 3.10 but other versions may work as well.
+<!-- 3. Make sure your C compiler is on the path. DeepDRR has been used with `gcc 9.3.0` (is this needed?)-->
+3. Install from `PyPI`, and specifiy the CUDA version you are using.
 
 ```bash
-pip install deepdrr
+pip install deepdrr[cuda102] # for CUDA 10.2
+pip install deepdrr[cuda110] # for CUDA 11.0
+pip install deepdrr[cuda111] # for CUDA 11.1
+pip install deepdrr[cuda11x] # for CUDA 11.2 - 11.8
+pip install deepdrr[cuda12x] # for CUDA 12.x
 ```
 
 ### Development
@@ -55,7 +51,7 @@ Installing from the `dev` branch is risky, as it is unstable. However, this inst
 
 Dependencies:
 
-1. CUDA 11.1
+1. CUDA 11.8.0
 2. Anaconda
 
 The `dev` branch contains the most up-to-date code and can be easily installed using Anaconda. To create an environment with DeepDRR, run
@@ -64,8 +60,10 @@ The `dev` branch contains the most up-to-date code and can be easily installed u
 git clone https://github.com/arcadelab/deepdrr.git
 cd deepdrr
 git checkout dev
-conda env create -f environment.yaml
+sudo scripts/ubuntu_setup.sh
+conda env create -f environment.yml
 conda activate deepdrr
+pip install -e .[dev,cuda11x] # this should match your CUDA version
 ```
 
 ## Documentation

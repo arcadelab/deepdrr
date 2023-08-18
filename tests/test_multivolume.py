@@ -5,6 +5,7 @@ from deepdrr import geo
 from PIL import Image
 from deepdrr.utils import test_utils
 import numpy as np
+from pathlib import Path
 
 
 def test_multivolume():
@@ -31,7 +32,15 @@ def test_multivolume():
         image = projector.project()
 
     image = (image * 255).astype(np.uint8)
-    Image.fromarray(image).save("output/test_multivolume.png")
+
+    try:
+        d = Path(__file__).resolve().parent
+        truth = d / "reference"
+        output_dir = d / "output"
+        output_dir.mkdir(exist_ok=True)
+        Image.fromarray(image).save(output_dir / "test_multivolume.png")
+    except e:
+        print(e)
 
 
 if __name__ == "__main__":

@@ -6,6 +6,13 @@ from typing import List
 from typing import Optional
 from typing import Tuple
 from typing import Union
+from typing import Dict
+
+import collections
+import logging
+
+import scipy
+import scipy.stats as st
 
 import nibabel as nib
 import numpy as np
@@ -17,9 +24,23 @@ from vtk.util import numpy_support as nps
 
 from .. import geo
 from ..utils import listify
+import trimesh
+import pyrender
+from . import kwargs_to_dict
+
+from collections import defaultdict
 
 
 log = logging.getLogger(__name__)
+
+
+_default_densities = {
+    "polyethylene": 1.05,  # polyethyelene is 0.97, but ABS plastic is 1.05
+    "concrete": 1.5,
+    "iron": 7.5,
+    "titanium": 7,
+    "bone": 1.5,
+}
 
 
 def isosurface(
@@ -113,6 +134,25 @@ def isosurface(
 
     return surface
 
+def voxelize_on_grid(
+    mesh: pv.PolyData,
+    grid: pv.PointSet,
+    shape: Tuple[int, int, int],
+) -> np.ndarray:
+
+    surface = mesh.extract_geometry()
+    if not surface.is_all_triangles:
+        surface.triangulate(inplace=True)
+
+    selection = grid.select_enclosed_points(surface, tolerance=0.0, check_surface=False)
+    voxels = selection.point_data['SelectedPoints'].reshape(shape)
+
+    kernlen = 3
+    kern3d = np.ones((kernlen, kernlen, kernlen))
+    voxels = scipy.signal.convolve(voxels, kern3d, mode='same')
+    voxels = voxels > 0.5
+
+    return voxels
 
 def voxelize(
     surface: pv.PolyData,
@@ -157,6 +197,81 @@ def voxelize(
     return data, world_from_ijk
 
 
+def voxelize_multisurface(
+    voxel_size: float = 0.1,
+    surfaces: List[Tuple[str, float, pv.PolyData]] = [], # material, density, surface
+    default_densities: Dict[str, float] = {},
+):
+    if len(surfaces) == 0:
+        return kwargs_to_dict(
+            data=np.zeros((1,1,1), dtype=np.float64),
+            materials={"air": np.ones((1,1,1), dtype=np.uint8)},
+            anatomical_from_IJK=None,
+        )
+    
+    bounds = []
+    for material, density, surface in surfaces:
+        bounds.append(surface.bounds)
+
+    bounds = np.array(bounds)
+    x_min, y_min, z_min = bounds[:, [0, 2, 4]].min(0)
+    x_max, y_max, z_max = bounds[:, [1, 3, 5]].max(0)
+
+    # combine surfaces wiht same material and approx same density
+    surface_dict = defaultdict(list)
+    for material, density, surface in surfaces:
+        surface_dict[(material, int(density * 100))].append((material, density, surface))
+    
+    combined_surfaces = []
+    for _, surfaces in surface_dict.items():
+        combined_surfaces.append((surfaces[0][0], surfaces[0][1], sum([s[2] for s in surfaces], pv.PolyData())))
+    surfaces = combined_surfaces
+
+    voxel_size = listify(voxel_size, 3)
+    density_x, density_y, density_z = voxel_size
+
+    spacing = np.array(voxel_size)
+
+    origin = np.array([x_min, y_min, z_min])
+    anatomical_from_ijk = geo.FrameTransform.from_rt(np.diag(spacing), origin)
+
+    x_b = np.arange(x_min, x_max, density_x)
+    y_b = np.arange(y_min, y_max, density_y)
+    z_b = np.arange(z_min, z_max, density_z)
+    x, y, z = np.meshgrid(x_b, y_b, z_b, indexing='ij')
+
+    grid = pv.PointSet(np.c_[x.ravel(), y.ravel(), z.ravel()])
+
+    segmentations = []
+    for material, density, surface in surfaces:
+        segmentations.append(voxelize_on_grid(surface, grid, x.shape))
+
+    material_segmentations = defaultdict(list)
+    for (material, _, _), segmentation in zip(surfaces, segmentations):
+        material_segmentations[material].append(segmentation)
+
+    material_segmentations_combined = {}
+    for material, seg in material_segmentations.items():
+        material_segmentations_combined[material] = np.logical_or.reduce(seg).astype(np.uint8)
+
+    def_dens = default_densities if default_densities else _default_densities
+
+    data = np.zeros_like(list(material_segmentations_combined.values())[0], dtype=np.float64)
+    for (material, density, _), segmentation in zip(surfaces, segmentations):
+        # if density is negative, use the default density
+        if density < -0.01:
+            if material not in def_dens:
+                raise ValueError(f"Material {material} not found in default densities")
+            density = def_dens[material]
+        data += segmentation * density
+
+    return kwargs_to_dict(
+        data=data,
+        materials=material_segmentations_combined,
+        anatomical_from_IJK=anatomical_from_ijk,
+    )
+
+
 def voxelize_file(path: str, output_path: str, **kwargs):
     output_path = Path(output_path)
     output_path.parent.mkdir(parents=True, exist_ok=True)
@@ -194,3 +309,43 @@ def voxelize_dir(input_dir: str, output_dir: str, use_cached: bool = True, **kwa
 
             voxelize_file(path, output_path, **kwargs)
             progress.advance(surfaces_voxelized)
+
+
+def polydata_to_vertices_faces(polydata: pv.PolyData) -> Tuple[np.ndarray, np.ndarray]:
+    positions = polydata.points.astype(np.float32).copy()
+    polyfaces = polydata.faces.reshape((-1, 4))
+    assert np.all(polyfaces[:, 0] == 3), "only triangular meshes are supported"
+    indices = polyfaces[..., 1:].astype(np.int32).copy()
+    return positions, indices
+
+def polydata_to_pyrender_prim(polydata: pv.PolyData, material: pyrender.Material = None) -> pyrender.Primitive:
+    positions, indices = polydata_to_vertices_faces(polydata)
+    return pyrender.Primitive(positions=positions, indices=indices, material=material)
+
+def polydata_to_pyrender_mesh(polydata: pv.PolyData, material: pyrender.Material = None) -> pyrender.Mesh:
+    return pyrender.Mesh([polydata_to_pyrender_prim(polydata, material=material)])
+
+def polydata_to_trimesh(polydata: pv.PolyData) -> trimesh.Trimesh:
+    positions, indices = polydata_to_vertices_faces(polydata)
+    return trimesh.Trimesh(vertices=positions, faces=indices, process=False, validate=False)
+
+def trimesh_to_pyrender_mesh(
+    mesh: Union[trimesh.Trimesh, List[trimesh.Trimesh], trimesh.Scene] = None,
+    material: pyrender.Material = None,
+    **kwargs
+) -> pyrender.Mesh:
+    if isinstance(mesh, trimesh.Scene):
+        mesh = mesh.dump()
+    mesh = pyrender.Mesh.from_trimesh(mesh, **kwargs)
+    if material is not None:
+        for prim in mesh.primitives:
+            prim.material = material
+    return mesh
+
+def trimesh_to_pyrender_prim(
+    mesh: trimesh.Trimesh = None,
+    material: pyrender.Material = None,
+) -> pyrender.Primitive:
+    mesh = trimesh_to_pyrender_mesh(mesh, material=material)
+    assert len(mesh.primitives) == 1, "only single primitive meshes are supported"
+    return mesh.primitives[0]

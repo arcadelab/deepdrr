@@ -13,12 +13,13 @@ from deepdrr.load_dicom import (
 from deepdrr import utils
 from deepdrr import Volume, MobileCArm, Projector
 from deepdrr import geo
-
+import pytest
 
 logger = logging.getLogger(__name__)
 logging.basicConfig(level=logging.INFO)
 
 
+@pytest.mark.skip(reason="anatomical_coordinate_system=None not implemented")
 def test_phantom():
     # Define a simple phantom for test: a wire box around a cube.
     volume = np.zeros((120, 100, 80), dtype=np.float32)

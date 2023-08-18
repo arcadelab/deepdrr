@@ -1,5 +1,8 @@
+include LICENSE
+include README.md
 include deepdrr/projector/*
 include deepdrr/projector/cubic/GL/*
 include deepdrr/projector/cubic/internal/*
 include deepdrr/projector/cubic/lib/*
 include deepdrr/projector/cubic/*
+include deepdrr/pyrenderdrr/shaders/*

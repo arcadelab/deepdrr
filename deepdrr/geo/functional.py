@@ -1,9 +1,10 @@
+from __future__ import annotations
 import logging
 from typing import Optional, overload
 import numpy as np
 
 from . import core
-from .core import P, V
+from .typing import P, V
 
 log = logging.getLogger(__name__)
 

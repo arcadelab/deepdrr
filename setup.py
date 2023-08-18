@@ -12,22 +12,41 @@ setuptools.setup(
     long_description=long_description,
     long_description_content_type="text/markdown",
     packages=setuptools.find_packages(),
-    install_requires=[
-        "colorlog",
-        "numpy",
-        "scipy",
-        "scikit-image",
+    install_requires=[ # TODO: this needs to be updated
+        "numpy", # ==1.24.4 why?
         "torch",
         "torchvision",
         "nibabel",
+        "scikit-image",
         "pydicom",
-        "pynrrd",
+        "scipy",
         "pyvista",
-        "pycuda",
+        "pynrrd",
         "rich",
         "opencv-python",
         "seaborn",
+        "graphviz",
+        "pyglet>=1.4.11",
+        "PyOpenGL>=3.1.7",
+        "PyOpenGL_accelerate>=3.1.7",
+        "trimesh",
+        "pyrender @ git+https://github.com/liamjwang/pyrender.git@master", # pyrender without hard PyOpenGL version requirement, replace this when new version is released
+        "cuda-python"
     ],
+    extras_require={
+        "dev": [
+            "black",
+            "pytest",
+            "trame",
+            "ipykernel",
+            "ipywidgets",
+        ],
+        "cuda102": ["cupy-cuda102"],
+        "cuda110": ["cupy-cuda110"],
+        "cuda111": ["cupy-cuda111"],
+        "cuda11x": ["cupy-cuda11x"],
+        "cuda12x": ["cupy-cuda12x"],
+    },
     include_package_data=True,
     python_requires=">=3.7",
 )
