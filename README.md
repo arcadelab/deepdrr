@@ -28,39 +28,50 @@
 
 DeepDRR provides state-of-the-art tools to generate realistic radiographs and fluoroscopy from 3D CTs on a training set scale.
 
-## Installation (Ubuntu)
+## Installing from Source
 
-DeepDRR requires an NVIDIA GPU.
+DeepDRR requires a linux machine with an NVIDIA GPU.
 
-1. Install the required apt packages from `scripts/ubuntu_setup.sh` in this repository.
-2. Install the CUDA Toolkit and PyTorch. We recommend using [Anaconda](https://www.anaconda.com/). See the `environment.yml` file in this repository for the packages you should add to your environment. DeepDRR is tested with CUDA 11.8.0 and Python 3.10 but other versions may work as well.
-<!-- 3. Make sure your C compiler is on the path. DeepDRR has been used with `gcc 9.3.0` (is this needed?)-->
-3. Install from `PyPI`, and specifiy the CUDA version you are using.
+1. Install the nvidia drivers for your system. [ubuntu guide](https://help.ubuntu.com/community/NvidiaDriversInstallation) 
+2. Install conda (we recommend [mambaforge](https://github.com/conda-forge/miniforge)).
+3. Run the following commands:
 
 ```bash
-pip install deepdrr[cuda102] # for CUDA 10.2
-pip install deepdrr[cuda110] # for CUDA 11.0
-pip install deepdrr[cuda111] # for CUDA 11.1
-pip install deepdrr[cuda11x] # for CUDA 11.2 - 11.8
-pip install deepdrr[cuda12x] # for CUDA 12.x
+git clone https://github.com/arcadelab/deepdrr.git
+cd deepdrr
+sudo ./scripts/ubuntu_setup.sh # installs apt dependencies and sets up the EGL driver
+conda env create -f environment.yml # installs CUDA 11.8 and pytorch
+conda activate deepdrr
+pip install .[cuda11x] # this should match your CUDA version, see installation notes below
 ```
 
-### Development
+### Installation Notes
 
-Installing from the `dev` branch is risky, as it is unstable. However, this installation method can be used for the `main` branch as well, perhaps somewhat more reliably.
+#### Other CUDA Versions
+DeepDRR depends on cupy which needs a version compiled for your CUDA version. 
+When installing DeepDRR, you can specify the CUDA version you want to use by appending the appropriate option to the `pip install` command:
+```bash
+pip install .[cuda102] # for CUDA 10.2
+pip install .[cuda110] # for CUDA 11.0
+pip install .[cuda111] # for CUDA 11.1
+pip install .[cuda11x] # for CUDA 11.2 - 11.8
+pip install .[cuda12x] # for CUDA 12.x
+```
+See [https://docs.cupy.dev/en/stable/install.html](https://docs.cupy.dev/en/stable/install.html) for more information.
 
-Dependencies:
+## Installing for Development
 
-1. CUDA 11.8.0
-2. Anaconda
+Installing from the `dev` branch is risky, as it is unstable.
 
-The `dev` branch contains the most up-to-date code and can be easily installed using Anaconda. To create an environment with DeepDRR, run
+1. Install the nvidia drivers for your system. [guide](https://help.ubuntu.com/community/NvidiaDriversInstallation) 
+2. Install conda (we recommend [mambaforge](https://github.com/conda-forge/miniforge)).
+3. Run the following commands:
 
 ```bash
 git clone https://github.com/arcadelab/deepdrr.git
 cd deepdrr
 git checkout dev
-sudo scripts/ubuntu_setup.sh
+sudo ./scripts/ubuntu_setup.sh
 conda env create -f environment.yml
 conda activate deepdrr
 pip install -e .[dev,cuda11x] # this should match your CUDA version
