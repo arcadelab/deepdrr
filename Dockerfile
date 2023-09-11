@@ -1,7 +1,5 @@
 # syntax=docker/dockerfile:1
 
-# FROM condaforge/mambaforge:22.11.1-4 as base
-# FROM pytorch/pytorch:1.13.1-cuda11.6-cudnn8-runtime as base
 FROM ubuntu:jammy as base
 
 ENV LANG=C.UTF-8 LC_ALL=C.UTF-8
@@ -46,11 +44,6 @@ RUN mkdir -p /usr/share/glvnd/egl_vendor.d/ && \
 RUN wget --quiet https://repo.anaconda.com/miniconda/Miniconda3-py310_23.5.2-0-Linux-x86_64.sh -O ~/miniconda.sh && \
     /bin/bash ~/miniconda.sh -b -p /opt/conda && \
     rm ~/miniconda.sh
-    # && \
-    # /opt/conda/bin/conda clean -tipsy && \
-    # ln -s /opt/conda/etc/profile.d/conda.sh /etc/profile.d/conda.sh && \
-    # echo ". /opt/conda/etc/profile.d/conda.sh" >> ~/.bashrc && \
-    # echo "conda activate base" >> ~/.bashrc
 
 WORKDIR /app
 
