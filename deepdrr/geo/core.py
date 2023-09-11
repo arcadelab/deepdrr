@@ -116,16 +116,16 @@ class HomogeneousObject(ABC):
         if self.data.ndim < 2:
             return f"{self.__class__.__name__[0]}{np.array_str(self.data, suppress_small=True)}"
         else:
-            return f"{self.__class__.__name__[0]}(\n{np.array_str(self.data, suppress_small=True)}\n)"
+            return (
+                f"{self.__class__.__name__[0]}(\n{np.array_str(self.data, suppress_small=True)}\n)"
+            )
 
     def __repr__(self):
         if self.data.ndim < 2:
             s = np.array_str(self.data, suppress_small=True)
             return f"{self.__class__.__name__}({s})"
         else:
-            s = "  " + str(np.array_str(self.data, suppress_small=True)).replace(
-                "\n", "\n  "
-            )
+            s = "  " + str(np.array_str(self.data, suppress_small=True)).replace("\n", "\n  ")
             return f"{self.__class__.__name__}({s})"
 
     def __getitem__(self, key):
@@ -346,9 +346,7 @@ class PointOrVector(Primitive):
 
     def __array__(self, *args, **kwargs) -> np.ndarray:
         """Return non-homogeneous numpy representation of object."""
-        return np.array(
-            _from_homogeneous(self.data, is_point=bool(self.data[-1])), *args, **kwargs
-        )
+        return np.array(_from_homogeneous(self.data, is_point=bool(self.data[-1])), *args, **kwargs)
 
     def normsqr(self, order: int = 2) -> float:
         """Get the squared L-order norm of the vector."""
@@ -442,17 +440,13 @@ class Point(PointOrVector, Joinable, HasLocation):
         Note that arrays are not allowed.
         """
         if isinstance(other, Point) and self.dim == other.dim:
-            assert np.isclose(
-                self.w, other.w
-            ), "cannot subtract points with different w"
+            assert np.isclose(self.w, other.w), "cannot subtract points with different w"
             if self.dim == 2:
                 return Vector2D(self.data - other.data)
             elif self.dim == 3:
                 return Vector3D(self.data - other.data)
             else:
-                raise NotImplementedError(
-                    f"subtraction of points of dimension {self.dim}"
-                )
+                raise NotImplementedError(f"subtraction of points of dimension {self.dim}")
         elif isinstance(other, Vector):
             return type(self)(self.data - other.data)
         elif isinstance(other, np.ndarray):
@@ -572,9 +566,7 @@ class Vector(PointOrVector, HasDirection):
         """Two vectors can be added to make another vector."""
         if isinstance(other, Vector):
             if self.dim != other.dim:
-                raise ValueError(
-                    f"cannot add {self.dim}D vector to {other.dim}D vector"
-                )
+                raise ValueError(f"cannot add {self.dim}D vector to {other.dim}D vector")
             return type(self)(self.data + other.data)
         elif isinstance(other, np.ndarray):
             return self + vector(other)
@@ -609,9 +601,7 @@ class Vector(PointOrVector, HasDirection):
         if isinstance(self, Vector2D) and isinstance(other, Vector2D):
             return vector(np.cross([self.x, self.y, 0], [other.x, other.y, 0]))
         elif isinstance(self, Vector3D) and isinstance(other, Vector3D):
-            return vector(
-                np.cross([self.x, self.y, self.z], [other.x, other.y, other.z])
-            )
+            return vector(np.cross([self.x, self.y, self.z], [other.x, other.y, other.z]))
         else:
             raise TypeError(f"unrecognized type for cross product: {type(other)}")
 
@@ -1133,9 +1123,7 @@ class Transform(HomogeneousObject):
         #     l1_ = -r01 * l0 + r00 * l1
         #     l2_ = np.linalg.det([[l0, l1, l2], [r00, r01, p0], [r10, r11, p1]])
         #     return line(l0_, l1_, l2_)
-        elif isinstance(self, (FrameTransform, CameraProjection)) and isinstance(
-            other, list
-        ):
+        elif isinstance(self, (FrameTransform, CameraProjection)) and isinstance(other, list):
             # TODO: handle fiducials elegantly, so the transform just affects their
             # world_from_anatomical. It think we need to change the design so that matmul is
             # implemented by the right side object as well, because this function is getting quite
@@ -1515,9 +1503,7 @@ FixedParameters: 0 0 0
         b = np.array(points_B)
 
         if a.shape != b.shape:
-            raise ValueError(
-                f"unmatched shapes for point correspondence: {a.shape}, {b.shape}"
-            )
+            raise ValueError(f"unmatched shapes for point correspondence: {a.shape}, {b.shape}")
 
         N = a.shape[0]
 
@@ -1860,6 +1846,8 @@ def frame_transform(*args) -> FrameTransform:
             return frame_transform(a["R"], a["t"])
         elif isinstance(a, dict):
             raise TypeError(f"couldn't convert dict to FrameTransform: {a}")
+        elif hasattr(a, "__array__"):
+            return frame_transform(np.array(a))
         else:
             raise TypeError(f"couldn't convert to FrameTransform: {a}")
     elif len(args) == 2:
@@ -1883,18 +1871,14 @@ def frame_transform(*args) -> FrameTransform:
                 raise TypeError(f"couldn't convert to FrameTransform: {args}")
             return FrameTransform.from_rt(r, t)
         else:
-            raise TypeError(
-                f"could not parse FrameTransfrom from [R, t]: [{args[0]}, {args[1]}]"
-            )
+            raise TypeError(f"could not parse FrameTransfrom from [R, t]: [{args[0]}, {args[1]}]")
     else:
         raise TypeError(f"too many arguments: {args}")
 
 
 f = frame_transform
 
-RAS_from_LPS = FrameTransform(
-    np.array([[-1, 0, 0, 0], [0, -1, 0, 0], [0, 0, 1, 0], [0, 0, 0, 1]])
-)
+RAS_from_LPS = FrameTransform(np.array([[-1, 0, 0, 0], [0, -1, 0, 0], [0, 0, 1, 0], [0, 0, 0, 1]]))
 LPS_from_RAS = RAS_from_LPS.inv
 
 mm_from_m = FrameTransform.from_scaling(1e3)
@@ -2128,9 +2112,7 @@ class CameraProjection(Transform):
         index_from_world = self.index_from_camera3d @ self.camera3d_from_world
 
         # TODO: adding _inv here causes the inverse projection to be different, WHY?
-        super().__init__(
-            get_data(index_from_world), _inv=get_data(index_from_world.inv)
-        )
+        super().__init__(get_data(index_from_world), _inv=get_data(index_from_world.inv))
 
     def get_config(self) -> dict[str, Any]:
         """Get the configuration of the camera projection.
@@ -2148,9 +2130,7 @@ class CameraProjection(Transform):
         return self
 
     @classmethod
-    def from_krt(
-        cls, K: np.ndarray, R: np.ndarray, t: np.ndarray
-    ) -> "CameraProjection":
+    def from_krt(cls, K: np.ndarray, R: np.ndarray, t: np.ndarray) -> "CameraProjection":
         """Create a CameraProjection from a camera intrinsic matrix and extrinsic matrix.
 
         Args:

@@ -104,7 +104,7 @@ def isosurface(
 
     surface: pv.PolyData = pv.wrap(dmc.GetOutput())
 
-    if not surface.is_all_triangles():
+    if not surface.is_all_triangles:
         log.debug("triangulate...")
         surface.triangulate(inplace=True)
 
@@ -134,25 +134,26 @@ def isosurface(
 
     return surface
 
+
 def voxelize_on_grid(
     mesh: pv.PolyData,
     grid: pv.PointSet,
     shape: Tuple[int, int, int],
 ) -> np.ndarray:
-
     surface = mesh.extract_geometry()
     if not surface.is_all_triangles:
         surface.triangulate(inplace=True)
 
     selection = grid.select_enclosed_points(surface, tolerance=0.0, check_surface=False)
-    voxels = selection.point_data['SelectedPoints'].reshape(shape)
+    voxels = selection.point_data["SelectedPoints"].reshape(shape)
 
     kernlen = 3
     kern3d = np.ones((kernlen, kernlen, kernlen))
-    voxels = scipy.signal.convolve(voxels, kern3d, mode='same')
+    voxels = scipy.signal.convolve(voxels, kern3d, mode="same")
     voxels = voxels > 0.5
 
     return voxels
+
 
 def voxelize(
     surface: pv.PolyData,
@@ -199,16 +200,16 @@ def voxelize(
 
 def voxelize_multisurface(
     voxel_size: float = 0.1,
-    surfaces: List[Tuple[str, float, pv.PolyData]] = [], # material, density, surface
+    surfaces: List[Tuple[str, float, pv.PolyData]] = [],  # material, density, surface
     default_densities: Dict[str, float] = {},
 ):
     if len(surfaces) == 0:
         return kwargs_to_dict(
-            data=np.zeros((1,1,1), dtype=np.float64),
-            materials={"air": np.ones((1,1,1), dtype=np.uint8)},
+            data=np.zeros((1, 1, 1), dtype=np.float64),
+            materials={"air": np.ones((1, 1, 1), dtype=np.uint8)},
             anatomical_from_IJK=None,
         )
-    
+
     bounds = []
     for material, density, surface in surfaces:
         bounds.append(surface.bounds)
@@ -221,10 +222,12 @@ def voxelize_multisurface(
     surface_dict = defaultdict(list)
     for material, density, surface in surfaces:
         surface_dict[(material, int(density * 100))].append((material, density, surface))
-    
+
     combined_surfaces = []
     for _, surfaces in surface_dict.items():
-        combined_surfaces.append((surfaces[0][0], surfaces[0][1], sum([s[2] for s in surfaces], pv.PolyData())))
+        combined_surfaces.append(
+            (surfaces[0][0], surfaces[0][1], sum([s[2] for s in surfaces], pv.PolyData()))
+        )
     surfaces = combined_surfaces
 
     voxel_size = listify(voxel_size, 3)
@@ -238,7 +241,7 @@ def voxelize_multisurface(
     x_b = np.arange(x_min, x_max, density_x)
     y_b = np.arange(y_min, y_max, density_y)
     z_b = np.arange(z_min, z_max, density_z)
-    x, y, z = np.meshgrid(x_b, y_b, z_b, indexing='ij')
+    x, y, z = np.meshgrid(x_b, y_b, z_b, indexing="ij")
 
     grid = pv.PointSet(np.c_[x.ravel(), y.ravel(), z.ravel()])
 
@@ -318,21 +321,29 @@ def polydata_to_vertices_faces(polydata: pv.PolyData) -> Tuple[np.ndarray, np.nd
     indices = polyfaces[..., 1:].astype(np.int32).copy()
     return positions, indices
 
-def polydata_to_pyrender_prim(polydata: pv.PolyData, material: pyrender.Material = None) -> pyrender.Primitive:
+
+def polydata_to_pyrender_prim(
+    polydata: pv.PolyData, material: pyrender.Material = None
+) -> pyrender.Primitive:
     positions, indices = polydata_to_vertices_faces(polydata)
     return pyrender.Primitive(positions=positions, indices=indices, material=material)
 
-def polydata_to_pyrender_mesh(polydata: pv.PolyData, material: pyrender.Material = None) -> pyrender.Mesh:
+
+def polydata_to_pyrender_mesh(
+    polydata: pv.PolyData, material: pyrender.Material = None
+) -> pyrender.Mesh:
     return pyrender.Mesh([polydata_to_pyrender_prim(polydata, material=material)])
+
 
 def polydata_to_trimesh(polydata: pv.PolyData) -> trimesh.Trimesh:
     positions, indices = polydata_to_vertices_faces(polydata)
     return trimesh.Trimesh(vertices=positions, faces=indices, process=False, validate=False)
 
+
 def trimesh_to_pyrender_mesh(
     mesh: Union[trimesh.Trimesh, List[trimesh.Trimesh], trimesh.Scene] = None,
     material: pyrender.Material = None,
-    **kwargs
+    **kwargs,
 ) -> pyrender.Mesh:
     if isinstance(mesh, trimesh.Scene):
         mesh = mesh.dump()
@@ -341,6 +352,7 @@ def trimesh_to_pyrender_mesh(
         for prim in mesh.primitives:
             prim.material = material
     return mesh
+
 
 def trimesh_to_pyrender_prim(
     mesh: trimesh.Trimesh = None,
