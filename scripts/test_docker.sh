@@ -1,1 +1,2 @@
-docker-compose up --build
+export BUILDKIT_PROGRESS=plain
+docker compose up --build
