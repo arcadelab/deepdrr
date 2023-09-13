@@ -21,10 +21,18 @@ class FiducialList:
         points: List[geo.Point3D],
         world_from_anatomical: Optional[geo.FrameTransform] = None,
         anatomical_coordinate_system: Literal["RAS", "LPS"] = "RAS",
+        names: Optional[List[str]] = None,
     ):
         self.points = points
         self.world_from_anatomical = world_from_anatomical
         self.anatomical_coordinate_system = anatomical_coordinate_system
+
+        if names is None:
+            num_digits = len(str(len(points)))
+            self.names = [f"P{str(i).zfill(num_digits)}" for i in range(len(points))]
+        else:
+            assert len(names) == len(points), "Number of names must match number of points"
+            self.names = names
 
     def __getitem__(self, index):
         return self.points[index]
@@ -98,25 +106,20 @@ class FiducialList:
         )
 
     @classmethod
-    def from_json(
-        cls, path: Path, world_from_anatomical: Optional[geo.FrameTransform] = None
-    ):
+    def from_json(cls, path: Path, world_from_anatomical: Optional[geo.FrameTransform] = None):
         # TODO: add support for associated IDs of the fiducials. Should really be a list/dict.
         data = pd.read_json(path)
-        control_points_table = pd.DataFrame.from_dict(
-            data["markups"][0]["controlPoints"]
-        )
+        control_points_table = pd.DataFrame.from_dict(data["markups"][0]["controlPoints"])
         coordinate_system = data["markups"][0]["coordinateSystem"]
         # TODO: not sure if this works.
-        points = [
-            geo.point(*row[["x", "y", "z"]].values)
-            for _, row in control_points_table.iterrows()
-        ]
+        points = [geo.point(*row["position"]) for _, row in control_points_table.iterrows()]
+        names = control_points_table["label"].values.tolist()
 
         return cls(
             points,
             world_from_anatomical=world_from_anatomical,
             anatomical_coordinate_system=coordinate_system,
+            names=names,
         )
 
     def save(self, path: Path):
@@ -139,9 +142,7 @@ class Fiducial(geo.Point3D):
         )
 
     @classmethod
-    def from_json(
-        cls, path: Path, world_from_anatomical: Optional[geo.FrameTransform] = None
-    ):
+    def from_json(cls, path: Path, world_from_anatomical: Optional[geo.FrameTransform] = None):
         raise NotImplementedError
 
     def save(self, path: Path):
