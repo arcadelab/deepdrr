@@ -40,6 +40,14 @@ class MobileCArm(Device):
 
     Default parameters are based on the Siemens CIOS Spin.
 
+    Intrinsic matrix:
+
+    -5257.73 0 767.5
+    0 -5257.73 767.5
+    0 0 1
+
+    Source to detector distance: 1020 mm
+
     """
 
     # basic parameters which can be safely set by user, but move_by() and reposition() are recommended.
@@ -121,12 +129,8 @@ class MobileCArm(Device):
         self.min_beta = utils.radians(min_beta, degrees=degrees)
         self.max_beta = utils.radians(max_beta, degrees=degrees)
         self.source_to_detector_distance = source_to_detector_distance
-        self.source_to_isocenter_vertical_distance = (
-            source_to_isocenter_vertical_distance
-        )
-        self.source_to_isocenter_horizontal_offset = (
-            source_to_isocenter_horizontal_offset
-        )
+        self.source_to_isocenter_vertical_distance = source_to_isocenter_vertical_distance
+        self.source_to_isocenter_horizontal_offset = source_to_isocenter_horizontal_offset
         self.immersion_depth = immersion_depth
         self.free_space = free_space
         self.pixel_size = pixel_size
@@ -149,9 +153,7 @@ class MobileCArm(Device):
             )
 
         # points in the arm frame don't change.
-        self.viewpoint_in_arm = geo.point(
-            0, self.source_to_isocenter_horizontal_offset, 0
-        )
+        self.viewpoint_in_arm = geo.point(0, self.source_to_isocenter_horizontal_offset, 0)
 
         self._enforce_bounds()
         self._static_mesh = None
@@ -237,16 +239,13 @@ class MobileCArm(Device):
         )
         if self.rotate_camera_left:
             camera3d_from_arm = (
-                geo.frame_transform(Rotation.from_euler("z", 90, degrees=True))
-                @ camera3d_from_arm
+                geo.frame_transform(Rotation.from_euler("z", 90, degrees=True)) @ camera3d_from_arm
             )
 
         # This is a little hacky, since the "device" frame is now kind of wrong, and modeling this
         # C-arm wouldn't show the rotation about the principle ray, but it will work to rotate the
         # images produced.
-        gamma_rotation = geo.frame_transform(
-            Rotation.from_euler("z", self.gamma, degrees=False)
-        )
+        gamma_rotation = geo.frame_transform(Rotation.from_euler("z", self.gamma, degrees=False))
 
         return gamma_rotation @ camera3d_from_arm @ self.arm_from_device
 
@@ -263,9 +262,7 @@ class MobileCArm(Device):
         return self.camera3d_from_device @ self.device_from_world
 
     def get_camera_projection(self) -> geo.CameraProjection:
-        return geo.CameraProjection(
-            self.camera_intrinsics, self.get_camera3d_from_world()
-        )
+        return geo.CameraProjection(self.camera_intrinsics, self.get_camera3d_from_world())
 
     @property
     def viewpoint(self) -> geo.Point3D:
@@ -485,8 +482,7 @@ class MobileCArm(Device):
                     + self.source_to_isocenter_horizontal_offset,
                     self.pixel_size * self.sensor_height / 2
                     + self.source_to_isocenter_horizontal_offset,
-                    -self.source_to_isocenter_vertical_distance
-                    + self.source_to_detector_distance,
+                    -self.source_to_isocenter_vertical_distance + self.source_to_detector_distance,
                     -self.source_to_isocenter_vertical_distance
                     + self.source_to_detector_distance
                     + self.detector_height,
