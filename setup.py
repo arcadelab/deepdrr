@@ -12,8 +12,8 @@ setuptools.setup(
     long_description=long_description,
     long_description_content_type="text/markdown",
     packages=setuptools.find_packages(),
-    install_requires=[ # TODO: this needs to be updated
-        "numpy", # ==1.24.4 why?
+    install_requires=[  # TODO: this needs to be updated
+        "numpy",  # ==1.24.4 why?
         "torch",
         "torchvision",
         "nibabel",
@@ -30,8 +30,9 @@ setuptools.setup(
         "PyOpenGL>=3.1.7",
         "PyOpenGL_accelerate>=3.1.7",
         "trimesh",
-        "pyrender @ git+https://github.com/liamjwang/pyrender.git@master", # pyrender without hard PyOpenGL version requirement, replace this when new version is released
-        "cuda-python"
+        "pyrender @ git+https://github.com/liamjwang/pyrender.git@master",  # pyrender without hard PyOpenGL version requirement, replace this when new version is released
+        "cuda-python",
+        "killeengeo",
     ],
     extras_require={
         "dev": [

@@ -16,7 +16,7 @@ You should have received a copy of the GNU General Public License
 along with DeepDRR.  If not, see <https://www.gnu.org/licenses/>.
 """
 
-from .core import (
+from killeengeo import (
     HomogeneousObject,
     PointOrVector,
     get_data,
@@ -48,12 +48,22 @@ from .core import (
     CameraProjection,
     CameraIntrinsicTransform,
 )
-from .hyperplane import HyperPlane, Line, Line2D, Line3D, Plane, line, l, pl, plane
-from .ray import Ray, Ray2D, Ray3D, ray
-from .segment import Segment, Segment2D, Segment3D, segment
-from .exceptions import JoinError, MeetError
+from killeengeo.hyperplane import (
+    HyperPlane,
+    Line,
+    Line2D,
+    Line3D,
+    Plane,
+    line,
+    l,
+    pl,
+    plane,
+)
+from killeengeo.ray import Ray, Ray2D, Ray3D, ray
+from killeengeo.segment import Segment, Segment2D, Segment3D, segment
+from killeengeo.exceptions import JoinError, MeetError
 from scipy.spatial.transform import Rotation
-from .random import spherical_uniform
+from killeengeo.random import spherical_uniform
 
 __all__ = [
     "HomogeneousObject",
