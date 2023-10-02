@@ -822,7 +822,7 @@ class Projector(object):
         if self.device is None:
             raise RuntimeError("must provide carm device to projector")
 
-        if not isinstance(self.device, CArm):
+        if not isinstance(self.device, Device):
             raise TypeError("device must be a CArm")
 
         camera_projections = []
