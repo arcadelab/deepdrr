@@ -117,8 +117,6 @@ def get_frustum_mesh(
     """
 
     focal_length_mm = camera_projection.intrinsic.focal_length * pixel_size
-    sensor_height = camera_projection.intrinsic.sensor_height
-    sensor_width = camera_projection.intrinsic.sensor_width
     sensor_height_mm = camera_projection.intrinsic.sensor_height * pixel_size
     sensor_width_mm = camera_projection.intrinsic.sensor_width * pixel_size
 
@@ -193,8 +191,6 @@ def get_frustum_mesh(
             j_size=sensor_height_mm,
         )
 
-    image = image.transform(
-        geo.get_data(camera_projection.world_from_camera3d), inplace=False
-    )
+    image = image.transform(geo.get_data(camera_projection.world_from_camera3d), inplace=False)
     mesh.transform(geo.get_data(camera_projection.world_from_camera3d), inplace=True)
     return mesh, image

@@ -1,8 +1,7 @@
 from abc import ABC, abstractmethod
 from typing import TYPE_CHECKING
 import pyvista as pv
-
-from .. import geo
+import killeengeo as geo
 
 
 class Device(ABC):
