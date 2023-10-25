@@ -125,10 +125,17 @@ def get_frustum_mesh(
     c = s + geo.v(0, 0, focal_length_mm)
     cx = pixel_size * camera_projection.intrinsic.cx
     cy = pixel_size * camera_projection.intrinsic.cy
-    ul = geo.p(-cx, cy, focal_length_mm)
-    ur = geo.p(cx, cy, focal_length_mm)
+
     bl = geo.p(-cx, -cy, focal_length_mm)
-    br = geo.p(cx, -cy, focal_length_mm)
+    br = bl + geo.v(sensor_width_mm, 0, 0)
+    ul = bl + geo.v(0, sensor_height_mm, 0)
+    ur = bl + geo.v(sensor_width_mm, sensor_height_mm, 0)
+
+    log.debug(
+        f"sensor_width_mm: {sensor_width_mm}, sensor_height_mm: {sensor_height_mm}"
+    )
+    log.debug(f"cx: {cx}, cy: {cy}")
+    log.debug(f"bl: {bl}, br: {br}, ul: {ul}, ur: {ur}")
 
     mesh = pv.Sphere(10, center=s)
     if full_frustum:
@@ -182,7 +189,6 @@ def get_frustum_mesh(
                 ),
                 inplace=False,
             )
-
     else:
         image = pv.Plane(
             center=[0, 0, focal_length_mm],
@@ -191,6 +197,8 @@ def get_frustum_mesh(
             j_size=sensor_height_mm,
         )
 
-    image = image.transform(geo.get_data(camera_projection.world_from_camera3d), inplace=False)
+    image = image.transform(
+        geo.get_data(camera_projection.world_from_camera3d), inplace=False
+    )
     mesh.transform(geo.get_data(camera_projection.world_from_camera3d), inplace=True)
     return mesh, image
