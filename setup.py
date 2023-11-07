@@ -32,8 +32,7 @@ setuptools.setup(
         "trimesh",
         "pyrender @ git+https://github.com/liamjwang/pyrender.git@master",  # pyrender without hard PyOpenGL version requirement, TODO replace this when new version is released
         "cuda-python",
-        # "killeengeo",
-        "killeengeo @ git+https://github.com/liamjwang/killeengeo.git@main", # TODO delete this
+        "killeengeo",
     ],
     extras_require={
         "dev": [
