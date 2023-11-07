@@ -15,6 +15,7 @@ from deepdrr import geo
 from ..vol import Volume
 from .. import utils
 from ..utils import data_utils
+from ..utils.mesh_utils import voxelize_multisurface
 
 
 log = logging.getLogger(__name__)
@@ -97,7 +98,6 @@ class Instrument(Volume, ABC):
         self.instruments_dir.mkdir(parents=True, exist_ok=True)
 
         self.surfaces = {}
-        bounds = []
         for material_dir, model_paths in self.get_model_paths():
             surface = pv.PolyData()
             for p in model_paths:
@@ -110,40 +110,22 @@ class Instrument(Volume, ABC):
                 material_dir.name if isinstance(material_dir, Path) else material_dir
             )
             self.surfaces[material_dirname] = surface
-            bounds.append(surface.bounds)
-
-        bounds = np.array(bounds)
-        x_min, y_min, z_min = bounds[:, [0, 2, 4]].min(0)
-        x_max, y_max, z_max = bounds[:, [1, 3, 5]].max(0)
-        bounds = [x_min, x_max, y_min, y_max, z_min, z_max]
-
-        cache_dir = self.get_cache_dir()
-        materials_path = cache_dir / "materials.npz".format()
-        anatomical_from_ijk_path = cache_dir / "anatomical_from_ijk.npy"
-        if materials_path.exists() and anatomical_from_ijk_path.exists():
-            log.debug(f"using cached voxelization: {materials_path.absolute()}")
-            materials = dict(np.load(materials_path))
-            anatomical_from_ijk = geo.FrameTransform(np.load(anatomical_from_ijk_path))
-        else:
-            materials, anatomical_from_ijk = self._get_materials(density, bounds)
-            np.savez_compressed(materials_path, **materials)
-            np.save(anatomical_from_ijk_path, geo.get_data(anatomical_from_ijk))
 
         # Convert from actual materials to DeepDRR compatible.
         materials = dict(
-            (self._material_mapping[m], seg) for m, seg in materials.items()
+            (self._material_mapping[m], surf) for m, surf in self.surfaces.items()
         )
 
-        data = np.zeros_like(list(materials.values())[0], dtype=np.float64)
-        for material, seg in materials.items():
-            data += self._densities[material] * seg
+        volume_kwargs = voxelize_multisurface(
+            voxel_size=density,
+            surfaces=[(material, -1, surface) for material, surface in materials.items()],
+            default_densities=self._densities,
+        )
 
         super().__init__(
-            data,
-            materials,
-            anatomical_from_ijk,
-            world_from_anatomical,
+            world_from_anatomical=world_from_anatomical,
             anatomical_coordinate_system=None,
+            **volume_kwargs,
         )
 
     def get_model_paths(self) -> List[Tuple[Path, List[Path]]]:
@@ -169,20 +151,6 @@ class Instrument(Volume, ABC):
         )
         cache_dir.mkdir(exist_ok=True, parents=True)
         return cache_dir
-
-    def _get_materials(self, density, bounds):
-        materials = {}
-        for material, surface in self.surfaces.items():
-            log.info(
-                f'voxelizing {self.__class__.__name__} "{material}" (may take a while)...'
-            )
-            materials[material], anatomical_from_ijk = utils.mesh_utils.voxelize(
-                surface,
-                density=density,
-                bounds=bounds,
-            )
-
-        return materials, anatomical_from_ijk
 
     @property
     def base_in_world(self) -> geo.Point3D:

@@ -33,6 +33,7 @@ DeepDRR provides state-of-the-art tools to generate realistic radiographs and fl
 DeepDRR requires a linux machine with an NVIDIA GPU.
 
 1. Install the nvidia drivers for your system. [ubuntu guide](https://help.ubuntu.com/community/NvidiaDriversInstallation) 
+    - On ubuntu 22, we use `sudo ubuntu-drivers install --gpgpu nvidia:535-server`
 2. Install conda (we recommend [mambaforge](https://github.com/conda-forge/miniforge)).
 3. Run the following commands:
 
@@ -64,6 +65,7 @@ See [https://docs.cupy.dev/en/stable/install.html](https://docs.cupy.dev/en/stab
 Installing from the `dev` branch is risky, as it is unstable.
 
 1. Install the nvidia drivers for your system. [guide](https://help.ubuntu.com/community/NvidiaDriversInstallation) 
+    - On ubuntu 22, we use `sudo ubuntu-drivers install --gpgpu nvidia:535-server`
 2. Install conda (we recommend [mambaforge](https://github.com/conda-forge/miniforge)).
 3. Run the following commands:
 

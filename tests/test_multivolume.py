@@ -12,7 +12,7 @@ def test_multivolume():
     file_paths = [test_utils.download_sampledata(
         "CT-chest"), test_utils.download_sampledata("CT-chest")]
     volumes = [deepdrr.Volume.from_nrrd(file_path) for file_path in file_paths]
-    volumes[0].rotate(geo.core.Rotation.from_euler(
+    volumes[0].rotate(geo.Rotation.from_euler(
         "x", -90, degrees=True), center=volumes[0].center_in_world)
     volumes[1].translate([0, 200, 0])
     carm = deepdrr.MobileCArm(isocenter=volumes[0].center_in_world)

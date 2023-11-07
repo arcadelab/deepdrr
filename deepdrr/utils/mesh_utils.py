@@ -315,8 +315,10 @@ def voxelize_dir(input_dir: str, output_dir: str, use_cached: bool = True, **kwa
 
 
 def polydata_to_vertices_faces(polydata: pv.PolyData) -> Tuple[np.ndarray, np.ndarray]:
-    positions = polydata.points.astype(np.float32).copy()
+    if not polydata.is_all_triangles:
+        polydata.triangulate(inplace=True)
     polyfaces = polydata.faces.reshape((-1, 4))
+    positions = polydata.points.astype(np.float32).copy()
     assert np.all(polyfaces[:, 0] == 3), "only triangular meshes are supported"
     indices = polyfaces[..., 1:].astype(np.int32).copy()
     return positions, indices

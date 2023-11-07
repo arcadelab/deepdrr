@@ -6,12 +6,14 @@ from pyrender.shader_program import ShaderProgramCache
 from .material import DRRMaterial
 from ..utils.cuda_utils import check_cudart_err, format_cudart_err
 from cuda import cudart
+import sys
 
 class DRRMode:
     NONE = 0
     DENSITY = 1
     DIST = 2
     SEG = 3
+    MESH_SUB = 4
 
 GL_COLOR_ATTACHMENT_LIST = [
     GL_COLOR_ATTACHMENT0,
@@ -43,27 +45,40 @@ class Renderer(object):
         Size of points in pixels. Defaults to 1.0.
     """
 
-    def __init__(self, viewport_width, viewport_height, point_size=1.0, num_peel_passes=None):
+    def __init__(self, viewport_width, viewport_height, point_size=1.0, num_peel_passes=None, num_mesh_mesh_layers=None, prim_unqiue_materials=None):
         self.dpscale = 1
 
         self.viewport_width = viewport_width
         self.viewport_height = viewport_height
         self.point_size = point_size
         self.num_peel_passes = num_peel_passes
+        self.num_mesh_mesh_layers = num_mesh_mesh_layers
+        self.prim_unqiue_materials = prim_unqiue_materials
 
         assert self.num_peel_passes is not None, "num_peel_passes must be set"
         assert self.num_peel_passes > 0, "num_peel_passes must be > 0"
+        assert self.num_mesh_mesh_layers is not None, "num_mesh_mesh_layers must be set"
+        assert self.num_mesh_mesh_layers > 0, "num_mesh_mesh_layers must be > 0"
+        assert self.prim_unqiue_materials is not None, "prim_unqiue_materials must be set"
+        assert self.prim_unqiue_materials >= 0, "prim_unqiue_materials must be >= 0"
 
         # Optional framebuffer for offscreen renders
+        self._main_fb = None
+        self._main_cb = None
+        self._main_db = None
         self._fb_initialized = False
         self._main_fb_dims = (None, None)
         self.g_peelTexId = None
         self.g_peelFboIds = None
         self.g_densityTexId = None
         self.g_densityFboId = None
+        self.g_peelTexSubId = None
+        self.g_peelFboSubIds = None
 
         self.subtractive_reg_ims = None
-        self.additive_reg_im = None
+        self.mesh_sub_reg_ims = None
+        self.additive_reg_ims = None
+        # self.additive_reg_im = None
 
         # Shader Program Cache
         d = Path(__file__).resolve().parent
@@ -103,14 +118,20 @@ class Renderer(object):
     def point_size(self, value):
         self._point_size = float(value)
 
-    def render(self, scene, flags, seg_node_map=None, drr_mode=DRRMode.NONE, zfar=0, mat=None):
+    def render(self, scene, flags, seg_node_map=None, drr_mode=DRRMode.NONE, zfar=0, mat=None, mat_idx=None, layer_id=None, tex_idx=None):
         self._update_context(scene, flags)
 
-        if drr_mode != DRRMode.DENSITY:
+        if drr_mode == DRRMode.DIST:
             for i in range(self.num_peel_passes):
-                retval = self._forward_pass(scene, flags, seg_node_map=seg_node_map, drr_mode=drr_mode, zfar=zfar, peelnum=i)
+                retval = self._forward_pass(scene, flags, seg_node_map=seg_node_map, drr_mode=drr_mode, zfar=zfar, peelnum=i, mat=mat, mat_idx=mat_idx, layer_id=layer_id, tex_idx=tex_idx)
+        elif drr_mode == DRRMode.MESH_SUB:
+            retval = self._forward_pass(scene, flags, seg_node_map=seg_node_map, drr_mode=drr_mode, zfar=zfar, peelnum=None, mat=mat, mat_idx=mat_idx, layer_id=layer_id, tex_idx=tex_idx)
+        elif drr_mode == DRRMode.DENSITY:
+            retval = self._forward_pass(scene, flags, seg_node_map=seg_node_map, drr_mode=drr_mode, zfar=zfar, peelnum=None, mat=mat, mat_idx=mat_idx, layer_id=layer_id, tex_idx=tex_idx)
+        elif drr_mode == DRRMode.SEG:
+            retval = self._forward_pass(scene, flags, seg_node_map=seg_node_map, drr_mode=drr_mode, zfar=zfar, peelnum=None, mat=mat, mat_idx=mat_idx, layer_id=layer_id, tex_idx=tex_idx)
         else:
-            retval = self._forward_pass(scene, flags, seg_node_map=seg_node_map, drr_mode=drr_mode, zfar=zfar, peelnum=0, mat=mat)
+            raise NotImplementedError
 
         return retval
 
@@ -146,21 +167,27 @@ class Renderer(object):
     # Rendering passes
     ###########################################################################
 
-    def _forward_pass(self, scene, flags, seg_node_map=None, drr_mode=DRRMode.NONE, zfar=0, peelnum=0, mat=None):
+    def _forward_pass(self, scene, flags, seg_node_map=None, drr_mode=DRRMode.NONE, zfar=None, peelnum=None, mat=None, mat_idx=None, layer_id=None, tex_idx=None):
         # Set up viewport for render
-        self._configure_forward_pass_viewport(flags, drr_mode=drr_mode, peelnum=peelnum)
+        self._configure_forward_pass_viewport(flags, drr_mode=drr_mode, peelnum=peelnum, mat_idx=mat_idx, layer_id=layer_id)
 
         # Clear it
         if drr_mode == DRRMode.DIST:
             glClearColor(-zfar, -zfar, -zfar, -zfar)
+            glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT)
         elif drr_mode == DRRMode.DENSITY:
             glClearColor(0, 0, 0, 0)
+            glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT)
+        elif drr_mode == DRRMode.MESH_SUB:
+            # glClearColor(0, 0, 0, 0)
+            # glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT)
+            # Don't clear-- we are rendering directly onto previous layer
+            pass
         elif drr_mode == DRRMode.SEG:
             glClearColor(0.0, 0.0, 0.0, 1.0)
-            if seg_node_map is None:
-                seg_node_map = {}
+            glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT)
+            
 
-        glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT)
         glDisable(GL_MULTISAMPLE)
 
         # Set up camera matrices
@@ -177,9 +204,12 @@ class Renderer(object):
 
             # If SEG, set color
             if drr_mode == DRRMode.SEG:
-                if node not in seg_node_map:
-                    continue
-                color = seg_node_map[node]
+                if seg_node_map is None:
+                    color = (255)
+                else:
+                    if not hasattr(mesh, "originmesh") or mesh.originmesh is None or mesh.originmesh not in seg_node_map:
+                        continue
+                    color = seg_node_map[mesh.originmesh]
                 if not isinstance(color, (list, tuple, np.ndarray)):
                     color = np.repeat(color, 3)
                 else:
@@ -195,6 +225,8 @@ class Renderer(object):
                     continue
                 if mat is not None and primitive.material.drrMatName != mat:
                     continue
+                if layer_id is not None and primitive.material.layer != layer_id:
+                    continue
 
                 # First, get and bind the appropriate program
                 program = self._get_primitive_program(
@@ -208,7 +240,7 @@ class Renderer(object):
                 program.set_uniform(
                     'cam_pos', scene.get_pose(scene.main_camera_node)[:3, 3]
                 )
-                if bool(flags & RenderFlags.SEG):
+                if drr_mode == DRRMode.SEG:
                     program.set_uniform('color', color)
 
                 # Finally, bind and draw the primitive
@@ -219,10 +251,10 @@ class Renderer(object):
                     flags=flags,
                     drr_mode=drr_mode,
                     zfar=zfar,
-                    peelnum=peelnum
+                    peelnum=peelnum,
+                    tex_idx=tex_idx,
                 )
                 self._reset_active_textures()
-
         # Unbind the shader and flush the output
         if program is not None:
             program._unbind()
@@ -232,7 +264,10 @@ class Renderer(object):
         #     return self._read_main_framebuffer(scene, flags, drr_mode=drr_mode, front=front)
         # return []
 
-    def _bind_and_draw_primitive(self, primitive, pose, program, flags, drr_mode=DRRMode.NONE, zfar=3, peelnum=0):
+        if drr_mode == DRRMode.SEG:
+            return self._read_main_framebuffer(scene, flags)
+
+    def _bind_and_draw_primitive(self, primitive, pose, program, flags, drr_mode=DRRMode.NONE, zfar=3, peelnum=0, tex_idx=None):
         # Set model pose matrix
         program.set_uniform('M', pose)
 
@@ -263,7 +298,36 @@ class Renderer(object):
             assert isinstance(density, float), "Density must be float"
             if density < 0:
                 density = 0
-            program.set_uniform('density', float(density)) # TODO (liam)
+            program.set_uniform('density', float(density))
+
+            glEnable(GL_BLEND)
+            glBlendEquation(GL_FUNC_ADD)
+            glBlendFunc(GL_ONE, GL_ONE)
+            glPolygonMode(GL_FRONT_AND_BACK, GL_FILL)
+            glDisable(GL_CULL_FACE)
+        elif drr_mode == DRRMode.SEG:
+            glEnable(GL_BLEND)
+            glBlendFunc(GL_ONE, GL_ZERO)
+            glPolygonMode(GL_FRONT_AND_BACK, GL_FILL)
+            glEnable(GL_CULL_FACE)
+            glCullFace(GL_BACK)
+        elif drr_mode == DRRMode.MESH_SUB:
+            density = material.density
+            assert density is not None, "Density must be set for DRRMode.DENSITY"
+            assert isinstance(density, float), "Density must be float"
+            if density < 0:
+                raise ValueError("Density must be >= 0")
+                # density = 0
+            program.set_uniform('density', float(density))
+
+            assert tex_idx is not None, "tex_idx must be set for DRRMode.MESH_SUB"
+
+            glActiveTexture(GL_TEXTURE0 + 0)
+            glBindTexture(GL_TEXTURE_RECTANGLE, self.g_peelTexSubId[tex_idx])
+            program.set_uniform('DepthBlenderTex', 0)
+            glActiveTexture(GL_TEXTURE0)
+
+            program.set_uniform('MaxDepth', float(zfar))
 
             glEnable(GL_BLEND)
             glBlendEquation(GL_FUNC_ADD)
@@ -403,16 +467,24 @@ class Renderer(object):
         geometry_shader = None
         defines = {}
 
-        if drr_mode != DRRMode.DENSITY:
+        if drr_mode == DRRMode.DIST:
             if peelnum == 0:
                 vertex_shader = 'dual_peeling_init_vertex.glsl'
                 fragment_shader = 'dual_peeling_init_fragment.glsl'
             else:
                 vertex_shader = 'dual_peeling_peel_vertex.glsl'
                 fragment_shader = 'dual_peeling_peel_fragment.glsl'
-        else:
+        elif drr_mode ==  DRRMode.DENSITY:
             vertex_shader = 'density.vert'
             fragment_shader = 'density.frag'
+        elif drr_mode == DRRMode.MESH_SUB:
+            vertex_shader = 'density_between.vert'
+            fragment_shader = 'density_between.frag'
+        elif drr_mode == DRRMode.SEG:
+            vertex_shader = 'segmentation.vert'
+            fragment_shader = 'segmentation.frag'
+        else:
+            raise NotImplementedError
 
         # Set up vertex buffer DEFINES
         bf = primitive.buf_flags
@@ -456,13 +528,20 @@ class Renderer(object):
     # Viewport Management
     ###########################################################################
 
-    def _configure_forward_pass_viewport(self, flags, drr_mode=DRRMode.NONE, peelnum=0):
+    def _configure_forward_pass_viewport(self, flags, drr_mode=DRRMode.NONE, peelnum=None, mat_idx=None, layer_id=None):
         self._configure_main_framebuffer()
 
         if drr_mode == DRRMode.DENSITY:
-            glBindFramebuffer(GL_FRAMEBUFFER, self.g_densityFboId)
-        else:
+            glBindFramebuffer(GL_FRAMEBUFFER, self.g_densityFboId[layer_id * self.prim_unqiue_materials + mat_idx])
+        elif drr_mode == DRRMode.SEG:
+            # glBindFramebuffer(GL_FRAMEBUFFER, self._main_fb)
+            glBindFramebuffer(GL_DRAW_FRAMEBUFFER, self._main_fb)
+        elif drr_mode == DRRMode.MESH_SUB:
+            glBindFramebuffer(GL_FRAMEBUFFER, self.g_densityFboId[layer_id * self.prim_unqiue_materials + mat_idx])
+        elif drr_mode == DRRMode.DIST:
             glBindFramebuffer(GL_FRAMEBUFFER, self.g_peelFboIds[peelnum])
+        else:
+            raise NotImplementedError
 
         glDrawBuffer(GL_COLOR_ATTACHMENT_LIST[0])
 
@@ -491,6 +570,33 @@ class Renderer(object):
         if not self._fb_initialized:
             self._fb_initialized = True
 
+            # seg textures
+            self._main_cb, self._main_db = glGenRenderbuffers(2)
+            
+            glBindRenderbuffer(GL_RENDERBUFFER, self._main_cb)
+            glRenderbufferStorage(
+                GL_RENDERBUFFER, GL_RGBA,
+                self.viewport_width, self.viewport_height
+            )
+            
+            glBindRenderbuffer(GL_RENDERBUFFER, self._main_db)
+            glRenderbufferStorage(
+                GL_RENDERBUFFER, GL_DEPTH_COMPONENT24,
+                self.viewport_width, self.viewport_height
+            )
+
+            self._main_fb = glGenFramebuffers(1)
+            glBindFramebuffer(GL_DRAW_FRAMEBUFFER, self._main_fb)
+            glFramebufferRenderbuffer(
+                GL_DRAW_FRAMEBUFFER, GL_COLOR_ATTACHMENT0,
+                GL_RENDERBUFFER, self._main_cb
+            )
+            glFramebufferRenderbuffer(
+                GL_DRAW_FRAMEBUFFER, GL_DEPTH_ATTACHMENT,
+                GL_RENDERBUFFER, self._main_db
+            )
+
+            # output depth textures for peeling 
             self.g_peelTexId = listify(glGenTextures(self.num_peel_passes))
             self.g_peelFboIds = listify(glGenFramebuffers(self.num_peel_passes))
 
@@ -506,18 +612,37 @@ class Renderer(object):
                 glBindFramebuffer(GL_FRAMEBUFFER, self.g_peelFboIds[i])
                 glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT_LIST[0], GL_TEXTURE_RECTANGLE, self.g_peelTexId[i], 0)
 
-            self.g_densityTexId = glGenTextures(1)
-            self.g_densityFboId = glGenFramebuffers(1)
+            # input depth textures for mesh-mesh subtraction TODO: reuse ones above
+            self.g_peelTexSubId = listify(glGenTextures(self.num_peel_passes*2)) 
+            self.g_peelFboSubIds = listify(glGenFramebuffers(self.num_peel_passes*2))
 
-            glBindTexture(GL_TEXTURE_RECTANGLE, self.g_densityTexId)
-            glTexParameteri(GL_TEXTURE_RECTANGLE, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE)
-            glTexParameteri(GL_TEXTURE_RECTANGLE, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE)
-            glTexParameteri(GL_TEXTURE_RECTANGLE, GL_TEXTURE_MIN_FILTER, GL_NEAREST)
-            glTexParameteri(GL_TEXTURE_RECTANGLE, GL_TEXTURE_MAG_FILTER, GL_NEAREST)
-            glTexImage2D(GL_TEXTURE_RECTANGLE, 0, GL_RG32F, self.viewport_width, self.viewport_height, 0, GL_RG, GL_FLOAT, None)
+            for i in range(self.num_peel_passes*2):
+                glBindTexture(GL_TEXTURE_RECTANGLE, self.g_peelTexSubId[i])
+                glTexParameteri(GL_TEXTURE_RECTANGLE, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE)
+                glTexParameteri(GL_TEXTURE_RECTANGLE, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE)
+                glTexParameteri(GL_TEXTURE_RECTANGLE, GL_TEXTURE_MIN_FILTER, GL_NEAREST)
+                glTexParameteri(GL_TEXTURE_RECTANGLE, GL_TEXTURE_MAG_FILTER, GL_NEAREST)
+                glTexImage2D(GL_TEXTURE_RECTANGLE, 0, GL_RG32F, self.viewport_width, self.viewport_height, 0, GL_RG, GL_FLOAT, None)
 
-            glBindFramebuffer(GL_FRAMEBUFFER, self.g_densityFboId)
-            glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT_LIST[0], GL_TEXTURE_RECTANGLE, self.g_densityTexId, 0)
+            for i in range(self.num_peel_passes*2):
+                glBindFramebuffer(GL_FRAMEBUFFER, self.g_peelFboSubIds[i])
+                glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT_LIST[0], GL_TEXTURE_RECTANGLE, self.g_peelTexSubId[i], 0)
+
+            # additive output textures
+            self.g_densityTexId = listify(glGenTextures(self.num_mesh_mesh_layers * self.prim_unqiue_materials))
+            self.g_densityFboId = listify(glGenFramebuffers(self.num_mesh_mesh_layers * self.prim_unqiue_materials))
+
+            for i in range(self.num_mesh_mesh_layers * self.prim_unqiue_materials):
+                glBindTexture(GL_TEXTURE_RECTANGLE, self.g_densityTexId[i])
+                glTexParameteri(GL_TEXTURE_RECTANGLE, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE)
+                glTexParameteri(GL_TEXTURE_RECTANGLE, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE)
+                glTexParameteri(GL_TEXTURE_RECTANGLE, GL_TEXTURE_MIN_FILTER, GL_NEAREST)
+                glTexParameteri(GL_TEXTURE_RECTANGLE, GL_TEXTURE_MAG_FILTER, GL_NEAREST)
+                glTexImage2D(GL_TEXTURE_RECTANGLE, 0, GL_RG32F, self.viewport_width, self.viewport_height, 0, GL_RG, GL_FLOAT, None)
+
+            for i in range(self.num_mesh_mesh_layers * self.prim_unqiue_materials):
+                glBindFramebuffer(GL_FRAMEBUFFER, self.g_densityFboId[i])
+                glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT_LIST[0], GL_TEXTURE_RECTANGLE, self.g_densityTexId[i], 0)
 
             self._main_fb_dims = (self.viewport_width, self.viewport_height)
 
@@ -531,26 +656,61 @@ class Renderer(object):
                     )
                 )
                 self.subtractive_reg_ims.append(reg_img)
-            
-            self.additive_reg_im = check_cudart_err(
-                cudart.cudaGraphicsGLRegisterImage(
-                    int(self.g_densityTexId),
-                    GL_TEXTURE_RECTANGLE,
-                    cudart.cudaGraphicsRegisterFlags.cudaGraphicsRegisterFlagsReadOnly,
+
+            self.mesh_sub_reg_ims = []
+            for tex_idx in range(self.num_peel_passes*2):
+                reg_img = check_cudart_err(
+                    cudart.cudaGraphicsGLRegisterImage(
+                        int(self.g_peelTexSubId[tex_idx]),
+                        GL_TEXTURE_RECTANGLE,
+                        cudart.cudaGraphicsRegisterFlags.cudaGraphicsRegisterFlagsWriteDiscard,
+                    )
                 )
-            )
+                self.mesh_sub_reg_ims.append(reg_img)
+            
+
+            self.additive_reg_ims = []
+            for tex_idx in range(self.num_mesh_mesh_layers * self.prim_unqiue_materials):
+                reg_img = check_cudart_err(
+                    cudart.cudaGraphicsGLRegisterImage(
+                        int(self.g_densityTexId[tex_idx]),
+                        GL_TEXTURE_RECTANGLE,
+                        cudart.cudaGraphicsRegisterFlags.cudaGraphicsRegisterFlagsReadOnly,
+                    )
+                )
+                self.additive_reg_ims.append(reg_img)
+                
 
     def _delete_main_framebuffer(self):
 
-        if self.additive_reg_im is not None:
-            check_cudart_err(cudart.cudaGraphicsUnregisterResource(self.additive_reg_im))
-            self.additive_reg_im = None
+        if self._main_fb is not None:
+            glDeleteFramebuffers(1, [self._main_fb])
+        if self._main_cb is not None:
+            glDeleteRenderbuffers(1, [self._main_cb])
+        if self._main_db is not None:
+            glDeleteRenderbuffers(1, [self._main_db])
+
+        self._main_fb = None
+        self._main_cb = None
+        self._main_db = None
+
+        if self.additive_reg_ims is not None:
+            for reg_img in self.additive_reg_ims:
+                check_cudart_err(cudart.cudaGraphicsUnregisterResource(reg_img))
+
+            self.additive_reg_ims = None
 
         if self.subtractive_reg_ims is not None:
             for reg_img in self.subtractive_reg_ims:
                 check_cudart_err(cudart.cudaGraphicsUnregisterResource(reg_img))
 
             self.subtractive_reg_ims = None
+
+        if self.mesh_sub_reg_ims is not None:
+            for reg_img in self.mesh_sub_reg_ims:
+                check_cudart_err(cudart.cudaGraphicsUnregisterResource(reg_img))
+
+            self.mesh_sub_reg_ims = None
         
 
         if self.g_peelTexId is not None:
@@ -560,60 +720,81 @@ class Renderer(object):
             glDeleteFramebuffers(self.num_peel_passes, self.g_peelFboIds)
             self.g_peelFboIds = None
         if self.g_densityTexId is not None:
-            glDeleteTextures(1, [self.g_densityTexId])
+            glDeleteTextures(self.num_mesh_mesh_layers * self.prim_unqiue_materials, self.g_densityTexId)
             self.g_densityTexId = None
         if self.g_densityFboId is not None:
-            glDeleteFramebuffers(1, [self.g_densityFboId])
+            glDeleteFramebuffers(self.num_mesh_mesh_layers * self.prim_unqiue_materials, self.g_densityFboId)
             self.g_densityFboId = None
+        if self.g_peelTexSubId is not None:
+            glDeleteTextures(self.num_peel_passes*2, self.g_peelTexSubId)
+            self.g_peelTexSubId = None
+        if self.g_peelFboSubIds is not None:
+            glDeleteFramebuffers(self.num_peel_passes*2, self.g_peelFboSubIds)
+            self.g_peelFboSubIds = None
 
         self._fb_initialized = False
         self._main_fb_dims = (None, None)
 
-    # def _read_main_framebuffer(self, scene, flags, drr_mode=DRRMode.NONE, front=True):
-    #     width, height = self._main_fb_dims[0], self._main_fb_dims[1]
 
-    #     # Bind framebuffer and blit buffers
-    #     glBindFramebuffer(GL_READ_FRAMEBUFFER, self._main_fb_ms)
-    #     glBindFramebuffer(GL_DRAW_FRAMEBUFFER, self._main_fb)
-    #     glBlitFramebuffer(
-    #         0, 0, width, height, 0, 0, width, height,
-    #         GL_COLOR_BUFFER_BIT, GL_LINEAR
-    #     )
-    #     glBlitFramebuffer(
-    #         0, 0, width, height, 0, 0, width, height,
-    #         GL_DEPTH_BUFFER_BIT, GL_NEAREST
-    #     )
-    #     glBindFramebuffer(GL_READ_FRAMEBUFFER, self._main_fb)
+    def _read_main_framebuffer(self, scene, flags):
+        width, height = self._main_fb_dims[0], self._main_fb_dims[1]
 
-    #     ims = []
+        # Bind framebuffer and blit buffers
+        # glBindFramebuffer(GL_DRAW_FRAMEBUFFER, self._main_fb)
+        # glBlitFramebuffer(
+        #     0, 0, width, height, 0, 0, width, height,
+        #     GL_COLOR_BUFFER_BIT, GL_LINEAR
+        # )
+        # glBlitFramebuffer(
+        #     0, 0, width, height, 0, 0, width, height,
+        #     GL_DEPTH_BUFFER_BIT, GL_NEAREST
+        # )
+        glBindFramebuffer(GL_READ_FRAMEBUFFER, self._main_fb)
 
-    #     numbufs = self.max_dual_peel_layers
-    #     if drr_mode == DRRMode.DENSITY:
-    #         glBindFramebuffer(GL_READ_FRAMEBUFFER, self.g_densityFboId)
-    #         glReadBuffer(GL_COLOR_ATTACHMENT_LIST[0])
+        # Read depth
+        # depth_buf = glReadPixels(
+        #     0, 0, width, height, GL_DEPTH_COMPONENT, GL_FLOAT
+        # )
+        # depth_im = np.frombuffer(depth_buf, dtype=np.float32)
+        # depth_im = depth_im.reshape((height, width))
+        # depth_im = np.flip(depth_im, axis=0)
+        # inf_inds = (depth_im == 1.0)
+        # depth_im = 2.0 * depth_im - 1.0
+        # z_near = scene.main_camera_node.camera.znear
+        # z_far = scene.main_camera_node.camera.zfar
+        # noninf = np.logical_not(inf_inds)
+        # if z_far is None:
+        #     depth_im[noninf] = 2 * z_near / (1.0 - depth_im[noninf])
+        # else:
+        #     depth_im[noninf] = ((2.0 * z_near * z_far) /
+        #                         (z_far + z_near - depth_im[noninf] *
+        #                         (z_far - z_near)))
+        # depth_im[inf_inds] = 0.0
 
-    #         color_buf = glReadPixels(
-    #             0, 0, width, height, GL_RGB, GL_FLOAT
-    #         )
-    #         color_im = np.frombuffer(color_buf, dtype=np.float32)
-    #         color_im = color_im.reshape((height, width, 3))
-    #         color_im = np.flip(color_im, axis=0)
-    #         ims.append(color_im)
+        # # Resize for macos if needed
+        # if sys.platform == 'darwin':
+        #     depth_im = self._resize_image(depth_im)
 
-    #     else:
-    #         for i in range(numbufs):
-    #             bufferidx = i + (0 if front else self.max_dual_peel_layers)
-    #             glBindFramebuffer(GL_READ_FRAMEBUFFER, self.g_dualPeelingFboIds[bufferidx])
-    #             glReadBuffer(GL_COLOR_ATTACHMENT_LIST[0])
-    #             # glReadBuffer(GL_COLOR_ATTACHMENT_LIST[bufferidx])
-    #             print(f"Reading buffer {bufferidx}")
+        # if flags & RenderFlags.DEPTH_ONLY:
+        #     return depth_im
 
-    #             color_buf = glReadPixels(
-    #                 0, 0, width, height, GL_RGBA, GL_FLOAT
-    #             )
-    #             color_im = np.frombuffer(color_buf, dtype=np.float32)
-    #             color_im = color_im.reshape((height, width, 4))
-    #             color_im = np.flip(color_im, axis=0)
-    #             ims.append(color_im)
+        # Read color
+        if flags & RenderFlags.RGBA:
+            color_buf = glReadPixels(
+                0, 0, width, height, GL_RGBA, GL_UNSIGNED_BYTE
+            )
+            color_im = np.frombuffer(color_buf, dtype=np.uint8)
+            color_im = color_im.reshape((height, width, 4))
+        else:
+            color_buf = glReadPixels(
+                0, 0, width, height, GL_RGB, GL_UNSIGNED_BYTE
+            )
+            color_im = np.frombuffer(color_buf, dtype=np.uint8)
+            color_im = color_im.reshape((height, width, 3))
+        color_im = np.flip(color_im, axis=0)
 
-    #     return ims
+        # Resize for macos if needed
+        if sys.platform == 'darwin':
+            color_im = self._resize_image(color_im, True)
+
+        return color_im

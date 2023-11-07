@@ -7,10 +7,11 @@ dist
 build
 docs/build
 **flycheck*.py
-/.DS_Store
-output
+.DS_Store
 cmake-build-debug
 .vscode
+tests/diff
+tests/output
 
 *.npy
 

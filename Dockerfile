@@ -55,4 +55,5 @@ RUN conda env update -n base -f environment.yml
 COPY . .
 RUN pip install .[dev,cuda11x]
 
+# CMD python tests/test_core.py
 CMD python -m pytest -v
