@@ -36,13 +36,13 @@ void main(void)
     float fragDepth = length(frag_position-cam_pos);
 
 
-	vec2 depthBlender = texture2DRect(DepthBlenderTex, gl_FragCoord.xy).xy;
+	vec4 depthBlender = texture2DRect(DepthBlenderTex, gl_FragCoord.xy).xyzw;
 	// vec2 depthBlender = textureRect(DepthBlenderTex, gl_FragCoord.xy).xy;
 	// vec4 forwardTemp = textureRect(FrontBlenderTex, gl_FragCoord.xy);
 	
 	// Depths and 1.0-alphaMult always increase
 	// so we can use pass-through by default with MAX blending
-	gl_FragData[0].xy = depthBlender;
+	// gl_FragData[0].xy = depthBlender;
 	
 	// // Front colors always increase (DST += SRC*ALPHA_MULT)
 	// // so we can use pass-through by default with MAX blending
@@ -53,28 +53,42 @@ void main(void)
 	// // Each pass, only one fragment writes a color greater than 0
 	// gl_FragData[2] = vec4(0.0);
 
-	float nearestDepth = -depthBlender.x;
-	float farthestDepth = depthBlender.y;
+	// float nearestDepth = -depthBlender.x;
+	float farthestDepthFront = depthBlender.y;
+	float farthestDepthAway = depthBlender.w;
 	// float alphaMultiplier = 1.0 - forwardTemp.w;
 
-    // gl_FragData[0].xy = vec2(99999); // TODO
+    // gl_FragData[0].xy = vec2(99999);
     // return;
 
-	if (fragDepth < nearestDepth || fragDepth > farthestDepth) {
-		// Skip this depth in the peeling algorithm
-		gl_FragData[0].rgba = vec4(-MaxDepth);
-		return;
-	}
+	// if (fragDepth < nearestDepth || fragDepth > farthestDepth) {
+	// 	// Skip this depth in the peeling algorithm
+	// 	gl_FragData[0].rgba = vec4(-MaxDepth);
+	// 	return;
+	// }
 	
-	if (fragDepth > nearestDepth && fragDepth < farthestDepth) {
-		// This fragment needs to be peeled again
-        if (!gl_FrontFacing) {
-            gl_FragData[0].rgba = vec4(-fragDepth, fragDepth, -MaxDepth, -MaxDepth);
-        } else {
-            gl_FragData[0].rgba = vec4(-MaxDepth, -MaxDepth, -fragDepth, fragDepth);
+	// if (fragDepth > nearestDepth && fragDepth < farthestDepth) {
+	// 	// This fragment needs to be peeled again
+    //     if (!gl_FrontFacing) {
+    //         gl_FragData[0].rgba = vec4(-fragDepth, fragDepth, -MaxDepth, -MaxDepth);
+    //     } else {
+    //         gl_FragData[0].rgba = vec4(-MaxDepth, -MaxDepth, -fragDepth, fragDepth);
+    //     }
+	// 	return;
+	// }
+
+    
+    if (!gl_FrontFacing) {
+        if (fragDepth < farthestDepthAway) {
+            gl_FragData[0].rgba = vec4(-MaxDepth, -MaxDepth, -MaxDepth, fragDepth);
+            return;
         }
-		return;
-	}
+    } else {
+        if (fragDepth < farthestDepthFront) {
+            gl_FragData[0].rgba = vec4(-MaxDepth, fragDepth, -MaxDepth, -MaxDepth);
+            return;
+        }
+    }
 	
 	// If we made it here, this fragment is on the peeled layer from last pass
 	// therefore, we need to shade it, and make sure it is not peeled any farther

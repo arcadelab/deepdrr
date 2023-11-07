@@ -30,9 +30,10 @@ setuptools.setup(
         "PyOpenGL>=3.1.7",
         "PyOpenGL_accelerate>=3.1.7",
         "trimesh",
-        "pyrender @ git+https://github.com/liamjwang/pyrender.git@master",  # pyrender without hard PyOpenGL version requirement, replace this when new version is released
+        "pyrender @ git+https://github.com/liamjwang/pyrender.git@master",  # pyrender without hard PyOpenGL version requirement, TODO replace this when new version is released
         "cuda-python",
-        "killeengeo",
+        # "killeengeo",
+        "killeengeo @ git+https://github.com/liamjwang/killeengeo.git@main", # TODO delete this
     ],
     extras_require={
         "dev": [

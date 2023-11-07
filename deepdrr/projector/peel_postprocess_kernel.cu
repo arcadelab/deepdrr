@@ -11,16 +11,14 @@ extern "C" {
 // To do this, set the intercept Ts to infinity, decrement the count, and set facing to 0
 // Then loop through to fill gaps
 // Keep a pointer at at the highest filled index, and another that sweeps forward palcing into the lowest index
+// TODO: The sorting is unnecessary, the depth peeling has a deterministic order. This is the lazy way.
 __device__ void tide(float *interceptTs, int8_t *interceptFacing, int rayIdx, float sourceToDetectorDistance) {
     {
-        // for (int i = 0; i < NUM_INTERSECTIONS; i++) { // TODO
-        //     interceptFacing[i] = i < NUM_INTERSECTIONS / 2 ? 1 : -1;
-        // }
         for (int i = 0; i < NUM_INTERSECTIONS; i += 4) {
-            interceptFacing[i] = 1;
-            interceptFacing[i + 1] = 1;
-            interceptFacing[i + 2] = -1;
-            interceptFacing[i + 3] = -1;
+            interceptFacing[i] = 0;
+            interceptFacing[i + 1] = -1;
+            interceptFacing[i + 2] = 0;
+            interceptFacing[i + 3] = 1;
             interceptTs[i] = -interceptTs[i];
             interceptTs[i + 1] = interceptTs[i + 1];
             interceptTs[i + 2] = -interceptTs[i + 2];
@@ -66,7 +64,8 @@ __device__ void tide(float *interceptTs, int8_t *interceptFacing, int rayIdx, fl
         int dstIdx = 0;
         int srcIdx = 1;
         while (srcIdx < NUM_INTERSECTIONS) {
-            if (interceptTs[srcIdx] == interceptTs[dstIdx]) {
+            // if (fabs(interceptTs[srcIdx] - interceptTs[dstIdx])<10.f) {
+            if (interceptTs[srcIdx] == interceptTs[dstIdx] && interceptFacing[srcIdx] == interceptFacing[dstIdx]) {
                 interceptTs[srcIdx] = INFINITY;
                 interceptFacing[srcIdx] = 0;
                 srcIdx++;
@@ -104,7 +103,7 @@ __device__ void tide(float *interceptTs, int8_t *interceptFacing, int rayIdx, fl
 
     {
 
-        int altitudes[64]; // TODO
+        int altitudes[NUM_INTERSECTIONS];
         int altitude = 0;
 
         for (int i = 0; i < NUM_INTERSECTIONS; i++) {
@@ -113,11 +112,17 @@ __device__ void tide(float *interceptTs, int8_t *interceptFacing, int rayIdx, fl
         }
 
         int seaLevel = max(0, altitude);
+        // interceptTs[0] = seaLevel;
 
         int prevAltitide = 0;
         for (int i = 0; i < NUM_INTERSECTIONS; i++) {
             int currentAltitude = altitudes[i];
+            // interceptTs[i] = currentAltitude;
             if (currentAltitude < seaLevel || prevAltitide < seaLevel) {
+                interceptTs[i] = INFINITY;
+                interceptFacing[i] = 0;
+            }
+            if (currentAltitude > 1 || prevAltitide > 1) { // we don't care about depth > 1
                 interceptTs[i] = INFINITY;
                 interceptFacing[i] = 0;
             }
@@ -199,4 +204,34 @@ __global__ void kernelReorder(float *__restrict__ rayInterceptTsIn, float *__res
         }
     }
 }
+
+__device__ void reorder2(float *__restrict__ rayInterceptTsIn, float *__restrict__ rayInterceptTsOut, int numRays,
+                        int rayIdx) {
+    int num_layers = 2;
+    for (int i = 0; i < NUM_INTERSECTIONS / num_layers; i++) {
+        for (int j = 0; j < num_layers; j++) {
+            // rayInterceptTsOut[rayIdx * NUM_INTERSECTIONS + i] = rayInterceptTsIn[rayIdx * NUM_INTERSECTIONS + i];
+            rayInterceptTsOut[i * numRays * num_layers + rayIdx * num_layers + j] =
+                rayInterceptTsIn[rayIdx * NUM_INTERSECTIONS + i * num_layers + j];
+        }
+    }
+}
+
+__global__ void kernelReorder2(float *__restrict__ rayInterceptTsIn, float *__restrict__ rayInterceptTsOut,
+                              int numRays) {
+    __shared__ int stride;
+    if (threadIdx.x == 0) {
+        stride = gridDim.x * blockDim.x;
+    }
+    __syncthreads();
+
+    int threadStartIdx = blockIdx.x * blockDim.x + threadIdx.x;
+
+    for (int idx = threadStartIdx; idx < numRays; idx += stride) {
+        if (idx < numRays) {
+            reorder2(rayInterceptTsIn, rayInterceptTsOut, numRays, idx);
+        }
+    }
+}
+
 }
