@@ -1,3 +1,5 @@
+*.log
+
 # Common
 # README.md
 CHANGELOG.md
