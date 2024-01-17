@@ -3,7 +3,7 @@
 """
 
 from __future__ import annotations
-from typing import Any, Union, Tuple, List, Optional, Dict, Type
+from typing import Any, Union, Tuple, List, Optional, Dict, Type, TYPE_CHECKING
 
 import logging
 import numpy as np
@@ -23,6 +23,9 @@ from ..utils import mesh_utils
 from ..device import Device
 from ..projector.material_coefficients import material_coefficients
 from .renderable import Renderable
+
+if TYPE_CHECKING:
+    from .mesh import Mesh
 
 vtk, nps, vtk_available = utils.try_import_vtk()
 
@@ -822,74 +825,16 @@ class Volume(Renderable):
     def __array__(self) -> np.ndarray:
         return self.data
 
-    def place_center(self, x: geo.Point3D) -> None:
-        """Translate the volume so that its center is located at world-space point x.
+    def get_center(self) -> geo.Point3D:
+        """Get the center of the volume in anatomical (local) coordinates."""
+        return geo.point(np.array(self.shape) / 2)
 
-        Only changes the translation elements of the world_from_anatomical transform. Preserves the current rotation of the
-
-        Args:
-            x (geo.Point3D): the world-space point.
-
-        """
-
-        x = geo.point(x)
-        center_anatomical = self.anatomical_from_ijk @ geo.point(
-            np.array(self.shape) / 2
-        )
-        center_world = self.world_from_anatomical @ center_anatomical
-        self.place(center_anatomical, x)
-
-    translate_center_to = place_center
-
-    def place(
-        self, point_in_anatomical: geo.Point3D, desired_point_in_world: geo.Point3D
-    ) -> None:
-        """Translate the volume so that x_in_anatomical corresponds to x_in_world."""
-        p_A = np.array(point_in_anatomical)
-        p_W = np.array(desired_point_in_world)
-        r_WA = self.world_from_anatomical.R
-        t_WA = p_W - r_WA @ p_A
-        self.world_from_anatomical.t = t_WA  # fancy setter
+    def translate_center_to(self, x: geo.Point3D):
+        return self.place_center(x)
 
     def copy_pose(self, other: Volume) -> None:
         """Copy the pose of another volume."""
         self.world_from_anatomical = other.world_from_anatomical.copy()
-
-    def translate(self, t: geo.Vector3D) -> Volume:
-        """Translate the volume by `t`.
-
-        Args:
-            t (geo.Vector3D): The vector to translate by, in world space.
-        """
-        t = geo.vector(t)
-        T = geo.FrameTransform.from_translation(t)
-        self.world_from_anatomical = T @ self.world_from_anatomical
-        return self
-
-    def rotate(
-        self,
-        rotation: Union[geo.Vector3D, Rotation],
-        center: Optional[geo.Point3D] = None,
-    ) -> Volume:
-        """Rotate the volume by `rotation` about `center`.
-
-        Args:
-            rotation (Union[geo.Vector3D, Rotation]): the rotation in world-space. If it is a vector, `Rotation.from_rotvec(rotation)` is used.
-            center (geo.Point3D, optional): the center of rotation in world space coordinates. If None, the center of the volume is used.
-        """
-
-        if isinstance(rotation, Rotation):
-            R = geo.FrameTransform.from_rotation(rotation.as_matrix())
-        else:
-            r = geo.vector(rotation)
-            R = geo.FrameTransform.from_rotation(Rotation.from_rotvec(r).as_matrix())
-
-        if center is None:
-            center = self.center_in_world
-
-        T = geo.FrameTransform.from_translation(center)
-        self.world_from_anatomical = T @ R @ T.inv @ self.world_from_anatomical
-        return self
 
     def supine(self):
         """Turns the volume to be face up.
@@ -1016,6 +961,18 @@ class Volume(Renderable):
         """
         x_ijk = self.ijk_from_world @ geo.point(x)
         return np.all(0 <= np.array(x_ijk) <= np.array(self.shape) - 1)
+
+    def as_mesh(self, material: str | DRRMaterial, **kwargs) -> Mesh:
+        """Convert the volume to a mesh.
+
+        Args:
+            material (str): The material to use for the mesh.
+            **kwargs: Additional arguments passed to :func:`deepdrr.utils.mesh_utils.isosurface`.
+
+        Returns:
+            Mesh: The volume as a mesh.
+        """
+        raise NotImplementedError
 
     def isosurface(
         self,
