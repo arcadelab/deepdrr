@@ -502,7 +502,7 @@ class Volume(Renderable):
             data = img.get_fdata()
             if label is None:
                 seg = data > 0
-            elif isinstance(label, int):
+            elif isinstance(label, (int, np.int32, np.int64, float)):
                 seg = data == label
             elif isinstance(label, list):
                 seg = np.isin(data, label)
@@ -1282,17 +1282,16 @@ class Volume(Renderable):
         )
         return bbox
 
-    def shrink(self) -> Volume:
+    def shrink(self) -> Volume | None:
         """Crop the volume to remove empty space.
 
         Returns:
-            Volume: The cropped volume.
+            Volume: The cropped volume or None if the volume is all zero.
         """
 
         bbox = self.get_bbox_IJK()
         if bbox is None:
-            log.warning("shrink called on empty volume")
-            return self
+            return None
         return self.crop(bbox)
 
 
