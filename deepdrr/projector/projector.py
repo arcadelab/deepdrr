@@ -424,6 +424,10 @@ class Projector(object):
         max_mesh_hits=32,
         mesh_layers=2,
         cuda_device_id=None,
+
+        # Deprecated
+        num_mesh_layers=None,
+        num_mesh_mesh_layers=None,
     ) -> None:
         """Create the projector, which has info for simulating the DRR.
 
@@ -457,6 +461,20 @@ class Projector(object):
             source_to_detector_distance (float, optional): If `device` is not provided, this is the distance from the source to the detector. This limits the lenght rays are traced for. Defaults to -1 (no limit).
             carm (MobileCArm, optional): Deprecated alias for `device`. See `device`.
         """
+
+        if num_mesh_layers is not None:
+            warnings.warn(
+                "num_mesh_layers is deprecated. Use mesh_layers instead.",
+                DeprecationWarning,
+            )
+            mesh_layers = num_mesh_layers
+
+        if num_mesh_mesh_layers is not None:
+            warnings.warn(
+                "num_mesh_mesh_layers is deprecated. Use mesh_layers instead.",
+                DeprecationWarning,
+            )
+            mesh_layers = num_mesh_mesh_layers
 
         self._egl_platform = None
 
