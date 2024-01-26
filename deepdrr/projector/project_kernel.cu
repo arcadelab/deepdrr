@@ -173,7 +173,7 @@ projectKernel(const cudaTextureObject_t * __restrict__ volume_texs, // array of 
               const float * __restrict__ additive_densities, // additive densities
               const int * __restrict__ mesh_unique_materials, // unique materials for additive mesh
               const int mesh_unique_material_count, // number of unique materials for additive mesh
-              const int num_mesh_mesh_layers,
+              const int mesh_layers,
             //   const int max_mesh_depth, // maximum number of mesh hits per pixel
               const int offsetW, 
               const int offsetH) {
@@ -347,12 +347,12 @@ projectKernel(const cudaTextureObject_t * __restrict__ volume_texs, // array of 
         area_density[AIR_INDEX] += (minAlpha / step) * AIR_DENSITY;
     }
 
-    int asdf = (vdx * out_width + udx) * MAX_MESH_DEPTH;
+    int asdf = (vdx * out_width + udx) * MAX_MESH_HITS;
 
-    int facing_local[MAX_MESH_DEPTH]; // faster
-    float alpha_local[MAX_MESH_DEPTH];
+    int facing_local[MAX_MESH_HITS]; // faster
+    float alpha_local[MAX_MESH_HITS];
 
-    for (int i = 0; i < MAX_MESH_DEPTH; i++) {
+    for (int i = 0; i < MAX_MESH_HITS; i++) {
         facing_local[i] = mesh_hit_facing[asdf + i];
         alpha_local[i] = mesh_hit_alphas[asdf + i];
     }
@@ -424,7 +424,7 @@ projectKernel(const cudaTextureObject_t * __restrict__ volume_texs, // array of 
 
 #if MESH_ADDITIVE_AND_SUBTRACTIVE_ENABLED > 0
         while (true) {
-            if ((mesh_hit_index < MAX_MESH_DEPTH && facing_local[mesh_hit_index] != 0 && alpha_local[mesh_hit_index] < alpha)){
+            if ((mesh_hit_index < MAX_MESH_HITS && facing_local[mesh_hit_index] != 0 && alpha_local[mesh_hit_index] < alpha)){
                 mesh_hit_depth += facing_local[mesh_hit_index];
                 mesh_hit_index += 1;
             } else {
@@ -486,7 +486,7 @@ projectKernel(const cudaTextureObject_t * __restrict__ volume_texs, // array of 
 
 #if MESH_ADDITIVE_ENABLED > 0
     for (int i = 0; i < mesh_unique_material_count; i++) {
-        for (int j = 0; j < num_mesh_mesh_layers; j++) {
+        for (int j = 0; j < mesh_layers; j++) {
             int add_dens_idx = j * mesh_unique_material_count * (out_height * out_width * 2) + i * (out_height * out_width * 2) + (vdx * out_width + udx) * 2;
             // If there is a matching number of front and back hits, add the density
             if (fabs(additive_densities[add_dens_idx + 1]) < 0.00001) {

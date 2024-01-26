@@ -333,7 +333,7 @@ def _get_kernel_projector_module(
     num_materials: int,
     mesh_additive_enabled: bool,
     mesh_additive_and_subtractive_enabled: bool,
-    num_mesh_layers: int,
+    max_mesh_hits: int,
     air_index: int,
     attenuate_outside_volume: bool = False,
 ) -> cp.RawModule:
@@ -379,7 +379,7 @@ def _get_kernel_projector_module(
         "-D",
         f"NUM_MATERIALS={num_materials}",
         "-D",
-        f"MAX_MESH_DEPTH={num_mesh_layers}",
+        f"MAX_MESH_HITS={max_mesh_hits}",
         "-D",
         f"ATTENUATE_OUTSIDE_VOLUME={int(attenuate_outside_volume)}",
         "-D",
@@ -421,8 +421,8 @@ class Projector(object):
         attenuate_outside_volume: bool = False,  # TODO: add unit tests for this, doesn't work with meshes?
         source_to_detector_distance: float = -1,
         carm: Optional[Device] = None,
-        num_mesh_layers=32,
-        num_mesh_mesh_layers=2,
+        max_mesh_hits=32,
+        mesh_layers=2,
         cuda_device_id=None,
     ) -> None:
         """Create the projector, which has info for simulating the DRR.
@@ -462,7 +462,7 @@ class Projector(object):
 
         self.cuda_device_id = cuda_device_id
 
-        self.num_mesh_mesh_layers = num_mesh_mesh_layers
+        self.mesh_layers = mesh_layers
 
         # set variables
         volume = utils.listify(volume)
@@ -544,8 +544,8 @@ class Projector(object):
         # TODO (mjudish): handle intensity_upper_bound when [collected_energy is True]
         # Might want to disallow using intensity_upper_bound, due to nonsensicalness
 
-        self.num_mesh_layers = num_mesh_layers
-        if self.num_mesh_layers < 4 or self.num_mesh_layers % 4 != 0:
+        self.max_mesh_hits = max_mesh_hits
+        if self.max_mesh_hits < 4 or self.max_mesh_hits % 4 != 0:
             raise ValueError("max_mesh_depth must be a multiple of 4 and >= 4")
 
         all_mats = []
@@ -737,8 +737,8 @@ class Projector(object):
                 np.uint64(self.additive_densities_gpu.data.ptr),
                 np.uint64(self.prim_unique_materials_gpu.data.ptr),
                 np.int32(len(self.prim_unique_materials)),
-                np.int32(self.num_mesh_mesh_layers),
-                # np.int32(self.num_mesh_layers),
+                np.int32(self.mesh_layers),
+                # np.int32(self.max_mesh_hits),
             ]
 
             # Calculate required blocks
@@ -898,7 +898,7 @@ class Projector(object):
         if self.mesh_subtractive_enabled:
             self._render_mesh_subtractive(proj, zfar)
 
-        for tex_idx in range(self.num_mesh_layers // 2):  # TODO: only mesh peel nonzero
+        for tex_idx in range(self.max_mesh_hits // 2):  # TODO: only mesh peel nonzero
             # transfer self.mesh_hit_alphas_gpu to gl textures
             pointer_into_mesh_hit_alphas_tex_gpu = int(
                 int(self.mesh_hit_alphas_tex_gpu.data.ptr)
@@ -922,12 +922,12 @@ class Projector(object):
                             zfar=zfar,
                             mat=mat,
                             mat_idx=mat_idx,
-                            layer_id=layer_id,
+                            layer_idx=layer_id,
                             tex_idx=tex_idx,
                         )
 
         # transfer all the additive
-        for layer_id in range(self.num_mesh_mesh_layers):
+        for layer_id in range(self.mesh_layers):
             for mat_idx, mat in enumerate(self.prim_unique_materials):
                 pointer_into_additive_densities = (
                     int(self.additive_densities_gpu.data.ptr)
@@ -951,11 +951,18 @@ class Projector(object):
 
     @time_range()
     def _render_mesh_additive(self, proj: geo.CameraProjection, zfar: float) -> None:
+        """
+        For each mesh layer and material combination, get the ray density.
+
+        Args:
+            proj (geo.CameraProjection): The camera projection.
+            zfar (float): The far clipping plane distance.
+        """
         width = proj.intrinsic.sensor_width
         height = proj.intrinsic.sensor_height
         total_pixels = width * height
 
-        for layer_id in range(self.num_mesh_mesh_layers):
+        for layer_idx in range(self.mesh_layers):
             for mat_idx, mat in enumerate(self.prim_unique_materials):
                 with time_range("additive_render"):
                     self.gl_renderer.render(
@@ -965,14 +972,14 @@ class Projector(object):
                         zfar=zfar,
                         mat=mat,
                         mat_idx=mat_idx,
-                        layer_id=layer_id,
+                        layer_idx=layer_idx,
                     )
 
                 # TODO: need gl synchronization here?
 
                 pointer_into_additive_densities = (
                     int(self.additive_densities_gpu.data.ptr)
-                    + layer_id
+                    + layer_idx
                     * len(self.prim_unique_materials)
                     * total_pixels
                     * 2
@@ -982,7 +989,7 @@ class Projector(object):
 
                 gl_tex_to_gpu(
                     self.gl_renderer.additive_reg_ims[
-                        layer_id * len(self.prim_unique_materials) + mat_idx
+                        layer_idx * len(self.prim_unique_materials) + mat_idx
                     ],
                     pointer_into_additive_densities,
                     width,
@@ -1194,14 +1201,14 @@ class Projector(object):
             len(self.all_materials),
             self.mesh_additive_enabled,
             self.mesh_subtractive_enabled,
-            self.num_mesh_layers,
+            self.max_mesh_hits,
             air_index=self.air_index,
             attenuate_outside_volume=self.attenuate_outside_volume,
         )
         self.project_kernel = self.mod.get_function("projectKernel")
 
         self.peel_postprocess_mod = _get_kernel_peel_postprocess_module(
-            num_intersections=self.num_mesh_layers
+            num_intersections=self.max_mesh_hits
         )
         self.kernel_tide = self.peel_postprocess_mod.get_function("kernelTide")
         self.kernel_reorder = self.peel_postprocess_mod.get_function("kernelReorder")
@@ -1286,14 +1293,14 @@ class Projector(object):
         self._renderer = Renderer(
             viewport_width=width,
             viewport_height=height,
-            num_peel_passes=self.num_mesh_layers // 4,
-            num_mesh_mesh_layers=self.num_mesh_layers,
+            num_peel_passes=self.max_mesh_hits // 4,
+            mesh_layers=self.max_mesh_hits,
             prim_unqiue_materials=len(self.prim_unique_materials),
         )
         self.gl_renderer = self._renderer
 
         self.additive_densities_gpu = cp.zeros(
-            self.num_mesh_mesh_layers
+            self.mesh_layers
             * len(self.prim_unique_materials)
             * total_pixels
             * 2,
@@ -1389,13 +1396,13 @@ class Projector(object):
         )
 
         self.mesh_hit_alphas_gpu = cp.zeros(
-            (total_pixels, self.num_mesh_layers), dtype=np.float32
+            (total_pixels, self.max_mesh_hits), dtype=np.float32
         )
         self.mesh_hit_alphas_tex_gpu = cp.zeros(
-            (total_pixels, self.num_mesh_layers), dtype=np.float32
+            (total_pixels, self.max_mesh_hits), dtype=np.float32
         )
         self.mesh_hit_facing_gpu = cp.zeros(
-            (total_pixels, self.num_mesh_layers), dtype=np.int8
+            (total_pixels, self.max_mesh_hits), dtype=np.int8
         )
 
         init_tock = time.perf_counter()

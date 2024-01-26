@@ -203,8 +203,8 @@ class TestSingleVolume:
         carm = deepdrr.MobileCArm(isocenter=volume.center_in_world, sensor_width=300, sensor_height=200, pixel_size=0.6)
         # self.project([volume], carm, "test_mesh.png")
         # self.project([mesh, mesh2, mesh3], carm, "test_mesh.png")
-        self.project([volume, mesh, mesh2, mesh3], carm, "test_mesh.png", verify=True, num_mesh_layers=32)
-        # self.project([volume, mesh, mesh2, mesh3], carm, "test_mesh.png", verify=False, num_mesh_layers=64)
+        self.project([volume, mesh, mesh2, mesh3], carm, "test_mesh.png", verify=True, max_mesh_hits=32)
+        # self.project([volume, mesh, mesh2, mesh3], carm, "test_mesh.png", verify=False, max_mesh_hits=64)
 
     
     def test_mesh_mesh_sub(self):
@@ -272,7 +272,7 @@ class TestSingleVolume:
         carm = deepdrr.MobileCArm(isocenter=volume.center_in_world, sensor_width=300, sensor_height=200, pixel_size=0.6)
         # self.project([volume], carm, "test_mesh.png")
         # self.project([mesh, mesh2, mesh3], carm, "test_mesh.png")
-        self.project([mesh2, mesh3], carm, "test_mesh_mesh_sub.png", verify=False, num_mesh_layers=32, neglog=True)
+        self.project([mesh2, mesh3], carm, "test_mesh_mesh_sub.png", verify=False, max_mesh_hits=32, neglog=True)
 
     
 
@@ -346,7 +346,7 @@ class TestSingleVolume:
             photon_count=100000,
             scatter_num=0,
             threads=8,
-            num_mesh_layers=128,
+            max_mesh_hits=128,
         )
 
         images = []
@@ -473,8 +473,8 @@ class TestSingleVolume:
         carm = deepdrr.MobileCArm(isocenter=volume.center_in_world, sensor_width=300*2, sensor_height=200*2, pixel_size=0.6/2)
         # self.project([volume], carm, "test_mesh.png")
         # self.project([mesh, mesh2, mesh3], carm, "test_mesh.png")
-        self.project([mesh, mesh2, mesh3], carm, "test_mesh_only.png", verify=True, num_mesh_layers=32)
-        # self.project([volume, mesh, mesh2, mesh3], carm, "test_mesh.png", verify=False, num_mesh_layers=64)
+        self.project([mesh, mesh2, mesh3], carm, "test_mesh_only.png", verify=True, max_mesh_hits=32)
+        # self.project([volume, mesh, mesh2, mesh3], carm, "test_mesh.png", verify=False, max_mesh_hits=64)
 
     
     def test_cube(self):
@@ -554,7 +554,7 @@ class TestSingleVolume:
             scatter_num=0,
             threads=8,
             neglog=True,
-            num_mesh_layers=32
+            max_mesh_hits=32
         )
 
         images = []
@@ -647,7 +647,7 @@ class TestSingleVolume:
             scatter_num=0,
             threads=8,
             neglog=True,
-            num_mesh_layers=32
+            max_mesh_hits=32
         )
 
         images = []
@@ -739,9 +739,9 @@ class TestSingleVolume:
         carm = deepdrr.MobileCArm(isocenter=volume.center_in_world, sensor_width=300, sensor_height=200, pixel_size=0.6)
         # self.project([volume], carm, "test_mesh.png")
         # self.project([mesh, mesh2, mesh3], carm, "test_mesh.png")
-        self.project([volume, mesh, mesh2] + overlapping, carm, "test_mesh_d4.png", num_mesh_layers=4, verify=False)
-        self.project([volume, mesh, mesh2] + overlapping, carm, "test_mesh_d64.png", num_mesh_layers=64, verify=False)
-        self.project([volume, mesh, mesh2] + overlapping, carm, "test_mesh_d128.png", num_mesh_layers=128, verify=False)
+        self.project([volume, mesh, mesh2] + overlapping, carm, "test_mesh_d4.png", max_mesh_hits=4, verify=False)
+        self.project([volume, mesh, mesh2] + overlapping, carm, "test_mesh_d64.png", max_mesh_hits=64, verify=False)
+        self.project([volume, mesh, mesh2] + overlapping, carm, "test_mesh_d128.png", max_mesh_hits=128, verify=False)
 
 
 
