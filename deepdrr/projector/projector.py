@@ -334,6 +334,7 @@ def _get_kernel_projector_module(
     mesh_additive_enabled: bool,
     mesh_additive_and_subtractive_enabled: bool,
     max_mesh_hits: int,
+    mesh_layers: int,
     air_index: int,
     attenuate_outside_volume: bool = False,
 ) -> cp.RawModule:
@@ -380,6 +381,8 @@ def _get_kernel_projector_module(
         f"NUM_MATERIALS={num_materials}",
         "-D",
         f"MAX_MESH_HITS={max_mesh_hits}",
+        "-D",
+        f"MESH_LAYERS={mesh_layers}",
         "-D",
         f"ATTENUATE_OUTSIDE_VOLUME={int(attenuate_outside_volume)}",
         "-D",
@@ -755,7 +758,7 @@ class Projector(object):
                 np.uint64(self.additive_densities_gpu.data.ptr),
                 np.uint64(self.prim_unique_materials_gpu.data.ptr),
                 np.int32(len(self.prim_unique_materials)),
-                np.int32(self.mesh_layers),
+                # np.int32(self.mesh_layers),
                 # np.int32(self.max_mesh_hits),
             ]
 
@@ -782,7 +785,7 @@ class Projector(object):
                     "Patchwise projection is deprecated, try increasing max_block_index and/or threads. Please raise an issue if you need this feature."
                 )
 
-            self.cupy_device.synchronize()  # for debug only
+            
 
             # def fast_host_to_device(d_a, a):
             #     d_a.data.copy_from(a.ctypes.data, a.nbytes)
@@ -913,43 +916,53 @@ class Projector(object):
 
         self._render_mesh_additive(proj, zfar)
 
+        
+
         if self.mesh_subtractive_enabled:
             self._render_mesh_subtractive(proj, zfar)
 
-        for tex_idx in range(self.max_mesh_hits // 2):  # TODO: only mesh peel nonzero
-            # transfer self.mesh_hit_alphas_gpu to gl textures
-            pointer_into_mesh_hit_alphas_tex_gpu = int(
-                int(self.mesh_hit_alphas_tex_gpu.data.ptr)
-                + tex_idx * total_pixels * 2 * NUMBYTES_FLOAT32
-            )
-            gl_gpu_to_tex(
-                self.gl_renderer.mesh_sub_reg_ims[tex_idx],
-                pointer_into_mesh_hit_alphas_tex_gpu,
-                width,
-                height,
-                2,
-            )
+        
 
-            for layer_id in [0]:  # TODO: support for more than 2 layers
-                for mat_idx, mat in enumerate(self.prim_unique_materials):
-                    with time_range("mesh_mesh_sub_render"):
-                        self.gl_renderer.render(
-                            self.scene,
-                            drr_mode=DRRMode.MESH_SUB,
-                            flags=RenderFlags.RGBA,
-                            zfar=zfar,
-                            mat=mat,
-                            mat_idx=mat_idx,
-                            layer_idx=layer_id,
-                            tex_idx=tex_idx,
-                        )
+
+        # For each layer
+        for subtrahend_layer_idx in range(self.mesh_layers-1, -1, -1):
+            # For each subtractive layer pair
+            num_mesh_hit_pairs = self.max_mesh_hits // 2
+            for tex_idx in range(num_mesh_hit_pairs):  # TODO: only mesh peel nonzero
+                # transfer self.mesh_hit_alphas_gpu to gl textures
+                pointer_into_mesh_hit_alphas_tex_gpu = int(
+                    int(self.mesh_hit_alphas_tex_gpu.data.ptr)
+                    + subtrahend_layer_idx * num_mesh_hit_pairs * total_pixels * 2 * NUMBYTES_FLOAT32
+                    + tex_idx * total_pixels * 2 * NUMBYTES_FLOAT32
+                )
+                gl_gpu_to_tex(
+                    self.gl_renderer.mesh_sub_reg_ims[tex_idx],
+                    pointer_into_mesh_hit_alphas_tex_gpu,
+                    width,
+                    height,
+                    2,
+                )
+
+                for minuend_layer_idx in range(subtrahend_layer_idx):
+                    for mat_idx, mat in enumerate(self.prim_unique_materials):
+                        with time_range("mesh_mesh_sub_render"):
+                            self.gl_renderer.render(
+                                self.scene,
+                                drr_mode=DRRMode.MESH_SUB,
+                                flags=RenderFlags.RGBA,
+                                zfar=zfar,
+                                mat=mat,
+                                mat_idx=mat_idx,
+                                layer_idx=minuend_layer_idx,
+                                tex_idx=tex_idx,
+                            )
 
         # transfer all the additive
-        for layer_id in range(self.mesh_layers):
+        for layer_idx in range(self.mesh_layers):
             for mat_idx, mat in enumerate(self.prim_unique_materials):
                 pointer_into_additive_densities = (
                     int(self.additive_densities_gpu.data.ptr)
-                    + layer_id
+                    + layer_idx
                     * len(self.prim_unique_materials)
                     * total_pixels
                     * 2
@@ -959,7 +972,7 @@ class Projector(object):
 
                 gl_tex_to_gpu(
                     self.gl_renderer.additive_reg_ims[
-                        layer_id * len(self.prim_unique_materials) + mat_idx
+                        layer_idx * len(self.prim_unique_materials) + mat_idx
                     ],
                     pointer_into_additive_densities,
                     width,
@@ -995,25 +1008,26 @@ class Projector(object):
 
                 # TODO: need gl synchronization here?
 
-                pointer_into_additive_densities = (
-                    int(self.additive_densities_gpu.data.ptr)
-                    + layer_idx
-                    * len(self.prim_unique_materials)
-                    * total_pixels
-                    * 2
-                    * NUMBYTES_FLOAT32
-                    + mat_idx * total_pixels * 2 * NUMBYTES_FLOAT32
-                )
+                # # TODO: not needed:
+                # pointer_into_additive_densities = (
+                #     int(self.additive_densities_gpu.data.ptr)
+                #     + layer_idx
+                #     * len(self.prim_unique_materials)
+                #     * total_pixels
+                #     * 2
+                #     * NUMBYTES_FLOAT32
+                #     + mat_idx * total_pixels * 2 * NUMBYTES_FLOAT32
+                # )
 
-                gl_tex_to_gpu(
-                    self.gl_renderer.additive_reg_ims[
-                        layer_idx * len(self.prim_unique_materials) + mat_idx
-                    ],
-                    pointer_into_additive_densities,
-                    width,
-                    height,
-                    2,
-                )
+                # gl_tex_to_gpu(
+                #     self.gl_renderer.additive_reg_ims[
+                #         layer_idx * len(self.prim_unique_materials) + mat_idx
+                #     ],
+                #     pointer_into_additive_densities,
+                #     width,
+                #     height,
+                #     2,
+                # )
 
     @time_range()
     def _render_mesh_seg(
@@ -1044,59 +1058,64 @@ class Projector(object):
         height = proj.intrinsic.sensor_height
         total_pixels = width * height
 
-        with time_range("subtractive_render"):
-            self.gl_renderer.render(
-                self.scene,
-                drr_mode=DRRMode.DIST,
-                flags=RenderFlags.RGBA,
-                zfar=zfar,
+        for layer_idx in range(self.mesh_layers):
+            
+
+            with time_range("subtractive_render"):
+                self.gl_renderer.render(
+                    self.scene,
+                    drr_mode=DRRMode.DIST,
+                    flags=RenderFlags.RGBA,
+                    zfar=zfar,
+                    layer_idx=layer_idx,
+                )
+
+            for tex_idx in range(self.gl_renderer.num_peel_passes):
+                # TODO: need gl synchronization here?
+                pointer_into_hit_alphas = int(
+                    int(self.mesh_hit_alphas_tex_gpu.data.ptr)
+                    + layer_idx * self.gl_renderer.num_peel_passes * total_pixels * 4 * NUMBYTES_FLOAT32
+                    + tex_idx * total_pixels * 4 * NUMBYTES_FLOAT32
+                )
+                gl_tex_to_gpu(
+                    self.gl_renderer.subtractive_reg_ims[tex_idx],
+                    pointer_into_hit_alphas,
+                    width,
+                    height,
+                    4,
+                )
+            
+            self.kernel_reorder(
+                args=(
+                    np.uint64(self.mesh_hit_alphas_tex_gpu.data.ptr + layer_idx * self.gl_renderer.num_peel_passes * total_pixels * 4 * NUMBYTES_FLOAT32),
+                    np.uint64(self.mesh_hit_alphas_gpu.data.ptr + layer_idx * self.gl_renderer.num_peel_passes * total_pixels * 4 * NUMBYTES_FLOAT32),
+                    np.int32(total_pixels),
+                ),
+                block=(256, 1, 1),  # TODO (liam)
+                grid=(128, 1),  # TODO (liam)
+            )
+            
+            self.kernel_tide(
+                args=(
+                    np.uint64(self.mesh_hit_alphas_gpu.data.ptr + layer_idx * self.gl_renderer.num_peel_passes * total_pixels * 4 * NUMBYTES_FLOAT32),
+                    np.uint64(self.mesh_hit_facing_gpu.data.ptr + layer_idx * self.gl_renderer.num_peel_passes * total_pixels * 4 * NUMBYTES_INT8),
+                    np.int32(total_pixels),
+                    np.float32(self.device.source_to_detector_distance * 2),
+                ),
+                block=(32, 1, 1),  # TODO (liam)
+                grid=(2048, 1),  # TODO (liam)
             )
 
-        for tex_idx in range(self.gl_renderer.num_peel_passes):
-            # TODO: need gl synchronization here?
-
-            pointer_into_hit_alphas = int(
-                int(self.mesh_hit_alphas_tex_gpu.data.ptr)
-                + tex_idx * total_pixels * 4 * NUMBYTES_FLOAT32
-            )
-            gl_tex_to_gpu(
-                self.gl_renderer.subtractive_reg_ims[tex_idx],
-                pointer_into_hit_alphas,
-                width,
-                height,
-                4,
+            self.kernel_reorder2(
+                args=(
+                    np.uint64(self.mesh_hit_alphas_gpu.data.ptr + layer_idx * self.gl_renderer.num_peel_passes * total_pixels * 4 * NUMBYTES_FLOAT32),
+                    np.uint64(self.mesh_hit_alphas_tex_gpu.data.ptr + layer_idx * self.gl_renderer.num_peel_passes * total_pixels * 4 * NUMBYTES_FLOAT32),
+                    np.int32(total_pixels),
+                ),
+                block=(256, 1, 1),  # TODO (liam)
+                grid=(128, 1),  # TODO (liam)
             )
 
-        self.kernel_reorder(
-            args=(
-                np.uint64(self.mesh_hit_alphas_tex_gpu.data.ptr),
-                np.uint64(self.mesh_hit_alphas_gpu.data.ptr),
-                np.int32(total_pixels),
-            ),
-            block=(256, 1, 1),  # TODO (liam)
-            grid=(128, 1),  # TODO (liam)
-        )
-
-        self.kernel_tide(
-            args=(
-                np.uint64(self.mesh_hit_alphas_gpu.data.ptr),
-                np.uint64(self.mesh_hit_facing_gpu.data.ptr),
-                np.int32(total_pixels),
-                np.float32(self.device.source_to_detector_distance * 2),
-            ),
-            block=(32, 1, 1),  # TODO (liam)
-            grid=(2048, 1),  # TODO (liam)
-        )
-
-        self.kernel_reorder2(
-            args=(
-                np.uint64(self.mesh_hit_alphas_gpu.data.ptr),
-                np.uint64(self.mesh_hit_alphas_tex_gpu.data.ptr),
-                np.int32(total_pixels),
-            ),
-            block=(256, 1, 1),  # TODO (liam)
-            grid=(128, 1),  # TODO (liam)
-        )
 
     def project_over_carm_range(
         self,
@@ -1220,6 +1239,7 @@ class Projector(object):
             self.mesh_additive_enabled,
             self.mesh_subtractive_enabled,
             self.max_mesh_hits,
+            self.mesh_layers,
             air_index=self.air_index,
             attenuate_outside_volume=self.attenuate_outside_volume,
         )
@@ -1414,13 +1434,13 @@ class Projector(object):
         )
 
         self.mesh_hit_alphas_gpu = cp.zeros(
-            (total_pixels, self.max_mesh_hits), dtype=np.float32
+            (self.mesh_layers, total_pixels, self.max_mesh_hits), dtype=np.float32
         )
         self.mesh_hit_alphas_tex_gpu = cp.zeros(
-            (total_pixels, self.max_mesh_hits), dtype=np.float32
+            (self.mesh_layers, total_pixels, self.max_mesh_hits), dtype=np.float32
         )
         self.mesh_hit_facing_gpu = cp.zeros(
-            (total_pixels, self.max_mesh_hits), dtype=np.int8
+            (self.mesh_layers, total_pixels, self.max_mesh_hits), dtype=np.int8
         )
 
         init_tock = time.perf_counter()

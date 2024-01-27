@@ -173,7 +173,7 @@ projectKernel(const cudaTextureObject_t * __restrict__ volume_texs, // array of 
               const float * __restrict__ additive_densities, // additive densities
               const int * __restrict__ mesh_unique_materials, // unique materials for additive mesh
               const int mesh_unique_material_count, // number of unique materials for additive mesh
-              const int mesh_layers,
+            //   const int mesh_layers,
             //   const int max_mesh_depth, // maximum number of mesh hits per pixel
               const int offsetW, 
               const int offsetH) {
@@ -338,23 +338,29 @@ projectKernel(const cudaTextureObject_t * __restrict__ volume_texs, // array of 
     float seg_at_alpha[NUM_VOLUMES][NUM_MATERIALS];
     // if (debug) printf("start trace\n");
 
-    int mesh_hit_depth = 0;
-    int mesh_hit_index = 0;
-    // int hit_arr_index = 0;
+    // int mesh_hit_depth = 0;
+    // int mesh_hit_index = 0;
+    int mesh_hit_depth[MESH_LAYERS];
+    int mesh_hit_index[MESH_LAYERS];
+    for (int i = 0; i < MESH_LAYERS; i++) {
+        mesh_hit_depth[i] = 0;
+        mesh_hit_index[i] = 0;
+    }
 
     // Attenuate up to minAlpha, assuming it is filled with air.
     if (ATTENUATE_OUTSIDE_VOLUME) {
         area_density[AIR_INDEX] += (minAlpha / step) * AIR_DENSITY;
     }
 
-    int asdf = (vdx * out_width + udx) * MAX_MESH_HITS;
+    int facing_local[MESH_LAYERS][MAX_MESH_HITS]; // faster
+    float alpha_local[MESH_LAYERS][MAX_MESH_HITS];
 
-    int facing_local[MAX_MESH_HITS]; // faster
-    float alpha_local[MAX_MESH_HITS];
-
-    for (int i = 0; i < MAX_MESH_HITS; i++) {
-        facing_local[i] = mesh_hit_facing[asdf + i];
-        alpha_local[i] = mesh_hit_alphas[asdf + i];
+    for (int j = 0; j < MESH_LAYERS; j++) {
+        for (int i = 0; i < MAX_MESH_HITS; i++) {
+            int mesh_hit_idx = j * (out_height * out_width) * MAX_MESH_HITS + (vdx * out_width + udx) * MAX_MESH_HITS + i;
+            facing_local[j][i] = mesh_hit_facing[mesh_hit_idx];
+            alpha_local[j][i] = mesh_hit_alphas[mesh_hit_idx];
+        }
     }
 
     int priority_local[NUM_VOLUMES]; // faster maybe?
@@ -423,20 +429,29 @@ projectKernel(const cudaTextureObject_t * __restrict__ volume_texs, // array of 
         }
 
 #if MESH_ADDITIVE_AND_SUBTRACTIVE_ENABLED > 0
-        while (true) {
-            if ((mesh_hit_index < MAX_MESH_HITS && facing_local[mesh_hit_index] != 0 && alpha_local[mesh_hit_index] < alpha)){
-                mesh_hit_depth += facing_local[mesh_hit_index];
-                mesh_hit_index += 1;
-            } else {
-                break;
+        for (int j = 0; j < MESH_LAYERS; j++) {
+            while (true) {
+                if ((mesh_hit_index[j] < MAX_MESH_HITS && facing_local[j][mesh_hit_index[j]] != 0 && alpha_local[j][mesh_hit_index[j]] < alpha)){
+                    mesh_hit_depth[j] += facing_local[j][mesh_hit_index[j]];
+                    mesh_hit_index[j] += 1;
+                } else {
+                    break;
+                }
             }
         }
 
 #endif
 
+        bool inside_mesh = false;
+        for (int j = 0; j < MESH_LAYERS; j++) {
+            if (mesh_hit_depth[j] > 0) {
+                inside_mesh = true;
+            }
+        }
+
         // if (debug) printf("  got priority at alpha, num vols\n"); // This is
         // the one that seems to take a half a second.
-        if (!mesh_hit_depth) {
+        if (!inside_mesh) {
             if (0 == n_vols_at_curr_priority) {
                 // Outside the bounds of all volumes to trace. Use the default
                 // AIR_DENSITY.
@@ -486,7 +501,7 @@ projectKernel(const cudaTextureObject_t * __restrict__ volume_texs, // array of 
 
 #if MESH_ADDITIVE_ENABLED > 0
     for (int i = 0; i < mesh_unique_material_count; i++) {
-        for (int j = 0; j < mesh_layers; j++) {
+        for (int j = 0; j < MESH_LAYERS; j++) {
             int add_dens_idx = j * mesh_unique_material_count * (out_height * out_width * 2) + i * (out_height * out_width * 2) + (vdx * out_width + udx) * 2;
             // If there is a matching number of front and back hits, add the density
             if (fabs(additive_densities[add_dens_idx + 1]) < 0.00001) {
