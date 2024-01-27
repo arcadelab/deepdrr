@@ -427,10 +427,6 @@ class Projector(object):
         max_mesh_hits=32,
         num_mesh_layers=2,
         cuda_device_id=None,
-
-        # Deprecated
-        num_mesh_layers=None,
-        num_mesh_mesh_layers=None,
     ) -> None:
         """Create the projector, which has info for simulating the DRR.
 
@@ -464,20 +460,6 @@ class Projector(object):
             source_to_detector_distance (float, optional): If `device` is not provided, this is the distance from the source to the detector. This limits the lenght rays are traced for. Defaults to -1 (no limit).
             carm (MobileCArm, optional): Deprecated alias for `device`. See `device`.
         """
-
-        if num_mesh_layers is not None:
-            warnings.warn(
-                "num_mesh_layers is deprecated. Use num_mesh_layers instead.",
-                DeprecationWarning,
-            )
-            num_mesh_layers = num_mesh_layers
-
-        if num_mesh_mesh_layers is not None:
-            warnings.warn(
-                "num_mesh_mesh_layers is deprecated. Use num_mesh_layers instead.",
-                DeprecationWarning,
-            )
-            num_mesh_layers = num_mesh_mesh_layers
 
         self._egl_platform = None
 
@@ -896,7 +878,7 @@ class Projector(object):
         return zfar
 
     def project_seg(
-            self, *camera_projections: geo.CameraProjection, seg_node_map=None
+            self, *camera_projections: geo.CameraProjection, tags: Optional[List[str]] = None
         ) -> np.ndarray:
             """
             TODO
@@ -911,15 +893,15 @@ class Projector(object):
             if len(camera_projections) > 1:
                 raise NotImplementedError("multiple projections")
             camera_projections = self._prepare_project(camera_projections)
-            return self._render_seg(camera_projections[0], seg_node_map=seg_node_map)
+            return self._render_seg(camera_projections[0], tags=tags)
 
-    def _render_seg(self, proj: geo.CameraProjection, seg_node_map=None):
+    def _render_seg(self, proj: geo.CameraProjection, tags: Optional[List[str]] = None) -> np.ndarray:
         zfar = self._setup_pyrender_scene(proj)
-        res = self._render_mesh_seg(proj, zfar, seg_node_map=seg_node_map)
+        res = self._render_mesh_seg(proj, zfar, tags=tags)
         return res
     
     def project_hits(
-        self, *camera_projections: geo.CameraProjection
+        self, *camera_projections: geo.CameraProjection, tags: Optional[List[str]] = None
     ) -> cupy.array:
         """
         For each mesh layer, compute a list of entry and exit alpha values for each pixel.
@@ -938,12 +920,12 @@ class Projector(object):
         if len(camera_projections) > 1:
             raise NotImplementedError("multiple projections")
         camera_projections = self._prepare_project(camera_projections)
-        return self._render_hits(camera_projections[0])
+        return self._render_hits(camera_projections[0], tags=tags)
     
-    def _render_hits(self, proj: geo.CameraProjection):
+    def _render_hits(self, proj: geo.CameraProjection, tags: Optional[List[str]] = None) -> cupy.array:
         zfar = self._setup_pyrender_scene(proj)
-        self._render_mesh_subtractive(proj, zfar, hits_mode=True)
-        return self.mesh_hit_alphas_gpu
+        self._render_mesh_subtractive_single(proj, zfar, layer_idx=0, hits_mode=True, tags=tags)
+        return self.mesh_hit_alphas_gpu[0]
 
     @time_range()
     def _render_mesh(self, proj: geo.CameraProjection) -> None:
@@ -1065,7 +1047,7 @@ class Projector(object):
 
     @time_range()
     def _render_mesh_seg(
-        self, proj: geo.CameraProjection, zfar: float, seg_node_map=None
+        self, proj: geo.CameraProjection, zfar: float, tags=None
     ) -> None:
         width = proj.intrinsic.sensor_width
         height = proj.intrinsic.sensor_height
@@ -1077,7 +1059,7 @@ class Projector(object):
                 drr_mode=DRRMode.SEG,
                 flags=RenderFlags.RGBA,
                 zfar=zfar,
-                seg_node_map=seg_node_map,
+                tags=tags,
                 # mat=mat,
                 # mat_idx=mat_idx,
                 # layer_id=layer_id,
@@ -1088,69 +1070,71 @@ class Projector(object):
 
     @time_range()
     def _render_mesh_subtractive(self, proj: geo.CameraProjection, zfar: float, hits_mode: bool = False) -> None:
+        for layer_idx in range(self.num_mesh_layers):
+            self._render_mesh_subtractive_single(proj, zfar, layer_idx, hits_mode)
+
+    def _render_mesh_subtractive_single(self, proj: geo.CameraProjection, zfar: float, layer_idx: int, hits_mode: bool, tags: Optional[List[str]] = None) -> None:
         width = proj.intrinsic.sensor_width
         height = proj.intrinsic.sensor_height
         total_pixels = width * height
+    
+        with time_range("subtractive_render"):
+            self.gl_renderer.render(
+                self.scene,
+                drr_mode=DRRMode.DIST,
+                flags=RenderFlags.RGBA,
+                zfar=zfar,
+                layer_idx=None if hits_mode else layer_idx,
+                force_all_subtract=hits_mode,
+                tags=tags,
+            )
 
-        for layer_idx in range(self.num_mesh_layers):
-            
+        for tex_idx in range(self.gl_renderer.num_peel_passes):
+            # TODO: need gl synchronization here?
+            pointer_into_hit_alphas = int(
+                int(self.mesh_hit_alphas_tex_gpu.data.ptr)
+                + layer_idx * self.gl_renderer.num_peel_passes * total_pixels * 4 * NUMBYTES_FLOAT32
+                + tex_idx * total_pixels * 4 * NUMBYTES_FLOAT32
+            )
+            gl_tex_to_gpu(
+                self.gl_renderer.subtractive_reg_ims[tex_idx],
+                pointer_into_hit_alphas,
+                width,
+                height,
+                4,
+            )
+        
+        self.kernel_reorder(
+            args=(
+                np.uint64(self.mesh_hit_alphas_tex_gpu.data.ptr + layer_idx * self.gl_renderer.num_peel_passes * total_pixels * 4 * NUMBYTES_FLOAT32),
+                np.uint64(self.mesh_hit_alphas_gpu.data.ptr + layer_idx * self.gl_renderer.num_peel_passes * total_pixels * 4 * NUMBYTES_FLOAT32),
+                np.int32(total_pixels),
+            ),
+            block=(256, 1, 1),  # TODO (liam)
+            grid=(128, 1),  # TODO (liam)
+        )
+        
+        self.kernel_tide(
+            args=(
+                np.uint64(self.mesh_hit_alphas_gpu.data.ptr + layer_idx * self.gl_renderer.num_peel_passes * total_pixels * 4 * NUMBYTES_FLOAT32),
+                np.uint64(self.mesh_hit_facing_gpu.data.ptr + layer_idx * self.gl_renderer.num_peel_passes * total_pixels * 4 * NUMBYTES_INT8),
+                np.int32(total_pixels),
+                np.float32(self.device.source_to_detector_distance * 2),
+            ),
+            block=(32, 1, 1),  # TODO (liam)
+            grid=(2048, 1),  # TODO (liam)
+        )
 
-            with time_range("subtractive_render"):
-                self.gl_renderer.render(
-                    self.scene,
-                    drr_mode=DRRMode.DIST,
-                    flags=RenderFlags.RGBA,
-                    zfar=zfar,
-                    layer_idx=layer_idx,
-                    force_all_subtract=hits_mode,
-                )
-
-            for tex_idx in range(self.gl_renderer.num_peel_passes):
-                # TODO: need gl synchronization here?
-                pointer_into_hit_alphas = int(
-                    int(self.mesh_hit_alphas_tex_gpu.data.ptr)
-                    + layer_idx * self.gl_renderer.num_peel_passes * total_pixels * 4 * NUMBYTES_FLOAT32
-                    + tex_idx * total_pixels * 4 * NUMBYTES_FLOAT32
-                )
-                gl_tex_to_gpu(
-                    self.gl_renderer.subtractive_reg_ims[tex_idx],
-                    pointer_into_hit_alphas,
-                    width,
-                    height,
-                    4,
-                )
-            
-            self.kernel_reorder(
+        if not hits_mode:
+            self.kernel_reorder2(
                 args=(
-                    np.uint64(self.mesh_hit_alphas_tex_gpu.data.ptr + layer_idx * self.gl_renderer.num_peel_passes * total_pixels * 4 * NUMBYTES_FLOAT32),
                     np.uint64(self.mesh_hit_alphas_gpu.data.ptr + layer_idx * self.gl_renderer.num_peel_passes * total_pixels * 4 * NUMBYTES_FLOAT32),
+                    np.uint64(self.mesh_hit_alphas_tex_gpu.data.ptr + layer_idx * self.gl_renderer.num_peel_passes * total_pixels * 4 * NUMBYTES_FLOAT32),
                     np.int32(total_pixels),
                 ),
                 block=(256, 1, 1),  # TODO (liam)
                 grid=(128, 1),  # TODO (liam)
             )
-            
-            self.kernel_tide(
-                args=(
-                    np.uint64(self.mesh_hit_alphas_gpu.data.ptr + layer_idx * self.gl_renderer.num_peel_passes * total_pixels * 4 * NUMBYTES_FLOAT32),
-                    np.uint64(self.mesh_hit_facing_gpu.data.ptr + layer_idx * self.gl_renderer.num_peel_passes * total_pixels * 4 * NUMBYTES_INT8),
-                    np.int32(total_pixels),
-                    np.float32(self.device.source_to_detector_distance * 2),
-                ),
-                block=(32, 1, 1),  # TODO (liam)
-                grid=(2048, 1),  # TODO (liam)
-            )
-
-            if not hits_mode:
-                self.kernel_reorder2(
-                    args=(
-                        np.uint64(self.mesh_hit_alphas_gpu.data.ptr + layer_idx * self.gl_renderer.num_peel_passes * total_pixels * 4 * NUMBYTES_FLOAT32),
-                        np.uint64(self.mesh_hit_alphas_tex_gpu.data.ptr + layer_idx * self.gl_renderer.num_peel_passes * total_pixels * 4 * NUMBYTES_FLOAT32),
-                        np.int32(total_pixels),
-                    ),
-                    block=(256, 1, 1),  # TODO (liam)
-                    grid=(128, 1),  # TODO (liam)
-                )
 
 
     def project_over_carm_range(

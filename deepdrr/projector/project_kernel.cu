@@ -173,7 +173,7 @@ projectKernel(const cudaTextureObject_t * __restrict__ volume_texs, // array of 
               const float * __restrict__ additive_densities, // additive densities
               const int * __restrict__ mesh_unique_materials, // unique materials for additive mesh
               const int mesh_unique_material_count, // number of unique materials for additive mesh
-            //   const int mesh_layers,
+            //   const int num_mesh_layers,
             //   const int max_mesh_depth, // maximum number of mesh hits per pixel
               const int offsetW, 
               const int offsetH) {

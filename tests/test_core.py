@@ -95,6 +95,10 @@ class TestSingleVolume:
         with projector:
             image = projector.project()
 
+            # alphas = projector.project_hits()
+
+            # np.save(self.output_dir / f"alphas", alphas)
+
         # # make fig with colorbar
         # plt.figure()
         # plt.imshow(image, cmap="viridis")
@@ -779,7 +783,7 @@ if __name__ == "__main__":
     test.test_mesh()
     # test.gen_threads()
     # test.test_cube()
-    test.test_mesh_mesh_1()
+    # test.test_mesh_mesh_1()
     # volume = test.load_volume()
     # carm = deepdrr.MobileCArm(isocenter=volume.center_in_world)
     # test.project(volume, carm, "test.png")
