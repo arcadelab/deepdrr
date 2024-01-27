@@ -334,7 +334,7 @@ def _get_kernel_projector_module(
     mesh_additive_enabled: bool,
     mesh_additive_and_subtractive_enabled: bool,
     max_mesh_hits: int,
-    mesh_layers: int,
+    num_mesh_layers: int,
     air_index: int,
     attenuate_outside_volume: bool = False,
 ) -> cp.RawModule:
@@ -382,7 +382,7 @@ def _get_kernel_projector_module(
         "-D",
         f"MAX_MESH_HITS={max_mesh_hits}",
         "-D",
-        f"MESH_LAYERS={mesh_layers}",
+        f"MESH_LAYERS={num_mesh_layers}",
         "-D",
         f"ATTENUATE_OUTSIDE_VOLUME={int(attenuate_outside_volume)}",
         "-D",
@@ -425,7 +425,7 @@ class Projector(object):
         source_to_detector_distance: float = -1,
         carm: Optional[Device] = None,
         max_mesh_hits=32,
-        mesh_layers=2,
+        num_mesh_layers=2,
         cuda_device_id=None,
 
         # Deprecated
@@ -467,23 +467,23 @@ class Projector(object):
 
         if num_mesh_layers is not None:
             warnings.warn(
-                "num_mesh_layers is deprecated. Use mesh_layers instead.",
+                "num_mesh_layers is deprecated. Use num_mesh_layers instead.",
                 DeprecationWarning,
             )
-            mesh_layers = num_mesh_layers
+            num_mesh_layers = num_mesh_layers
 
         if num_mesh_mesh_layers is not None:
             warnings.warn(
-                "num_mesh_mesh_layers is deprecated. Use mesh_layers instead.",
+                "num_mesh_mesh_layers is deprecated. Use num_mesh_layers instead.",
                 DeprecationWarning,
             )
-            mesh_layers = num_mesh_mesh_layers
+            num_mesh_layers = num_mesh_mesh_layers
 
         self._egl_platform = None
 
         self.cuda_device_id = cuda_device_id
 
-        self.mesh_layers = mesh_layers
+        self.num_mesh_layers = num_mesh_layers
 
         # set variables
         volume = utils.listify(volume)
@@ -758,7 +758,7 @@ class Projector(object):
                 np.uint64(self.additive_densities_gpu.data.ptr),
                 np.uint64(self.prim_unique_materials_gpu.data.ptr),
                 np.int32(len(self.prim_unique_materials)),
-                # np.int32(self.mesh_layers),
+                # np.int32(self.num_mesh_layers),
                 # np.int32(self.max_mesh_hits),
             ]
 
@@ -896,15 +896,54 @@ class Projector(object):
         return zfar
 
     def project_seg(
-        self, *camera_projections: geo.CameraProjection, seg_node_map=None
-    ) -> np.ndarray:
-        camera_projections = self._prepare_project(camera_projections)
-        return self._render_seg(camera_projections[0], seg_node_map=seg_node_map)
+            self, *camera_projections: geo.CameraProjection, seg_node_map=None
+        ) -> np.ndarray:
+            """
+            TODO
+
+            Args:
+                camera_projections: TODO
+                seg_node_map: TODO
+
+            Returns:
+                np.ndarray: TODO
+            """
+            if len(camera_projections) > 1:
+                raise NotImplementedError("multiple projections")
+            camera_projections = self._prepare_project(camera_projections)
+            return self._render_seg(camera_projections[0], seg_node_map=seg_node_map)
 
     def _render_seg(self, proj: geo.CameraProjection, seg_node_map=None):
         zfar = self._setup_pyrender_scene(proj)
         res = self._render_mesh_seg(proj, zfar, seg_node_map=seg_node_map)
         return res
+    
+    def project_hits(
+        self, *camera_projections: geo.CameraProjection
+    ) -> cupy.array:
+        """
+        For each mesh layer, compute a list of entry and exit alpha values for each pixel.
+        Each pixel list will have an even number of elements and is padded by [inf] values. 
+        The list is sorted by closest to farthest intersection.
+        For example: [entry0, exit0, entry1, exit1, inf, inf, ...].
+        The cupy array will be overwritten on the next call to any project method.
+
+        Args:
+            camera_projections: TODO
+            seg_node_map: TODO
+        
+        Returns:
+            cupy.array: Pointer to cupy array of Float32s of shape (num_mesh_layers, height*width, max_mesh_hits)
+        """
+        if len(camera_projections) > 1:
+            raise NotImplementedError("multiple projections")
+        camera_projections = self._prepare_project(camera_projections)
+        return self._render_hits(camera_projections[0])
+    
+    def _render_hits(self, proj: geo.CameraProjection):
+        zfar = self._setup_pyrender_scene(proj)
+        self._render_mesh_subtractive(proj, zfar, hits_mode=True)
+        return self.mesh_hit_alphas_gpu
 
     @time_range()
     def _render_mesh(self, proj: geo.CameraProjection) -> None:
@@ -916,16 +955,11 @@ class Projector(object):
 
         self._render_mesh_additive(proj, zfar)
 
-        
-
         if self.mesh_subtractive_enabled:
             self._render_mesh_subtractive(proj, zfar)
 
-        
-
-
         # For each layer
-        for subtrahend_layer_idx in range(self.mesh_layers-1, -1, -1):
+        for subtrahend_layer_idx in range(self.num_mesh_layers-1, -1, -1):
             # For each subtractive layer pair
             num_mesh_hit_pairs = self.max_mesh_hits // 2
             for tex_idx in range(num_mesh_hit_pairs):  # TODO: only mesh peel nonzero
@@ -958,7 +992,7 @@ class Projector(object):
                             )
 
         # transfer all the additive
-        for layer_idx in range(self.mesh_layers):
+        for layer_idx in range(self.num_mesh_layers):
             for mat_idx, mat in enumerate(self.prim_unique_materials):
                 pointer_into_additive_densities = (
                     int(self.additive_densities_gpu.data.ptr)
@@ -993,7 +1027,7 @@ class Projector(object):
         height = proj.intrinsic.sensor_height
         total_pixels = width * height
 
-        for layer_idx in range(self.mesh_layers):
+        for layer_idx in range(self.num_mesh_layers):
             for mat_idx, mat in enumerate(self.prim_unique_materials):
                 with time_range("additive_render"):
                     self.gl_renderer.render(
@@ -1053,12 +1087,12 @@ class Projector(object):
         return res
 
     @time_range()
-    def _render_mesh_subtractive(self, proj: geo.CameraProjection, zfar: float) -> None:
+    def _render_mesh_subtractive(self, proj: geo.CameraProjection, zfar: float, hits_mode: bool = False) -> None:
         width = proj.intrinsic.sensor_width
         height = proj.intrinsic.sensor_height
         total_pixels = width * height
 
-        for layer_idx in range(self.mesh_layers):
+        for layer_idx in range(self.num_mesh_layers):
             
 
             with time_range("subtractive_render"):
@@ -1068,6 +1102,7 @@ class Projector(object):
                     flags=RenderFlags.RGBA,
                     zfar=zfar,
                     layer_idx=layer_idx,
+                    force_all_subtract=hits_mode,
                 )
 
             for tex_idx in range(self.gl_renderer.num_peel_passes):
@@ -1106,15 +1141,16 @@ class Projector(object):
                 grid=(2048, 1),  # TODO (liam)
             )
 
-            self.kernel_reorder2(
-                args=(
-                    np.uint64(self.mesh_hit_alphas_gpu.data.ptr + layer_idx * self.gl_renderer.num_peel_passes * total_pixels * 4 * NUMBYTES_FLOAT32),
-                    np.uint64(self.mesh_hit_alphas_tex_gpu.data.ptr + layer_idx * self.gl_renderer.num_peel_passes * total_pixels * 4 * NUMBYTES_FLOAT32),
-                    np.int32(total_pixels),
-                ),
-                block=(256, 1, 1),  # TODO (liam)
-                grid=(128, 1),  # TODO (liam)
-            )
+            if not hits_mode:
+                self.kernel_reorder2(
+                    args=(
+                        np.uint64(self.mesh_hit_alphas_gpu.data.ptr + layer_idx * self.gl_renderer.num_peel_passes * total_pixels * 4 * NUMBYTES_FLOAT32),
+                        np.uint64(self.mesh_hit_alphas_tex_gpu.data.ptr + layer_idx * self.gl_renderer.num_peel_passes * total_pixels * 4 * NUMBYTES_FLOAT32),
+                        np.int32(total_pixels),
+                    ),
+                    block=(256, 1, 1),  # TODO (liam)
+                    grid=(128, 1),  # TODO (liam)
+                )
 
 
     def project_over_carm_range(
@@ -1239,7 +1275,7 @@ class Projector(object):
             self.mesh_additive_enabled,
             self.mesh_subtractive_enabled,
             self.max_mesh_hits,
-            self.mesh_layers,
+            self.num_mesh_layers,
             air_index=self.air_index,
             attenuate_outside_volume=self.attenuate_outside_volume,
         )
@@ -1332,13 +1368,13 @@ class Projector(object):
             viewport_width=width,
             viewport_height=height,
             num_peel_passes=self.max_mesh_hits // 4,
-            mesh_layers=self.max_mesh_hits,
+            num_mesh_layers=self.max_mesh_hits,
             prim_unqiue_materials=len(self.prim_unique_materials),
         )
         self.gl_renderer = self._renderer
 
         self.additive_densities_gpu = cp.zeros(
-            self.mesh_layers
+            self.num_mesh_layers
             * len(self.prim_unique_materials)
             * total_pixels
             * 2,
@@ -1434,13 +1470,13 @@ class Projector(object):
         )
 
         self.mesh_hit_alphas_gpu = cp.zeros(
-            (self.mesh_layers, total_pixels, self.max_mesh_hits), dtype=np.float32
+            (self.num_mesh_layers, total_pixels, self.max_mesh_hits), dtype=np.float32
         )
         self.mesh_hit_alphas_tex_gpu = cp.zeros(
-            (self.mesh_layers, total_pixels, self.max_mesh_hits), dtype=np.float32
+            (self.num_mesh_layers, total_pixels, self.max_mesh_hits), dtype=np.float32
         )
         self.mesh_hit_facing_gpu = cp.zeros(
-            (self.mesh_layers, total_pixels, self.max_mesh_hits), dtype=np.int8
+            (self.num_mesh_layers, total_pixels, self.max_mesh_hits), dtype=np.int8
         )
 
         init_tock = time.perf_counter()

@@ -118,12 +118,12 @@ class Renderer(object):
     def point_size(self, value):
         self._point_size = float(value)
 
-    def render(self, scene, flags, seg_node_map=None, drr_mode=DRRMode.NONE, zfar=0, mat=None, mat_idx=None, layer_idx=None, tex_idx=None):
+    def render(self, scene, flags, seg_node_map=None, drr_mode=DRRMode.NONE, zfar=0, mat=None, mat_idx=None, layer_idx=None, tex_idx=None, force_all_subtract=False):
         self._update_context(scene, flags)
 
         if drr_mode == DRRMode.DIST:
             for i in range(self.num_peel_passes):
-                retval = self._forward_pass(scene, flags, seg_node_map=seg_node_map, drr_mode=drr_mode, zfar=zfar, peelnum=i, mat=mat, mat_idx=mat_idx, layer_idx=layer_idx, tex_idx=tex_idx)
+                retval = self._forward_pass(scene, flags, seg_node_map=seg_node_map, drr_mode=drr_mode, zfar=zfar, peelnum=i, mat=mat, mat_idx=mat_idx, layer_idx=layer_idx, tex_idx=tex_idx, force_all_subtract=force_all_subtract)
         elif drr_mode == DRRMode.MESH_SUB:
             retval = self._forward_pass(scene, flags, seg_node_map=seg_node_map, drr_mode=drr_mode, zfar=zfar, peelnum=None, mat=mat, mat_idx=mat_idx, layer_idx=layer_idx, tex_idx=tex_idx)
         elif drr_mode == DRRMode.DENSITY:
@@ -167,7 +167,7 @@ class Renderer(object):
     # Rendering passes
     ###########################################################################
 
-    def _forward_pass(self, scene, flags, seg_node_map=None, drr_mode=DRRMode.NONE, zfar=None, peelnum=None, mat=None, mat_idx=None, layer_idx=None, tex_idx=None):
+    def _forward_pass(self, scene, flags, seg_node_map=None, drr_mode=DRRMode.NONE, zfar=None, peelnum=None, mat=None, mat_idx=None, layer_idx=None, tex_idx=None, force_all_subtract=False):
         # Set up viewport for render
         self._configure_forward_pass_viewport(flags, drr_mode=drr_mode, peelnum=peelnum, mat_idx=mat_idx, layer_idx=layer_idx)
 
@@ -221,7 +221,7 @@ class Renderer(object):
                     continue
                 if drr_mode == DRRMode.DENSITY and not primitive.material.additive:
                     continue
-                if drr_mode == DRRMode.DIST and not primitive.material.subtractive:
+                if drr_mode == DRRMode.DIST and (not force_all_subtract and not primitive.material.subtractive):
                     continue
                 if mat is not None and primitive.material.drrMatName != mat:
                     continue
