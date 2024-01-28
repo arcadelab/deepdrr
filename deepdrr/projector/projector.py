@@ -879,7 +879,7 @@ class Projector(object):
         return zfar
 
     def project_seg(
-            self, *camera_projections: geo.CameraProjection, tags: Optional[List[str]] = None
+            self, *camera_projections: geo.CameraProjection, tags: Optional[List[Optional[List[str]]]] = None
         ) -> np.ndarray:
             """
             TODO
@@ -896,13 +896,13 @@ class Projector(object):
             camera_projections = self._prepare_project(camera_projections)
             return self._render_seg(camera_projections[0], tags=tags)
 
-    def _render_seg(self, proj: geo.CameraProjection, tags: Optional[List[str]] = None) -> np.ndarray:
+    def _render_seg(self, proj: geo.CameraProjection, tags: Optional[List[Optional[List[str]]]] = None) -> np.ndarray:
         zfar = self._setup_pyrender_scene(proj)
         res = self._render_mesh_seg(proj, zfar, tags=tags)
         return res
     
     def project_hits(
-        self, *camera_projections: geo.CameraProjection, tags: Optional[List[str]] = None
+        self, *camera_projections: geo.CameraProjection, tags: Optional[List[Optional[List[str]]]] = None
     ) -> cupy.array:
         """
         For each mesh layer, compute a list of entry and exit alpha values for each pixel.
@@ -922,10 +922,14 @@ class Projector(object):
         camera_projections = self._prepare_project(camera_projections)
         return self._render_hits(camera_projections[0], tags=tags)
     
-    def _render_hits(self, proj: geo.CameraProjection, tags: Optional[List[str]] = None) -> cupy.array:
+    def _render_hits(self, proj: geo.CameraProjection, tags: Optional[List[Optional[List[str]]]] = None) -> cupy.array:
         zfar = self._setup_pyrender_scene(proj)
-        self._render_mesh_subtractive_single(proj, zfar, layer_idx=0, hits_mode=True, tags=tags)
-        return self.mesh_hit_alphas_gpu[0].get().reshape(self.output_shape[1], self.output_shape[0], self.max_mesh_hits)
+        res = []
+        if tags is not None:
+            for tag in tags:
+                self._render_mesh_subtractive_single(proj, zfar, layer_idx=0, hits_mode=True, tags=tag)
+                res.append(self.mesh_hit_alphas_gpu[0].get().reshape(self.output_shape[1], self.output_shape[0], self.max_mesh_hits))
+        return res
 
     @time_range()
     def _render_mesh(self, proj: geo.CameraProjection) -> None:
@@ -965,21 +969,38 @@ class Projector(object):
 
     @time_range()
     def _render_mesh_seg(
-        self, proj: geo.CameraProjection, zfar: float, tags=None
+        self, proj: geo.CameraProjection, zfar: float, tags: Optional[List[Optional[List[str]]]] = None
     ) -> None:
         width = proj.intrinsic.sensor_width
         height = proj.intrinsic.sensor_height
         total_pixels = width * height
 
-        with time_range("seg_render"):
-            res = self.gl_renderer.render(
-                self.scene,
-                drr_mode=DRRMode.SEG,
-                flags=RenderFlags.RGBA,
-                zfar=zfar,
-                tags=tags,
-            )
-            res = np.flip(res, axis=0)
+        # with time_range("seg_render"):
+        #     res = self.gl_renderer.render(
+        #         self.scene,
+        #         drr_mode=DRRMode.SEG,
+        #         flags=RenderFlags.RGBA,
+        #         zfar=zfar,
+        #         tags=tags,
+        #     )
+        #     res = np.flip(res, axis=0)
+        batch_size = 4
+        batched = []
+        for i in range(0, len(tags), batch_size):
+            batched.append(tags[i:i+batch_size])
+
+        res = []
+        for batch in batched:
+            with time_range("seg_render"):
+                res_batch = self.gl_renderer.render(
+                    self.scene,
+                    drr_mode=DRRMode.SEG,
+                    flags=RenderFlags.RGBA,
+                    zfar=zfar,
+                    tags=batch,
+                )
+                for i in range(len(batch)):
+                    res.append(res_batch[:,:,i])
 
         return res
 
