@@ -76,6 +76,24 @@ def save(path: Path, image: np.ndarray, mkdir: bool = True) -> Path:
     return path
 
 
+def save_raw(path: Path, image: np.ndarray, mkdir: bool = True) -> Path:
+    """Save the given image using PIL.
+
+    Args:
+        path (Path): the path to write the image to. Also determines the type.
+        image (np.ndarray): the image, in [C, H, W] or [H, W, C] order. (If the former, transposes).
+    """
+    path = Path(path)
+    if not path.parent.exists() and mkdir:
+        path.parent.mkdir(parents=True)
+
+    if len(image.shape) == 3 and image.shape[0] in [3, 4]:
+        image = image.transpose(1, 2, 0)
+
+    Image.fromarray(image).save(str(path))
+    return path
+
+
 def image_saver(images: np.ndarray, prefix: str, path: str) -> bool:
     """Save the images as tiff
 

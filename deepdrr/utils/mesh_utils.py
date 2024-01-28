@@ -379,12 +379,18 @@ def trimesh_to_pyrender_prim(
 
 def load_trimesh(
     path: Union[str, Path], convert_to_RAS: bool = False
-) -> trimesh.Trimesh:
+) -> trimesh.Trimesh | None:
     """Load a trimesh from a file."""
     path = Path(path)
     if not path.exists():
         raise FileNotFoundError(f"Could not find file {path}")
-    mesh = trimesh.load(path)
+    mesh = trimesh.load_mesh(path)
+    log.info(f"mesh: {type(mesh)}, {path}")
+    if isinstance(mesh, trimesh.Scene):
+        return None
+    if mesh.vertices.shape[0] == 0:
+        log.warning(f"mesh has no vertices: {path}")
+        return None
     if convert_to_RAS:
-        mesh = mesh.apply_transform(np.array(geo.RAS_from_LPS))
+        mesh.apply_transform(np.array(geo.RAS_from_LPS))
     return mesh

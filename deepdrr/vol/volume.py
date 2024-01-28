@@ -1003,7 +1003,7 @@ class Volume(Renderable):
         smooth: bool = True,
         decimation: float = 0.01,
         decimation_points: Optional[int] = None,
-        smooth_iter: int = 200,
+        smooth_iter: int = 50,
         relaxation_factor: float = 0.25,
         convert_to_LPS: bool = False,
     ) -> pv.PolyData:
@@ -1059,8 +1059,8 @@ class Volume(Renderable):
         return surface
 
     def load_trimesh_in_world(
-        self, path: Path, material: str = "bone", convert_to_RAS: bool = True
-    ) -> trimesh.Trimesh:
+        self, path: Path, convert_to_RAS: bool = True
+    ) -> trimesh.Trimesh | None:
         """Load the given mesh as a trimesh positioned correctly with the CT in world coordinates.
 
         This is useful for meshes that were created from the CT, which should be saved in LPS
@@ -1074,9 +1074,12 @@ class Volume(Renderable):
 
         Returns:
             trimesh.Trimesh: The mesh in world coordinates.
+            None: if the mesh is empty
         """
         mesh = mesh_utils.load_trimesh(path, convert_to_RAS=convert_to_RAS)
-        mesh = mesh.apply_transform(geo.get_data(self.world_from_anatomical))
+        if mesh is None:
+            return None
+        mesh.apply_transform(geo.get_data(self.world_from_anatomical))
         return mesh
 
     def _make_surface(self, material: str = "bone"):
