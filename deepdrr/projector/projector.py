@@ -332,7 +332,7 @@ def _get_kernel_projector_module(
     num_volumes: int,
     num_materials: int,
     mesh_additive_enabled: bool,
-    mesh_additive_and_subtractive_enabled: bool,
+    # mesh_additive_and_subtractive_enabled: bool,
     max_mesh_hits: int,
     mesh_layers: int,
     air_index: int,
@@ -375,8 +375,8 @@ def _get_kernel_projector_module(
         f"NUM_VOLUMES={num_volumes}",
         "-D",
         f"MESH_ADDITIVE_ENABLED={int(mesh_additive_enabled)}",
-        "-D",
-        f"MESH_ADDITIVE_AND_SUBTRACTIVE_ENABLED={int(mesh_additive_and_subtractive_enabled)}",
+        # "-D",
+        # f"MESH_ADDITIVE_AND_SUBTRACTIVE_ENABLED={int(mesh_additive_and_subtractive_enabled)}",
         "-D",
         f"NUM_MATERIALS={num_materials}",
         "-D",
@@ -487,11 +487,11 @@ class Projector(object):
                 raise ValueError(f"unrecognized Renderable type: {type(_vol)}.")
 
         self.mesh_additive_enabled = len(self.meshes) > 0
-        self.mesh_subtractive_enabled = False
+        # self.mesh_subtractive_enabled = False
 
-        for prim in self.primitives:
-            if prim.material.subtractive:
-                self.mesh_subtractive_enabled = True
+        # for prim in self.primitives:
+        #     if prim.material.subtractive:
+        #         self.mesh_subtractive_enabled = True
 
         if priorities is None:
             self.priorities = [
@@ -1271,7 +1271,7 @@ class Projector(object):
             len(self.volumes),
             len(self.all_materials),
             self.mesh_additive_enabled,
-            self.mesh_subtractive_enabled,
+            # self.mesh_subtractive_enabled,
             self.max_mesh_hits,
             self.mesh_layers,
             air_index=self.air_index,
