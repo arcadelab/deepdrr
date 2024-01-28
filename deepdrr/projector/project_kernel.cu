@@ -353,10 +353,13 @@ projectKernel(const cudaTextureObject_t * __restrict__ volume_texs, // array of 
         area_density[AIR_INDEX] += (minAlpha / step) * AIR_DENSITY;
     }
 
-    int facing_local[MESH_LAYERS][MAX_MESH_HITS]; // faster
+    int facing_local[MESH_LAYERS][MAX_MESH_HITS];
     float alpha_local[MESH_LAYERS][MAX_MESH_HITS];
 
     for (int j = 0; j < MESH_LAYERS; j++) {
+        if (mesh_sub_layer_valid[j] == 0) {
+            continue;
+        }
         for (int i = 0; i < MAX_MESH_HITS; i++) {
             int mesh_hit_idx = j * (out_height * out_width) * MAX_MESH_HITS + (vdx * out_width + udx) * MAX_MESH_HITS + i;
             facing_local[j][i] = mesh_hit_facing[mesh_hit_idx];
@@ -364,7 +367,7 @@ projectKernel(const cudaTextureObject_t * __restrict__ volume_texs, // array of 
         }
     }
 
-    int priority_local[NUM_VOLUMES]; // faster maybe?
+    int priority_local[NUM_VOLUMES];
 
     for (int i = 0; i < NUM_VOLUMES; i++) {
         priority_local[i] = priority[i];
@@ -388,7 +391,6 @@ projectKernel(const cudaTextureObject_t * __restrict__ volume_texs, // array of 
             pz[vol_id] = sz_ijk_local[vol_id] + alpha * rz_ijk[vol_id] - 0.5f;
 
             for (int mat_id = 0; mat_id < NUM_MATERIALS; mat_id++) {
-                // TODO (liam): discuss: why use fancy cubicTex3D and then round it?
                 seg_at_alpha[vol_id][mat_id] = tex3D<float>(seg_texs[vol_id * NUM_MATERIALS + mat_id], px[vol_id], py[vol_id], pz[vol_id]);
                 // seg_at_alpha[vol_id][mat_id] = roundf(cubicTex3D<float>(seg_texs[vol_id * NUM_MATERIALS + mat_id], px[vol_id], py[vol_id], pz[vol_id]));
             }
@@ -429,7 +431,6 @@ projectKernel(const cudaTextureObject_t * __restrict__ volume_texs, // array of 
             }
         }
 
-// #if MESH_ADDITIVE_AND_SUBTRACTIVE_ENABLED > 0
         for (int j = 0; j < MESH_LAYERS; j++) {
             if (mesh_sub_layer_valid[j] == 0) {
                 continue;
@@ -443,8 +444,6 @@ projectKernel(const cudaTextureObject_t * __restrict__ volume_texs, // array of 
                 }
             }
         }
-
-// #endif
 
         bool inside_mesh = false;
         for (int j = 0; j < MESH_LAYERS; j++) {

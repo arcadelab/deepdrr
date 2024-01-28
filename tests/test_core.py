@@ -40,6 +40,26 @@ def pytest_generate_tests(metafunc):
                    for funcargs in funcarglist]
     )
 
+from time import time 
+  
+  
+def timer_func(func): 
+    # This function shows the execution time of  
+    # the function object passed 
+    def wrap_func(*args, **kwargs): 
+        t1 = time() 
+        try:
+            result = func(*args, **kwargs) 
+        except Exception as e:
+            raise e
+        finally:
+            t2 = time() 
+            print(f'Function {func.__name__!r} executed in {(t2-t1):.4f}s') 
+        return result 
+    return wrap_func 
+  
+  
+
 
 def draw_masks( # from perphix.utils.vis_utils
     image: np.ndarray,
@@ -550,7 +570,7 @@ class TestSingleVolume:
         # self.project([volume, mesh, mesh2, mesh3], carm, "test_mesh.png", verify=False, max_mesh_hits=64)
 
 
-    
+    @timer_func
     def test_anatomical(self):
         input_folder = Path('tests/resources/mesh_out_low')
         tissue_types = list(input_folder.glob('*'))
@@ -594,10 +614,11 @@ class TestSingleVolume:
             threads=8,
             neglog=True,
             mesh_layers=2,
+            max_mesh_hits=32,
         )
         
         images = []
-        segs = []
+        hit_ims = []
         
         # N = 1
         # N = 20
@@ -605,12 +626,12 @@ class TestSingleVolume:
         with projector:
             # for i in range(N):
             for i in tqdm.tqdm(range(N)):
-                for m in contour_meshes:
-                    m.set_enabled(True)
+                # for m in contour_meshes:
+                #     m.set_enabled(True)
                 
-                for l, m in enumerate(contour_meshes):
-                    if (i // 10) % len(contour_meshes) == l:
-                        m.set_enabled(False)
+                # for l, m in enumerate(contour_meshes):
+                #     if (i // 10) % len(contour_meshes) == l:
+                #         m.set_enabled(False)
                 
 
                 z = geo.FrameTransform.from_translation([-51 ,-164.20076, -408.00333])
@@ -627,37 +648,51 @@ class TestSingleVolume:
                 carm._device_from_camera3d = new
         
                 image = projector.project()
+                # image_256 = (image * 255).astype(np.uint8)
+                # image_256 = np.zeros((200*2, 200*2), dtype=np.uint8)*255
 
-                seg = [projector.project_seg(tags=[k]) for k, v in d_contour_mesh_files.items()]
+                seg = projector.project_seg(tags=[k for k, v in d_contour_mesh_files.items()])
                 seg = np.stack(seg, axis=0)
-                # seg_256 = (seg * 255).astype(np.uint8)
 
-                hits_channels = projector.project_hits(tags=["bone"])[:, :, :4]
-                # stack so four grayscale images from the first four channels of hits_channels
-                hits = np.concatenate([hits_channels[:, :, i] for i in range(4)], axis=1)
+                hits_channels = projector.project_hits(tags=[["bone"]])[0][:, :, :4]
+                hits = np.concatenate([hits_channels[:, :, i] for i in range(4)], axis=0)
 
+                hits[hits <= 0] = np.inf
                 finite_hits = hits[np.isfinite(hits)]
                 if len(finite_hits) > 0:
                     hits_max = np.amax(finite_hits)
                     hits_min = np.amin(finite_hits)
                     hits = (hits - hits_min) / (hits_max - hits_min)
                 hits_256 = (hits * 255).astype(np.uint8)
-                segs.append(Image.fromarray(hits_256))
-
+                hit_ims.append(Image.fromarray(hits_256))
 
                 image_256 = (image * 255).astype(np.uint8)
                 image_256 = draw_masks(image_256, seg, seed=0)
 
 
                 images.append(Image.fromarray(image_256))
-                # segs.append(Image.fromarray(seg))
         
         # Save the list of images as a GIF
         name = f'test_anatomical.gif'
         output_gif_path = self.output_dir/name
+
+        name2 = f'test_anatomical_seg.gif'
+        output_gif_path2 = self.output_dir/name2
         
         # if True:
-        with verify_image(name, actual_dir=self.output_dir, expected_dir=self.truth, diff_dir=self.diff_dir):
+        with verify_image(name, actual_dir=self.output_dir, expected_dir=self.truth, diff_dir=self.diff_dir),\
+            verify_image(name2, actual_dir=self.output_dir, expected_dir=self.truth, diff_dir=self.diff_dir):
+
+
+            hit_ims[0].save(
+                output_gif_path2,
+                save_all=True,
+                append_images=hit_ims[1:],
+                duration=7000/N,  # Duration between frames in milliseconds
+                loop=0,  # 0 means loop indefinitely, you can set another value if needed
+                disposal=1,  # 2 means replace with background color (use 1 for no disposal)
+            )
+
             images[0].save(
                 output_gif_path,
                 save_all=True,
@@ -667,19 +702,6 @@ class TestSingleVolume:
                 disposal=1,  # 2 means replace with background color (use 1 for no disposal)
             )
 
-        name = f'test_anatomical_seg.gif'
-        output_gif_path = self.output_dir/name
-        
-        # if True:
-        with verify_image(name, actual_dir=self.output_dir, expected_dir=self.truth, diff_dir=self.diff_dir):
-            segs[0].save(
-                output_gif_path,
-                save_all=True,
-                append_images=segs[1:],
-                duration=7000/N,  # Duration between frames in milliseconds
-                loop=0,  # 0 means loop indefinitely, you can set another value if needed
-                disposal=1,  # 2 means replace with background color (use 1 for no disposal)
-            )
 
     
     def test_cube(self):
@@ -981,7 +1003,7 @@ if __name__ == "__main__":
     test = TestSingleVolume()
     # test.test_layer_depth()
     # test.test_mesh_only()
-    test.test_anatomical()
+    # test.test_anatomical()
     # test.gen_threads()
     # test.test_cube()
     test.test_mesh_mesh_1()

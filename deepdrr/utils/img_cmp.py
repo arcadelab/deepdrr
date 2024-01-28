@@ -27,7 +27,7 @@ from deepdrr.pyrenderdrr.material import DRRMaterial
 from deepdrr.utils.mesh_utils import *
 
 @contextmanager
-def verify_image(name, actual_dir, expected_dir, diff_dir, atol=1):
+def verify_image(name, actual_dir, expected_dir, diff_dir, atol=1, compute_diff=False):
     actual_dir = Path(actual_dir)
     expected_dir = Path(expected_dir)
     diff_dir = Path(diff_dir)
@@ -83,43 +83,46 @@ def verify_image(name, actual_dir, expected_dir, diff_dir, atol=1):
 
     diff_name = Path(name).stem+"_diff"
     diff_path = diff_dir / (diff_name + ".png")
-    if not same:  
-        pil_fig_imgs = []
-        for i, diff_im in enumerate(tqdm.tqdm(diff_ims)):
-            plt.figure()
-            plt.imshow(diff_im[:,:,0], cmap="viridis", vmin=min_diff, vmax=max_diff)
-            plt.colorbar()
-            plt.title("First channel diff (might have other channels!)")
-            # diff_name = f"diff_{name}"
-            # if len(expected_frames) > 1:
-            #     diff_name = f"{diff_name}_diff_{i:03d}"
-    
-            # plt.savefig(self.output_dir / (diff_name + ".png"))
-            # save figure to PIL Image
-            buf = io.BytesIO()
-            plt.savefig(buf, format='png')
-            plt.close()
-            
-            buf.seek(0)
-            pil_fig_img = Image.open(buf)
-            pil_fig_imgs.append(pil_fig_img)
-        
-        if len(pil_fig_imgs) > 1:
-            pil_fig_imgs[0].save(
-                diff_path,
-                save_all=True,
-                append_images=pil_fig_imgs[1:],
-                duration=expected_img.info.get('duration', 100),
-                loop=0,  # 0 means loop indefinitely, you can set another value if needed
-                disposal=1,  # 2 means replace with background color (use 1 for no disposal)
-            )
-        else:
-            pil_fig_imgs[0].save(diff_path)
-
+    if not compute_diff:
+        diff_path.unlink(missing_ok=True)
     else:
-        # write a green image
-        passed_img = Image.new('RGB', (expected_img.width, expected_img.height), color = (0, 255, 0))
-        passed_img.save(diff_path)
+        if not same:  
+            pil_fig_imgs = []
+            for i, diff_im in enumerate(tqdm.tqdm(diff_ims, "Computing diff")):
+                plt.figure()
+                plt.imshow(diff_im[:,:,0], cmap="viridis", vmin=min_diff, vmax=max_diff)
+                plt.colorbar()
+                plt.title("First channel diff (might have other channels!)")
+                # diff_name = f"diff_{name}"
+                # if len(expected_frames) > 1:
+                #     diff_name = f"{diff_name}_diff_{i:03d}"
+        
+                # plt.savefig(self.output_dir / (diff_name + ".png"))
+                # save figure to PIL Image
+                buf = io.BytesIO()
+                plt.savefig(buf, format='png')
+                plt.close()
+                
+                buf.seek(0)
+                pil_fig_img = Image.open(buf)
+                pil_fig_imgs.append(pil_fig_img)
+            
+            if len(pil_fig_imgs) > 1:
+                pil_fig_imgs[0].save(
+                    diff_path,
+                    save_all=True,
+                    append_images=pil_fig_imgs[1:],
+                    duration=expected_img.info.get('duration', 100),
+                    loop=0,  # 0 means loop indefinitely, you can set another value if needed
+                    disposal=1,  # 2 means replace with background color (use 1 for no disposal)
+                )
+            else:
+                pil_fig_imgs[0].save(diff_path)
+
+        else:
+            # write a green image
+            passed_img = Image.new('RGB', (expected_img.width, expected_img.height), color = (0, 255, 0))
+            passed_img.save(diff_path)
 
     # for i, diff_im in enumerate(diff_ims):
     #     assert np.allclose(diff_im, 0, atol=atol), f"Test {name} failed"
