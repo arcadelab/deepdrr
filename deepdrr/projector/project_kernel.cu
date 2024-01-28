@@ -170,10 +170,11 @@ projectKernel(const cudaTextureObject_t * __restrict__ volume_texs, // array of 
               float * __restrict__ solid_angle, // flat array, with shape (out_height, out_width). Could be NULL pointer
               const float * __restrict__ mesh_hit_alphas, // mesh hit distances for subtracting
               const int8_t * __restrict__ mesh_hit_facing, // mesh hit facing direction for subtracting
+              const int8_t * __restrict__ mesh_sub_layer_valid, // mesh hit facing direction for subtracting
               const float * __restrict__ additive_densities, // additive densities
               const int * __restrict__ mesh_unique_materials, // unique materials for additive mesh
               const int mesh_unique_material_count, // number of unique materials for additive mesh
-            //   const int num_mesh_layers,
+            //   const int mesh_layers,
             //   const int max_mesh_depth, // maximum number of mesh hits per pixel
               const int offsetW, 
               const int offsetH) {
@@ -428,8 +429,11 @@ projectKernel(const cudaTextureObject_t * __restrict__ volume_texs, // array of 
             }
         }
 
-#if MESH_ADDITIVE_AND_SUBTRACTIVE_ENABLED > 0
+// #if MESH_ADDITIVE_AND_SUBTRACTIVE_ENABLED > 0
         for (int j = 0; j < MESH_LAYERS; j++) {
+            if (mesh_sub_layer_valid[j] == 0) {
+                continue;
+            }
             while (true) {
                 if ((mesh_hit_index[j] < MAX_MESH_HITS && facing_local[j][mesh_hit_index[j]] != 0 && alpha_local[j][mesh_hit_index[j]] < alpha)){
                     mesh_hit_depth[j] += facing_local[j][mesh_hit_index[j]];
@@ -440,7 +444,7 @@ projectKernel(const cudaTextureObject_t * __restrict__ volume_texs, // array of 
             }
         }
 
-#endif
+// #endif
 
         bool inside_mesh = false;
         for (int j = 0; j < MESH_LAYERS; j++) {

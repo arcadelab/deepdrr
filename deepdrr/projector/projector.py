@@ -334,7 +334,7 @@ def _get_kernel_projector_module(
     mesh_additive_enabled: bool,
     mesh_additive_and_subtractive_enabled: bool,
     max_mesh_hits: int,
-    num_mesh_layers: int,
+    mesh_layers: int,
     air_index: int,
     attenuate_outside_volume: bool = False,
 ) -> cp.RawModule:
@@ -382,7 +382,7 @@ def _get_kernel_projector_module(
         "-D",
         f"MAX_MESH_HITS={max_mesh_hits}",
         "-D",
-        f"MESH_LAYERS={num_mesh_layers}",
+        f"MESH_LAYERS={mesh_layers}",
         "-D",
         f"ATTENUATE_OUTSIDE_VOLUME={int(attenuate_outside_volume)}",
         "-D",
@@ -425,7 +425,7 @@ class Projector(object):
         source_to_detector_distance: float = -1,
         carm: Optional[Device] = None,
         max_mesh_hits=32,
-        num_mesh_layers=2,
+        mesh_layers=2,
         cuda_device_id=None,
     ) -> None:
         """Create the projector, which has info for simulating the DRR.
@@ -465,7 +465,7 @@ class Projector(object):
 
         self.cuda_device_id = cuda_device_id
 
-        self.num_mesh_layers = num_mesh_layers
+        self.mesh_layers = mesh_layers
 
         # set variables
         volume = utils.listify(volume)
@@ -737,10 +737,11 @@ class Projector(object):
                 self.solid_angle_gpu,  # solid_angle
                 np.uint64(self.mesh_hit_alphas_gpu.data.ptr),
                 np.uint64(self.mesh_hit_facing_gpu.data.ptr),
+                np.uint64(self.mesh_sub_layer_valid.data.ptr),
                 np.uint64(self.additive_densities_gpu.data.ptr),
                 np.uint64(self.prim_unique_materials_gpu.data.ptr),
                 np.int32(len(self.prim_unique_materials)),
-                # np.int32(self.num_mesh_layers),
+                # np.int32(self.mesh_layers),
                 # np.int32(self.max_mesh_hits),
             ]
 
@@ -915,7 +916,7 @@ class Projector(object):
             seg_node_map: TODO
         
         Returns:
-            cupy.array: Pointer to cupy array of Float32s of shape (num_mesh_layers, height*width, max_mesh_hits)
+            cupy.array: Pointer to cupy array of Float32s of shape (mesh_layers, height*width, max_mesh_hits)
         """
         if len(camera_projections) > 1:
             raise NotImplementedError("multiple projections")
@@ -937,11 +938,13 @@ class Projector(object):
 
         self._render_mesh_additive(proj, zfar)
 
-        if self.mesh_subtractive_enabled:
-            self._render_mesh_subtractive(proj, zfar)
+        self._render_mesh_subtractive(proj, zfar)
 
         # For each layer
-        for subtrahend_layer_idx in range(self.num_mesh_layers-1, -1, -1):
+        for subtrahend_layer_idx in range(self.mesh_layers-1, -1, -1):
+            if not self.mesh_sub_layer_valid[subtrahend_layer_idx]:
+                continue
+
             # For each subtractive layer pair
             num_mesh_hit_pairs = self.max_mesh_hits // 2
             for tex_idx in range(num_mesh_hit_pairs):  # TODO: only mesh peel nonzero
@@ -974,7 +977,7 @@ class Projector(object):
                             )
 
         # transfer all the additive
-        for layer_idx in range(self.num_mesh_layers):
+        for layer_idx in range(self.mesh_layers):
             for mat_idx, mat in enumerate(self.prim_unique_materials):
                 pointer_into_additive_densities = (
                     int(self.additive_densities_gpu.data.ptr)
@@ -1009,7 +1012,7 @@ class Projector(object):
         height = proj.intrinsic.sensor_height
         total_pixels = width * height
 
-        for layer_idx in range(self.num_mesh_layers):
+        for layer_idx in range(self.mesh_layers):
             for mat_idx, mat in enumerate(self.prim_unique_materials):
                 with time_range("additive_render"):
                     self.gl_renderer.render(
@@ -1070,8 +1073,19 @@ class Projector(object):
 
     @time_range()
     def _render_mesh_subtractive(self, proj: geo.CameraProjection, zfar: float, hits_mode: bool = False) -> None:
-        for layer_idx in range(self.num_mesh_layers):
-            self._render_mesh_subtractive_single(proj, zfar, layer_idx, hits_mode)
+        for layer_idx in range(self.mesh_layers):
+            layer_enabled = False
+            for mesh in self.meshes:
+                if mesh.mesh.is_visible:
+                    for prim in mesh.mesh.primitives:
+                        if prim.material.layer == layer_idx and prim.material.subtractive:
+                            layer_enabled = True
+                            break
+            
+            self.mesh_sub_layer_valid[layer_idx] = 1 if layer_enabled else 0
+            
+            if layer_enabled:
+                self._render_mesh_subtractive_single(proj, zfar, layer_idx, hits_mode)
 
     def _render_mesh_subtractive_single(self, proj: geo.CameraProjection, zfar: float, layer_idx: int, hits_mode: bool, tags: Optional[List[str]] = None) -> None:
         width = proj.intrinsic.sensor_width
@@ -1259,7 +1273,7 @@ class Projector(object):
             self.mesh_additive_enabled,
             self.mesh_subtractive_enabled,
             self.max_mesh_hits,
-            self.num_mesh_layers,
+            self.mesh_layers,
             air_index=self.air_index,
             attenuate_outside_volume=self.attenuate_outside_volume,
         )
@@ -1352,13 +1366,13 @@ class Projector(object):
             viewport_width=width,
             viewport_height=height,
             num_peel_passes=self.max_mesh_hits // 4,
-            num_mesh_layers=self.max_mesh_hits,
+            mesh_layers=self.max_mesh_hits,
             prim_unqiue_materials=len(self.prim_unique_materials),
         )
         self.gl_renderer = self._renderer
 
         self.additive_densities_gpu = cp.zeros(
-            self.num_mesh_layers
+            self.mesh_layers
             * len(self.prim_unique_materials)
             * total_pixels
             * 2,
@@ -1453,14 +1467,17 @@ class Projector(object):
             f"time elapsed after intializing rest of primary-signal stuff: {init_tock - init_tick}"
         )
 
+        self.mesh_sub_layer_valid = cp.zeros(
+            (self.mesh_layers), dtype=np.int8
+        )
         self.mesh_hit_alphas_gpu = cp.zeros(
-            (self.num_mesh_layers, total_pixels, self.max_mesh_hits), dtype=np.float32
+            (self.mesh_layers, total_pixels, self.max_mesh_hits), dtype=np.float32
         )
         self.mesh_hit_alphas_tex_gpu = cp.zeros(
-            (self.num_mesh_layers, total_pixels, self.max_mesh_hits), dtype=np.float32
+            (self.mesh_layers, total_pixels, self.max_mesh_hits), dtype=np.float32
         )
         self.mesh_hit_facing_gpu = cp.zeros(
-            (self.num_mesh_layers, total_pixels, self.max_mesh_hits), dtype=np.int8
+            (self.mesh_layers, total_pixels, self.max_mesh_hits), dtype=np.int8
         )
 
         init_tock = time.perf_counter()
@@ -1481,6 +1498,7 @@ class Projector(object):
             self.seg_texobs = None
             self.seg_texarrs = None
 
+            self.mesh_sub_layer_valid = None
             self.mesh_hit_alphas_gpu = None
             self.mesh_hit_alphas_tex_gpu = None
             self.mesh_hit_facing_gpu = None

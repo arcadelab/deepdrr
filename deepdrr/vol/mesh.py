@@ -42,17 +42,23 @@ class Mesh(Renderable):
         mesh: pyrender.Mesh = None,
         **kwargs,
     ) -> None:
+        if mesh is None:
+            raise ValueError("mesh must be specified")
+
+        self.mesh = mesh
+        
         Renderable.__init__(
             self,
             anatomical_from_IJK=anatomical_from_IJK,
             world_from_anatomical=world_from_anatomical,
             anatomical_from_ijk=anatomical_from_ijk,
+            **kwargs,
         )
-        if mesh is None:
-            raise ValueError("mesh must be specified")
 
-        self.mesh = mesh
 
+    def set_enabled(self, enabled: bool) -> None:
+        self.mesh.is_visible = enabled
+        
     def get_center(self) -> kg.Point3D:
         return kg.point(self.mesh.centroid)
 
