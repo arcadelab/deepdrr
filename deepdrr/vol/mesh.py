@@ -61,13 +61,20 @@ class Mesh(Renderable):
 
     @classmethod
     def from_stl(
-        cls, path: Union[str, Path], material: str | DRRMaterial = "iron", **kwargs
+        cls,
+        path: Union[str, Path],
+        material: str | DRRMaterial = "iron",
+        convert_to_RAS: bool = False,
+        **kwargs,
     ) -> Mesh:
         """Create a mesh for the given material with default density.
 
         Args:
             path (Union[str, Path]): Path to the STL file.
             material (str | DRRMaterial, optional): Material to use. Defaults to "iron".
+            convert_to_RAS (bool, optional): Good practice is to store meshes in LPS coordinates. When loading a mesh
+                from a CT file, such as a segmentation, that was saved in LPS coordinates, this should be set to True.
+                Defaults to False.
 
         Returns:
             Mesh: The mesh.
@@ -80,8 +87,6 @@ class Mesh(Renderable):
         if isinstance(material, str):
             material = DRRMaterial.from_name(material)
 
-        mesh = pyrender.Mesh.from_trimesh(
-            trimesh.load_mesh(path),
-            material=material,
-        )
+        mesh = mesh_utils.load_trimesh(path, convert_to_RAS=convert_to_RAS)
+        mesh = pyrender.Mesh.from_trimesh(mesh, material=material)
         return cls(mesh=mesh, **kwargs)
