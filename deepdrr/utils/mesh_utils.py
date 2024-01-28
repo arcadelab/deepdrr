@@ -385,7 +385,6 @@ def load_trimesh(
     if not path.exists():
         raise FileNotFoundError(f"Could not find file {path}")
     mesh = trimesh.load_mesh(path)
-    log.info(f"mesh: {type(mesh)}, {path}")
     if isinstance(mesh, trimesh.Scene):
         return None
     if mesh.vertices.shape[0] == 0:
