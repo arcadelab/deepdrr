@@ -929,75 +929,13 @@ class Projector(object):
 
     @time_range()
     def _render_mesh(self, proj: geo.CameraProjection) -> None:
-        width = proj.intrinsic.sensor_width
-        height = proj.intrinsic.sensor_height
-        total_pixels = width * height
-
         zfar = self._setup_pyrender_scene(proj)
 
         self._render_mesh_additive(proj, zfar)
-
         self._render_mesh_subtractive(proj, zfar)
-
-        # For each layer
-        for subtrahend_layer_idx in range(self.mesh_layers-1, -1, -1):
-            if not self.mesh_sub_layer_valid[subtrahend_layer_idx]:
-                continue
-
-            # For each subtractive layer pair
-            num_mesh_hit_pairs = self.max_mesh_hits // 2
-            for tex_idx in range(num_mesh_hit_pairs):  # TODO: only mesh peel nonzero
-                # transfer self.mesh_hit_alphas_gpu to gl textures
-                pointer_into_mesh_hit_alphas_tex_gpu = int(
-                    int(self.mesh_hit_alphas_tex_gpu.data.ptr)
-                    + subtrahend_layer_idx * num_mesh_hit_pairs * total_pixels * 2 * NUMBYTES_FLOAT32
-                    + tex_idx * total_pixels * 2 * NUMBYTES_FLOAT32
-                )
-                gl_gpu_to_tex(
-                    self.gl_renderer.mesh_sub_reg_ims[tex_idx],
-                    pointer_into_mesh_hit_alphas_tex_gpu,
-                    width,
-                    height,
-                    2,
-                )
-
-                for minuend_layer_idx in range(subtrahend_layer_idx):
-                    for mat_idx, mat in enumerate(self.prim_unique_materials):
-                        with time_range("mesh_mesh_sub_render"):
-                            self.gl_renderer.render(
-                                self.scene,
-                                drr_mode=DRRMode.MESH_SUB,
-                                flags=RenderFlags.RGBA,
-                                zfar=zfar,
-                                mat=mat,
-                                mat_idx=mat_idx,
-                                layer_idx=minuend_layer_idx,
-                                tex_idx=tex_idx,
-                            )
-
-        # transfer all the additive
-        for layer_idx in range(self.mesh_layers):
-            for mat_idx, mat in enumerate(self.prim_unique_materials):
-                pointer_into_additive_densities = (
-                    int(self.additive_densities_gpu.data.ptr)
-                    + layer_idx
-                    * len(self.prim_unique_materials)
-                    * total_pixels
-                    * 2
-                    * NUMBYTES_FLOAT32
-                    + mat_idx * total_pixels * 2 * NUMBYTES_FLOAT32
-                )
-
-                gl_tex_to_gpu(
-                    self.gl_renderer.additive_reg_ims[
-                        layer_idx * len(self.prim_unique_materials) + mat_idx
-                    ],
-                    pointer_into_additive_densities,
-                    width,
-                    height,
-                    2,
-                )
-
+        self._subtract_from_additive(proj, zfar)
+        self._transfer_additive_to_cuda(proj, zfar)
+        
     @time_range()
     def _render_mesh_additive(self, proj: geo.CameraProjection, zfar: float) -> None:
         """
@@ -1024,28 +962,6 @@ class Projector(object):
                         layer_idx=layer_idx,
                     )
 
-                # TODO: need gl synchronization here?
-
-                # # TODO: not needed:
-                # pointer_into_additive_densities = (
-                #     int(self.additive_densities_gpu.data.ptr)
-                #     + layer_idx
-                #     * len(self.prim_unique_materials)
-                #     * total_pixels
-                #     * 2
-                #     * NUMBYTES_FLOAT32
-                #     + mat_idx * total_pixels * 2 * NUMBYTES_FLOAT32
-                # )
-
-                # gl_tex_to_gpu(
-                #     self.gl_renderer.additive_reg_ims[
-                #         layer_idx * len(self.prim_unique_materials) + mat_idx
-                #     ],
-                #     pointer_into_additive_densities,
-                #     width,
-                #     height,
-                #     2,
-                # )
 
     @time_range()
     def _render_mesh_seg(
@@ -1062,9 +978,6 @@ class Projector(object):
                 flags=RenderFlags.RGBA,
                 zfar=zfar,
                 tags=tags,
-                # mat=mat,
-                # mat_idx=mat_idx,
-                # layer_id=layer_id,
             )
             res = np.flip(res, axis=0)
 
@@ -1103,7 +1016,6 @@ class Projector(object):
             )
 
         for tex_idx in range(self.gl_renderer.num_peel_passes):
-            # TODO: need gl synchronization here?
             pointer_into_hit_alphas = int(
                 int(self.mesh_hit_alphas_tex_gpu.data.ptr)
                 + layer_idx * self.gl_renderer.num_peel_passes * total_pixels * 4 * NUMBYTES_FLOAT32
@@ -1148,6 +1060,78 @@ class Projector(object):
                 block=(256, 1, 1),  # TODO (liam)
                 grid=(128, 1),  # TODO (liam)
             )
+
+
+    def _subtract_from_additive(self, proj: geo.CameraProjection, zfar: float) -> None:
+        width = proj.intrinsic.sensor_width
+        height = proj.intrinsic.sensor_height
+        total_pixels = width * height
+
+        # For each layer
+        for subtrahend_layer_idx in range(self.mesh_layers-1, -1, -1):
+            if not self.mesh_sub_layer_valid[subtrahend_layer_idx]:
+                continue
+
+            # For each subtractive layer pair
+            num_mesh_hit_pairs = self.max_mesh_hits // 2
+            for tex_idx in range(num_mesh_hit_pairs):  # TODO: only mesh peel nonzero
+                # transfer self.mesh_hit_alphas_gpu to gl textures
+                pointer_into_mesh_hit_alphas_tex_gpu = int(
+                    int(self.mesh_hit_alphas_tex_gpu.data.ptr)
+                    + subtrahend_layer_idx * num_mesh_hit_pairs * total_pixels * 2 * NUMBYTES_FLOAT32
+                    + tex_idx * total_pixels * 2 * NUMBYTES_FLOAT32
+                )
+                gl_gpu_to_tex(
+                    self.gl_renderer.mesh_sub_reg_ims[tex_idx],
+                    pointer_into_mesh_hit_alphas_tex_gpu,
+                    width,
+                    height,
+                    2,
+                )
+
+                for minuend_layer_idx in range(subtrahend_layer_idx):
+                    for mat_idx, mat in enumerate(self.prim_unique_materials):
+                        with time_range("mesh_mesh_sub_render"):
+                            self.gl_renderer.render(
+                                self.scene,
+                                drr_mode=DRRMode.MESH_SUB,
+                                flags=RenderFlags.RGBA,
+                                zfar=zfar,
+                                mat=mat,
+                                mat_idx=mat_idx,
+                                layer_idx=minuend_layer_idx,
+                                tex_idx=tex_idx,
+                            )
+
+
+    def _transfer_additive_to_cuda(self, proj: geo.CameraProjection, zfar: float) -> None:
+        width = proj.intrinsic.sensor_width
+        height = proj.intrinsic.sensor_height
+        total_pixels = width * height
+    
+        # transfer all the additive
+        for layer_idx in range(self.mesh_layers):
+            for mat_idx, mat in enumerate(self.prim_unique_materials):
+                pointer_into_additive_densities = (
+                    int(self.additive_densities_gpu.data.ptr)
+                    + layer_idx
+                    * len(self.prim_unique_materials)
+                    * total_pixels
+                    * 2
+                    * NUMBYTES_FLOAT32
+                    + mat_idx * total_pixels * 2 * NUMBYTES_FLOAT32
+                )
+
+                gl_tex_to_gpu(
+                    self.gl_renderer.additive_reg_ims[
+                        layer_idx * len(self.prim_unique_materials) + mat_idx
+                    ],
+                    pointer_into_additive_densities,
+                    width,
+                    height,
+                    2,
+                )
+
 
 
     def project_over_carm_range(

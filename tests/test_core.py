@@ -984,7 +984,7 @@ if __name__ == "__main__":
     test.test_anatomical()
     # test.gen_threads()
     # test.test_cube()
-    # test.test_mesh_mesh_1()
+    test.test_mesh_mesh_1()
     # volume = test.load_volume()
     # carm = deepdrr.MobileCArm(isocenter=volume.center_in_world)
     # test.project(volume, carm, "test.png")
