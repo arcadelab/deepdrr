@@ -230,7 +230,7 @@ class Renderer(object):
                 if drr_mode == DRRMode.DIST:
                     if not force_all_subtract and not primitive.material.subtractive:
                         continue
-                    if tags is not None and primitive.material.tag not in tags:
+                    if tags is not None and primitive.material.tag != tags:
                         continue
 
                 if drr_mode == DRRMode.SEG:

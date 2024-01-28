@@ -621,8 +621,8 @@ class TestSingleVolume:
         hit_ims = []
         
         # N = 1
-        # N = 20
-        N = 100
+        N = 20
+        # N = 100
         with projector:
             # for i in range(N):
             for i in tqdm.tqdm(range(N)):
@@ -654,8 +654,9 @@ class TestSingleVolume:
                 seg = projector.project_seg(tags=[k for k, v in d_contour_mesh_files.items()])
                 seg = np.stack(seg, axis=0)
 
-                hits_channels = projector.project_hits(tags=[["bone"]])[0][:, :, :4]
-                hits = np.concatenate([hits_channels[:, :, i] for i in range(4)], axis=0)
+                hits_channels = projector.project_hits(tags=[k for k, v in d_contour_mesh_files.items()])
+
+                hits = np.concatenate([np.concatenate([hits_channels[j][:, :, i] for i in range(4)], axis=0) for j in range(len(d_contour_mesh_files))], axis=1)
 
                 hits[hits <= 0] = np.inf
                 finite_hits = hits[np.isfinite(hits)]
@@ -1003,10 +1004,10 @@ if __name__ == "__main__":
     test = TestSingleVolume()
     # test.test_layer_depth()
     # test.test_mesh_only()
-    # test.test_anatomical()
+    test.test_anatomical()
     # test.gen_threads()
     # test.test_cube()
-    test.test_mesh_mesh_1()
+    # test.test_mesh_mesh_1()
     # volume = test.load_volume()
     # carm = deepdrr.MobileCArm(isocenter=volume.center_in_world)
     # test.project(volume, carm, "test.png")
