@@ -68,8 +68,8 @@ def verify_image(name, actual_dir, expected_dir, diff_dir, atol=1):
     min_diff = 0
     for i, expected_frame in enumerate(expected_frames):
         actual_frame = actual_frames[i]
-        if not np.allclose(actual_frame, actual_frame[:, :, 0][:, :, np.newaxis]):
-            print(f"Warning: Image {i} has different values in different channels, this compare function only shows the first channel diff")
+        # if not np.allclose(actual_frame, actual_frame[:, :, 0][:, :, np.newaxis]):
+            # print(f"Warning: Image {i} has different values in different channels, this compare function only shows the first channel diff")
         diff_im = actual_frame.astype(np.float32) - expected_frame.astype(np.float32)
         max_diff = max(max_diff, diff_im.max())
         min_diff = min(min_diff, diff_im.min())
@@ -89,6 +89,7 @@ def verify_image(name, actual_dir, expected_dir, diff_dir, atol=1):
             plt.figure()
             plt.imshow(diff_im[:,:,0], cmap="viridis", vmin=min_diff, vmax=max_diff)
             plt.colorbar()
+            plt.title("First channel diff (might have other channels!)")
             # diff_name = f"diff_{name}"
             # if len(expected_frames) > 1:
             #     diff_name = f"{diff_name}_diff_{i:03d}"

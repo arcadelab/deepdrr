@@ -35,6 +35,7 @@ class Renderable(ABC):
         anatomical_from_IJK: Optional[geo.FrameTransform] = None,
         world_from_anatomical: Optional[geo.FrameTransform] = None,
         anatomical_from_ijk: Optional[geo.FrameTransform] = None,
+        enabled: bool = True,
     ) -> None:
         if anatomical_from_ijk is not None:
             # Deprecation warning
@@ -45,6 +46,11 @@ class Renderable(ABC):
             if world_from_anatomical is None
             else geo.frame_transform(world_from_anatomical)
         )
+        self.set_enabled(enabled)
+
+    @abstractmethod
+    def set_enabled(self, enabled: bool) -> None:
+        pass
 
     @property
     def world_from_IJK(self) -> geo.FrameTransform:

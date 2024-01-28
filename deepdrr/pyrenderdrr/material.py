@@ -40,6 +40,7 @@ class DRRMaterial(MetallicRoughnessMaterial):
         subtractive=False,
         layer=0,
         drrMatName=None,
+        tag=None,
     ):
         super(DRRMaterial, self).__init__(
             name=name,
@@ -64,6 +65,7 @@ class DRRMaterial(MetallicRoughnessMaterial):
         self.subtractive = subtractive
         self.layer = layer
         self.drrMatName = drrMatName
+        self.tag = tag
 
     @property
     def density(self):

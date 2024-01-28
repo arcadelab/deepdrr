@@ -20,6 +20,10 @@ import io
 from matplotlib import pyplot as plt
 
 from deepdrr.utils.img_cmp import verify_image
+from deepdrr.utils.image_utils import ensure_cdim, as_uint8, as_float32
+import cv2
+import seaborn as sns
+
 
 import pyvista as pv
 import logging
@@ -37,6 +41,70 @@ def pytest_generate_tests(metafunc):
     )
 
 
+def draw_masks( # from perphix.utils.vis_utils
+    image: np.ndarray,
+    masks: np.ndarray,
+    alpha: float = 0.3,
+    threshold: float = 0.5,
+    names: Optional[List[str]] = None,
+    colors: Optional[np.ndarray] = None,
+    palette: str = "hls",
+    seed: Optional[int] = None,
+) -> np.ndarray:
+    """Draw contours of masks on an image (copy).
+
+    Args:
+        image (np.ndarray): the image to draw on.
+        masks (np.ndarray): the masks to draw. [num_masks, H, W] array of masks.
+    """
+
+    image = as_float32(image)
+    image = ensure_cdim(image)
+    if colors is None:
+        colors = np.array(sns.color_palette(palette, masks.shape[0]))
+        if seed is not None:
+            np.random.seed(seed)
+        colors = colors[np.random.permutation(colors.shape[0])]
+
+    image *= 1 - alpha
+    for i, mask in enumerate(masks):
+        bool_mask = mask > threshold
+
+        image[bool_mask] = colors[i] * alpha + image[bool_mask] * (1 - alpha)
+
+        contours, _ = cv2.findContours(
+            bool_mask.astype(np.uint8), cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE
+        )
+        image = as_uint8(image)
+        cv2.drawContours(image, contours, -1, (255 * colors[i]).tolist(), 1)
+        image = as_float32(image)
+
+    image = as_uint8(image)
+
+    fontscale = 0.75 / 512 * image.shape[0]
+    thickness = max(int(1 / 256 * image.shape[0]), 1)
+
+    if names is not None:
+        for i, mask in enumerate(masks):
+            bool_mask = mask > threshold
+            ys, xs = np.argwhere(bool_mask).T
+            if len(ys) == 0:
+                continue
+            y = (np.min(ys) + np.max(ys)) / 2
+            x = (np.min(xs) + np.max(xs)) / 2
+            image = cv2.putText(
+                image,
+                names[i],
+                (int(x) + 5, int(y) - 5),
+                cv2.FONT_HERSHEY_SIMPLEX,
+                fontscale,
+                (255 * colors[i]).tolist(),
+                thickness,
+                cv2.LINE_AA,
+            )
+
+    return image
+
 class TestSingleVolume:
     d = Path(__file__).resolve().parent
     truth = d / "reference"
@@ -53,6 +121,7 @@ class TestSingleVolume:
         "test_mesh_mesh_sub": [dict()],
         "test_mesh_mesh_1": [dict()],
         "test_mesh_only": [dict()],
+        "test_anatomical": [dict()],
         "test_multi_projector": [dict()],
         "test_layer_depth": [dict()],
         "test_translate": [
@@ -94,6 +163,10 @@ class TestSingleVolume:
 
         with projector:
             image = projector.project()
+
+            # alphas = projector.project_hits()
+
+            # np.save(self.output_dir / f"alphas", alphas)
 
         # # make fig with colorbar
         # plt.figure()
@@ -203,8 +276,8 @@ class TestSingleVolume:
         carm = deepdrr.MobileCArm(isocenter=volume.center_in_world, sensor_width=300, sensor_height=200, pixel_size=0.6)
         # self.project([volume], carm, "test_mesh.png")
         # self.project([mesh, mesh2, mesh3], carm, "test_mesh.png")
-        self.project([volume, mesh, mesh2, mesh3], carm, "test_mesh.png", verify=True, num_mesh_layers=32)
-        # self.project([volume, mesh, mesh2, mesh3], carm, "test_mesh.png", verify=False, num_mesh_layers=64)
+        self.project([volume, mesh, mesh2, mesh3], carm, "test_mesh.png", verify=True, max_mesh_hits=32)
+        # self.project([volume, mesh, mesh2, mesh3], carm, "test_mesh.png", verify=False, max_mesh_hits=64)
 
     
     def test_mesh_mesh_sub(self):
@@ -272,7 +345,7 @@ class TestSingleVolume:
         carm = deepdrr.MobileCArm(isocenter=volume.center_in_world, sensor_width=300, sensor_height=200, pixel_size=0.6)
         # self.project([volume], carm, "test_mesh.png")
         # self.project([mesh, mesh2, mesh3], carm, "test_mesh.png")
-        self.project([mesh2, mesh3], carm, "test_mesh_mesh_sub.png", verify=False, num_mesh_layers=32, neglog=True)
+        self.project([mesh2, mesh3], carm, "test_mesh_mesh_sub.png", verify=False, max_mesh_hits=32, neglog=True)
 
     
 
@@ -346,7 +419,7 @@ class TestSingleVolume:
             photon_count=100000,
             scatter_num=0,
             threads=8,
-            num_mesh_layers=128,
+            max_mesh_hits=128,
         )
 
         images = []
@@ -473,8 +546,140 @@ class TestSingleVolume:
         carm = deepdrr.MobileCArm(isocenter=volume.center_in_world, sensor_width=300*2, sensor_height=200*2, pixel_size=0.6/2)
         # self.project([volume], carm, "test_mesh.png")
         # self.project([mesh, mesh2, mesh3], carm, "test_mesh.png")
-        self.project([mesh, mesh2, mesh3], carm, "test_mesh_only.png", verify=True, num_mesh_layers=32)
-        # self.project([volume, mesh, mesh2, mesh3], carm, "test_mesh.png", verify=False, num_mesh_layers=64)
+        self.project([mesh, mesh2, mesh3], carm, "test_mesh_only.png", verify=True, max_mesh_hits=32)
+        # self.project([volume, mesh, mesh2, mesh3], carm, "test_mesh.png", verify=False, max_mesh_hits=64)
+
+
+    
+    def test_anatomical(self):
+        input_folder = Path('tests/resources/mesh_out_low')
+        tissue_types = list(input_folder.glob('*'))
+        tissue_types = [x for x in tissue_types if x.is_dir()]
+        
+        
+        contour_mesh_files = {x.stem:list(x.glob('iso_*.stl')) for x in tissue_types}
+        [x.sort(key=lambda x: int(x.stem.split('_')[1])) for x in contour_mesh_files.values()]
+        contour_mesh_files = {k:[(x, float(x.stem.split('_')[2])) for x in l] for k, l in contour_mesh_files.items()}
+        
+        d_contour_mesh_files = {}
+        for mat_id, l in contour_mesh_files.items():
+            if len(l) == 0:
+                continue
+            densities = [x[1] for x in l]
+            diff_densities = [densities[0]]+list(np.diff(densities))
+            assert np.allclose(np.cumsum(diff_densities), densities)
+            d_contour_mesh_files[mat_id] = [(x[0], diff_densities[i]) for i, x in enumerate(l)]
+        
+        contour_meshes = [polydata_to_pyrender_mesh(pv.read(str(m)), material=DRRMaterial(k, density=d, subtractive=False, tag=k)) for k, l in d_contour_mesh_files.items() for m, d in l]
+        
+        meshtransform = None
+        contour_meshes = [deepdrr.Mesh(mesh=m, world_from_anatomical=meshtransform) for m in contour_meshes]
+        
+        
+        carm = deepdrr.SimpleDevice(sensor_width=200*2, sensor_height=200*2, pixel_size=5, source_to_detector_distance=1000)
+
+        # self.project(contour_meshes, carm, "test_anatomical.png", verify=True, max_mesh_hits=32)
+
+
+        projector = deepdrr.Projector(
+            volume=contour_meshes,
+            # volume=[contour_meshes[0]],
+            carm=carm,
+            step=0.01,  # stepsize along projection ray, measured in voxels
+            mode="linear",
+            max_block_index=65535,
+            spectrum="90KV_AL40",
+            photon_count=100000,
+            scatter_num=0,
+            threads=8,
+            neglog=True,
+            mesh_layers=2,
+        )
+        
+        images = []
+        segs = []
+        
+        # N = 1
+        # N = 20
+        N = 100
+        with projector:
+            # for i in range(N):
+            for i in tqdm.tqdm(range(N)):
+                for m in contour_meshes:
+                    m.set_enabled(True)
+                
+                for l, m in enumerate(contour_meshes):
+                    if (i // 10) % len(contour_meshes) == l:
+                        m.set_enabled(False)
+                
+
+                z = geo.FrameTransform.from_translation([-51 ,-164.20076, -408.00333])
+                # z = geo.FrameTransform.from_translation(np.mean(contour_meshes[0].mesh.primitives[0].positions, axis=0))
+                # z = geo.FrameTransform.from_translation([400, 400, 800])
+                # z = geo.FrameTransform.from_translation([10*np.sin(-i/N*np.pi*2*2), 10*np.sin(-i/N*np.pi*2), 0])
+                # a = geo.FrameTransform.from_rotation(geo.Rotation.from_euler("x", -i/N*np.pi*2))
+                # b = geo.FrameTransform.from_rotation(geo.Rotation.from_euler("x", -np.pi/2))
+                b = geo.FrameTransform.from_rotation(geo.Rotation.from_euler("x", -np.pi/2))
+                b2 = geo.FrameTransform.from_rotation(geo.Rotation.from_euler("y", -i/N*np.pi*2))
+                # c = geo.FrameTransform.from_translation([0, 0, -30])
+                c = geo.FrameTransform.from_translation([0, 0, -500])
+                new = z @ b @ b2 @ c
+                carm._device_from_camera3d = new
+        
+                image = projector.project()
+
+                seg = [projector.project_seg(tags=[k]) for k, v in d_contour_mesh_files.items()]
+                seg = np.stack(seg, axis=0)
+                # seg_256 = (seg * 255).astype(np.uint8)
+
+                hits_channels = projector.project_hits(tags=["bone"])[:, :, :4]
+                # stack so four grayscale images from the first four channels of hits_channels
+                hits = np.concatenate([hits_channels[:, :, i] for i in range(4)], axis=1)
+
+                finite_hits = hits[np.isfinite(hits)]
+                if len(finite_hits) > 0:
+                    hits_max = np.amax(finite_hits)
+                    hits_min = np.amin(finite_hits)
+                    hits = (hits - hits_min) / (hits_max - hits_min)
+                hits_256 = (hits * 255).astype(np.uint8)
+                segs.append(Image.fromarray(hits_256))
+
+
+                image_256 = (image * 255).astype(np.uint8)
+                image_256 = draw_masks(image_256, seg, seed=0)
+
+
+                images.append(Image.fromarray(image_256))
+                # segs.append(Image.fromarray(seg))
+        
+        # Save the list of images as a GIF
+        name = f'test_anatomical.gif'
+        output_gif_path = self.output_dir/name
+        
+        # if True:
+        with verify_image(name, actual_dir=self.output_dir, expected_dir=self.truth, diff_dir=self.diff_dir):
+            images[0].save(
+                output_gif_path,
+                save_all=True,
+                append_images=images[1:],
+                duration=7000/N,  # Duration between frames in milliseconds
+                loop=0,  # 0 means loop indefinitely, you can set another value if needed
+                disposal=1,  # 2 means replace with background color (use 1 for no disposal)
+            )
+
+        name = f'test_anatomical_seg.gif'
+        output_gif_path = self.output_dir/name
+        
+        # if True:
+        with verify_image(name, actual_dir=self.output_dir, expected_dir=self.truth, diff_dir=self.diff_dir):
+            segs[0].save(
+                output_gif_path,
+                save_all=True,
+                append_images=segs[1:],
+                duration=7000/N,  # Duration between frames in milliseconds
+                loop=0,  # 0 means loop indefinitely, you can set another value if needed
+                disposal=1,  # 2 means replace with background color (use 1 for no disposal)
+            )
 
     
     def test_cube(self):
@@ -554,7 +759,7 @@ class TestSingleVolume:
             scatter_num=0,
             threads=8,
             neglog=True,
-            num_mesh_layers=32
+            max_mesh_hits=32
         )
 
         images = []
@@ -647,7 +852,7 @@ class TestSingleVolume:
             scatter_num=0,
             threads=8,
             neglog=True,
-            num_mesh_layers=32
+            max_mesh_hits=32
         )
 
         images = []
@@ -739,9 +944,9 @@ class TestSingleVolume:
         carm = deepdrr.MobileCArm(isocenter=volume.center_in_world, sensor_width=300, sensor_height=200, pixel_size=0.6)
         # self.project([volume], carm, "test_mesh.png")
         # self.project([mesh, mesh2, mesh3], carm, "test_mesh.png")
-        self.project([volume, mesh, mesh2] + overlapping, carm, "test_mesh_d4.png", num_mesh_layers=4, verify=False)
-        self.project([volume, mesh, mesh2] + overlapping, carm, "test_mesh_d64.png", num_mesh_layers=64, verify=False)
-        self.project([volume, mesh, mesh2] + overlapping, carm, "test_mesh_d128.png", num_mesh_layers=128, verify=False)
+        self.project([volume, mesh, mesh2] + overlapping, carm, "test_mesh_d4.png", max_mesh_hits=4, verify=False)
+        self.project([volume, mesh, mesh2] + overlapping, carm, "test_mesh_d64.png", max_mesh_hits=64, verify=False)
+        self.project([volume, mesh, mesh2] + overlapping, carm, "test_mesh_d128.png", max_mesh_hits=128, verify=False)
 
 
 
@@ -776,10 +981,10 @@ if __name__ == "__main__":
     test = TestSingleVolume()
     # test.test_layer_depth()
     # test.test_mesh_only()
-    test.test_mesh()
+    test.test_anatomical()
     # test.gen_threads()
     # test.test_cube()
-    # test.test_mesh_mesh_1()
+    test.test_mesh_mesh_1()
     # volume = test.load_volume()
     # carm = deepdrr.MobileCArm(isocenter=volume.center_in_world)
     # test.project(volume, carm, "test.png")
