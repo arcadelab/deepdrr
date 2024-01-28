@@ -605,6 +605,14 @@ class TestSingleVolume:
         with projector:
             # for i in range(N):
             for i in tqdm.tqdm(range(N)):
+                for m in contour_meshes:
+                    m.set_enabled(True)
+                
+                for l, m in enumerate(contour_meshes):
+                    if (i // 10) % len(contour_meshes) == l:
+                        m.set_enabled(False)
+                
+
                 z = geo.FrameTransform.from_translation([-51 ,-164.20076, -408.00333])
                 # z = geo.FrameTransform.from_translation(np.mean(contour_meshes[0].mesh.primitives[0].positions, axis=0))
                 # z = geo.FrameTransform.from_translation([400, 400, 800])
@@ -620,7 +628,6 @@ class TestSingleVolume:
         
                 image = projector.project()
 
-
                 seg = [projector.project_seg(tags=[k]) for k, v in d_contour_mesh_files.items()]
                 seg = np.stack(seg, axis=0)
                 # seg_256 = (seg * 255).astype(np.uint8)
@@ -629,9 +636,11 @@ class TestSingleVolume:
                 # stack so four grayscale images from the first four channels of hits_channels
                 hits = np.concatenate([hits_channels[:, :, i] for i in range(4)], axis=1)
 
-                hits_max = np.amax(hits[np.isfinite(hits)])
-                hits_min = np.amin(hits[np.isfinite(hits)])
-                hits = (hits - hits_min) / (hits_max - hits_min)
+                finite_hits = hits[np.isfinite(hits)]
+                if len(finite_hits) > 0:
+                    hits_max = np.amax(finite_hits)
+                    hits_min = np.amin(finite_hits)
+                    hits = (hits - hits_min) / (hits_max - hits_min)
                 hits_256 = (hits * 255).astype(np.uint8)
                 segs.append(Image.fromarray(hits_256))
 
@@ -647,6 +656,7 @@ class TestSingleVolume:
         name = f'test_anatomical.gif'
         output_gif_path = self.output_dir/name
         
+        # if True:
         with verify_image(name, actual_dir=self.output_dir, expected_dir=self.truth, diff_dir=self.diff_dir):
             images[0].save(
                 output_gif_path,
@@ -660,6 +670,7 @@ class TestSingleVolume:
         name = f'test_anatomical_seg.gif'
         output_gif_path = self.output_dir/name
         
+        # if True:
         with verify_image(name, actual_dir=self.output_dir, expected_dir=self.truth, diff_dir=self.diff_dir):
             segs[0].save(
                 output_gif_path,
