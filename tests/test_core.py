@@ -40,24 +40,6 @@ def pytest_generate_tests(metafunc):
                    for funcargs in funcarglist]
     )
 
-from time import time 
-  
-  
-def timer_func(func): 
-    # This function shows the execution time of  
-    # the function object passed 
-    def wrap_func(*args, **kwargs): 
-        t1 = time() 
-        try:
-            result = func(*args, **kwargs) 
-        except Exception as e:
-            raise e
-        finally:
-            t2 = time() 
-            print(f'Function {func.__name__!r} executed in {(t2-t1):.4f}s') 
-        return result 
-    return wrap_func 
-  
   
 
 
@@ -570,7 +552,6 @@ class TestSingleVolume:
         # self.project([volume, mesh, mesh2, mesh3], carm, "test_mesh.png", verify=False, max_mesh_hits=64)
 
 
-    @timer_func
     def test_anatomical(self):
         input_folder = Path('tests/resources/mesh_out_low')
         tissue_types = list(input_folder.glob('*'))
