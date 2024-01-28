@@ -55,6 +55,8 @@ class Volume(Renderable):
         anatomical_coordinate_system: Optional[str] = None,
         cache_dir: Optional[str] = None,
         config: Dict[str, Any] = dict(),
+        enabled: bool = True,
+        **kwargs,
     ) -> None:
         """A deepdrr Volume object with materials segmentation and orientation in world-space.
 
@@ -70,13 +72,17 @@ class Volume(Renderable):
                 This may be useful for ensuring compatibility with other data, but it is not checked or used internally (yet). Defaults to None.
             cache_dir ()
         """
-        Renderable.__init__(self, anatomical_from_IJK, world_from_anatomical)
+        Renderable.__init__(self, anatomical_from_IJK, world_from_anatomical, **kwargs)
         self.data = np.array(data).astype(np.float32)
         self.materials = self._format_materials(materials)
         self.anatomical_coordinate_system = anatomical_coordinate_system
         assert self.anatomical_coordinate_system in ["LPS", "RAS", None]
         self.cache_dir = None if cache_dir is None else Path(cache_dir).expanduser()
         self.config = config
+        self.enabled = enabled
+
+    def set_enabled(self, enabled: bool) -> None:
+        self.enabled = enabled
 
     def get_config(self) -> Dict[str, Any]:
         """Get the configuration of the volume. Does not include volumetric data.
