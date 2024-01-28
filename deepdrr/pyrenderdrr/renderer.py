@@ -184,9 +184,8 @@ class Renderer(object):
             # Don't clear-- we are rendering directly onto previous layer
             pass
         elif drr_mode == DRRMode.SEG:
-            glClearColor(0.0, 0.0, 0.0, 1.0)
-            glClear(GL_COLOR_BUFFER_BIT)
-            # glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT)
+            glClearColor(0.0, 0.0, 0.0, 0.0)
+            glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT)
             
 
         glDisable(GL_MULTISAMPLE)
@@ -220,16 +219,28 @@ class Renderer(object):
             for primitive in mesh.primitives:
                 if not isinstance(primitive.material, DRRMaterial):
                     continue
-                if drr_mode == DRRMode.DENSITY and not primitive.material.additive:
-                    continue
-                if drr_mode == DRRMode.DIST and (not force_all_subtract and not primitive.material.subtractive):
-                    continue
                 if mat is not None and primitive.material.drrMatName != mat:
                     continue
                 if layer_idx is not None and primitive.material.layer != layer_idx:
                     continue
-                if tags is not None and primitive.material.tag not in tags:
-                    continue
+
+                if drr_mode == DRRMode.DENSITY:
+                    if not primitive.material.additive:
+                        continue
+                if drr_mode == DRRMode.DIST:
+                    if not force_all_subtract and not primitive.material.subtractive:
+                        continue
+                    if tags is not None and primitive.material.tag not in tags:
+                        continue
+
+                if drr_mode == DRRMode.SEG:
+                    color = np.zeros(4, dtype=np.float32)
+                    if tags is not None:
+                        for i in range(len(tags)):
+                            if tags[i] in primitive.material.tag:
+                                color[i] = 1.0
+                    if np.sum(color) == 0.0:
+                        continue
 
                 # First, get and bind the appropriate program
                 program = self._get_primitive_program(
@@ -243,8 +254,8 @@ class Renderer(object):
                 program.set_uniform(
                     'cam_pos', scene.get_pose(scene.main_camera_node)[:3, 3]
                 )
-                # if drr_mode == DRRMode.SEG:
-                #     program.set_uniform('color', color)
+                if drr_mode == DRRMode.SEG:
+                    program.set_uniform('color', color)
 
                 # Finally, bind and draw the primitive
                 self._bind_and_draw_primitive(
@@ -310,10 +321,14 @@ class Renderer(object):
             glDisable(GL_CULL_FACE)
         elif drr_mode == DRRMode.SEG:
             glEnable(GL_BLEND)
-            glBlendFunc(GL_ONE, GL_ZERO)
+            # glBlendFunc(GL_ONE, GL_ZERO)
+            glBlendEquation(GL_MAX)
+            glBlendFunc(GL_ONE, GL_ONE)
+            # glPolygonMode(GL_FRONT_AND_BACK, GL_FILL)
+            # glEnable(GL_CULL_FACE)
+            # glCullFace(GL_BACK)
             glPolygonMode(GL_FRONT_AND_BACK, GL_FILL)
-            glEnable(GL_CULL_FACE)
-            glCullFace(GL_BACK)
+            glDisable(GL_CULL_FACE)
         elif drr_mode == DRRMode.MESH_SUB:
             density = material.density
             assert density is not None, "Density must be set for DRRMode.DENSITY"
@@ -579,8 +594,8 @@ class Renderer(object):
             
             glBindRenderbuffer(GL_RENDERBUFFER, self._main_cb)
             glRenderbufferStorage(
-                GL_RENDERBUFFER, GL_R8,
-                # GL_RENDERBUFFER, GL_RGBA,
+                # GL_RENDERBUFFER, GL_R8,
+                GL_RENDERBUFFER, GL_RGBA,
                 self.viewport_width, self.viewport_height
             )
             
@@ -799,11 +814,13 @@ class Renderer(object):
 
 
         color_buf = glReadPixels(
-            0, 0, width, height, GL_RED, GL_UNSIGNED_BYTE
+            0, 0, width, height, GL_RGBA, GL_UNSIGNED_BYTE
+            # 0, 0, width, height, GL_RED, GL_UNSIGNED_BYTE
         )
         color_im = np.frombuffer(color_buf, dtype=np.uint8)
-        color_im = color_im.reshape((height, width))
-        color_im = np.flip(color_im, axis=0)
+        color_im = color_im.reshape((height, width, 4))
+        # color_im = color_im.reshape((height, width))
+        # color_im = np.flip(color_im, axis=0)
 
         # Resize for macos if needed
         if sys.platform == 'darwin':
