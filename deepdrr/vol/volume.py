@@ -13,11 +13,13 @@ from pydicom.filereader import dcmread
 import nrrd
 from scipy.spatial.transform import Rotation
 from scipy.interpolate import RegularGridInterpolator
+import trimesh
 import pyvista as pv
 
 from .. import load_dicom
 from .. import geo
 from .. import utils
+from ..common import PatientPose
 from ..utils import data_utils
 from ..utils import mesh_utils
 from ..device import Device
@@ -26,6 +28,7 @@ from .renderable import Renderable
 
 if TYPE_CHECKING:
     from .mesh import Mesh
+    from ..pyrenderdrr import DRRMaterial
 
 vtk, nps, vtk_available = utils.try_import_vtk()
 
@@ -926,6 +929,24 @@ class Volume(Renderable):
             )
             self.world_from_anatomical = world_from_device @ device_from_anatomical
 
+    def position_patient(self, pose: PatientPose) -> None:
+        """Position the patient in the given pose.
+
+        Args:
+            pose (PatientPose): The pose to position the patient in.
+        """
+        match pose:
+            case PatientPose.HFS:
+                self.orient_patient(head_first=True, supine=True)
+            case PatientPose.HFP:
+                self.orient_patient(head_first=True, supine=False)
+            case PatientPose.FFS:
+                self.orient_patient(head_first=False, supine=True)
+            case PatientPose.FFP:
+                self.orient_patient(head_first=False, supine=False)
+            case _:
+                raise NotImplementedError(f"Invalid patient pose {pose}")
+
     def interpolate(self, *x: geo.Point3D, method: str = "linear") -> np.ndarray:
         """Interpolate the value of the volume at the point.
 
@@ -1042,6 +1063,27 @@ class Volume(Renderable):
             surface = surface.decimate(1 - decimation_points / surface.n_points)
 
         return surface
+
+    def load_trimesh_in_world(
+        self, path: Path, material: str = "bone", convert_to_RAS: bool = True
+    ) -> trimesh.Trimesh:
+        """Load the given mesh as a trimesh positioned correctly with the CT in world coordinates.
+
+        This is useful for meshes that were created from the CT, which should be saved in LPS
+        coordinates.
+
+        Args:
+            path (Path): The path to the mesh.
+            material (str): The material of the mesh.
+            convert_to_RAS (bool): If True, the mesh is converted to RAS coordinates. Defaults to True.
+            **kwargs: Additional arguments passed to :func:`deepdrr.utils.mesh_utils.load_trimesh`.
+
+        Returns:
+            trimesh.Trimesh: The mesh in world coordinates.
+        """
+        mesh = mesh_utils.load_trimesh(path, convert_to_RAS=convert_to_RAS)
+        mesh = mesh.apply_transform(geo.get_data(self.world_from_anatomical))
+        return mesh
 
     def _make_surface(self, material: str = "bone"):
         """Make a surface for the boolean segmentation"""
@@ -1183,11 +1225,12 @@ class Volume(Renderable):
 
         return mesh
 
-    def crop(self, crop_box: Tuple[Tuple[float, float], ...]) -> Volume:
+    def crop(self, crop_box: Tuple[Tuple[float, float], ...] | np.ndarray) -> Volume:
         """Crop the volume to a given bounding box.
 
         Args:
             crop_box (Tuple[Tuple[float, float], ...]): The bounding box to crop to, in IJK.
+                (np.ndarray): The bounding box to crop to, in IJK. Must be a [3, 2] array, with min/max in IJK.
 
         Returns:
             Volume: The cropped volume.

@@ -221,12 +221,18 @@ def voxelize_multisurface(
     # combine surfaces wiht same material and approx same density
     surface_dict = defaultdict(list)
     for material, density, surface in surfaces:
-        surface_dict[(material, int(density * 100))].append((material, density, surface))
+        surface_dict[(material, int(density * 100))].append(
+            (material, density, surface)
+        )
 
     combined_surfaces = []
     for _, surfaces in surface_dict.items():
         combined_surfaces.append(
-            (surfaces[0][0], surfaces[0][1], sum([s[2] for s in surfaces], pv.PolyData()))
+            (
+                surfaces[0][0],
+                surfaces[0][1],
+                sum([s[2] for s in surfaces], pv.PolyData()),
+            )
         )
     surfaces = combined_surfaces
 
@@ -255,11 +261,15 @@ def voxelize_multisurface(
 
     material_segmentations_combined = {}
     for material, seg in material_segmentations.items():
-        material_segmentations_combined[material] = np.logical_or.reduce(seg).astype(np.uint8)
+        material_segmentations_combined[material] = np.logical_or.reduce(seg).astype(
+            np.uint8
+        )
 
     def_dens = default_densities if default_densities else _default_densities
 
-    data = np.zeros_like(list(material_segmentations_combined.values())[0], dtype=np.float64)
+    data = np.zeros_like(
+        list(material_segmentations_combined.values())[0], dtype=np.float64
+    )
     for (material, density, _), segmentation in zip(surfaces, segmentations):
         # if density is negative, use the default density
         if density < -0.01:
@@ -339,7 +349,9 @@ def polydata_to_pyrender_mesh(
 
 def polydata_to_trimesh(polydata: pv.PolyData) -> trimesh.Trimesh:
     positions, indices = polydata_to_vertices_faces(polydata)
-    return trimesh.Trimesh(vertices=positions, faces=indices, process=False, validate=False)
+    return trimesh.Trimesh(
+        vertices=positions, faces=indices, process=False, validate=False
+    )
 
 
 def trimesh_to_pyrender_mesh(
@@ -363,3 +375,16 @@ def trimesh_to_pyrender_prim(
     mesh = trimesh_to_pyrender_mesh(mesh, material=material)
     assert len(mesh.primitives) == 1, "only single primitive meshes are supported"
     return mesh.primitives[0]
+
+
+def load_trimesh(
+    path: Union[str, Path], convert_to_RAS: bool = False
+) -> trimesh.Trimesh:
+    """Load a trimesh from a file."""
+    path = Path(path)
+    if not path.exists():
+        raise FileNotFoundError(f"Could not find file {path}")
+    mesh = trimesh.load(path)
+    if convert_to_RAS:
+        mesh = mesh.apply_transform(np.array(geo.RAS_from_LPS))
+    return mesh
