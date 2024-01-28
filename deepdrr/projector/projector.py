@@ -909,14 +909,13 @@ class Projector(object):
         Each pixel list will have an even number of elements and is padded by [inf] values. 
         The list is sorted by closest to farthest intersection.
         For example: [entry0, exit0, entry1, exit1, inf, inf, ...].
-        The cupy array will be overwritten on the next call to any project method.
 
         Args:
             camera_projections: TODO
             seg_node_map: TODO
         
         Returns:
-            cupy.array: Pointer to cupy array of Float32s of shape (mesh_layers, height*width, max_mesh_hits)
+            np.array: Numpy array of Float32s of shape (mesh_layers, height, width, max_mesh_hits)
         """
         if len(camera_projections) > 1:
             raise NotImplementedError("multiple projections")
@@ -926,7 +925,7 @@ class Projector(object):
     def _render_hits(self, proj: geo.CameraProjection, tags: Optional[List[str]] = None) -> cupy.array:
         zfar = self._setup_pyrender_scene(proj)
         self._render_mesh_subtractive_single(proj, zfar, layer_idx=0, hits_mode=True, tags=tags)
-        return self.mesh_hit_alphas_gpu[0]
+        return self.mesh_hit_alphas_gpu[0].get().reshape(self.output_shape[1], self.output_shape[0], self.max_mesh_hits)
 
     @time_range()
     def _render_mesh(self, proj: geo.CameraProjection) -> None:

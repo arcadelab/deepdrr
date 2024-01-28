@@ -802,7 +802,7 @@ class Renderer(object):
             0, 0, width, height, GL_RED, GL_UNSIGNED_BYTE
         )
         color_im = np.frombuffer(color_buf, dtype=np.uint8)
-        color_im = color_im.reshape((height, width, 1))
+        color_im = color_im.reshape((height, width))
         color_im = np.flip(color_im, axis=0)
 
         # Resize for macos if needed
