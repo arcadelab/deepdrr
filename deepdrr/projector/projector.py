@@ -879,7 +879,7 @@ class Projector(object):
         return zfar
 
     def project_seg(
-            self, *camera_projections: geo.CameraProjection, tags: Optional[List[Optional[List[str]]]] = None
+            self, *camera_projections: geo.CameraProjection, tags: Optional[List[str]] = None
         ) -> np.ndarray:
             """
             TODO
@@ -896,7 +896,7 @@ class Projector(object):
             camera_projections = self._prepare_project(camera_projections)
             return self._render_seg(camera_projections[0], tags=tags)
 
-    def _render_seg(self, proj: geo.CameraProjection, tags: Optional[List[Optional[List[str]]]] = None) -> np.ndarray:
+    def _render_seg(self, proj: geo.CameraProjection, tags: Optional[List[str]]  = None) -> np.ndarray:
         zfar = self._setup_pyrender_scene(proj)
         res = self._render_mesh_seg(proj, zfar, tags=tags)
         return res
@@ -969,7 +969,7 @@ class Projector(object):
 
     @time_range()
     def _render_mesh_seg(
-        self, proj: geo.CameraProjection, zfar: float, tags: Optional[List[Optional[List[str]]]] = None
+        self, proj: geo.CameraProjection, zfar: float, tags: Optional[List[str]]  = None
     ) -> None:
         width = proj.intrinsic.sensor_width
         height = proj.intrinsic.sensor_height

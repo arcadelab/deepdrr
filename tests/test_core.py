@@ -40,24 +40,6 @@ def pytest_generate_tests(metafunc):
                    for funcargs in funcarglist]
     )
 
-from time import time 
-  
-  
-def timer_func(func): 
-    # This function shows the execution time of  
-    # the function object passed 
-    def wrap_func(*args, **kwargs): 
-        t1 = time() 
-        try:
-            result = func(*args, **kwargs) 
-        except Exception as e:
-            raise e
-        finally:
-            t2 = time() 
-            print(f'Function {func.__name__!r} executed in {(t2-t1):.4f}s') 
-        return result 
-    return wrap_func 
-  
   
 
 
@@ -570,7 +552,6 @@ class TestSingleVolume:
         # self.project([volume, mesh, mesh2, mesh3], carm, "test_mesh.png", verify=False, max_mesh_hits=64)
 
 
-    @timer_func
     def test_anatomical(self):
         input_folder = Path('tests/resources/mesh_out_low')
         tissue_types = list(input_folder.glob('*'))
@@ -621,8 +602,8 @@ class TestSingleVolume:
         hit_ims = []
         
         # N = 1
-        # N = 20
-        N = 100
+        N = 20
+        # N = 100
         with projector:
             # for i in range(N):
             for i in tqdm.tqdm(range(N)):
@@ -654,8 +635,9 @@ class TestSingleVolume:
                 seg = projector.project_seg(tags=[k for k, v in d_contour_mesh_files.items()])
                 seg = np.stack(seg, axis=0)
 
-                hits_channels = projector.project_hits(tags=[["bone"]])[0][:, :, :4]
-                hits = np.concatenate([hits_channels[:, :, i] for i in range(4)], axis=0)
+                hits_channels = projector.project_hits(tags=[k for k, v in d_contour_mesh_files.items()])
+
+                hits = np.concatenate([np.concatenate([hits_channels[j][:, :, i] for i in range(4)], axis=0) for j in range(len(d_contour_mesh_files))], axis=1)
 
                 hits[hits <= 0] = np.inf
                 finite_hits = hits[np.isfinite(hits)]
@@ -1003,10 +985,10 @@ if __name__ == "__main__":
     test = TestSingleVolume()
     # test.test_layer_depth()
     # test.test_mesh_only()
-    # test.test_anatomical()
+    test.test_anatomical()
     # test.gen_threads()
     # test.test_cube()
-    test.test_mesh_mesh_1()
+    # test.test_mesh_mesh_1()
     # volume = test.load_volume()
     # carm = deepdrr.MobileCArm(isocenter=volume.center_in_world)
     # test.project(volume, carm, "test.png")
