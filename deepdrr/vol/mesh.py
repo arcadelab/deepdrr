@@ -46,7 +46,7 @@ class Mesh(Renderable):
             raise ValueError("mesh must be specified")
 
         self.mesh = mesh
-        
+
         Renderable.__init__(
             self,
             anatomical_from_IJK=anatomical_from_IJK,
@@ -55,10 +55,9 @@ class Mesh(Renderable):
             **kwargs,
         )
 
-
     def set_enabled(self, enabled: bool) -> None:
         self.mesh.is_visible = enabled
-        
+
     def get_center(self) -> kg.Point3D:
         return kg.point(self.mesh.centroid)
 
@@ -71,6 +70,7 @@ class Mesh(Renderable):
         path: Union[str, Path],
         material: str | DRRMaterial = "iron",
         convert_to_RAS: bool = False,
+        tag: Optional[str] = None,
         **kwargs,
     ) -> Mesh:
         """Create a mesh for the given material with default density.
@@ -91,7 +91,7 @@ class Mesh(Renderable):
             raise FileNotFoundError(f"Could not find file {path}")
 
         if isinstance(material, str):
-            material = DRRMaterial.from_name(material)
+            material = DRRMaterial.from_name(material, tag=tag)
 
         mesh = mesh_utils.load_trimesh(path, convert_to_RAS=convert_to_RAS)
         mesh = pyrender.Mesh.from_trimesh(mesh, material=material)
