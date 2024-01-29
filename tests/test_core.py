@@ -581,7 +581,7 @@ class TestSingleVolume:
 
         # self.project(contour_meshes, carm, "test_anatomical.png", verify=True, max_mesh_hits=32)
 
-
+        mesh_hits = 32
         projector = deepdrr.Projector(
             volume=contour_meshes,
             # volume=[contour_meshes[0]],
@@ -595,15 +595,15 @@ class TestSingleVolume:
             threads=8,
             neglog=True,
             mesh_layers=2,
-            max_mesh_hits=32,
+            max_mesh_hits=mesh_hits,
         )
         
         images = []
         hit_ims = []
         
         # N = 1
+        # N = 20
         N = 20
-        # N = 100
         with projector:
             # for i in range(N):
             for i in tqdm.tqdm(range(N)):
@@ -636,10 +636,23 @@ class TestSingleVolume:
                 seg = np.stack(seg, axis=0)
 
                 hits_channels = projector.project_hits(tags=[k for k, v in d_contour_mesh_files.items()])
+                # for item in hits_channels:
+                #     # negate every other channel
+                #     for i in range(1, item.shape[2], 2):
+                #         item[:, :, i] *= -1
 
-                hits = np.concatenate([np.concatenate([hits_channels[j][:, :, i] for i in range(4)], axis=0) for j in range(len(d_contour_mesh_files))], axis=1)
+                for a in hits_channels:
+                    assert np.sum(np.isinf(a).astype(np.int32).sum(axis=-1) % 2) == 0
 
-                hits[hits <= 0] = np.inf
+                # hits = np.concatenate([np.concatenate([hits_channels[j][:, :, i] for i in range(12)], axis=1) for j in range(len(d_contour_mesh_files))], axis=0)
+                show_hits = 32
+                asdf = np.array([hits_channels[2][:,:,i] for i in range(show_hits)])
+                hits = asdf[np.arange(show_hits).reshape(-1,4)] # (4, 3, 400, 400)
+                # turn into one big 2d image
+                hits = np.concatenate([np.concatenate([hits[i, j] for j in range(4)], axis=1) for i in range(show_hits//4)], axis=0)                
+
+                hits[hits <= -1000] = np.inf
+                hits[hits >= 1000] = np.inf
                 finite_hits = hits[np.isfinite(hits)]
                 if len(finite_hits) > 0:
                     hits_max = np.amax(finite_hits)
@@ -984,8 +997,9 @@ if __name__ == "__main__":
     logging.basicConfig(level=logging.WARNING)
     test = TestSingleVolume()
     # test.test_layer_depth()
+    test.test_mesh()
     # test.test_mesh_only()
-    test.test_anatomical()
+    # test.test_anatomical()
     # test.gen_threads()
     # test.test_cube()
     # test.test_mesh_mesh_1()
