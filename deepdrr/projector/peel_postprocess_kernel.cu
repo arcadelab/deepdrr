@@ -15,9 +15,9 @@ extern "C" {
 __device__ void tide(float *interceptTs, int8_t *interceptFacing, int rayIdx, float sourceToDetectorDistance) {
     {
         for (int i = 0; i < NUM_INTERSECTIONS; i += 4) {
-            interceptFacing[i] = 0;
+            interceptFacing[i] = -1;
             interceptFacing[i + 1] = -1;
-            interceptFacing[i + 2] = 0;
+            interceptFacing[i + 2] = 1;
             interceptFacing[i + 3] = 1;
             interceptTs[i] = -interceptTs[i];
             interceptTs[i + 1] = interceptTs[i + 1];
