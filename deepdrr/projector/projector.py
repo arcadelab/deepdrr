@@ -1071,16 +1071,16 @@ class Projector(object):
             grid=(2048, 1),  # TODO (liam)
         )
 
-        # if not hits_mode:
-        #     self.kernel_reorder2(
-        #         args=(
-        #             np.uint64(self.mesh_hit_alphas_gpu.data.ptr + layer_idx * self.gl_renderer.num_peel_passes * total_pixels * 4 * NUMBYTES_FLOAT32),
-        #             np.uint64(self.mesh_hit_alphas_tex_gpu.data.ptr + layer_idx * self.gl_renderer.num_peel_passes * total_pixels * 4 * NUMBYTES_FLOAT32),
-        #             np.int32(total_pixels),
-        #         ),
-        #         block=(256, 1, 1),  # TODO (liam)
-        #         grid=(128, 1),  # TODO (liam)
-        #     )
+        if not hits_mode:
+            self.kernel_reorder2(
+                args=(
+                    np.uint64(self.mesh_hit_alphas_gpu.data.ptr + layer_idx * self.gl_renderer.num_peel_passes * total_pixels * 4 * NUMBYTES_FLOAT32),
+                    np.uint64(self.mesh_hit_alphas_tex_gpu.data.ptr + layer_idx * self.gl_renderer.num_peel_passes * total_pixels * 4 * NUMBYTES_FLOAT32),
+                    np.int32(total_pixels),
+                ),
+                block=(256, 1, 1),  # TODO (liam)
+                grid=(128, 1),  # TODO (liam)
+            )
 
 
     def _subtract_from_additive(self, proj: geo.CameraProjection, zfar: float) -> None:

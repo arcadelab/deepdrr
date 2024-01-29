@@ -26,8 +26,8 @@ void main(void)
     // }
 
     if (!gl_FrontFacing) {
-        gl_FragData[0].rgba = vec4(-MaxDepth, -MaxDepth, -fragDepth, fragDepth);
+        gl_FragData[0].rgba = vec4(-MaxDepth, -MaxDepth, -MaxDepth, fragDepth);
     } else {
-        gl_FragData[0].rgba = vec4(-fragDepth, fragDepth, -MaxDepth, -MaxDepth);
+        gl_FragData[0].rgba = vec4(-MaxDepth, fragDepth, -MaxDepth, -MaxDepth);
     }
 }
