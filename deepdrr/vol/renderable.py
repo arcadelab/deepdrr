@@ -142,7 +142,15 @@ class Renderable(ABC):
         center_world = self.world_from_anatomical @ center_anatomical
         self.place(center_anatomical, x)
 
-    def translate(self, t: geo.Vector3D) -> Volume:
+    def apply_transform(self, transform: geo.FrameTransform) -> None:
+        """Apply a transformation to the volume.
+
+        Args:
+            transform (geo.FrameTransform): The transformation to apply.
+        """
+        self.world_from_anatomical = transform @ self.world_from_anatomical
+
+    def translate(self, t: geo.Vector3D) -> Renderable:
         """Translate the volume by `t`.
 
         Args:

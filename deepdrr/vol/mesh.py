@@ -58,6 +58,10 @@ class Mesh(Renderable):
     def set_enabled(self, enabled: bool) -> None:
         self.mesh.is_visible = enabled
 
+    @property
+    def enabled(self) -> bool:
+        return self.mesh.is_visible
+
     def get_center(self) -> kg.Point3D:
         return kg.point(self.mesh.centroid)
 

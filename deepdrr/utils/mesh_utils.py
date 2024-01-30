@@ -128,10 +128,12 @@ def isosurface(
         )
 
     log.debug("normals")
-    surface.compute_normals(inplace=True)
+    surface.compute_normals(inplace=True, auto_orient_normals=True)
     if surface.n_open_edges > 0:
         log.warning(f"surface is not closed, with {surface.n_open_edges} open edges")
 
+    # flip normals if necessary
+    surface.flip_normals()
     return surface
 
 
