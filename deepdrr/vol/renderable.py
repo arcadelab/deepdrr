@@ -157,7 +157,7 @@ class Renderable(ABC):
         self,
         rotation: Union[geo.Vector3D, Rotation],
         center: Optional[geo.Point3D] = None,
-    ) -> Volume:
+    ) -> Renderable:
         """Rotate the volume by `rotation` about `center`.
 
         Args:
