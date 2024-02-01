@@ -24,6 +24,7 @@ from ..projector.material_coefficients import material_coefficients
 from .renderable import Renderable
 import pyrender
 import trimesh
+from trimesh.repair import fix_normals
 
 # from deepdrr.utils.mesh_utils import polydata_to_trimesh
 
@@ -98,5 +99,11 @@ class Mesh(Renderable):
             material = DRRMaterial.from_name(material, tag=tag)
 
         mesh = mesh_utils.load_trimesh(path, convert_to_RAS=convert_to_RAS)
+
+        if mesh is None:
+            raise ValueError(f"Could not load mesh from {path}")
+
+        fix_normals(mesh)
+
         mesh = pyrender.Mesh.from_trimesh(mesh, material=material)
         return cls(mesh=mesh, **kwargs)

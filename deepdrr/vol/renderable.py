@@ -139,7 +139,7 @@ class Renderable(ABC):
 
         x = geo.point(x)
         center_anatomical = self.get_center()
-        center_world = self.world_from_anatomical @ center_anatomical
+        # center_world = self.world_from_anatomical @ center_anatomical
         self.place(center_anatomical, x)
 
     def apply_transform(self, transform: geo.FrameTransform) -> None:
@@ -163,7 +163,7 @@ class Renderable(ABC):
 
     def rotate(
         self,
-        rotation: Union[geo.Vector3D, Rotation],
+        rotation: Union[geo.Vector3D, Rotation, geo.FrameTransform],
         center: Optional[geo.Point3D] = None,
     ) -> Renderable:
         """Rotate the volume by `rotation` about `center`.
@@ -175,6 +175,8 @@ class Renderable(ABC):
 
         if isinstance(rotation, Rotation):
             R = geo.FrameTransform.from_rotation(rotation.as_matrix())
+        elif isinstance(rotation, geo.FrameTransform):
+            R = rotation
         else:
             r = geo.vector(rotation)
             R = geo.FrameTransform.from_rotation(Rotation.from_rotvec(r).as_matrix())

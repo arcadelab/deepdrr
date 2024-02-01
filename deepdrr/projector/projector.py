@@ -858,8 +858,8 @@ class Projector(object):
             self.cam.fy = proj.intrinsic.fy
             self.cam.cx = proj.intrinsic.cx
             self.cam.cy = proj.intrinsic.cy
-            self.cam.znear = self.device.source_to_detector_distance / 1000
-            self.cam.zfar = self.device.source_to_detector_distance
+            self.cam.znear = 1  # self.device.source_to_detector_distance / 1000
+            self.cam.zfar = self.device.source_to_detector_distance * 4
 
             deepdrr_to_opengl_cam = np.array(
                 [
@@ -872,7 +872,7 @@ class Projector(object):
 
             self.cam_node.matrix = np.array(proj.extrinsic.inv) @ deepdrr_to_opengl_cam
 
-            zfar = self.device.source_to_detector_distance * 2  # TODO (liam)
+            zfar = self.device.source_to_detector_distance * 2 * 4  # TODO (liam)
 
         return zfar
 
