@@ -103,7 +103,7 @@ class Mesh(Renderable):
         if not isinstance(material, list):
             material = [material]
 
-        material = [DRRMaterial.from_name(m) if isinstance(m, str) else m for m in material]
+        material = [DRRMaterial.from_name(m, tag=tag) if isinstance(m, str) else m for m in material]
         
         prims = []
         for p, m in zip(path, material):
