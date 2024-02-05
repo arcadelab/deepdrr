@@ -117,28 +117,23 @@ def listify(x: Union[List[T], T], n: int = 1) -> List[T]:
 
 
 @overload
-def radians(t: float, degrees: bool) -> float:
-    ...
+def radians(t: float, degrees: bool) -> float: ...
 
 
 @overload
-def radians(t: np.ndarray, degrees: bool) -> np.ndarray:
-    ...
+def radians(t: np.ndarray, degrees: bool) -> np.ndarray: ...
 
 
 @overload
-def radians(ts: List[T], degrees: bool) -> List[T]:
-    ...
+def radians(ts: List[T], degrees: bool) -> List[T]: ...
 
 
 @overload
-def radians(ts: Dict[S, T], degrees: bool) -> Dict[S, T]:
-    ...
+def radians(ts: Dict[S, T], degrees: bool) -> Dict[S, T]: ...
 
 
 @overload
-def radians(*ts: T, degrees: bool) -> List[T]:
-    ...
+def radians(*ts: T, degrees: bool) -> List[T]: ...
 
 
 def radians(*args, degrees=True):
