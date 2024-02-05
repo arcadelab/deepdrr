@@ -25,6 +25,7 @@ from vtk.util import numpy_support as nps
 from .. import geo
 from ..utils import listify
 import trimesh
+from trimesh.repair import fix_inversion, fix_normals
 import pyrender
 from . import kwargs_to_dict
 
@@ -128,9 +129,13 @@ def isosurface(
         )
 
     log.debug("normals")
-    surface.compute_normals(inplace=True)
+    surface.compute_normals(inplace=True, auto_orient_normals=True)
     if surface.n_open_edges > 0:
         log.warning(f"surface is not closed, with {surface.n_open_edges} open edges")
+
+    trimesh_ = polydata_to_trimesh(surface)
+    fix_normals(trimesh_)
+    surface = pv.wrap(trimesh_)
 
     return surface
 

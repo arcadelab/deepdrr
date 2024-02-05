@@ -153,3 +153,12 @@ class SimpleDevice(Device):
     @property
     def device_from_camera3d(self) -> geo.FrameTransform:
         return self._device_from_camera3d
+
+    def __str__(self):
+        return (
+            f"SimpleDevice(sensor_height={self.sensor_height}, "
+            f"sensor_width={self.sensor_width}, "
+            f"pixel_size={self.pixel_size}, "
+            f"source_to_detector_distance={self.source_to_detector_distance}"
+            f")"
+        )

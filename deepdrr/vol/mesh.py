@@ -24,6 +24,7 @@ from ..projector.material_coefficients import material_coefficients
 from .renderable import Renderable
 import pyrender
 import trimesh
+from trimesh.repair import fix_normals
 
 # from deepdrr.utils.mesh_utils import polydata_to_trimesh
 
@@ -46,7 +47,7 @@ class Mesh(Renderable):
             raise ValueError("mesh must be specified")
 
         self.mesh = mesh
-        
+
         Renderable.__init__(
             self,
             anatomical_from_IJK=anatomical_from_IJK,
@@ -55,10 +56,13 @@ class Mesh(Renderable):
             **kwargs,
         )
 
-
     def set_enabled(self, enabled: bool) -> None:
         self.mesh.is_visible = enabled
-        
+
+    @property
+    def enabled(self) -> bool:
+        return self.mesh.is_visible
+
     def get_center(self) -> kg.Point3D:
         return kg.point(self.mesh.centroid)
 
@@ -71,6 +75,7 @@ class Mesh(Renderable):
         path: Union[Union[str, Path], List[Union[str, Path]]],
         material: Union[Union[str, DRRMaterial], List[Union[str, DRRMaterial]]] = "iron",
         convert_to_RAS: bool = False,
+        tag: Optional[str] = None,
         **kwargs,
     ) -> Mesh:
         """Create a mesh for the given material with default density.
@@ -103,6 +108,7 @@ class Mesh(Renderable):
         prims = []
         for p, m in zip(path, material):
             mesh = mesh_utils.load_trimesh(p, convert_to_RAS=convert_to_RAS)
+            fix_normals(mesh)
             prims.append(pyrender.Mesh.from_trimesh(mesh, material=m).primitives[0])
 
         mesh = pyrender.Mesh(primitives=prims)
