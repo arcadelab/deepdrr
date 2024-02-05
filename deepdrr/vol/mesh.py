@@ -72,8 +72,8 @@ class Mesh(Renderable):
     @classmethod
     def from_stl(
         cls,
-        path: Union[str, Path],
-        material: str | DRRMaterial = "iron",
+        path: Union[Union[str, Path], List[Union[str, Path]]],
+        material: Union[Union[str, DRRMaterial], List[Union[str, DRRMaterial]]] = "iron",
         convert_to_RAS: bool = False,
         tag: Optional[str] = None,
         **kwargs,
@@ -91,19 +91,25 @@ class Mesh(Renderable):
             Mesh: The mesh.
 
         """
-        path = Path(path)
-        if not path.exists():
-            raise FileNotFoundError(f"Could not find file {path}")
+        if not isinstance(path, list):
+            path = [path]
 
-        if isinstance(material, str):
-            material = DRRMaterial.from_name(material, tag=tag)
+        path = [Path(p) for p in path]
+        
+        for p in path:
+            if not p.exists():
+                raise FileNotFoundError(f"Could not find file {p}")
 
-        mesh = mesh_utils.load_trimesh(path, convert_to_RAS=convert_to_RAS)
+        if not isinstance(material, list):
+            material = [material]
 
-        if mesh is None:
-            raise ValueError(f"Could not load mesh from {path}")
+        material = [DRRMaterial.from_name(m, tag=tag) if isinstance(m, str) else m for m in material]
+        
+        prims = []
+        for p, m in zip(path, material):
+            mesh = mesh_utils.load_trimesh(p, convert_to_RAS=convert_to_RAS)
+            fix_normals(mesh)
+            prims.append(pyrender.Mesh.from_trimesh(mesh, material=m).primitives[0])
 
-        fix_normals(mesh)
-
-        mesh = pyrender.Mesh.from_trimesh(mesh, material=material)
+        mesh = pyrender.Mesh(primitives=prims)
         return cls(mesh=mesh, **kwargs)
