@@ -118,18 +118,18 @@ class Renderer(object):
     def point_size(self, value):
         self._point_size = float(value)
 
-    def render(self, scene, flags, tags=None, drr_mode=DRRMode.NONE, zfar=0, mat=None, mat_idx=None, layer_idx=None, tex_idx=None, force_all_subtract=False):
+    def render(self, scene, flags, tags=None, drr_mode=DRRMode.NONE, zfar=0, mat=None, mat_idx=None, layer_idx=None, tex_idx=None, force_all_subtract=False, density_override=None):
         self._update_context(scene, flags)
 
         if drr_mode == DRRMode.DIST:
             for i in range(self.num_peel_passes):
                 retval = self._forward_pass(scene, flags, tags=tags, drr_mode=drr_mode, zfar=zfar, peelnum=i, mat=mat, mat_idx=mat_idx, layer_idx=layer_idx, tex_idx=tex_idx, force_all_subtract=force_all_subtract)
         elif drr_mode == DRRMode.MESH_SUB:
-            retval = self._forward_pass(scene, flags, tags=tags, drr_mode=drr_mode, zfar=zfar, peelnum=None, mat=mat, mat_idx=mat_idx, layer_idx=layer_idx, tex_idx=tex_idx)
+            retval = self._forward_pass(scene, flags, tags=tags, drr_mode=drr_mode, zfar=zfar, peelnum=None, mat=mat, mat_idx=mat_idx, layer_idx=layer_idx, tex_idx=tex_idx, density_override=density_override)
         elif drr_mode == DRRMode.DENSITY:
-            retval = self._forward_pass(scene, flags, tags=tags, drr_mode=drr_mode, zfar=zfar, peelnum=None, mat=mat, mat_idx=mat_idx, layer_idx=layer_idx, tex_idx=tex_idx)
+            retval = self._forward_pass(scene, flags, tags=tags, drr_mode=drr_mode, zfar=zfar, peelnum=None, mat=mat, mat_idx=mat_idx, layer_idx=layer_idx, tex_idx=tex_idx, density_override=density_override)
         elif drr_mode == DRRMode.SEG:
-            retval = self._forward_pass(scene, flags, tags=tags, drr_mode=drr_mode, zfar=zfar, peelnum=None, mat=mat, mat_idx=mat_idx, layer_idx=layer_idx, tex_idx=tex_idx)
+            retval = self._forward_pass(scene, flags, tags=tags, drr_mode=drr_mode, zfar=zfar, peelnum=None, mat=mat, mat_idx=mat_idx, layer_idx=layer_idx, tex_idx=tex_idx, density_override=density_override)
         else:
             raise NotImplementedError
 
@@ -167,7 +167,7 @@ class Renderer(object):
     # Rendering passes
     ###########################################################################
 
-    def _forward_pass(self, scene, flags, tags=None, drr_mode=DRRMode.NONE, zfar=None, peelnum=None, mat=None, mat_idx=None, layer_idx=None, tex_idx=None, force_all_subtract=False):
+    def _forward_pass(self, scene, flags, tags=None, drr_mode=DRRMode.NONE, zfar=None, peelnum=None, mat=None, mat_idx=None, layer_idx=None, tex_idx=None, force_all_subtract=False, density_override=None):
         # Set up viewport for render
         self._configure_forward_pass_viewport(flags, drr_mode=drr_mode, peelnum=peelnum, mat_idx=mat_idx, layer_idx=layer_idx)
 
@@ -227,6 +227,8 @@ class Renderer(object):
                 if drr_mode == DRRMode.DENSITY:
                     if not primitive.material.additive:
                         continue
+                    if tags is not None and primitive.material.tag != tags:
+                        continue
                 if drr_mode == DRRMode.DIST:
                     if not force_all_subtract and not primitive.material.subtractive:
                         continue
@@ -267,6 +269,7 @@ class Renderer(object):
                     zfar=zfar,
                     peelnum=peelnum,
                     tex_idx=tex_idx,
+                    density_override=density_override,
                 )
                 self._reset_active_textures()
         # Unbind the shader and flush the output
@@ -280,8 +283,11 @@ class Renderer(object):
 
         if drr_mode == DRRMode.SEG:
             return self._read_main_framebuffer(scene, flags)
+        
+        if drr_mode == DRRMode.DENSITY and density_override is not None:
+            return self._read_distance_framebuffer(scene, flags)
 
-    def _bind_and_draw_primitive(self, primitive, pose, program, flags, drr_mode=DRRMode.NONE, zfar=3, peelnum=0, tex_idx=None):
+    def _bind_and_draw_primitive(self, primitive, pose, program, flags, drr_mode=DRRMode.NONE, zfar=3, peelnum=0, tex_idx=None, density_override=None):
         # Set model pose matrix
         program.set_uniform('M', pose)
 
@@ -312,6 +318,10 @@ class Renderer(object):
             assert isinstance(density, float), "Density must be float"
             if density < 0:
                 density = 0
+
+            if density_override is not None:
+                density = density_override
+
             program.set_uniform('density', float(density))
 
             glEnable(GL_BLEND)
@@ -827,3 +837,25 @@ class Renderer(object):
             color_im = self._resize_image(color_im, True)
 
         return color_im
+    
+
+    def _read_distance_framebuffer(self, scene, flags):
+            width, height = self._main_fb_dims[0], self._main_fb_dims[1]
+    
+            glBindFramebuffer(GL_READ_FRAMEBUFFER, self.g_densityFboId[0])
+    
+            color_buf = glReadPixels(
+                0, 0, width, height, GL_RGB, GL_FLOAT
+                # 0, 0, width, height, GL_RGB, GL_FLOAT
+                # 0, 0, width, height, GL_RED, GL_UNSIGNED_BYTE
+            )
+            color_im = np.frombuffer(color_buf, dtype=np.float32)
+            color_im = color_im.reshape((height, width, 3))
+            # color_im = color_im.reshape((height, width))
+            # color_im = np.flip(color_im, axis=0)
+    
+            # Resize for macos if needed
+            if sys.platform == 'darwin':
+                color_im = self._resize_image(color_im, True)
+    
+            return color_im

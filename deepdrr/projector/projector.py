@@ -946,6 +946,44 @@ class Projector(object):
                     )
                 )
         return res
+    
+
+    def project_distance(
+        self,
+        *camera_projections: geo.CameraProjection,
+        tags: Optional[List[Optional[List[str]]]] = None,
+    ) -> cupy.array:
+
+        if len(camera_projections) > 1:
+            raise NotImplementedError("multiple projections")
+        camera_projections = self._prepare_project(camera_projections)
+        return self._render_distance(camera_projections[0], tags=tags)
+    
+    def _render_distance(
+        self,
+        proj: geo.CameraProjection,
+        tags: Optional[List[Optional[List[str]]]] = None,
+    ) -> cupy.array:
+        zfar = self._setup_pyrender_scene(proj)
+        res = []
+        if tags is not None:
+            for tag in tags:
+                layer_idx = 0
+                mat_idx = 0
+                rend_out = self.gl_renderer.render(
+                    self.scene,
+                    drr_mode=DRRMode.DENSITY,
+                    flags=RenderFlags.RGBA,
+                    zfar=zfar,
+                    mat=None,
+                    mat_idx=0,
+                    tags=tag,
+                    layer_idx=layer_idx,
+                    density_override=1
+                )
+                rend_out[:,:,0][np.abs(rend_out[:,:,1])>0.01] = 0
+                res.append(rend_out[:,:,0])
+        return res
 
     @time_range()
     def _render_mesh(self, proj: geo.CameraProjection) -> None:
@@ -957,7 +995,7 @@ class Projector(object):
         self._transfer_additive_to_cuda(proj, zfar)
 
     @time_range()
-    def _render_mesh_additive(self, proj: geo.CameraProjection, zfar: float) -> None:
+    def _render_mesh_additive(self, proj: geo.CameraProjection, zfar: float, density_override=None) -> None:
         """
         For each mesh layer and material combination, get the ray density.
 
@@ -980,6 +1018,7 @@ class Projector(object):
                         mat=mat,
                         mat_idx=mat_idx,
                         layer_idx=layer_idx,
+                        density_override=density_override
                     )
 
     @time_range()
