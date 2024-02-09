@@ -635,7 +635,7 @@ class TestSingleVolume:
                 seg = projector.project_seg(tags=[k for k, v in d_contour_mesh_files.items()])
                 seg = np.stack(seg, axis=0)
 
-                hits_channels = projector.project_distance(tags=[k for k, v in d_contour_mesh_files.items()])
+                hits_channels = projector.project_travel(tags=[k for k, v in d_contour_mesh_files.items()])
                 # for item in hits_channels:
                 #     # negate every other channel
                 #     for i in range(1, item.shape[2], 2):
