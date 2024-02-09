@@ -948,7 +948,7 @@ class Projector(object):
         return res
     
 
-    def project_distance(
+    def project_travel(
         self,
         *camera_projections: geo.CameraProjection,
         tags: Optional[List[Optional[List[str]]]] = None,
