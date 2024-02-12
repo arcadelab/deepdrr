@@ -586,7 +586,7 @@ class Volume(Renderable):
         stem = path.name.split(".")[0]
 
         if cache_dir is None:
-            cache_dir = path.parent // "cache"
+            cache_dir = path.parent / "cache"
 
         # Multi-frame dicoms store all slices of a volume in one file.
         # they must specify the necessary dicom tags under

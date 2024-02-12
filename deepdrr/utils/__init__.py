@@ -8,10 +8,12 @@ import logging
 from typing import Optional, TypeVar, Any, Tuple, Union, List, overload, Dict
 import math
 
+from .image_utils import _neglog as neglog
 from .data_utils import jsonable
 from . import data_utils, image_utils, test_utils
 
 __all__ = [
+    "neglog",
     "param_saver",
     "one_hot",
     "tuplify",
@@ -189,50 +191,6 @@ def generate_uniform_angles(
     thetas = np.tile(thetas, num_phis)
     phis = phis.repeat(num_thetas, 0)
     return phis, thetas
-
-
-def neglog(image: np.ndarray, epsilon: float = 0.01) -> np.ndarray:
-    """Take the negative log transform of an intensity image.
-
-    Args:
-        image (np.ndarray): a single 2D image, or N such images.
-        epsilon (float, optional): positive offset from 0 before taking the logarithm.
-
-    Returns:
-        np.ndarray: the image or images after a negative log transform, scaled to [0, 1]
-    """
-    image = np.array(image)
-    shape = image.shape
-    if len(shape) == 2:
-        image = image[np.newaxis, :, :]
-
-    # shift image to avoid invalid values
-    image += image.min(axis=(1, 2), keepdims=True) + epsilon
-
-    # negative log transform
-    image = -np.log(image)
-
-    # linear interpolate to range [0, 1]
-    image_min = image.min(axis=(1, 2), keepdims=True)
-    image_max = image.max(axis=(1, 2), keepdims=True)
-    if np.any(image_max == image_min):
-        logger.debug(
-            f"mapping constant image to 0. This probably indicates the projector is pointed away from the volume."
-        )
-        # TODO(killeen): for multiple images, only fill the bad ones
-        image[:] = 0
-        if image.shape[0] > 1:
-            logger.error("TODO: zeroed all images, even though only one might be bad.")
-    else:
-        image = (image - image_min) / (image_max - image_min)
-
-    if np.any(np.isnan(image)):
-        logger.warning(f"got NaN values from negative log transform.")
-
-    if len(shape) == 2:
-        return image[0]
-    else:
-        return image
 
 
 def try_import_pyvista():
