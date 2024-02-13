@@ -508,7 +508,7 @@ projectKernel(const cudaTextureObject_t * __restrict__ volume_texs, // array of 
             int add_dens_idx = j * mesh_unique_material_count * (out_height * out_width * 2) + i * (out_height * out_width * 2) + (vdx * out_width + udx) * 2;
             // If there is a matching number of front and back hits, add the density
             if (fabs(additive_densities[add_dens_idx + 1]) < 0.00001) {
-                area_density[mesh_unique_materials[i]] += additive_densities[add_dens_idx];
+                area_density[mesh_unique_materials[i]] += fmax(additive_densities[add_dens_idx], 0.0f);
             }
         }
     }
