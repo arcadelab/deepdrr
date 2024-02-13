@@ -946,7 +946,6 @@ class Projector(object):
                     )
                 )
         return res
-    
 
     def project_travel(
         self,
@@ -958,7 +957,7 @@ class Projector(object):
             raise NotImplementedError("multiple projections")
         camera_projections = self._prepare_project(camera_projections)
         return self._render_distance(camera_projections[0], tags=tags)
-    
+
     def _render_distance(
         self,
         proj: geo.CameraProjection,
@@ -979,10 +978,10 @@ class Projector(object):
                     mat_idx=0,
                     tags=tag,
                     layer_idx=layer_idx,
-                    density_override=1
+                    density_override=1,
                 )
-                rend_out[:,:,0][np.abs(rend_out[:,:,1])>0.01] = 0
-                res.append(rend_out[:,:,0])
+                rend_out[:, :, 0][np.abs(rend_out[:, :, 1]) > 0.01] = 0
+                res.append(rend_out[:, :, 0])
         return res
 
     @time_range()
@@ -995,7 +994,9 @@ class Projector(object):
         self._transfer_additive_to_cuda(proj, zfar)
 
     @time_range()
-    def _render_mesh_additive(self, proj: geo.CameraProjection, zfar: float, density_override=None) -> None:
+    def _render_mesh_additive(
+        self, proj: geo.CameraProjection, zfar: float, density_override=None
+    ) -> None:
         """
         For each mesh layer and material combination, get the ray density.
 
@@ -1018,7 +1019,7 @@ class Projector(object):
                         mat=mat,
                         mat_idx=mat_idx,
                         layer_idx=layer_idx,
-                        density_override=density_override
+                        density_override=density_override,
                     )
 
     @time_range()
@@ -1567,10 +1568,10 @@ class Projector(object):
         )
         for bin in range(n_bins):  # , energy in enumerate(energies):
             for m, mat_name in enumerate(self.all_materials):
-                absorption_coef_table[
-                    bin * len(self.all_materials) + m
-                ] = mass_attenuation.get_absorption_coefs(
-                    contiguous_energies[bin], mat_name
+                absorption_coef_table[bin * len(self.all_materials) + m] = (
+                    mass_attenuation.get_absorption_coefs(
+                        contiguous_energies[bin], mat_name
+                    )
                 )
         self.absorption_coef_table_gpu = cp.asarray(absorption_coef_table)
         log.debug(
