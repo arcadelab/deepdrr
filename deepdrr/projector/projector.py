@@ -981,8 +981,10 @@ class Projector(object):
                     layer_idx=layer_idx,
                     density_override=1
                 )
-                rend_out[:,:,0][np.abs(rend_out[:,:,1])>0.01] = 0
-                res.append(rend_out[:,:,0])
+                out_im = rend_out[:,:,0]
+                out_im[np.abs(rend_out[:,:,1])>0.01] = 0
+                out_im[out_im<0] = 0
+                res.append(out_im)
         return res
 
     @time_range()
