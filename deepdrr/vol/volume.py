@@ -73,6 +73,7 @@ class Volume(Renderable):
             cache_dir ()
         """
         Renderable.__init__(self, anatomical_from_IJK, world_from_anatomical, **kwargs)
+        assert data.ndim == 3, "Volume data must be 3D."
         self.data = np.array(data).astype(np.float32)
         self.materials = self._format_materials(materials)
         self.anatomical_coordinate_system = anatomical_coordinate_system
