@@ -385,14 +385,14 @@ class Renderer(object):
 
     def _sorted_mesh_nodes(self, scene):
         # cam_loc = scene.get_pose(scene.main_camera_node)[:3, 3]
-        solid_nodes = []
-        trans_nodes = []
-        for node in scene.mesh_nodes:
-            mesh = node.mesh
-            if mesh.is_transparent:
-                trans_nodes.append(node)
-            else:
-                solid_nodes.append(node)
+        # solid_nodes = []
+        # trans_nodes = []
+        # for node in scene.mesh_nodes:
+        #     mesh = node.mesh
+        #     if mesh.is_transparent:
+        #         trans_nodes.append(node)
+        #     else:
+        #         solid_nodes.append(node)
 
         # # TODO BETTER SORTING METHOD
         # trans_nodes.sort(
@@ -402,7 +402,9 @@ class Renderer(object):
         #     key=lambda n: -np.linalg.norm(scene.get_pose(n)[:3, 3] - cam_loc)
         # )
 
-        return solid_nodes + trans_nodes
+        # return solid_nodes + trans_nodes
+
+        return scene.mesh_nodes
 
     # def _sorted_nodes_by_distance(self, scene, nodes, compare_node):
     #     nodes = list(nodes)
@@ -433,21 +435,21 @@ class Renderer(object):
 
         self._meshes = scene_meshes.copy()
 
-        # Update mesh textures
-        mesh_textures = set()
-        for m in scene_meshes:
-            for p in m.primitives:
-                mesh_textures |= p.material.textures
+        # # Update mesh textures
+        # mesh_textures = set()
+        # for m in scene_meshes:
+        #     for p in m.primitives:
+        #         mesh_textures |= p.material.textures
 
-        # Add new textures to context
-        for texture in mesh_textures - self._mesh_textures:
-            texture._add_to_context()
+        # # Add new textures to context
+        # for texture in mesh_textures - self._mesh_textures:
+        #     texture._add_to_context()
 
-        # Remove old textures from context
-        for texture in self._mesh_textures - mesh_textures:
-            texture.delete()
+        # # Remove old textures from context
+        # for texture in self._mesh_textures - mesh_textures:
+        #     texture.delete()
 
-        self._mesh_textures = mesh_textures.copy()
+        # self._mesh_textures = mesh_textures.copy()
 
     ###########################################################################
     # Texture Management
