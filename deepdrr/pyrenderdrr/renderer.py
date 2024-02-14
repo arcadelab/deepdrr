@@ -384,7 +384,7 @@ class Renderer(object):
         primitive._unbind()
 
     def _sorted_mesh_nodes(self, scene):
-        cam_loc = scene.get_pose(scene.main_camera_node)[:3, 3]
+        # cam_loc = scene.get_pose(scene.main_camera_node)[:3, 3]
         solid_nodes = []
         trans_nodes = []
         for node in scene.mesh_nodes:
@@ -394,23 +394,23 @@ class Renderer(object):
             else:
                 solid_nodes.append(node)
 
-        # TODO BETTER SORTING METHOD
-        trans_nodes.sort(
-            key=lambda n: -np.linalg.norm(scene.get_pose(n)[:3, 3] - cam_loc)
-        )
-        solid_nodes.sort(
-            key=lambda n: -np.linalg.norm(scene.get_pose(n)[:3, 3] - cam_loc)
-        )
+        # # TODO BETTER SORTING METHOD
+        # trans_nodes.sort(
+        #     key=lambda n: -np.linalg.norm(scene.get_pose(n)[:3, 3] - cam_loc)
+        # )
+        # solid_nodes.sort(
+        #     key=lambda n: -np.linalg.norm(scene.get_pose(n)[:3, 3] - cam_loc)
+        # )
 
         return solid_nodes + trans_nodes
 
-    def _sorted_nodes_by_distance(self, scene, nodes, compare_node):
-        nodes = list(nodes)
-        compare_posn = scene.get_pose(compare_node)[:3, 3]
-        nodes.sort(key=lambda n: np.linalg.norm(
-            scene.get_pose(n)[:3, 3] - compare_posn)
-                   )
-        return nodes
+    # def _sorted_nodes_by_distance(self, scene, nodes, compare_node):
+    #     nodes = list(nodes)
+    #     compare_posn = scene.get_pose(compare_node)[:3, 3]
+    #     nodes.sort(key=lambda n: np.linalg.norm(
+    #         scene.get_pose(n)[:3, 3] - compare_posn)
+    #                )
+    #     return nodes
 
     ###########################################################################
     # Context Management
