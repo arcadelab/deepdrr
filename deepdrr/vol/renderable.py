@@ -187,3 +187,45 @@ class Renderable(ABC):
         T = geo.FrameTransform.from_translation(center)
         self.world_from_anatomical = T @ R @ T.inv @ self.world_from_anatomical
         return self
+
+    def align(
+        self,
+        a_in_world: geo.Point3D,
+        b_in_world: geo.Point3D,
+        progress: float = 1,
+        distance: Optional[float] = None,
+        a: geo.Point3D = [0, 0, 0],
+        b: geo.Point3D = [0, 0, 1],
+    ) -> None:
+        """Align the renderable so that a and b are aligned with a_in_world and b_in_world.
+
+
+        Args:
+            a_in_world (geo.Point3D): a point in world space.
+            b_in_world (geo.Point3D): a point in world space.
+            progress (float, optional): progress of the tool from from a to b.
+                0 places b at a_in_world, 1 places b at b_in_world. Defaults to 1.
+            distance (float, optional): Same as progress, but in mm. Defaults to 1.
+            a (geo.Point3D): a point in the renderable's model/anatomical space. Defaults to the model origin.
+            b (geo.Point3D): a point in the renderable's model/anatomical space. Defaults to [0, 0, 1].
+
+        """
+        a = geo.point(a)
+        b = geo.point(b)
+        a_in_world = geo.point(a_in_world)
+        b_in_world = geo.point(b_in_world)
+
+        if distance is not None:
+            trajectory_length = (b_in_world - a_in_world).norm()
+            progress = distance / trajectory_length
+
+        trajectory_vector = b_in_world - a_in_world
+        desired_tip_in_world = a_in_world.lerp(b_in_world, progress)
+        tool_length = (b - a).norm()
+        desired_base_in_world = (
+            desired_tip_in_world - trajectory_vector.hat() * tool_length
+        )
+
+        self.world_from_anatomical = geo.FrameTransform.from_line_segments(
+            desired_tip_in_world, desired_base_in_world, b, a
+        )

@@ -17,7 +17,7 @@ You can find which version of CUDA you have by running `nvcc --version` in your 
 
 from . import vis, geo, projector, device, annotations, utils
 from .projector import Projector
-from .vol import Renderable, Volume, Mesh
+from .vol import Renderable, Volume, Mesh, LinearToolMesh
 from .device import Device, CArm, MobileCArm, SimpleDevice
 from .annotations import LineAnnotation, FiducialList, Fiducial
 from .common import PatientPose
@@ -32,6 +32,7 @@ __all__ = [
     "Renderable",
     "Volume",
     "Mesh",
+    "LinearToolMesh",
     "Projector",
     "LineAnnotation",
     "FiducialList",

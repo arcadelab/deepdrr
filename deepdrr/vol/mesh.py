@@ -1,6 +1,6 @@
 from __future__ import annotations
 from re import T
-from typing import Any, Union, Tuple, List, Optional, Dict, Type
+from typing import Any, Union, Tuple, List, Optional, Dict, Type, TypeVar
 from functools import cached_property
 
 import logging
@@ -33,6 +33,8 @@ from trimesh.repair import fix_normals
 vtk, nps, vtk_available = utils.try_import_vtk()
 
 log = logging.getLogger(__name__)
+
+T = TypeVar("T", bound="Mesh")
 
 
 class Mesh(Renderable):
@@ -72,13 +74,15 @@ class Mesh(Renderable):
 
     @classmethod
     def from_stl(
-        cls,
+        cls: Type[T],
         path: Union[Union[str, Path], List[Union[str, Path]]],
-        material: Union[Union[str, DRRMaterial], List[Union[str, DRRMaterial]]] = "iron",
+        material: Union[
+            Union[str, DRRMaterial], List[Union[str, DRRMaterial]]
+        ] = "iron",
         convert_to_RAS: bool = False,
         tag: Optional[str] = None,
         **kwargs,
-    ) -> Mesh:
+    ) -> T:
         """Create a mesh for the given material with default density.
 
         Args:
@@ -96,7 +100,7 @@ class Mesh(Renderable):
             path = [path]
 
         path = [Path(p) for p in path]
-        
+
         for p in path:
             if not p.exists():
                 raise FileNotFoundError(f"Could not find file {p}")
@@ -104,8 +108,11 @@ class Mesh(Renderable):
         if not isinstance(material, list):
             material = [material]
 
-        material = [DRRMaterial.from_name(m, tag=tag) if isinstance(m, str) else m for m in material]
-        
+        material = [
+            DRRMaterial.from_name(m, tag=tag) if isinstance(m, str) else m
+            for m in material
+        ]
+
         prims = []
         for p, m in zip(path, material):
             mesh = mesh_utils.load_trimesh(p, convert_to_RAS=convert_to_RAS)
@@ -143,3 +150,34 @@ class Mesh(Renderable):
             radius = max(radius, np.max(np.linalg.norm(positions - center, axis=1)))
 
         return center, radius
+
+
+class LinearToolMesh(Mesh):
+    """A mesh with a base and a tip defined in anatomical coordinates."""
+
+    def __init__(
+        self,
+        base: kg.Point3D,
+        tip: kg.Point3D,
+        **kwargs,
+    ) -> None:
+        self.base = kg.point(base)
+        self.tip = kg.point(tip)
+        super().__init__(**kwargs)
+
+    def align(
+        self,
+        a_in_world: kg.Point3D,
+        b_in_world: kg.Point3D,
+        progress: float = 1,
+        distance: Optional[float] = None,
+    ):
+        """Align the renderable so that base and tip are aligned with a_in_world and b_in_world."""
+        super().align(
+            a_in_world,
+            b_in_world,
+            progress=progress,
+            distance=distance,
+            a=self.base,
+            b=self.tip,
+        )
