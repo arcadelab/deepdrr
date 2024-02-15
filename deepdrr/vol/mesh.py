@@ -1,6 +1,7 @@
 from __future__ import annotations
 from re import T
 from typing import Any, Union, Tuple, List, Optional, Dict, Type
+from functools import cached_property
 
 import logging
 from killeengeo import Point3D
@@ -113,3 +114,32 @@ class Mesh(Renderable):
 
         mesh = pyrender.Mesh(primitives=prims)
         return cls(mesh=mesh, **kwargs)
+
+    @cached_property
+    def get_bounding_AABB(self):
+        prims = self.mesh.primitives
+
+        minpt = np.inf * np.ones(3)
+        maxpt = -np.inf * np.ones(3)
+
+        for prim in prims:
+            positions = prim.positions
+            minpt = np.minimum(minpt, np.min(positions, axis=0))
+            maxpt = np.maximum(maxpt, np.max(positions, axis=0))
+
+        return minpt, maxpt
+    
+    @cached_property
+    def get_loose_bounding_sphere(self):
+        # use the center of the AABB as the center of the sphere
+        minpt, maxpt = self.get_bounding_AABB
+        center = (minpt + maxpt) / 2
+
+        # use the distance from the center to the furthest point as the radius
+        prims = self.mesh.primitives
+        radius = 0
+        for prim in prims:
+            positions = prim.positions
+            radius = max(radius, np.max(np.linalg.norm(positions - center, axis=1)))
+
+        return center, radius
