@@ -851,7 +851,7 @@ class Projector(object):
     def _setup_pyrender_scene(self, proj: geo.CameraProjection):
         with time_range("set_mesh_poses"):
             for mesh_id, mesh in enumerate(self.meshes):
-                self.mesh_nodes[mesh_id].matrix = mesh.world_from_ijk
+                self.mesh_nodes[mesh_id]._matrix = mesh.world_from_ijk
 
         with time_range("mesh_camera_setup"):
             self.cam.fx = proj.intrinsic.fx
@@ -870,11 +870,72 @@ class Projector(object):
                 ]
             )
 
-            self.cam_node.matrix = np.array(proj.extrinsic.inv) @ deepdrr_to_opengl_cam
+            self.cam_node._matrix = np.array(proj.extrinsic.inv) @ deepdrr_to_opengl_cam
 
             zfar = self.device.source_to_detector_distance * 2 * 4  # TODO (liam)
 
         return zfar
+
+    def meshes_bounding_sphere_in_frustum(self, meshes) -> bool:
+        camera_projections = self._prepare_project(None)
+        proj = camera_projections[0]
+
+        self._setup_pyrender_scene(proj)
+
+        width = proj.intrinsic.sensor_width
+        height = proj.intrinsic.sensor_height
+
+        gl_proj_matrix = self.cam.get_projection_matrix(width=width, height=height)
+
+        ndc_top = np.array([0, 1, 1, 1])
+        ndc_bottom = np.array([0, -1, 1, 1])
+        ndc_left = np.array([-1, 0, 1, 1])
+        ndc_right = np.array([1, 0, 1, 1])
+
+        cam_top = np.dot(np.linalg.inv(gl_proj_matrix), ndc_top)
+        cam_bottom = np.dot(np.linalg.inv(gl_proj_matrix), ndc_bottom)
+        cam_left = np.dot(np.linalg.inv(gl_proj_matrix), ndc_left)
+        cam_right = np.dot(np.linalg.inv(gl_proj_matrix), ndc_right)
+
+        cam_v = cam_top - cam_bottom
+        cam_h = cam_right - cam_left
+
+        top_face_normal = np.cross(cam_h[:3], cam_top[:3])
+        bottom_face_normal = np.cross(cam_bottom[:3], cam_h[:3])
+        left_face_normal = np.cross(cam_v[:3], cam_left[:3])
+        right_face_normal = np.cross(cam_right[:3], cam_v[:3])
+
+        top_face_normal /= np.linalg.norm(top_face_normal)
+        bottom_face_normal /= np.linalg.norm(bottom_face_normal)
+        left_face_normal /= np.linalg.norm(left_face_normal)
+        right_face_normal /= np.linalg.norm(right_face_normal)
+
+        res = []
+        for mesh in meshes:
+            center, radius = mesh.get_loose_bounding_sphere
+
+            # transform to world space
+            center = np.array([center[0], center[1], center[2], 1])
+            center = np.dot(mesh.world_from_ijk, center)
+
+            # transform to camera space
+            center = np.dot(proj.extrinsic, center)
+
+            center = center[:3]
+
+            center[2] = -center[2]  # flip z axis
+
+            # if sphere is at all in frustum
+            is_in_frustum = \
+                np.dot(center, top_face_normal) < radius \
+                and np.dot(center, bottom_face_normal) < radius \
+                and np.dot(center, left_face_normal) < radius \
+                and np.dot(center, right_face_normal) < radius
+            
+            res.append(is_in_frustum)
+
+        return res
+                
 
     def project_seg(
         self,
