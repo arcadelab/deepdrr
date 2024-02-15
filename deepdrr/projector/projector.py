@@ -859,7 +859,7 @@ class Projector(object):
             self.cam.cx = proj.intrinsic.cx
             self.cam.cy = proj.intrinsic.cy
             self.cam.znear = 1  # self.device.source_to_detector_distance / 1000
-            self.cam.zfar = self.device.source_to_detector_distance * 4
+            self.cam.zfar = self.source_to_detector_distance * 4
 
             deepdrr_to_opengl_cam = np.array(
                 [
@@ -872,7 +872,7 @@ class Projector(object):
 
             self.cam_node.matrix = np.array(proj.extrinsic.inv) @ deepdrr_to_opengl_cam
 
-            zfar = self.device.source_to_detector_distance * 2 * 4  # TODO (liam)
+            zfar = self.source_to_detector_distance * 2 * 4  # TODO (liam)
 
         return zfar
 
@@ -1166,7 +1166,7 @@ class Projector(object):
                     * NUMBYTES_INT8
                 ),
                 np.int32(total_pixels),
-                np.float32(self.device.source_to_detector_distance * 2),
+                np.float32(self.source_to_detector_distance * 2),
             ),
             block=(32, 1, 1),  # TODO (liam)
             grid=(2048, 1),  # TODO (liam)
@@ -1363,8 +1363,8 @@ class Projector(object):
         log.debug(f"beginning call to Projector.initialize")
         init_tick = time.perf_counter()
 
-        width = self.device.sensor_width
-        height = self.device.sensor_height
+        width = self.camera_intrinsics.sensor_width
+        height = self.camera_intrinsics.sensor_height
         total_pixels = width * height
 
         device_id = int(os.environ.get("EGL_DEVICE_ID", "0"))
@@ -1469,16 +1469,16 @@ class Projector(object):
             self.mesh_nodes.append(node)
             self.scene.add(drrmesh.mesh, parent_node=node)
 
-        cam_intr = self.device.camera_intrinsics
+        cam_intr = self.camera_intrinsics
 
         self.cam = IntrinsicsCamera(
             fx=cam_intr.fx,
             fy=cam_intr.fy,
             cx=cam_intr.cx,
             cy=cam_intr.cy,
-            znear=self.device.source_to_detector_distance
+            znear=self.source_to_detector_distance
             / 1000,  # TODO (liam) near clipping plane parameter
-            zfar=self.device.source_to_detector_distance,
+            zfar=self.source_to_detector_distance,
         )
 
         self.cam_node = self.scene.add(self.cam)
