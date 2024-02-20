@@ -857,7 +857,8 @@ class Projector(object):
             self.cam.fx = proj.intrinsic.fx
             self.cam.fy = proj.intrinsic.fy
             self.cam.cx = proj.intrinsic.cx
-            self.cam.cy = proj.intrinsic.cy
+            self.cam.cy = proj.intrinsic.sensor_height - proj.intrinsic.cy
+
             self.cam.znear = 1  # self.device.source_to_detector_distance / 1000
             self.cam.zfar = self.device.source_to_detector_distance * 4
 
@@ -919,18 +920,18 @@ class Projector(object):
             center = np.dot(mesh.world_from_ijk, center)
 
             # transform to camera space
-            center = np.dot(proj.extrinsic, center)
+            camspace_center = np.dot(proj.extrinsic, center)
 
-            center = center[:3]
+            camspace_center = camspace_center[:3]
 
-            center[2] = -center[2]  # flip z axis
+            camspace_center[2] = -camspace_center[2]  # flip z axis
 
             # if sphere is at all in frustum
             is_in_frustum = \
-                np.dot(center, top_face_normal) < radius \
-                and np.dot(center, bottom_face_normal) < radius \
-                and np.dot(center, left_face_normal) < radius \
-                and np.dot(center, right_face_normal) < radius
+                np.dot(camspace_center, top_face_normal) < radius \
+                and np.dot(camspace_center, bottom_face_normal) < radius \
+                and np.dot(camspace_center, left_face_normal) < radius \
+                and np.dot(camspace_center, right_face_normal) < radius
             
             res.append(is_in_frustum)
 
