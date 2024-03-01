@@ -144,13 +144,14 @@ def get_frustum_mesh(
             + pv.Line(br, bl)
             + pv.Line(ur, br)
             + pv.Line(ul, bl)
-            + pv.Line(s, ul)
-            + pv.Line(s, ur)
-            + pv.Line(s, bl)
-            + pv.Line(s, br)
+            # + pv.Line(s, ul)
+            # + pv.Line(s, ur)
+            # + pv.Line(s, bl)
+            # + pv.Line(s, br)
         )
-    else:
         mesh += pv.Line(s, c)
+    else:
+        mesh += pv.Line(s, s.lerp(c, 0.1))
 
     if image_plane_distance is not None:
         pixel_size_at_plane = pixel_size / focal_length_mm * image_plane_distance
@@ -165,7 +166,7 @@ def get_frustum_mesh(
     if image_path is not None:
         image = pv.read(image_path)
         # This is just a hack because some of rob's images are rotated by 180 degrees
-        if camera_projection.intrinsic.fx > 0:
+        if camera_projection.intrinsic.fx > 0 and False:
             image = image.transform(
                 np.array(
                     [
