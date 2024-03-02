@@ -100,6 +100,7 @@ def get_frustum_mesh(
     pixel_size: float,
     image_path: Optional[str] = None,
     image_plane_distance: Optional[float] = None,
+    frustum_type: str | None = None,
     full_frustum: bool = True,
 ) -> pv.PolyData:
     """Get a really simple camera mesh for the camera projections.
@@ -110,11 +111,16 @@ def get_frustum_mesh(
         image_path (str, optional): The path to the image. Defaults to None.
         image_plane_distance (float, optional): The distance from the camera to the image plane visualization. Defaults to None,
             which uses the distance from the camera to the image plane.
-        full_frustum (bool, optional): Whether to show the full frustum, or just the principle ray. Defaults to True.
+        full_frustum (bool, optional): Specify frustum type (deprecated, see frustum_type).
+            True corresponds to "ray" mode, False to "short_ray." False Defaults to True.
+        frustum_type (str, optional): How to visualize the frustum. Options are "frustum", "ray", "short_ray". Defaults to None.
 
     Returns:
         pv.PolyData: Mesh representing the C-arm frustum.
     """
+
+    if frustum_type is None:
+        frustum_type = "ray" if full_frustum else "short_ray"
 
     focal_length_mm = camera_projection.intrinsic.focal_length * pixel_size
     sensor_height_mm = camera_projection.intrinsic.sensor_height * pixel_size
@@ -138,20 +144,24 @@ def get_frustum_mesh(
     log.debug(f"bl: {bl}, br: {br}, ul: {ul}, ur: {ur}")
 
     mesh = pv.Sphere(10, center=s)
-    if full_frustum:
+    if frustum_type == "frustum":
         mesh += (
             pv.Line(ur, ul)
             + pv.Line(br, bl)
             + pv.Line(ur, br)
             + pv.Line(ul, bl)
-            # + pv.Line(s, ul)
-            # + pv.Line(s, ur)
-            # + pv.Line(s, bl)
-            # + pv.Line(s, br)
+            + pv.Line(s, ul)
+            + pv.Line(s, ur)
+            + pv.Line(s, bl)
+            + pv.Line(s, br)
         )
+    elif frustum_type == "ray":
+        mesh += pv.Line(ur, ul) + pv.Line(br, bl) + pv.Line(ur, br) + pv.Line(ul, bl)
         mesh += pv.Line(s, c)
-    else:
+    elif frustum_type == "short_ray":
         mesh += pv.Line(s, s.lerp(c, 0.1))
+    else:
+        raise ValueError(f"Invalid frustum type: {frustum_type}")
 
     if image_plane_distance is not None:
         pixel_size_at_plane = pixel_size / focal_length_mm * image_plane_distance
