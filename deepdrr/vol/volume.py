@@ -1058,6 +1058,10 @@ class Volume(Renderable):
             inplace=True,
         )
 
+        # if it's empty, reuturn
+        if surface.n_points == 0:
+            return surface
+
         if np.linalg.det(self.anatomical_from_ijk.R) < 0:
             # flip normals
             surface.flip_normals()
