@@ -88,7 +88,7 @@ def isosurface(
         data = (data > value).astype(np.uint8)
 
     if np.sum(data) == 0:
-        log.warning("No voxels in isosurface")
+        log.debug("No voxels in isosurface")
         return pv.PolyData()
 
     log.debug("transfer scalars")
