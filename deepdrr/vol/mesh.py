@@ -66,6 +66,10 @@ class Mesh(Renderable):
     def enabled(self) -> bool:
         return self.mesh.is_visible
 
+    @enabled.setter
+    def enabled(self, enabled: bool) -> None:
+        self.set_enabled(enabled)
+
     def get_center(self) -> kg.Point3D:
         return kg.point(self.mesh.centroid)
 
@@ -135,7 +139,7 @@ class Mesh(Renderable):
             maxpt = np.maximum(maxpt, np.max(positions, axis=0))
 
         return minpt, maxpt
-    
+
     @cached_property
     def get_loose_bounding_sphere(self):
         # use the center of the AABB as the center of the sphere

@@ -837,7 +837,7 @@ class Volume(Renderable):
 
     def get_center(self) -> geo.Point3D:
         """Get the center of the volume in anatomical (local) coordinates."""
-        return geo.point(np.array(self.shape) / 2)
+        return self.anatomical_from_IJK @ geo.point(np.array(self.shape) / 2)
 
     def translate_center_to(self, x: geo.Point3D):
         return self.place_center(x)
