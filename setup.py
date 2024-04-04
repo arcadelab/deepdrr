@@ -23,6 +23,7 @@ setuptools.setup(
         "pyvista",
         "pynrrd",
         "rich",
+        "tqdm",
         "opencv-python",
         "seaborn",
         "graphviz",
