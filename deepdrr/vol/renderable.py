@@ -103,7 +103,7 @@ class Renderable(ABC):
     @property
     def center_in_world(self) -> geo.Point3D:
         """The center of the volume in world coorindates. Useful for debugging."""
-        return self.world_from_ijk @ self.get_center()
+        return self.world_from_anatomical @ self.get_center()
 
     @abstractmethod
     def get_bounding_box_in_world(self) -> Tuple[geo.Point3D, geo.Point3D]:
