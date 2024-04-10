@@ -697,7 +697,7 @@ class Projector(object):
 
     @time_range()
     def _render_single(self, proj: geo.CameraProjection) -> np.ndarray:
-        # Only re-allocate if the output shape has changed.
+        # Only re-allocates if the output shape has changed.
         self.initialize_output_arrays(proj.intrinsic.sensor_size)
 
         self._update_object_locations(proj)
@@ -927,16 +927,16 @@ class Projector(object):
             camspace_center[2] = -camspace_center[2]  # flip z axis
 
             # if sphere is at all in frustum
-            is_in_frustum = \
-                np.dot(camspace_center, top_face_normal) < radius \
-                and np.dot(camspace_center, bottom_face_normal) < radius \
-                and np.dot(camspace_center, left_face_normal) < radius \
+            is_in_frustum = (
+                np.dot(camspace_center, top_face_normal) < radius
+                and np.dot(camspace_center, bottom_face_normal) < radius
+                and np.dot(camspace_center, left_face_normal) < radius
                 and np.dot(camspace_center, right_face_normal) < radius
-            
+            )
+
             res.append(is_in_frustum)
 
         return res
-                
 
     def project_seg(
         self,

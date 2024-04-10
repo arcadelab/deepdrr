@@ -14,7 +14,7 @@ class SimpleDevice(Device):
     is the direction from the source to the detector. The up-vector of images can also be provided,
     not necessarily in the image plane (projected onto it).
 
-    Any of the device's attributes can be set directly. The default values are not based on any
+    Any of the device's attributes below can be set directly at any time. The default values are not based on any
     particular device.
 
     This class may be useful for understanding basic concepts.
@@ -44,6 +44,17 @@ class SimpleDevice(Device):
 
         # Default view centered on the origin. Sets the device_from_camera3d
         self.set_view([0, 0, 0], [0, 0, 1], [0, -1, 0])
+
+    def scale_sensor(self, detector_size: float):
+        """Scale the pixel_size so the shorter side is `detector_size`.
+
+        Args:
+            detector_size (float): the size of the detector in mm.
+        """
+        if self.sensor_height < self.sensor_width:
+            self.pixel_size = detector_size / self.sensor_height
+        else:
+            self.pixel_size = detector_size / self.sensor_width
 
     @property
     def camera_intrinsics(self) -> geo.CameraIntrinsicTransform:
