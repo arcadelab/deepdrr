@@ -18,8 +18,9 @@ import pyvista as pv
 import open3d as o3d
 import tempfile
 from scipy import ndimage
-
-
+from scipy.ndimage import label, generate_binary_structure
+import skimage
+import skimage.measure
 
 import itertools
 
@@ -41,6 +42,102 @@ vtk, nps, vtk_available = utils.try_import_vtk()
 
 
 log = logging.getLogger(__name__)
+
+
+import numpy as np
+from numba import guvectorize, int64
+
+
+@guvectorize(
+    ["void(uint8[:,:,:], uint8, uint8, uint8, uint8[:,:,:])"],
+    "(m,n,o),(),(),()->(m,n,o)",
+    nopython=True,
+)
+def _mode_filter_3d_numba(
+    image,
+    kernel_size_x,
+    kernel_size_y,
+    kernel_size_z,
+    output,
+):
+    # Calculate the padding width
+    pad_width_x = kernel_size_x // 2
+    pad_width_y = kernel_size_y // 2
+    pad_width_z = kernel_size_z // 2
+
+    hist = np.zeros(256, dtype=np.int32)
+
+    # Pad the edges with reflection
+    padded_image = image
+
+    # Retrieve the dimensions of the padded image
+    padded_m, padded_n, padded_o = padded_image.shape
+
+    # Move a sliding window across the image
+    for i in range(pad_width_x, padded_m - pad_width_x):
+        for j in range(pad_width_y, padded_n - pad_width_y):
+            for k in range(pad_width_z, padded_o - pad_width_z):
+                # Extract the current window
+                window = padded_image[
+                    i - pad_width_x : i + pad_width_x + 1,
+                    j - pad_width_y : j + pad_width_y + 1,
+                    k - pad_width_z : k + pad_width_z + 1,
+                ]
+                flat_window = window.flatten()
+
+                # Compute the histogram of the window
+                hist[:] = 0
+                for pixel in flat_window:
+                    hist[pixel] += 1
+
+                # get max
+                max_val = np.argmax(hist)
+
+                # output[i, j] = padded_image[i, j]
+                output[i, j, k] = max_val
+
+
+def mode_filter_3d(data, kernel_size):
+    assert len(kernel_size) == 3
+    kernel_size = np.array(kernel_size)
+
+    input_image = np.around(data).astype(np.uint8)
+
+    pad_width = kernel_size // 2
+    padded_image = np.pad(
+        input_image,
+        pad_width=np.array(
+            [
+                [pad_width[0], pad_width[0]],
+                [pad_width[1], pad_width[1]],
+                [pad_width[2], pad_width[2]],
+            ]
+        ),
+        mode="reflect",
+    )
+    output_image = np.zeros_like(padded_image, dtype=np.uint8)
+    _mode_filter_3d_numba(
+        padded_image, kernel_size[0], kernel_size[1], kernel_size[2], output_image
+    )
+
+    # remove the padding
+    def unpad(x, pad_width):
+        slices = []
+        for c in pad_width:
+            e = None if c[1] == 0 else -c[1]
+            slices.append(slice(c[0], e))
+        return x[tuple(slices)]
+
+    output_image = unpad(
+        output_image,
+        [
+            (pad_width[0], pad_width[0]),
+            (pad_width[1], pad_width[1]),
+            (pad_width[2], pad_width[2]),
+        ],
+    )
+
+    return output_image
 
 
 class Volume(Renderable):
@@ -1019,6 +1116,9 @@ class Volume(Renderable):
         smooth_iter: int = 50,
         relaxation_factor: float = 0.25,
         convert_to_LPS: bool = False,
+        taubin_smooth: bool = False,
+        taubin_smooth_iter: int = 50,
+        taubin_smooth_pass_band: float = 0.05,
     ) -> pv.PolyData:
         """Make an isosurface from the volume's data, transforming to anatomical_coordinates.
 
@@ -1073,13 +1173,18 @@ class Volume(Renderable):
             # Convert to LPS
             surface.transform(geo.get_data(geo.RAS_from_LPS), inplace=True)
 
+        if taubin_smooth:
+            surface = surface.smooth_taubin(n_iter=taubin_smooth_iter, pass_band=taubin_smooth_pass_band)
+
         if decimation_points is not None and surface.n_points > decimation_points:
             # Decimate the surface to the desired number of points
             surface = surface.decimate(1 - decimation_points / surface.n_points)
 
         return surface
 
-    def cap_blocks(self, axis: str, convert_to_LPS: bool = False, offset_mm: float = 0) -> pv.PolyData:
+    def cap_blocks(
+        self, axis: str, convert_to_LPS: bool = False, offset_mm: float = 0
+    ) -> pv.PolyData:
         dims = self.data.shape
 
         idx_map = ["R", "L", "A", "P", "S", "I"]
@@ -1090,24 +1195,35 @@ class Volume(Renderable):
         flips = [self.anatomical_from_ijk[i, i] < 0 for i in range(3)]
         top = not top if flips[axis_idx] else top
 
-        if not np.allclose(np.diag(np.diag(self.anatomical_from_ijk[:3, :3])), self.anatomical_from_ijk[:3, :3]):
-            raise NotImplementedError("Non-diagonal anatomical_from_ijk cap_blocks not implemented.")
+        if not np.allclose(
+            np.diag(np.diag(self.anatomical_from_ijk[:3, :3])),
+            self.anatomical_from_ijk[:3, :3],
+        ):
+            raise NotImplementedError(
+                "Non-diagonal anatomical_from_ijk cap_blocks not implemented."
+            )
 
         def off_axis(i):
-            return (-.5, dims[i] - .5)
-        
-        def above(i):
-            return tuple(np.array((dims[i] - .5, 2 * (dims[i] - .5)) - (offset_mm / self.spacing[i])))
-        
-        def below(i):
-            return tuple(np.array((-(dims[i]-.5), -.5) + (offset_mm / self.spacing[i])))
+            return (-0.5, dims[i] - 0.5)
 
-        bounds_func = [off_axis]*3
+        def above(i):
+            return tuple(
+                np.array(
+                    (dims[i] - 0.5, 2 * (dims[i] - 0.5)) - (offset_mm / self.spacing[i])
+                )
+            )
+
+        def below(i):
+            return tuple(
+                np.array((-(dims[i] - 0.5), -0.5) + (offset_mm / self.spacing[i]))
+            )
+
+        bounds_func = [off_axis] * 3
         bounds_func[axis_idx] = above if top else below
         bounds = [f(i) for i, f in enumerate(bounds_func)]
         bounds = tuple(itertools.chain.from_iterable(bounds))
         surface = pv.Cube(bounds=bounds)
-        
+
         surface = surface.triangulate()
 
         if np.linalg.det(self.anatomical_from_ijk.R) < 0:
@@ -1122,22 +1238,32 @@ class Volume(Renderable):
             surface.transform(geo.get_data(geo.RAS_from_LPS), inplace=True)
 
         return surface
-    
 
-    def unknown_masks(self, axis: str, convert_to_LPS: bool = False, offset_mm: float = 0, dilation_mm: float = 10) -> pv.PolyData:
+    def unknown_masks(
+        self,
+        axis: str,
+        convert_to_LPS: bool = False,
+        offset_mm: float = 0,
+        dilation_mm: float = 10,
+    ) -> pv.PolyData:
         dims = self.data.shape
-    
+
         idx_map = ["R", "L", "A", "P", "S", "I"]
         axis_enc = idx_map.index(axis)
         axis_idx = axis_enc // 2
         top = axis_enc % 2 == 0
-    
+
         flips = [self.anatomical_from_ijk[i, i] < 0 for i in range(3)]
         top = not top if flips[axis_idx] else top
-    
-        if not np.allclose(np.diag(np.diag(self.anatomical_from_ijk[:3, :3])), self.anatomical_from_ijk[:3, :3]):
-            raise NotImplementedError("Non-diagonal anatomical_from_ijk cap_blocks not implemented.")
-        
+
+        if not np.allclose(
+            np.diag(np.diag(self.anatomical_from_ijk[:3, :3])),
+            self.anatomical_from_ijk[:3, :3],
+        ):
+            raise NotImplementedError(
+                "Non-diagonal anatomical_from_ijk cap_blocks not implemented."
+            )
+
         i = axis_idx
 
         if top:
@@ -1157,7 +1283,6 @@ class Volume(Renderable):
         # if sum is zero, return empty surface
         if np.sum(sliced) == 0:
             return pv.PolyData()
-
 
         dilation = int(dilation_mm / self.spacing[i])
         # make dilation odd
@@ -1184,24 +1309,24 @@ class Volume(Renderable):
         )
 
         if top:
-            surface.points[surface.points[:,i] >= 0, i] = offset_slice_idx + dims[i] 
-            surface.points[surface.points[:,i] < 0, i] = offset_slice_idx
+            surface.points[surface.points[:, i] >= 0, i] = offset_slice_idx + dims[i]
+            surface.points[surface.points[:, i] < 0, i] = offset_slice_idx
         else:
-            surface.points[surface.points[:,i] >= 0, i] = offset_slice_idx
-            surface.points[surface.points[:,i] < 0, i] = offset_slice_idx - dims[i]
+            surface.points[surface.points[:, i] >= 0, i] = offset_slice_idx
+            surface.points[surface.points[:, i] < 0, i] = offset_slice_idx - dims[i]
 
         if len(surface.points) == 0:
             return surface
 
         surface = surface.triangulate()
-    
+
         if np.linalg.det(self.anatomical_from_ijk.R) < 0:
             # flip normals
             surface.flip_normals()
-    
+
         # Convert to anatomical coordinates
         surface.transform(geo.get_data(self.anatomical_from_ijk), inplace=True)
-    
+
         if self.anatomical_coordinate_system == "RAS" and convert_to_LPS:
             # Convert to LPS
             surface.transform(geo.get_data(geo.RAS_from_LPS), inplace=True)
@@ -1209,17 +1334,17 @@ class Volume(Renderable):
         with tempfile.TemporaryDirectory() as tmpdir:
             tmpfile = Path(tmpdir) / "in.stl"
             surface.save(tmpfile)
-        
+
             o3d_body = o3d.io.read_triangle_mesh(str(tmpfile))
-            
+
             hull, _ = o3d_body.compute_convex_hull()
             hull = hull.simplify_quadric_decimation(100)  # not guaranteed convex!
             hull.compute_vertex_normals()
-            
+
             o3d.io.write_triangle_mesh(str(tmpfile), hull)
 
             surface = pv.read(tmpfile)
-    
+
         return surface
 
     def load_trimesh_in_world(
@@ -1449,7 +1574,7 @@ class Volume(Renderable):
         )
         return bbox
 
-    def shrink(self) -> Volume | None:
+    def shrink(self, padding=0) -> Volume | None:
         """Crop the volume to remove empty space.
 
         Returns:
@@ -1457,9 +1582,214 @@ class Volume(Renderable):
         """
 
         bbox = self.get_bbox_IJK()
+
         if bbox is None:
             return None
+        bbox = np.clip(
+            bbox + np.array([[-padding, padding]]),
+            0,
+            np.array(self.shape)[:, np.newaxis],
+        )
         return self.crop(bbox)
+
+    def split_bodies(self, connectivity=2) -> List[Volume]:
+        vol_data = self.data
+        labeled_array, num_features = label(
+            vol_data, generate_binary_structure(3, connectivity)
+        )
+        bodies = []
+        for i in range(1, num_features + 1):
+            seg = labeled_array == i
+            materials = dict(bone=seg)
+            data = seg.astype(np.float32)
+            bodies.append(
+                Volume(
+                    data,
+                    materials=materials,
+                    anatomical_from_IJK=self.anatomical_from_ijk,
+                    world_from_anatomical=self.world_from_anatomical,
+                    anatomical_coordinate_system=self.anatomical_coordinate_system,
+                    cache_dir=self.cache_dir,
+                    config=self.config,
+                )
+            )
+        return bodies
+
+    def downscale(self, factor: List[int], segmentation=False) -> Volume:
+        if not segmentation:
+            raise NotImplementedError(
+                "Downscaling of non-segmentation volumes is not implemented."
+            )
+
+        factor = tuple(factor)
+        if len(factor) != 3:
+            raise ValueError("Factor must be a 3-tuple.")
+
+        seg_data = next(iter(self.materials.values()))
+        seg_data = np.array(seg_data)
+        # add
+        seg_data = skimage.measure.block_reduce(seg_data, factor, np.max)
+        anatomical_from_IJK = self.anatomical_from_ijk.copy()
+        anatomical_from_IJK.R[:3, :3] *= factor
+
+        return Volume(
+            seg_data.astype(np.float32),
+            materials=dict(bone=seg_data.astype(np.int32)),
+            anatomical_from_IJK=anatomical_from_IJK,
+            world_from_anatomical=self.world_from_anatomical,
+            anatomical_coordinate_system=self.anatomical_coordinate_system,
+            cache_dir=self.cache_dir,
+            config=self.config,
+        )
+
+    def upscale(
+        self,
+        factor: List[int],
+        segmentation=False,
+        smooth_seg: Optional[List[int]] = None,
+    ) -> Volume:
+        if not segmentation:
+            raise NotImplementedError(
+                "Upscaling of non-segmentation volumes is not implemented."
+            )
+
+        factor = tuple(factor)
+        if len(factor) != 3:
+            raise ValueError("Factor must be a 3-tuple.")
+
+        data = self.data
+        data = np.array(data)
+        data = skimage.transform.rescale(
+            data,
+            factor,
+            mode="reflect",
+            order=0,
+            anti_aliasing=False,
+        )
+        if smooth_seg is not None:
+            data = mode_filter_3d(data, kernel_size=smooth_seg)
+        anatomical_from_IJK = self.anatomical_from_ijk.copy()
+        anatomical_from_IJK.R[:3, :3] /= factor
+
+        return Volume(
+            data.astype(np.float32),
+            materials=dict(bone=data.astype(np.int32)),
+            anatomical_from_IJK=anatomical_from_IJK,
+            world_from_anatomical=self.world_from_anatomical,
+            anatomical_coordinate_system=self.anatomical_coordinate_system,
+            cache_dir=self.cache_dir,
+            config=self.config,
+        )
+
+    def cluster_seg(self, segmentation=False, n_clusters=9, expand=0) -> Volume:
+        import sklearn
+        from sklearn.cluster import spectral_clustering
+        from skimage.segmentation import expand_labels
+        import sklearn.feature_extraction
+
+        if not segmentation:
+            raise NotImplementedError(
+                "Clustering of non-segmentation volumes is not implemented."
+            )
+
+        data = self.data
+
+        mask = data.astype(bool)
+        img = data.astype(float)
+
+        graph = sklearn.feature_extraction.img_to_graph(img, mask=mask)
+        graph.data = np.exp(-graph.data / graph.data.std())
+
+        labels = spectral_clustering(
+            graph, n_clusters=n_clusters, eigen_solver="arpack"
+        )
+        label_im = np.full(mask.shape, -1, dtype=int)
+        label_im[mask] = labels
+        label_im += 1
+        label_im = expand_labels(label_im, expand)
+
+        return Volume(
+            label_im.astype(np.float32),
+            materials=dict(bone=label_im.astype(np.int32)),
+            anatomical_from_IJK=self.anatomical_from_ijk,
+            world_from_anatomical=self.world_from_anatomical,
+            anatomical_coordinate_system=self.anatomical_coordinate_system,
+            cache_dir=self.cache_dir,
+            config=self.config,
+        )
+
+    def split_by_segmentation(self, seg: np.array) -> List[Volume]:
+        # drop last few elements to match shape
+        seg = seg[: self.shape[0], : self.shape[1], : self.shape[2]]
+        # round and cast to int
+        seg = np.round(seg).astype(int)
+        # get unique values
+        unique_values = list(np.unique(seg))
+        # remove 0 if present
+        if 0 in unique_values:
+            unique_values.remove(0)
+
+        self_data = self.data
+
+        out_vols = []
+        for seg_id in unique_values:
+            # where self is greater than 0.5 and seg is equal to seg_id
+            mask = np.logical_and(self_data > 0.5, seg == seg_id)
+            # if no points in mask, skip
+            if not np.any(mask):
+                continue
+            # make new volume with mask
+            out_vols.append(
+                Volume(
+                    mask.astype(np.float32),
+                    materials=dict(bone=mask.astype(np.int32)),
+                    anatomical_from_IJK=self.anatomical_from_ijk,
+                    world_from_anatomical=self.world_from_anatomical,
+                    anatomical_coordinate_system=self.anatomical_coordinate_system,
+                    cache_dir=self.cache_dir,
+                    config=self.config,
+                )
+            )
+        return out_vols
+
+    def split_seg(self) -> List[Volume]:
+        seg = self.data
+        seg = np.round(seg).astype(int)
+        unique_values = list(np.unique(seg))
+        if 0 in unique_values:
+            unique_values.remove(0)
+
+        out_vols = []
+        for seg_id in unique_values:
+            mask = seg == seg_id
+            if not np.any(mask):
+                continue
+            out_vols.append(
+                Volume(
+                    mask.astype(np.float32),
+                    materials=dict(bone=mask.astype(np.int32)),
+                    anatomical_from_IJK=self.anatomical_from_ijk,
+                    world_from_anatomical=self.world_from_anatomical,
+                    anatomical_coordinate_system=self.anatomical_coordinate_system,
+                    cache_dir=self.cache_dir,
+                    config=self.config,
+                )
+            )
+
+        return out_vols
+
+    @property
+    def volume(self) -> float:
+        # count nonzero
+        nonzero = np.count_nonzero(self.data)
+        # volume per voxel
+        vol_per_voxel = np.prod(self.spacing)
+        # multiply
+        return nonzero * vol_per_voxel
+
+    @property
+    def empty(self) -> bool:
+        return self.get_bbox_IJK() is None
 
 
 class MetalVolume(Volume):
