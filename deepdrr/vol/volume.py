@@ -1116,6 +1116,9 @@ class Volume(Renderable):
         smooth_iter: int = 50,
         relaxation_factor: float = 0.25,
         convert_to_LPS: bool = False,
+        taubin_smooth: bool = False,
+        taubin_smooth_iter: int = 50,
+        taubin_smooth_pass_band: float = 0.05,
     ) -> pv.PolyData:
         """Make an isosurface from the volume's data, transforming to anatomical_coordinates.
 
@@ -1169,6 +1172,9 @@ class Volume(Renderable):
         if self.anatomical_coordinate_system == "RAS" and convert_to_LPS:
             # Convert to LPS
             surface.transform(geo.get_data(geo.RAS_from_LPS), inplace=True)
+
+        if taubin_smooth:
+            surface = surface.smooth_taubin(n_iter=taubin_smooth_iter, pass_band=taubin_smooth_pass_band)
 
         if decimation_points is not None and surface.n_points > decimation_points:
             # Decimate the surface to the desired number of points
@@ -1586,9 +1592,11 @@ class Volume(Renderable):
         )
         return self.crop(bbox)
 
-    def split_bodies(self) -> List[Volume]:
+    def split_bodies(self, connectivity=2) -> List[Volume]:
         vol_data = self.data
-        labeled_array, num_features = label(vol_data, generate_binary_structure(3, 2))
+        labeled_array, num_features = label(
+            vol_data, generate_binary_structure(3, connectivity)
+        )
         bodies = []
         for i in range(1, num_features + 1):
             seg = labeled_array == i
@@ -1626,7 +1634,7 @@ class Volume(Renderable):
 
         return Volume(
             seg_data.astype(np.float32),
-            materials=dict(bone=seg_data),
+            materials=dict(bone=seg_data.astype(np.int32)),
             anatomical_from_IJK=anatomical_from_IJK,
             world_from_anatomical=self.world_from_anatomical,
             anatomical_coordinate_system=self.anatomical_coordinate_system,
@@ -1665,7 +1673,7 @@ class Volume(Renderable):
 
         return Volume(
             data.astype(np.float32),
-            materials=dict(),
+            materials=dict(bone=data.astype(np.int32)),
             anatomical_from_IJK=anatomical_from_IJK,
             world_from_anatomical=self.world_from_anatomical,
             anatomical_coordinate_system=self.anatomical_coordinate_system,
@@ -1702,7 +1710,7 @@ class Volume(Renderable):
 
         return Volume(
             label_im.astype(np.float32),
-            materials=dict(),
+            materials=dict(bone=label_im.astype(np.int32)),
             anatomical_from_IJK=self.anatomical_from_ijk,
             world_from_anatomical=self.world_from_anatomical,
             anatomical_coordinate_system=self.anatomical_coordinate_system,
@@ -1734,7 +1742,7 @@ class Volume(Renderable):
             out_vols.append(
                 Volume(
                     mask.astype(np.float32),
-                    materials=dict(),
+                    materials=dict(bone=mask.astype(np.int32)),
                     anatomical_from_IJK=self.anatomical_from_ijk,
                     world_from_anatomical=self.world_from_anatomical,
                     anatomical_coordinate_system=self.anatomical_coordinate_system,
@@ -1759,7 +1767,7 @@ class Volume(Renderable):
             out_vols.append(
                 Volume(
                     mask.astype(np.float32),
-                    materials=dict(),
+                    materials=dict(bone=mask.astype(np.int32)),
                     anatomical_from_IJK=self.anatomical_from_ijk,
                     world_from_anatomical=self.world_from_anatomical,
                     anatomical_coordinate_system=self.anatomical_coordinate_system,
