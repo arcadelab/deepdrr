@@ -15,6 +15,13 @@ from scipy.spatial.transform import Rotation
 from scipy.interpolate import RegularGridInterpolator
 import trimesh
 import pyvista as pv
+import open3d as o3d
+import tempfile
+from scipy import ndimage
+
+
+
+import itertools
 
 from .. import load_dicom
 from .. import geo
@@ -499,8 +506,7 @@ class Volume(Renderable):
         if cache_dir is None:
             cache_dir = path.parent / "cache"
 
-            if not cache_dir.exists():
-                cache_dir.mkdir()
+            cache_dir.mkdir(exist_ok=True)
 
         log.info(f"loading NiFti volume from {path}")
         img = nib.load(path)
@@ -1052,6 +1058,14 @@ class Volume(Renderable):
             inplace=True,
         )
 
+        # if it's empty, reuturn
+        if surface.n_points == 0:
+            return surface
+
+        if np.linalg.det(self.anatomical_from_ijk.R) < 0:
+            # flip normals
+            surface.flip_normals()
+
         # Convert to anatomical coordinates
         surface.transform(geo.get_data(self.anatomical_from_ijk), inplace=True)
 
@@ -1063,6 +1077,149 @@ class Volume(Renderable):
             # Decimate the surface to the desired number of points
             surface = surface.decimate(1 - decimation_points / surface.n_points)
 
+        return surface
+
+    def cap_blocks(self, axis: str, convert_to_LPS: bool = False, offset_mm: float = 0) -> pv.PolyData:
+        dims = self.data.shape
+
+        idx_map = ["R", "L", "A", "P", "S", "I"]
+        axis_enc = idx_map.index(axis)
+        axis_idx = axis_enc // 2
+        top = axis_enc % 2 == 0
+
+        flips = [self.anatomical_from_ijk[i, i] < 0 for i in range(3)]
+        top = not top if flips[axis_idx] else top
+
+        if not np.allclose(np.diag(np.diag(self.anatomical_from_ijk[:3, :3])), self.anatomical_from_ijk[:3, :3]):
+            raise NotImplementedError("Non-diagonal anatomical_from_ijk cap_blocks not implemented.")
+
+        def off_axis(i):
+            return (-.5, dims[i] - .5)
+        
+        def above(i):
+            return tuple(np.array((dims[i] - .5, 2 * (dims[i] - .5)) - (offset_mm / self.spacing[i])))
+        
+        def below(i):
+            return tuple(np.array((-(dims[i]-.5), -.5) + (offset_mm / self.spacing[i])))
+
+        bounds_func = [off_axis]*3
+        bounds_func[axis_idx] = above if top else below
+        bounds = [f(i) for i, f in enumerate(bounds_func)]
+        bounds = tuple(itertools.chain.from_iterable(bounds))
+        surface = pv.Cube(bounds=bounds)
+        
+        surface = surface.triangulate()
+
+        if np.linalg.det(self.anatomical_from_ijk.R) < 0:
+            # flip normals
+            surface.flip_normals()
+
+        # Convert to anatomical coordinates
+        surface.transform(geo.get_data(self.anatomical_from_ijk), inplace=True)
+
+        if self.anatomical_coordinate_system == "RAS" and convert_to_LPS:
+            # Convert to LPS
+            surface.transform(geo.get_data(geo.RAS_from_LPS), inplace=True)
+
+        return surface
+    
+
+    def unknown_masks(self, axis: str, convert_to_LPS: bool = False, offset_mm: float = 0, dilation_mm: float = 10) -> pv.PolyData:
+        dims = self.data.shape
+    
+        idx_map = ["R", "L", "A", "P", "S", "I"]
+        axis_enc = idx_map.index(axis)
+        axis_idx = axis_enc // 2
+        top = axis_enc % 2 == 0
+    
+        flips = [self.anatomical_from_ijk[i, i] < 0 for i in range(3)]
+        top = not top if flips[axis_idx] else top
+    
+        if not np.allclose(np.diag(np.diag(self.anatomical_from_ijk[:3, :3])), self.anatomical_from_ijk[:3, :3]):
+            raise NotImplementedError("Non-diagonal anatomical_from_ijk cap_blocks not implemented.")
+        
+        i = axis_idx
+
+        if top:
+            offset_slice_idx = int(dims[i] - (offset_mm / self.spacing[i]))
+            take_range = list(range(offset_slice_idx, dims[i]))
+        else:
+            offset_slice_idx = int(offset_mm / self.spacing[i])
+            take_range = list(range(0, offset_slice_idx))
+
+        # get slice axis i from the volume
+        sliced = self.data.take(take_range, axis=i)
+        # take the sum along the axis
+        sliced = np.sum(sliced, axis=i)
+        sliced = np.where(sliced > 0, 1, 0)
+        sliced = np.expand_dims(sliced, axis=i)
+
+        # if sum is zero, return empty surface
+        if np.sum(sliced) == 0:
+            return pv.PolyData()
+
+
+        dilation = int(dilation_mm / self.spacing[i])
+        # make dilation odd
+        if dilation % 2 == 0:
+            dilation += 1
+
+        dilation_tuple = (dilation, dilation, dilation)
+        sliced = ndimage.grey_dilation(sliced, size=dilation_tuple)
+        sliced = np.pad(sliced, 1, mode="constant", constant_values=0)
+
+        surface = mesh_utils.isosurface(
+            sliced,
+            value=0.5,
+            node_centered=True,
+            smooth=False,
+            decimation=0,
+            smooth_iter=0,
+            relaxation_factor=0,
+        )
+
+        surface.transform(
+            np.array([[1, 0, 0, -1], [0, 1, 0, -1], [0, 0, 1, -1], [0, 0, 0, 1]]),
+            inplace=True,
+        )
+
+        if top:
+            surface.points[surface.points[:,i] >= 0, i] = offset_slice_idx + dims[i] 
+            surface.points[surface.points[:,i] < 0, i] = offset_slice_idx
+        else:
+            surface.points[surface.points[:,i] >= 0, i] = offset_slice_idx
+            surface.points[surface.points[:,i] < 0, i] = offset_slice_idx - dims[i]
+
+        if len(surface.points) == 0:
+            return surface
+
+        surface = surface.triangulate()
+    
+        if np.linalg.det(self.anatomical_from_ijk.R) < 0:
+            # flip normals
+            surface.flip_normals()
+    
+        # Convert to anatomical coordinates
+        surface.transform(geo.get_data(self.anatomical_from_ijk), inplace=True)
+    
+        if self.anatomical_coordinate_system == "RAS" and convert_to_LPS:
+            # Convert to LPS
+            surface.transform(geo.get_data(geo.RAS_from_LPS), inplace=True)
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            tmpfile = Path(tmpdir) / "in.stl"
+            surface.save(tmpfile)
+        
+            o3d_body = o3d.io.read_triangle_mesh(str(tmpfile))
+            
+            hull, _ = o3d_body.compute_convex_hull()
+            hull = hull.simplify_quadric_decimation(100)  # not guaranteed convex!
+            hull.compute_vertex_normals()
+            
+            o3d.io.write_triangle_mesh(str(tmpfile), hull)
+
+            surface = pv.read(tmpfile)
+    
         return surface
 
     def load_trimesh_in_world(

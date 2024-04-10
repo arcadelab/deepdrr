@@ -40,7 +40,7 @@ DeepDRR requires a linux machine with an NVIDIA GPU.
 ```bash
 git clone https://github.com/arcadelab/deepdrr.git
 cd deepdrr
-sudo ./scripts/ubuntu_setup.sh # installs apt dependencies and sets up the EGL driver
+sudo ./scripts/setup_ubuntu.sh # installs apt dependencies and sets up the EGL driver
 conda env create -f environment.yml # installs CUDA 11.8 and pytorch
 conda activate deepdrr
 pip install .[cuda11x] # this should match your CUDA version, see installation notes below
@@ -73,7 +73,7 @@ Installing from the `dev` branch is risky, as it is unstable.
 git clone https://github.com/arcadelab/deepdrr.git
 cd deepdrr
 git checkout dev
-sudo ./scripts/ubuntu_setup.sh
+sudo ./scripts/setup_ubuntu.sh
 conda env create -f environment.yml
 conda activate deepdrr
 pip install -e .[dev,cuda11x] # this should match your CUDA version
