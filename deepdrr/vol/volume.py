@@ -1176,7 +1176,9 @@ class Volume(Renderable):
 
         return surface
 
-    def cap_blocks(self, axis: str, convert_to_LPS: bool = False, offset_mm: float = 0) -> pv.PolyData:
+    def cap_blocks(
+        self, axis: str, convert_to_LPS: bool = False, offset_mm: float = 0
+    ) -> pv.PolyData:
         dims = self.data.shape
 
         idx_map = ["R", "L", "A", "P", "S", "I"]
@@ -1187,19 +1189,30 @@ class Volume(Renderable):
         flips = [self.anatomical_from_ijk[i, i] < 0 for i in range(3)]
         top = not top if flips[axis_idx] else top
 
-        if not np.allclose(np.diag(np.diag(self.anatomical_from_ijk[:3, :3])), self.anatomical_from_ijk[:3, :3]):
-            raise NotImplementedError("Non-diagonal anatomical_from_ijk cap_blocks not implemented.")
+        if not np.allclose(
+            np.diag(np.diag(self.anatomical_from_ijk[:3, :3])),
+            self.anatomical_from_ijk[:3, :3],
+        ):
+            raise NotImplementedError(
+                "Non-diagonal anatomical_from_ijk cap_blocks not implemented."
+            )
 
         def off_axis(i):
-            return (-.5, dims[i] - .5)
+            return (-0.5, dims[i] - 0.5)
 
         def above(i):
-            return tuple(np.array((dims[i] - .5, 2 * (dims[i] - .5)) - (offset_mm / self.spacing[i])))
+            return tuple(
+                np.array(
+                    (dims[i] - 0.5, 2 * (dims[i] - 0.5)) - (offset_mm / self.spacing[i])
+                )
+            )
 
         def below(i):
-            return tuple(np.array((-(dims[i]-.5), -.5) + (offset_mm / self.spacing[i])))
+            return tuple(
+                np.array((-(dims[i] - 0.5), -0.5) + (offset_mm / self.spacing[i]))
+            )
 
-        bounds_func = [off_axis]*3
+        bounds_func = [off_axis] * 3
         bounds_func[axis_idx] = above if top else below
         bounds = [f(i) for i, f in enumerate(bounds_func)]
         bounds = tuple(itertools.chain.from_iterable(bounds))
@@ -1220,7 +1233,13 @@ class Volume(Renderable):
 
         return surface
 
-    def unknown_masks(self, axis: str, convert_to_LPS: bool = False, offset_mm: float = 0, dilation_mm: float = 10) -> pv.PolyData:
+    def unknown_masks(
+        self,
+        axis: str,
+        convert_to_LPS: bool = False,
+        offset_mm: float = 0,
+        dilation_mm: float = 10,
+    ) -> pv.PolyData:
         dims = self.data.shape
 
         idx_map = ["R", "L", "A", "P", "S", "I"]
@@ -1231,8 +1250,13 @@ class Volume(Renderable):
         flips = [self.anatomical_from_ijk[i, i] < 0 for i in range(3)]
         top = not top if flips[axis_idx] else top
 
-        if not np.allclose(np.diag(np.diag(self.anatomical_from_ijk[:3, :3])), self.anatomical_from_ijk[:3, :3]):
-            raise NotImplementedError("Non-diagonal anatomical_from_ijk cap_blocks not implemented.")
+        if not np.allclose(
+            np.diag(np.diag(self.anatomical_from_ijk[:3, :3])),
+            self.anatomical_from_ijk[:3, :3],
+        ):
+            raise NotImplementedError(
+                "Non-diagonal anatomical_from_ijk cap_blocks not implemented."
+            )
 
         i = axis_idx
 
@@ -1279,11 +1303,11 @@ class Volume(Renderable):
         )
 
         if top:
-            surface.points[surface.points[:,i] >= 0, i] = offset_slice_idx + dims[i] 
-            surface.points[surface.points[:,i] < 0, i] = offset_slice_idx
+            surface.points[surface.points[:, i] >= 0, i] = offset_slice_idx + dims[i]
+            surface.points[surface.points[:, i] < 0, i] = offset_slice_idx
         else:
-            surface.points[surface.points[:,i] >= 0, i] = offset_slice_idx
-            surface.points[surface.points[:,i] < 0, i] = offset_slice_idx - dims[i]
+            surface.points[surface.points[:, i] >= 0, i] = offset_slice_idx
+            surface.points[surface.points[:, i] < 0, i] = offset_slice_idx - dims[i]
 
         if len(surface.points) == 0:
             return surface
@@ -1653,6 +1677,7 @@ class Volume(Renderable):
         import sklearn
         from sklearn.cluster import spectral_clustering
         from skimage.segmentation import expand_labels
+        import sklearn.feature_extraction
 
         if not segmentation:
             raise NotImplementedError(
@@ -1744,6 +1769,19 @@ class Volume(Renderable):
             )
 
         return out_vols
+
+    @property
+    def volume(self) -> float:
+        # count nonzero
+        nonzero = np.count_nonzero(self.data)
+        # volume per voxel
+        vol_per_voxel = np.prod(self.spacing)
+        # multiply
+        return nonzero * vol_per_voxel
+
+    @property
+    def empty(self) -> bool:
+        return self.get_bbox_IJK() is None
 
 
 class MetalVolume(Volume):
