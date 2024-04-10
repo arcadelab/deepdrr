@@ -1719,6 +1719,32 @@ class Volume(Renderable):
             )
         return out_vols
 
+    def split_seg(self) -> List[Volume]:
+        seg = self.data
+        seg = np.round(seg).astype(int)
+        unique_values = list(np.unique(seg))
+        if 0 in unique_values:
+            unique_values.remove(0)
+
+        out_vols = []
+        for seg_id in unique_values:
+            mask = seg == seg_id
+            if not np.any(mask):
+                continue
+            out_vols.append(
+                Volume(
+                    mask.astype(np.float32),
+                    materials=dict(),
+                    anatomical_from_IJK=self.anatomical_from_ijk,
+                    world_from_anatomical=self.world_from_anatomical,
+                    anatomical_coordinate_system=self.anatomical_coordinate_system,
+                    cache_dir=self.cache_dir,
+                    config=self.config,
+                )
+            )
+
+        return out_vols
+
 
 class MetalVolume(Volume):
     """Same as a volume, but with a different segmentation for the materials."""
