@@ -13,3 +13,4 @@ dependencies:
   - cuda-nvprof
   - cuda-gdb
   - cuda-profiler-api
+  - numba

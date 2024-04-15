@@ -130,7 +130,10 @@ class SimpleDevice(Device):
         z_axis = geo.vector(0, 0, 1)
         if (rotvec := z_axis.cross(direction_in_device)).norm() < 1e-6:
             # The direction is parallel to the z-axis. The ray frame is the device frame.
-            rotvec = geo.vector(0, 0, 0)
+            if z_axis.dot(direction_in_device) < 0:
+                rotvec = geo.vector(np.pi, 0, 0)
+            else:
+                rotvec = geo.vector(0, 0, 0)
         else:
             rotvec = rotvec.hat() * z_axis.angle(direction_in_device)
         rot = geo.Rotation.from_rotvec(rotvec)
