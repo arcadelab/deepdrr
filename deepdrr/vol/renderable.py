@@ -1,5 +1,5 @@
 from __future__ import annotations
-from typing import Any, Union, Tuple, List, Optional, Dict, Type
+from typing import Any, Union, Tuple, List, Optional, Dict, Type, TypeVar
 
 import logging
 import numpy as np
@@ -24,6 +24,9 @@ vtk, nps, vtk_available = utils.try_import_vtk()
 
 
 log = logging.getLogger(__name__)
+
+
+T = TypeVar("T")
 
 
 class Renderable(ABC):
