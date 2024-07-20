@@ -7,16 +7,18 @@ from deepdrr.utils import test_utils, image_utils
 from deepdrr.projector import Projector
 from deepdrr.vol import Mesh
 from deepdrr.pyrenderdrr import DRRMaterial
+import killeengeo as kg
 
 
 def main():
     output_dir = test_utils.get_output_dir()
-    data_dir = test_utils.download_sampledata("CTPelvic1K_sample")
-    print(data_dir)
-    ct = deepdrr.Volume.from_nifti(
-        data_dir / "dataset6_CLINIC_0001_data.nii.gz", use_thresholding=True
-    )
-    ct.supine()
+    # data_dir = test_utils.download_sampledata("CTPelvic1K_sample")
+    # print(data_dir)
+    # ct = deepdrr.Volume.from_nifti(
+    #     data_dir / "dataset6_CLINIC_0001_data.nii.gz",
+    #     use_thresholding=True,
+    # )
+    # ct.supine()
 
     # define the simulated C-arm
     carm = deepdrr.device.SimpleDevice()
@@ -27,18 +29,19 @@ def main():
 
     # project in the anterior direction
     with Projector(
-        [ct, mesh, dense_mesh], device=carm, intensity_upper_bound=4
+        [mesh, dense_mesh], device=carm, intensity_upper_bound=4
     ) as projector:
-        p = ct.center_in_world
-        v = ct.world_from_anatomical @ geo.vector(0, 1, 0)
+        # p = ct.center_in_world
+        # v = ct.world_from_anatomical @ geo.vector(0, 1, 0)
+        p = kg.p(0, 0, 0)
+        v = kg.v(0, 0, 1)
         carm.set_view(
             p,
             v,
-            up=ct.world_from_anatomical @ geo.vector(0, 0, 1),
             source_to_point_fraction=0.7,
         )
 
-        mesh.place_center(ct.center_in_world)
+        mesh.place_center(p)
 
         image = projector()
 
