@@ -78,6 +78,10 @@ class Mesh(Renderable):
     def get_bounding_box_in_world(self) -> Tuple[Point3D, Point3D]:
         raise NotImplementedError("TODO")
 
+    def get_bounding_box_volume(self) -> float:
+        min_bounds, max_bounds = self.get_bounding_box_in_world()
+        return abs(np.prod(max_bounds - min_bounds))
+
     @classmethod
     def from_stl(
         cls: Type[T],
