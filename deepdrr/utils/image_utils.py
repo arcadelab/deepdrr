@@ -340,7 +340,11 @@ def draw_masks(
     return (image * 255).astype(np.uint8)
 
 
-def process_drr(image: np.ndarray, neglog: bool = True) -> np.ndarray:
+def process_drr(
+    image: np.ndarray,
+    neglog: bool = True,
+    clahe: bool = True,
+) -> np.ndarray:
     """Process a raw DRR for visualization."""
     # Cast to uint8
     if neglog:
@@ -348,8 +352,10 @@ def process_drr(image: np.ndarray, neglog: bool = True) -> np.ndarray:
     image = as_uint8(image)
 
     # apply clahe and invert
-    clahe = cv2.createCLAHE(clipLimit=4, tileGridSize=(8, 8))
-    image = clahe.apply(image)
+    if clahe:
+        clahe = cv2.createCLAHE(clipLimit=4, tileGridSize=(8, 8))
+        image = clahe.apply(image)
+
     image = 255 - image
     image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
     return image

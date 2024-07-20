@@ -12,6 +12,7 @@ from deepdrr.pyrenderdrr import DRRMaterial
 def main():
     output_dir = test_utils.get_output_dir()
     data_dir = test_utils.download_sampledata("CTPelvic1K_sample")
+    print(data_dir)
     ct = deepdrr.Volume.from_nifti(
         data_dir / "dataset6_CLINIC_0001_data.nii.gz", use_thresholding=True
     )

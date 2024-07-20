@@ -38,6 +38,8 @@ T = TypeVar("T", bound="Mesh")
 
 
 class Mesh(Renderable):
+    mesh: pyrender.Mesh
+
     def __init__(
         self,
         anatomical_from_IJK: Optional[kg.FrameTransform] = None,
@@ -154,6 +156,9 @@ class Mesh(Renderable):
             radius = max(radius, np.max(np.linalg.norm(positions - center, axis=1)))
 
         return center, radius
+
+    def get_points(self) -> np.ndarray:
+        return np.array(self.mesh.primitives[0].positions)
 
 
 class LinearToolMesh(Mesh):
