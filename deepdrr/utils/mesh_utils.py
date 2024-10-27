@@ -396,5 +396,5 @@ def load_trimesh(
         log.warning(f"mesh has no vertices: {path}")
         return None
     if convert_to_RAS:
-        mesh.apply_transform(np.array(geo.RAS_from_LPS))
+        mesh = mesh.apply_transform(np.array(geo.RAS_from_LPS))
     return mesh

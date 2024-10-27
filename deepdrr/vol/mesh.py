@@ -164,6 +164,18 @@ class Mesh(Renderable):
     def get_points(self) -> np.ndarray:
         return np.array(self.mesh.primitives[0].positions)
 
+    def trimesh(self) -> trimesh.Trimesh:
+        return trimesh.Trimesh(
+            vertices=self.get_points(),
+            faces=self.mesh.primitives[0].indices,
+        )
+
+    def trimesh_in_world(self) -> trimesh.Trimesh:
+        """Get the mesh in the world coordinate system."""
+        mesh = self.trimesh()
+        mesh = mesh.apply_transform(self.world_from_anatomical)
+        return mesh
+
 
 class LinearToolMesh(Mesh):
     """A mesh with a base and a tip defined in anatomical coordinates."""

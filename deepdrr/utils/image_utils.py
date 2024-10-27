@@ -359,3 +359,56 @@ def process_drr(
     image = 255 - image
     image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
     return image
+
+
+def resize_by_height(image: np.ndarray, height: int) -> np.ndarray:
+    """Resize a numpy array image"""
+    h, w, _ = image.shape
+
+    new_w = int(height * w / h)
+    new_h = height
+
+    return cv2.resize(image, (new_w, new_h), interpolation=cv2.INTER_NEAREST)
+
+
+def resize_by_width(image: np.ndarray, width: int) -> np.ndarray:
+    """Resize a numpy array image"""
+    h, w, _ = image.shape
+
+    new_w = width
+    new_h = int(width * h / w)
+
+    return cv2.resize(image, (new_w, new_h), interpolation=cv2.INTER_NEAREST)
+
+
+def pad_to_square(image: np.ndarray, cval: float = 0) -> tuple[np.ndarray, np.ndarray]:
+    """Resize a numpy array image to the given width and height.
+
+    Maintain the aspect ratio of the image and pad extra space with 0s."""
+
+    h, w = image.shape[:2]
+    width = max(h, w)
+    height = max(h, w)
+
+    if w / h > width / height:
+        # Image is wider than target
+        new_w = width
+        new_h = int(width * h / w)
+        pad_top = int((height - new_h) / 2)
+        pad_bottom = height - new_h - pad_top
+        pad_left = 0
+        pad_right = 0
+    else:
+        # Image is taller than target
+        new_w = int(height * w / h)
+        new_h = height
+        pad_top = 0
+        pad_bottom = 0
+        pad_left = int((width - new_w) / 2)
+        pad_right = width - new_w - pad_left
+
+    # image = cv2.resize(image, (new_w, new_h), interpolation=cv2.INTER_NEAREST)
+    image = cv2.copyMakeBorder(
+        image, pad_top, pad_bottom, pad_left, pad_right, cv2.BORDER_CONSTANT, value=cval
+    )
+    return image, np.array([pad_top, pad_bottom, pad_left, pad_right])

@@ -955,6 +955,7 @@ class Projector(object):
         """
         if len(camera_projections) > 1:
             raise NotImplementedError("multiple projections")
+
         camera_projections = self._prepare_project(camera_projections)
         return self._render_seg(camera_projections[0], tags=tags)
 
@@ -1014,7 +1015,6 @@ class Projector(object):
         *camera_projections: geo.CameraProjection,
         tags: Optional[List[Optional[List[str]]]] = None,
     ) -> cupy.array:
-
         if len(camera_projections) > 1:
             raise NotImplementedError("multiple projections")
         camera_projections = self._prepare_project(camera_projections)
@@ -1092,6 +1092,7 @@ class Projector(object):
     ) -> None:
         width = proj.intrinsic.sensor_width
         height = proj.intrinsic.sensor_height
+        log.debug(f"sensor size: {width}x{height}")
         total_pixels = width * height
 
         # with time_range("seg_render"):

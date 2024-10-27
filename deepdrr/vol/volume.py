@@ -566,6 +566,7 @@ class Volume(Renderable):
         materials: Optional[Dict[str, np.ndarray]] = None,
         segmentation: bool = False,
         label: Union[None, int, List[int]] = None,
+        binarize: bool = False,
         density_kwargs: dict = {},
         **kwargs,
     ):
@@ -625,7 +626,10 @@ class Volume(Renderable):
             else:
                 raise ValueError(f"Invalid label: {label}")
             materials = dict(bone=seg)
-            data = seg.astype(np.float32)
+            if binarize:
+                data = seg.astype(np.float32)
+            else:
+                data = data.astype(np.float32)
         else:
             hu_values = img.get_fdata()
             data = cls._convert_hounsfield_to_density(hu_values, **density_kwargs)
@@ -1174,7 +1178,9 @@ class Volume(Renderable):
             surface.transform(geo.get_data(geo.RAS_from_LPS), inplace=True)
 
         if taubin_smooth:
-            surface = surface.smooth_taubin(n_iter=taubin_smooth_iter, pass_band=taubin_smooth_pass_band)
+            surface = surface.smooth_taubin(
+                n_iter=taubin_smooth_iter, pass_band=taubin_smooth_pass_band
+            )
 
         if decimation_points is not None and surface.n_points > decimation_points:
             # Decimate the surface to the desired number of points
