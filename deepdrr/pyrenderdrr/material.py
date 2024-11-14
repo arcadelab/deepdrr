@@ -11,6 +11,8 @@ class DRRMaterial(MetallicRoughnessMaterial):
         "muscle": 1.06,
         "air": 0.0012,
         "iron": 7.87,
+        "lead": 11.34,
+        "copper": 8.96,
         "lung": 0.26,
         "titanium": 4.51,
         "teflon": 2.2,

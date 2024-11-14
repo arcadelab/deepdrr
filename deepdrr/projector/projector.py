@@ -943,15 +943,15 @@ class Projector(object):
         *camera_projections: geo.CameraProjection,
         tags: Optional[List[str]] = None,
     ) -> np.ndarray:
-        """
-        TODO
+        """Project segmentation masks for mesh objects.
 
         Args:
             camera_projections: TODO
+            tags: [C] list of tags to project.
             seg_node_map: TODO
 
         Returns:
-            np.ndarray: TODO
+            np.ndarray: [C, H, W] array of segmentation masks
         """
         if len(camera_projections) > 1:
             raise NotImplementedError("multiple projections")

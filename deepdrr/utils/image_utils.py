@@ -344,6 +344,7 @@ def process_drr(
     image: np.ndarray,
     neglog: bool = True,
     clahe: bool = True,
+    invert: bool = True,
 ) -> np.ndarray:
     """Process a raw DRR for visualization."""
     # Cast to uint8
@@ -356,7 +357,8 @@ def process_drr(
         clahe = cv2.createCLAHE(clipLimit=4, tileGridSize=(8, 8))
         image = clahe.apply(image)
 
-    image = 255 - image
+    if invert:
+        image = 255 - image
     image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
     return image
 

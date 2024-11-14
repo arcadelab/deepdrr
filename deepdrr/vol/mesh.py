@@ -84,7 +84,7 @@ class Mesh(Renderable):
 
     @classmethod
     def from_stl(
-        cls: Type[T],
+        cls,
         path: Union[Union[str, Path], List[Union[str, Path]]],
         material: Union[
             Union[str, DRRMaterial], List[Union[str, DRRMaterial]]
@@ -92,7 +92,7 @@ class Mesh(Renderable):
         convert_to_RAS: bool = False,
         tag: Optional[str] = None,
         **kwargs,
-    ) -> T:
+    ) -> Mesh:
         """Create a mesh for the given material with default density.
 
         Args:
@@ -190,6 +190,18 @@ class LinearToolMesh(Mesh):
         self.tip = kg.point(tip)
         super().__init__(**kwargs)
 
+    @property
+    def base_in_world(self) -> kg.Point3D:
+        return self.world_from_anatomical @ self.base
+
+    @property
+    def tip_in_world(self) -> kg.Point3D:
+        return self.world_from_anatomical @ self.tip
+
+    @property
+    def length_in_world(self) -> float:
+        return (self.tip_in_world - self.base_in_world).norm()
+
     def align(
         self,
         a_in_world: kg.Point3D,
@@ -205,4 +217,29 @@ class LinearToolMesh(Mesh):
             distance=distance,
             a=self.base,
             b=self.tip,
+        )
+
+    def orient(
+        self,
+        startpoint: kg.Point3D,
+        direction: kg.Vector3D,
+        distance: float = 0,
+    ):
+        return self.align(
+            startpoint,
+            startpoint + direction.hat(),
+            distance=distance,
+        )
+
+    def twist(self, angle: float, degrees: bool = True):
+        """Rotate the tool clockwise (when looking down on it) by `angle`.
+
+        Args:
+            angle (float): The angle.
+            degrees (bool, optional): Whether `angle` is in degrees. Defaults to True.
+        """
+        rotvec = (self.tip - self.base).hat()
+        rotvec *= utils.radians(angle, degrees=degrees)
+        self.world_from_anatomical = self.world_from_anatomical @ kg.frame_transform(
+            kg.Rotation.from_rotvec(rotvec)
         )

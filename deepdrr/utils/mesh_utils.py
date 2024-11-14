@@ -83,7 +83,8 @@ def isosurface(
     vol.SetSpacing(1, 1, 1)
 
     if label is not None:
-        data = (data == label).astype(np.uint8)
+        data = np.isclose(data, label, atol=0.2).astype(np.uint8)
+        # data = (data == label).astype(np.uint8)
     else:
         data = (data > value).astype(np.uint8)
 

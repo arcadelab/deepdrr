@@ -510,6 +510,24 @@ class Volume(Renderable):
             )
             nib.save(img, output_dir / f"{name}.nii.gz")
 
+    def save_nifti(self, path: Path):
+        """Save the data to disk as a nifti file.
+
+        The materials and world_from_anatomical are not saved.
+
+        Args:
+            path (Path): the path to save the nifti file to. Should be a .nii.gz file.
+        """
+        path = Path(path)
+        if not path.parent.exists():
+            path.parent.mkdir(parents=True)
+
+        img = nib.Nifti1Image(
+            self.data,
+            geo.get_data(self.RAS_from_IJK),
+        )
+        nib.save(img, str(path))
+
     @classmethod
     def load(cls: Type[Volume], path: Path, segmentation: bool = False) -> Volume:
         """Load a volume from disk.
