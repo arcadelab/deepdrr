@@ -873,7 +873,7 @@ class Projector(object):
 
             self.cam_node._matrix = np.array(proj.extrinsic.inv) @ deepdrr_to_opengl_cam
 
-            zfar = self.device.source_to_detector_distance * 2 * 4  # TODO (liam)
+            zfar = self.device.source_to_detector_distance * 4  # TODO (liam)
 
         return zfar
 
@@ -1541,7 +1541,8 @@ class Projector(object):
             cy=cam_intr.cy,
             znear=self.device.source_to_detector_distance
             / 1000,  # TODO (liam) near clipping plane parameter
-            zfar=self.device.source_to_detector_distance,
+            zfar=self.device.source_to_detector_distance
+            * 4,  # TODO (killeen) far clipping plane parameter
         )
 
         self.cam_node = self.scene.add(self.cam)
