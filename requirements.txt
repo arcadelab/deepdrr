@@ -12,6 +12,7 @@ pynrrd
 rich
 opencv-python
 seaborn
+pyrender==0.1.43
 
 # development requirements
 black # proper python style
