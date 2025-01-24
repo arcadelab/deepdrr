@@ -1382,9 +1382,11 @@ class Projector(object):
 
         if self.initialized:
             if len(self.primitives) > 0:
-                log.error(
-                    "Changing sensor size while using meshes is not yet supported."  # TODO (liam)
+                # TODO (liam)
+                raise RuntimeError(
+                    "Changing sensor size while using meshes is not yet supported."
                 )
+
             self.intensity_gpu = None
             self.photon_prob_gpu = None
             if self.collected_energy:

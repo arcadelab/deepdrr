@@ -17,7 +17,6 @@ class CameraProjectionDevice(Device):
         self.pixel_size = pixel_size
         self.projection = projection
 
-
     @property
     def projection(self) -> geo.CameraProjection:
         return self._projection
@@ -30,7 +29,9 @@ class CameraProjectionDevice(Device):
         self.sensor_width = projection.intrinsic.sensor_width
 
         self.camera_intrinsics = projection.intrinsic
-        self.source_to_detector_distance = projection.intrinsic.focal_length * self.pixel_size
+        self.source_to_detector_distance = (
+            projection.intrinsic.focal_length * self.pixel_size
+        )
         self.world_from_device = projection.world_from_camera3d
 
     @property
