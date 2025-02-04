@@ -141,11 +141,11 @@ class FiducialList:
             f.write("# Markups fiducial file version = 4.11\n")
             f.write("# CoordinateSystem = LPS\n")
             f.write(
-                "# columns = id, label, description, associatedNodeID, visibility, locked, selected, position\n"
+                "# columns = id,x,y,z,ow,ox,oy,oz,vis,sel,lock,label,desc,associatedNodeID"
             )
             for i, point in enumerate(points):
                 f.write(
-                    f"{i}, {self.names[i]}, , , 1, 0, 0, {point[0]}, {point[1]}, {point[2]}\n"
+                    f"{i},{point[0]},{point[1]},{point[2]},0,0,0,1,1,1,1,{self.names[i]},,,2,0\n"
                 )
 
 
