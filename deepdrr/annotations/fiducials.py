@@ -31,7 +31,9 @@ class FiducialList:
             num_digits = len(str(len(points)))
             self.names = [f"P{str(i).zfill(num_digits)}" for i in range(len(points))]
         else:
-            assert len(names) == len(points), "Number of names must match number of points"
+            assert len(names) == len(
+                points
+            ), "Number of names must match number of points"
             self.names = names
 
     def __getitem__(self, index):
@@ -106,13 +108,19 @@ class FiducialList:
         )
 
     @classmethod
-    def from_json(cls, path: Path, world_from_anatomical: Optional[geo.FrameTransform] = None):
+    def from_json(
+        cls, path: Path, world_from_anatomical: Optional[geo.FrameTransform] = None
+    ):
         # TODO: add support for associated IDs of the fiducials. Should really be a list/dict.
         data = pd.read_json(path)
-        control_points_table = pd.DataFrame.from_dict(data["markups"][0]["controlPoints"])
+        control_points_table = pd.DataFrame.from_dict(
+            data["markups"][0]["controlPoints"]
+        )
         coordinate_system = data["markups"][0]["coordinateSystem"]
         # TODO: not sure if this works.
-        points = [geo.point(*row["position"]) for _, row in control_points_table.iterrows()]
+        points = [
+            geo.point(*row["position"]) for _, row in control_points_table.iterrows()
+        ]
         names = control_points_table["label"].values.tolist()
 
         return cls(
@@ -123,7 +131,22 @@ class FiducialList:
         )
 
     def save(self, path: Path):
-        raise NotImplementedError()
+        """Save the fiducials to a FCSV file
+        Args:
+            path (Path): Path to the FCSV file
+        """
+        points = self.to_LPS()
+
+        with open(path, "w") as f:
+            f.write("# Markups fiducial file version = 4.11\n")
+            f.write("# CoordinateSystem = LPS\n")
+            f.write(
+                "# columns = id, label, description, associatedNodeID, visibility, locked, selected, position\n"
+            )
+            for i, point in enumerate(points):
+                f.write(
+                    f"{i}, {self.names[i]}, , , 1, 0, 0, {point.x}, {point.y}, {point.z}\n"
+                )
 
 
 class Fiducial(geo.Point3D):
@@ -142,8 +165,10 @@ class Fiducial(geo.Point3D):
         )
 
     @classmethod
-    def from_json(cls, path: Path, world_from_anatomical: Optional[geo.FrameTransform] = None):
+    def from_json(
+        cls, path: Path, world_from_anatomical: Optional[geo.FrameTransform] = None
+    ):
         raise NotImplementedError
 
     def save(self, path: Path):
-        raise NotImplementedError
+        FiducialList([self]).save(path)
