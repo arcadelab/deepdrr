@@ -145,7 +145,7 @@ class FiducialList:
             )
             for i, point in enumerate(points):
                 f.write(
-                    f"{i}, {self.names[i]}, , , 1, 0, 0, {point.x}, {point.y}, {point.z}\n"
+                    f"{i}, {self.names[i]}, , , 1, 0, 0, {point[0]}, {point[1]}, {point[2]}\n"
                 )
 
 
