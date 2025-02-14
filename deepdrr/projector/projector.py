@@ -1428,8 +1428,8 @@ class Projector(object):
         log.debug(f"beginning call to Projector.initialize")
         init_tick = time.perf_counter()
 
-        width = self.device.sensor_width
-        height = self.device.sensor_height
+        width = self.camera_intrinsics.sensor_width
+        height = self.camera_intrinsics.sensor_height
         total_pixels = width * height
 
         device_id = int(os.environ.get("EGL_DEVICE_ID", "0"))
@@ -1534,16 +1534,16 @@ class Projector(object):
             self.mesh_nodes.append(node)
             self.scene.add(drrmesh.mesh, parent_node=node)
 
-        cam_intr = self.device.camera_intrinsics
+        cam_intr = self.camera_intrinsics
 
         self.cam = IntrinsicsCamera(
             fx=cam_intr.fx,
             fy=cam_intr.fy,
             cx=cam_intr.cx,
             cy=cam_intr.cy,
-            znear=self.device.source_to_detector_distance
+            znear=self.source_to_detector_distance
             / 1000,  # TODO (liam) near clipping plane parameter
-            zfar=self.device.source_to_detector_distance
+            zfar=self.source_to_detector_distance
             * 4,  # TODO (killeen) far clipping plane parameter
         )
 
