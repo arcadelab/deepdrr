@@ -636,7 +636,7 @@ class Projector(object):
                     )
                 )
         else:
-            self.max_ray_length = -1
+            self.max_ray_length = self.source_to_detector_distance
 
         return camera_projections
 
