@@ -636,7 +636,7 @@ class Projector(object):
                     )
                 )
         else:
-            self.max_ray_length = self.source_to_detector_distance
+            self.max_ray_length = -1
 
         return camera_projections
 
@@ -860,7 +860,7 @@ class Projector(object):
             self.cam.cy = proj.intrinsic.sensor_height - proj.intrinsic.cy
 
             self.cam.znear = 1  # self.device.source_to_detector_distance / 1000
-            self.cam.zfar = self.device.source_to_detector_distance * 4
+            self.cam.zfar = self.source_to_detector_distance * 4
 
             deepdrr_to_opengl_cam = np.array(
                 [
@@ -873,7 +873,7 @@ class Projector(object):
 
             self.cam_node._matrix = np.array(proj.extrinsic.inv) @ deepdrr_to_opengl_cam
 
-            zfar = self.device.source_to_detector_distance * 4  # TODO (liam)
+            zfar = self.source_to_detector_distance * 4  # TODO (liam)
 
         return zfar
 
@@ -1229,7 +1229,7 @@ class Projector(object):
                     * NUMBYTES_INT8
                 ),
                 np.int32(total_pixels),
-                np.float32(self.device.source_to_detector_distance * 2),
+                np.float32(self.source_to_detector_distance * 2),
             ),
             block=(32, 1, 1),  # TODO (liam)
             grid=(2048, 1),  # TODO (liam)
