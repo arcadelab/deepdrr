@@ -877,9 +877,9 @@ class Projector(object):
 
         return zfar
 
-    def meshes_bounding_sphere_in_frustum(self, meshes) -> bool:
-        camera_projections = self._prepare_project(None)
-        proj = camera_projections[0]
+    def meshes_bounding_sphere_in_frustum(self, meshes, index_from_world: Optional[geo.CameraProjection] = None) -> bool:
+        camera_projections = self._prepare_project(index_from_world)
+        proj = camera_projections
 
         self._setup_pyrender_scene(proj)
 
