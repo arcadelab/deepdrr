@@ -642,7 +642,7 @@ class Projector(object):
 
         return camera_projections
 
-    @time_range()
+    # @time_range()
     def project(
         self,
         *camera_projections: geo.CameraProjection,
@@ -879,7 +879,9 @@ class Projector(object):
 
         return zfar
 
-    def meshes_bounding_sphere_in_frustum(self, meshes, index_from_world: Optional[geo.CameraProjection] = None) -> bool:
+    def meshes_bounding_sphere_in_frustum(
+        self, meshes, index_from_world: Optional[geo.CameraProjection] = None
+    ) -> bool:
         camera_projections = self._prepare_project(index_from_world)
         proj = camera_projections
 
