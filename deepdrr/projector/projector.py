@@ -485,7 +485,8 @@ class Projector(object):
                         raise ValueError(f"unrecognized material type: {type(_vol)}.")
             else:
                 raise ValueError(f"unrecognized Renderable type: {type(_vol)}.")
-
+        log.info('volumes')
+        log.info(self.volumes)
         self.mesh_additive_enabled = len(self.meshes) > 0
         # self.mesh_subtractive_enabled = False
 
@@ -636,7 +637,8 @@ class Projector(object):
                     )
                 )
         else:
-            self.max_ray_length = -1
+            #self.max_ray_length = -1
+            self.max_ray_length = self.source_to_detector_distance * 4
 
         return camera_projections
 
@@ -957,12 +959,16 @@ class Projector(object):
             raise NotImplementedError("multiple projections")
 
         camera_projections = self._prepare_project(camera_projections)
+        log.info(type(camera_projections))
+        log.info(camera_projections)
         return self._render_seg(camera_projections[0], tags=tags)
 
     def _render_seg(
         self, proj: geo.CameraProjection, tags: Optional[List[str]] = None
     ) -> np.ndarray:
         zfar = self._setup_pyrender_scene(proj)
+        log.info(zfar)
+        log.info(proj)
         res = self._render_mesh_seg(proj, zfar, tags=tags)
         return res
 
@@ -1092,7 +1098,7 @@ class Projector(object):
     ) -> None:
         width = proj.intrinsic.sensor_width
         height = proj.intrinsic.sensor_height
-        log.debug(f"sensor size: {width}x{height}")
+        log.info(f"sensor size: {width}x{height}")
         total_pixels = width * height
 
         # with time_range("seg_render"):
@@ -1108,7 +1114,6 @@ class Projector(object):
         batched = []
         for i in range(0, len(tags), batch_size):
             batched.append(tags[i : i + batch_size])
-
         res = []
         for batch in batched:
             with time_range("seg_render"):
@@ -1527,6 +1532,8 @@ class Projector(object):
         self.scene = Scene(bg_color=[0.0, 0.0, 0.0])
 
         self.mesh_nodes = []
+        log.info("adding meshes to self.scene")
+        #log.info(self.meshes)
         for drrmesh in self.meshes:
             node = Node()
             drrmesh.mesh.originmesh = drrmesh
