@@ -383,6 +383,16 @@ def resize_by_width(image: np.ndarray, width: int) -> np.ndarray:
     return cv2.resize(image, (new_w, new_h), interpolation=cv2.INTER_NEAREST)
 
 
+def resize_by_short_side(image: np.ndarray, size: int) -> np.ndarray:
+    """Resize a numpy array image"""
+    h, w, _ = image.shape
+
+    if h < w:
+        return resize_by_height(image, size)
+    else:
+        return resize_by_width(image, size)
+
+
 def pad_to_square(image: np.ndarray, cval: float = 0) -> tuple[np.ndarray, np.ndarray]:
     """Resize a numpy array image to the given width and height.
 
