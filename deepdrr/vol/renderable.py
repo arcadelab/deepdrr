@@ -1,4 +1,4 @@
- __future__ import annotations
+__future__ import annotations
 from typing import Any, Union, Tuple, List, Optional, Dict, Type, TypeVar
 
 import logging
