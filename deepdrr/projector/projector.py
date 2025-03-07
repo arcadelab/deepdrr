@@ -485,7 +485,7 @@ class Projector(object):
                         raise ValueError(f"unrecognized material type: {type(_vol)}.")
             else:
                 raise ValueError(f"unrecognized Renderable type: {type(_vol)}.")
-        log.info('volumes')
+        log.info("volumes")
         log.info(self.volumes)
         self.mesh_additive_enabled = len(self.meshes) > 0
         # self.mesh_subtractive_enabled = False
@@ -637,7 +637,7 @@ class Projector(object):
                     )
                 )
         else:
-            #self.max_ray_length = -1
+            # self.max_ray_length = -1
             self.max_ray_length = self.source_to_detector_distance * 4
 
         return camera_projections
@@ -1100,7 +1100,7 @@ class Projector(object):
     ) -> None:
         width = proj.intrinsic.sensor_width
         height = proj.intrinsic.sensor_height
-        log.info(f"sensor size: {width}x{height}")
+        # log.info(f"sensor size: {width}x{height}")
         total_pixels = width * height
 
         # with time_range("seg_render"):
@@ -1535,7 +1535,7 @@ class Projector(object):
 
         self.mesh_nodes = []
         log.info("adding meshes to self.scene")
-        #log.info(self.meshes)
+        # log.info(self.meshes)
         for drrmesh in self.meshes:
             node = Node()
             drrmesh.mesh.originmesh = drrmesh

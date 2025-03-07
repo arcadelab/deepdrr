@@ -634,11 +634,15 @@ class Volume(Renderable):
         anatomical_from_IJK = geo.FrameTransform(img.affine)
 
         if segmentation:
-            data = img.get_fdata()
+            data = np.array(img.get_fdata())
+            log.info(
+                f"treating volume as segmentation with label: {label}, {type(label)}"
+            )
             if label is None:
                 seg = data > 0
             elif isinstance(label, (int, np.int32, np.int64, float)):
                 seg = data == label
+                log.info(f"got seg with size: {np.sum(seg)}")
             elif isinstance(label, list):
                 seg = np.isin(data, label)
             else:

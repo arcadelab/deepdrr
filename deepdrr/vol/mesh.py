@@ -176,6 +176,12 @@ class Mesh(Renderable):
         mesh = mesh.apply_transform(self.world_from_anatomical)
         return mesh
 
+    def pv(self) -> pv.PolyData:
+        return pv.wrap(self.trimesh())
+
+    def pv_in_world(self) -> pv.PolyData:
+        return pv.wrap(self.trimesh_in_world())
+
 
 class LinearToolMesh(Mesh):
     """A mesh with a base and a tip defined in anatomical coordinates."""
