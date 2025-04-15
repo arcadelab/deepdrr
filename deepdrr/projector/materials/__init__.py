@@ -15,6 +15,4 @@ for file in os.listdir(folder):
             element.load_from_ascii(lines)
             ELEMENTS[symbol] = element
 
-__all__ = [
-    "elements"
-]
+__all__ = ["ELEMENTS", "ElementData"]

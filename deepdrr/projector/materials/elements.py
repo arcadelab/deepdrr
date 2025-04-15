@@ -31,6 +31,7 @@ class ElementData:
             return self.entries[-1]
 
         e1, e2 = self.entries[idx - 1], self.entries[idx]
+        # TODO check if this is correct at all? This was just very assumptious to do
         # Linear interpolation
         factor = (energy - e1.energy) / (e2.energy - e1.energy)
         mu_rho = e1.mu_over_rho + factor * (e2.mu_over_rho - e1.mu_over_rho)
