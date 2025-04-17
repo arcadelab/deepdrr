@@ -652,20 +652,29 @@ muscle = np.array(
     ]
 )
 
+class _MaterialCoefficients(dict):
+    def __init__(self):
+        super().__init__()
+        self.update({
+            "bone": bone,
+            "soft tissue": softTissue,
+            "tissue_soft": softTissue,
+            "blood": blood,
+            "muscle": muscle,
+            "air": air,
+            "iron": iron,
+            "lead": lead,
+            "copper": copper,
+            "lung": lung,
+            "titanium": titanium,
+            "teflon": teflon,
+            "polyethylene": polyethylene,
+            "concrete": concrete,
+        })
 
-material_coefficients = {
-    "bone": bone,
-    "soft tissue": softTissue,
-    "tissue_soft": softTissue,
-    "blood": blood,
-    "muscle": muscle,
-    "air": air,
-    "iron": iron,
-    "lead": lead,
-    "copper": copper,
-    "lung": lung,
-    "titanium": titanium,
-    "teflon": teflon,
-    "polyethylene": polyethylene,
-    "concrete": concrete,
-}
+    def overwrite(self, new_dict):
+        self.clear()
+        self.update(new_dict)
+
+# Singleton instance
+material_coefficients = _MaterialCoefficients()
