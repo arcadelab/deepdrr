@@ -31,7 +31,7 @@ from ..common import PatientPose
 from ..utils import data_utils
 from ..utils import mesh_utils
 from ..device import Device
-from ..projector.material_coefficients import material_coefficients
+from ..material.MATERIALS import MATERIALS
 from .renderable import Renderable
 
 if TYPE_CHECKING:

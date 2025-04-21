@@ -32,8 +32,8 @@ from ..pyrenderdrr.material import DRRMaterial
 
 from .. import geo, utils, vol
 from ..device import Device, MobileCArm
-from . import analytic_generators, mass_attenuation, spectral_data
-from .material_coefficients import material_coefficients
+from . import analytic_generators, spectral_data
+from ..material.MATERIALS import MATERIALS
 from .mcgpu_compton_data import COMPTON_DATA
 from .mcgpu_mfp_data import MFP_DATA
 from .mcgpu_rita_samplers import rita_samplers
@@ -577,7 +577,7 @@ class Projector(object):
 
         # assertions
         for mat in self.all_materials:
-            assert mat in material_coefficients, f"unrecognized material: {mat}"
+            assert mat in MATERIALS, f"unrecognized material: {mat}"
 
         # initialized when arrays are allocated.
         self.output_shape = None
@@ -1646,9 +1646,7 @@ class Projector(object):
         for bin in range(n_bins):  # , energy in enumerate(energies):
             for m, mat_name in enumerate(self.all_materials):
                 absorption_coef_table[bin * len(self.all_materials) + m] = (
-                    mass_attenuation.get_absorption_coefs(
-                        contiguous_energies[bin], mat_name
-                    )
+                    MATERIALS[mat_name].get_coefficients(contiguous_energies[bin]).mu_over_rho
                 )
         self.absorption_coef_table_gpu = cp.asarray(absorption_coef_table)
         log.debug(

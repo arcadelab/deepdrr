@@ -13,7 +13,7 @@ log = logging.getLogger(__name__)
 
 
 def get_mat_filename(deepDRR_mat_name: str) -> str:
-    """Material names are those from the dictionary in material_coefficients.py file
+    """Material names are those from the dictionary in const MATERIALS file
     """
     if "bone" == deepDRR_mat_name:
         return "bone_ICRP110"
