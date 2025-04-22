@@ -4,7 +4,7 @@ element_map = {
     "Li": "3_Li_Lithium",
     "Be": "4_Be_Beryllium",
     "B":  "5_B_Boron",
-    "C":  "6_C_Carbon, Graphite",
+    "C":  "6_C_Carbon",
     "N":  "7_N_Nitrogen",
     "O":  "8_O_Oxygen",
     "F":  "9_F_Fluorine",
@@ -93,8 +93,7 @@ element_map = {
     "U":  "92_U_Uranium",
 
     # Add named materials too
-    "soft tissue": "tissue",
-    "tissue_soft": "tissue",
+    "soft tissue": "tissue_soft",
     "iron":        "26_Fe_Iron",
     "lead":        "82_Pb_Lead",
     "copper":      "29_Cu_Copper",

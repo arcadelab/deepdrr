@@ -577,7 +577,12 @@ class Projector(object):
 
         # assertions
         for mat in self.all_materials:
-            assert mat == str(Material.from_string(mat)), f"unrecognized material: {mat}"
+            try:
+                Material.from_string(mat)
+            except ValueError:
+                raise ValueError(
+                    f"Material {mat} not found in material database. Please check the material name."
+                )
 
         # initialized when arrays are allocated.
         self.output_shape = None

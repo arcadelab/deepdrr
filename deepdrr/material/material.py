@@ -21,21 +21,34 @@ class MaterialMeta(type):
     def register_map(cls, mapping: dict[str, str]):
         cls._custom_map.update(mapping)
     
-    def from_string(cls, name: str) -> "Material":
-        if name in cls._cache:
-            return cls._cache[name]
+    def from_string(cls, name: str, compound_string: bool = False) -> "Material":
+        """
+        Create a Material instance from a string name or compound string.
+        Args:
+            name (str): Name of the material or compound string.
+            compound_string (bool): If True, treat the name as a compound string.
+        Returns:
+            Material: Material instance.
+        Example:
+            material = Material.from_string("bone")
+            material = Material.from_string("C") # Carbon
+            material = Material.from_string("N0.758391O0.228770Cl0.012840", compound_string=True) # Air
+        """
+        # Check if custom mapping for name exists
+        mapped_name = cls._custom_map.get(name, name)
+        if mapped_name in cls._cache:
+            return cls._cache[mapped_name]
         
         # 1. Handle custom string mapping (compound mode)
-        if cls._is_compound_string(name):
+        if compound_string:
             # NOTE: this assumes decomposition like "H1119O8881" (for 11.19% H, 88.81% O)
-            materials = cls._parse_compound_string(name)
+            materials = cls._parse_compound_string(mapped_name)
             coefficients = cls.calc_material_coeffs_custom_compound(materials)
-            instance = cls(name, coefficients=coefficients)
-            cls._cache[name] = instance
+            instance = cls(mapped_name, coefficients=coefficients)
+            cls._cache[mapped_name] = instance
             return instance
 
         # 2. Normal material name from file (default mode)
-        mapped_name = cls._custom_map.get(name, name) # Check if custom mapping exists
         path = os.path.join(cls._material_dir, mapped_name)
         if not os.path.isfile(path):
             raise AttributeError(f"Material '{name}' not found at {path}")
@@ -47,25 +60,21 @@ class MaterialMeta(type):
         instance = cls(name, coefficients=cls.load_material_coeffs_from_lines(lines))
         cls._cache[name] = instance
         return instance
-
-    @staticmethod
-    def _is_compound_string(name: str) -> bool:
-        return any(c.isdigit() for c in name)
     
     @staticmethod
     def _parse_compound_string(name: str) -> dict[str, float]:
         """
-        Parse a compound string like "H1119O8881" -> {"H": 0.1119, "O": 0.8881}
+        Parse a compound string like 'H0.112O0.888' -> {'H': 0.112, 'O': 0.888}
+        Only supports proper floats (e.g., H0.5, not H5 or H.5).
         """
-        # Matches chemical symbols with their percentage ie. H1119, O8881, C12,...
-        matches = re.findall(r'([A-Z][a-z]?)(\d+)', name)
+        matches = re.findall(r'([A-Z][a-z]?)([0-9]+\.[0-9]+)', name)
         if not matches:
             raise ValueError(f"Invalid compound string: {name}")
 
-        parsed = {elem: int(percent) / 10000 for elem, percent in matches}
+        parsed = {elem: float(fraction) for elem, fraction in matches}
         total = sum(parsed.values())
-        if not np.isclose(total, 1.0):
-            raise ValueError(f"Fractions must sum to 1.0, got {total}")
+        if not np.isclose(total, 1.0, atol=1e-4):
+            raise ValueError(f"Fractions must sum to 1.0, got {total} for {name}")
         return parsed
     
     @staticmethod
