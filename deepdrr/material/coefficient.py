@@ -1,5 +1,6 @@
 from dataclasses import dataclass
 
+
 @dataclass
 class CoefficientEntry:
     """
@@ -10,6 +11,8 @@ class CoefficientEntry:
         mu_en_over_rho (float): Mass energy-absorption
             coefficient in cm^2/g.
     """
+
     energy: float          # MeV
     mu_over_rho: float     # cm^2/g
     mu_en_over_rho: float  # cm^2/g
+    

@@ -2,7 +2,12 @@ from typing import Union
 import numpy as np
 from numpy.typing import NDArray
 
-def log_interp(xInterp: Union[float, NDArray[np.float_]], x: NDArray[np.float_], y: NDArray[np.float_]) -> Union[float, NDArray[np.float_]]:
+
+def log_interp(
+    xInterp: Union[float, NDArray[np.float_]],
+    x: NDArray[np.float_],
+    y: NDArray[np.float_],
+) -> Union[float, NDArray[np.float_]]:
     """
     Performs logarithmic interpolation of y values at given x values.
     The function takes the logarithm of the x values and performs linear interpolation in the log space.
@@ -20,5 +25,7 @@ def log_interp(xInterp: Union[float, NDArray[np.float_]], x: NDArray[np.float_],
         xInterp = np.log10(xInterp)
     x = np.log10(x.copy())
     y = np.log10(y.copy())
-    yInterp = np.power(10, np.interp(xInterp, x, y)) # np.interp is 1-D linear interpolation
+    yInterp = np.power(
+        10, np.interp(xInterp, x, y)
+    )  # np.interp is 1-D linear interpolation
     return yInterp
