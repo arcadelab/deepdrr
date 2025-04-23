@@ -579,7 +579,7 @@ class Projector(object):
         for mat in self.all_materials:
             try:
                 Material.from_string(mat)
-            except ValueError:
+            except AttributeError:
                 raise ValueError(
                     f"Material {mat} not found in material database. Please check the material name."
                 )
