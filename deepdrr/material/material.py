@@ -11,17 +11,102 @@ from .mappings import element_map
 # Energy in MeV, Mass Attenuation Coef (\mu / \rho) [cm^2 / g], Mass Energy-Absorbition Coef (\mu_{en} / \rho) [cm^2 / g]
 
 
-class MaterialMeta(type):
+class Material:
+    """
+    A class to represent a material with its coefficients.
+    Attributes:
+        name (str): Name of the material.
+        coefficients (List[CoefficientEntry]): Coefficients for the material.
+    """
+
+    name: str
+    coefficients: List[CoefficientEntry]
+
     _cache: dict[str, "Material"] = {}
     _material_dir = os.path.join(os.path.dirname(__file__), "material_decompositions")
     _custom_map: dict[str, str] = {}
 
+    def __init__(self, name: str, coefficients: List[CoefficientEntry]):
+        """
+        Initialize a Material object with a name and coefficients.
+
+        Args:
+            name (str): Name of the material.
+            coefficients (List[CoefficientEntry]): Coefficients for the material.
+        Example:
+            material = Material("Water", [[0.1, 0.2, 0.3], [0.4, 0.5, 0.6]])
+        """
+        self.name: str = name
+        self.coefficients = coefficients
+
+    def __repr__(self):
+        return f"Material(name={self.name}, coefficients={self.coefficients})"
+
+    def __str__(self):
+        return self.name
+
+    @property
+    def energy(self) -> NDArray[Any]:
+        """Return the energy values of the coefficients."""
+        return np.array([e.energy for e in self.coefficients])
+
+    @property
+    def mu_over_rho(self) -> NDArray[Any]:
+        """Return the mass attenuation coefficient."""
+        return np.array([e.mu_over_rho for e in self.coefficients])
+
+    @property
+    def mu_en_over_rho(self) -> NDArray[Any]:
+        """Return the mass energy-absorption coefficient."""
+        return np.array([e.mu_en_over_rho for e in self.coefficients])
+
+    def as_array(self) -> NDArray[Any]:
+        """Return coefficients as a 2D numpy array."""
+        return np.array(
+            [[e.energy, e.mu_over_rho, e.mu_en_over_rho] for e in self.coefficients]
+        )
+
+    def get(self, energy: float) -> CoefficientEntry:
+        """Lookup coefficients for a given energy value.
+        Args:
+            energy (float): Energy value in MeV.
+        Returns:
+            CoefficientEntry: Coefficient entry for the given energy.
+        """
+        energies = self.energy
+        for j in range(1, len(energies)):
+            if energies[j] == energies[j - 1]:
+                energies[j - 1] *= (
+                    1 - 1e-9
+                )  # tiny decrease for the first occurrence for proper interpolation
+        mu_rho = float(log_interp(energy, energies, self.mu_over_rho))
+        mu_en_rho = float(log_interp(energy, energies, self.mu_en_over_rho))
+        return CoefficientEntry(energy, mu_rho, mu_en_rho)
+
+    def get_list(self, energies: NDArray[Any]) -> List[CoefficientEntry]:
+        """Lookup coefficients for a list of energies."""
+        return [self.get(e) for e in energies]
+
+    def get_coefficients(self, energy_keV: float) -> CoefficientEntry:
+        """Returns the coefficients for the specified KeV energy level. Legacy function.
+        Args:
+            energy_keV: energy level of photon/ray (KeV)
+        Returns:
+            the interpolated coefficients (in [cm^2 / g])
+        """
+        # Convert MeV to keV
+        energy = energy_keV / 1000
+        return self.get(energy)
+
+    @classmethod
     def __getattr__(cls, name: str):
         return cls.from_string(name)
 
+    @classmethod
     def register_map(cls, mapping: dict[str, str]):
         cls._custom_map.update(mapping)
 
+    @classmethod
     def from_string(cls, name: str, compound_string: bool = False) -> "Material":
         """
         Create a Material instance from a string name or compound string.
@@ -144,90 +229,6 @@ class MaterialMeta(type):
             CoefficientEntry(e, mu_over_rho[i], mu_en_over_rho[i])
             for i, e in enumerate(energy)
         ]
-
-
-class Material(metaclass=MaterialMeta):
-    """
-    A class to represent a material with its coefficients.
-    Attributes:
-        name (str): Name of the material.
-        coefficients (List[CoefficientEntry]): Coefficients for the material.
-    """
-
-    name: str
-    coefficients: List[CoefficientEntry]
-
-    def __init__(self, name: str, coefficients: List[CoefficientEntry]):
-        """
-        Initialize a Material object with a name and coefficients.
-
-        Args:
-            name (str): Name of the material.
-            coefficients (List[CoefficientEntry]): Coefficients for the material.
-        Example:
-            material = Material("Water", [[0.1, 0.2, 0.3], [0.4, 0.5, 0.6]])
-        """
-        self.name: str = name
-        self.coefficients = coefficients
-
-    def __repr__(self):
-        return f"Material(name={self.name}, coefficients={self.coefficients})"
-
-    def __str__(self):
-        return self.name
-
-    @property
-    def energy(self) -> NDArray[Any]:
-        """Return the energy values of the coefficients."""
-        return np.array([e.energy for e in self.coefficients])
-
-    @property
-    def mu_over_rho(self) -> NDArray[Any]:
-        """Return the mass attenuation coefficient."""
-        return np.array([e.mu_over_rho for e in self.coefficients])
-
-    @property
-    def mu_en_over_rho(self) -> NDArray[Any]:
-        """Return the mass energy-absorption coefficient."""
-        return np.array([e.mu_en_over_rho for e in self.coefficients])
-
-    def as_array(self) -> NDArray[Any]:
-        """Return coefficients as a 2D numpy array."""
-        return np.array(
-            [[e.energy, e.mu_over_rho, e.mu_en_over_rho] for e in self.coefficients]
-        )
-
-    def get(self, energy: float) -> CoefficientEntry:
-        """Lookup coefficients for a given energy value.
-        Args:
-            energy (float): Energy value in MeV.
-        Returns:
-            CoefficientEntry: Coefficient entry for the given energy.
-        """
-        energies = self.energy
-        for j in range(1, len(energies)):
-            if energies[j] == energies[j - 1]:
-                energies[j - 1] *= (
-                    1 - 1e-9
-                )  # tiny decrease for the first occurrence for proper interpolation
-        mu_rho = float(log_interp(energy, energies, self.mu_over_rho))
-        mu_en_rho = float(log_interp(energy, energies, self.mu_en_over_rho))
-        return CoefficientEntry(energy, mu_rho, mu_en_rho)
-
-    def get_list(self, energies: NDArray[Any]) -> List[CoefficientEntry]:
-        """Lookup coefficients for a list of energies."""
-        return [self.get(e) for e in energies]
-
-    def get_coefficients(self, energy_keV: float) -> CoefficientEntry:
-        """Returns the coefficients for the specified KeV energy level. Legacy function.
-        Args:
-            energy_keV: energy level of photon/ray (KeV)
-        Returns:
-            the interpolated coefficients (in [cm^2 / g])
-        """
-        # Convert MeV to keV
-        energy = energy_keV / 1000
-        return self.get(energy)
 
 
 Material.register_map(element_map)
