@@ -1,5 +1,6 @@
 import os
 import re
+import csv
 import numpy as np
 from typing import List, Any
 from numpy.typing import NDArray
@@ -151,6 +152,7 @@ class Material:
     def _parse_compound_string(name: str) -> dict[str, float]:
         """
         Parse a compound string like 'H0.112O0.888' -> {'H': 0.112, 'O': 0.888}
+
         Only supports proper floats (e.g., H0.5, not H5 or H.5).
         """
         matches = re.findall(r"([A-Z][a-z]?)([0-9]+\.[0-9]+)", name)
@@ -173,7 +175,7 @@ class Material:
         Returns:
             List[CoefficientEntry]: List of CoefficientEntry objects.
         Example:
-            _ = load_material_coeffs_from_lines(["Energy mu_rho mu_en_rho", "0.1 0.2 0.3", "0.4 0.5 0.6"])
+            coefficients = load_material_coeffs_from_lines(["Energy mu_rho mu_en_rho", "0.1 0.2 0.3", "0.4 0.5 0.6"])
         """
         coefficients: List[CoefficientEntry] = []
         for line in lines:
@@ -229,6 +231,40 @@ class Material:
             CoefficientEntry(e, mu_over_rho[i], mu_en_over_rho[i])
             for i, e in enumerate(energy)
         ]
+
+    @staticmethod
+    def from_csv(path: str) -> None:
+        """
+        Load and register from materials.csv file in deepdrr.
+
+        The materials.csv file should be structured like a typical DukeSim material decomposition.
+
+        Args:
+            path (str): Path to the materials.csv file.
+        Example:
+            from deepdrr.material import Material\n
+            Material.from_csv("path/to/materials.csv")
+        """
+
+        # csv file should be structured like this:
+        # Name,comment,MassDensity,H,He,C,N,O
+        # Water,,1.0,0.1119,0.0,0.0,0.0,0.8881
+
+        with open(path, newline="") as csvfile:
+            reader = csv.DictReader(csvfile)
+            for row in reader:
+                name = row["Name"]
+                composition = ""
+                for key, val in row.items():
+                    if key in ("Name", "MassDensity", "comment"):
+                        continue
+                    val = float(val)
+                    if val > 0.0:
+                        composition += f"{key}{val:.6f}"
+                # Register with DeepDRR
+                Material.from_string(composition, compound_string=True)
+                # Map the label name to the composition string
+                Material.register_map({name: composition})
 
 
 Material.register_map(element_map)
