@@ -189,7 +189,7 @@ def create_cuda_texture(
     format_descriptor = cupy.cuda.texture.ChannelFormatDescriptor(
         *channels, channel_type
     )
-
+    
     cuda_array = cupy.cuda.texture.CUDAarray(format_descriptor, *(texture_shape[::-1]))
     ressource_descriptor = cupy.cuda.texture.ResourceDescriptor(
         cupy.cuda.runtime.cudaResourceTypeArray, cuArr=cuda_array
@@ -546,7 +546,7 @@ class Projector(object):
 
         all_mats = []
         for _vol in self.volumes:
-            all_mats.extend(list(_vol.materials.keys()))
+            all_mats.extend(list(_vol.materials[0].keys()))
 
         for _vol in self.primitives:
             all_mats.append(_vol.material.drrMatName)
@@ -1456,24 +1456,17 @@ class Projector(object):
             self.volumes_texarrs.append(vol_texarr)
             self.volumes_texobs.append(vol_texobj)
 
-        init_tock = time.perf_counter()
-        log.debug(f"time elapsed after intializing volumes: {init_tock - init_tick}")
-
         self.seg_texobs = []
         self.seg_texarrs = []
         for vol_id, _vol in enumerate(self.volumes):
-            for mat_id, mat in enumerate(self.all_materials):
-                seg = None
-                if mat in _vol.materials:
-                    seg = _vol.materials[mat]
-                else:
-                    seg = np.zeros(_vol.shape).astype(
-                        np.float32
-                    )  # TODO (liam): 8 bit textures to save VRAM?
-                seg = np.moveaxis(seg, [0, 1, 2], [2, 1, 0]).copy()
-                texobj, texarr = create_cuda_texture(seg)
-                self.seg_texobs.append(texobj)
-                self.seg_texarrs.append(texarr)
+            # segmentation labels are reorderd via the list/set inintialization and sorting above, so we have to remap our segmentation indices
+            # first evaluate new index mapping based on old (vol.materials[0]) and new (self.all_materials) material list
+            label_dict_index_remapping = np.array([_vol.materials[0][k] for k in self.all_materials], dtype=np.uint16).argsort()
+            # then remap the segmentation array and cast it to uint16 datatype, and adjust the axis for cuda indices
+            segmentation = np.moveaxis(label_dict_index_remapping[_vol.materials[1]].astype(np.uint16), [0, 1, 2], [2, 1, 0]).copy()
+            combined_texobj, combined_texarr = create_cuda_texture(segmentation, sampling_mode="nearest", dtype=np.uint16)
+            self.seg_texobs.append(combined_texobj)
+            self.seg_texarrs.append(combined_texarr)
 
         self.volumes_texobs_gpu = cp.array(
             [x.ptr for x in self.volumes_texobs], dtype=np.uint64

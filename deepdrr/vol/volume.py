@@ -140,7 +140,7 @@ def mode_filter_3d(data, kernel_size):
 
 class Volume(Renderable):
     data: np.ndarray
-    materials: Dict[str, np.ndarray]
+    materials: Tuple[Dict[str, int], np.ndarray]
     anatomical_coordinate_system: Optional[str]
 
     cache_dir: Optional[Path] = None
@@ -151,7 +151,7 @@ class Volume(Renderable):
     def __init__(
         self,
         data: np.ndarray,
-        materials: Dict[str, np.ndarray],
+        materials: Union[Dict[str, np.ndarray], Tuple[Dict[str, int], np.ndarray]],
         anatomical_from_IJK: Optional[geo.FrameTransform] = None,
         world_from_anatomical: Optional[geo.FrameTransform] = None,
         anatomical_coordinate_system: Optional[str] = None,
@@ -167,17 +167,23 @@ class Volume(Renderable):
 
         Args:
             data (np.ndarray): The density data (a 3D array).
-            materials (Dict[str, np.ndarray]): material segmentation of the volume, mapping material name to binary segmentation.
-            anatomical_from_IJK (geo.FrameTransform): transformation from IJK space to anatomical (RAS or LPS).
-            world_from_anatomical (Optional[geo.FrameTransform], optional): transformation from the anatomical space to world coordinates. If None, assumes identity. Defaults to None.
-            anatomical_coordinate_system (str, optional): String denoting the coordinate system. Either "LPS", "RAS", or None.
-                This may be useful for ensuring compatibility with other data, but it is not checked or used internally (yet). Defaults to None.
-            cache_dir ()
+            materials (Union[Dict[str, np.ndarray], Tuple[Dict[str, int], np.ndarray]]): Material segmentation of the volume.
+                Either a dictionary mapping material name to binary segmentation, or a tuple mapping material name to material index with the segmentation as 3d numpy array.
+            anatomical_from_IJK (Optional[geo.FrameTransform]): Transformation from IJK space to anatomical (RAS or LPS).
+            world_from_anatomical (Optional[geo.FrameTransform]): Transformation from the anatomical space to world coordinates. If None, assumes identity.
+            anatomical_coordinate_system (Optional[str]): Coordinate system string, either "LPS", "RAS", or None.
+            cache_dir (Optional[str]): Directory for caching.
+            config (Dict[str, Any]): Configuration dictionary.
+            enabled (bool): Whether the volume is enabled.
         """
         Renderable.__init__(self, anatomical_from_IJK, world_from_anatomical, **kwargs)
         assert data.ndim == 3, "Volume data must be 3D."
         self.data = np.array(data).astype(np.float32)
-        self.materials = self._format_materials(materials)
+
+        if isinstance(materials, tuple):
+            self.materials = materials[0], materials[1].astype(np.uint16)
+        else:
+            self.materials = self._format_materials(materials)
         self.anatomical_coordinate_system = anatomical_coordinate_system
         assert self.anatomical_coordinate_system in ["LPS", "RAS", None]
         self.cache_dir = None if cache_dir is None else Path(cache_dir).expanduser()
@@ -948,12 +954,17 @@ class Volume(Renderable):
     def _format_materials(
         self,
         materials: Dict[str, np.ndarray],
-    ) -> np.ndarray:
+    ) -> Tuple[dict, np.ndarray]:
         """Standardize the input material segmentation."""
-        for mat in materials:
-            materials[mat] = np.array(materials[mat]).astype(np.float32)
-
-        return materials
+        combined_segmentation = None
+        material_dict = {}
+        for mat_id, mat in enumerate(materials):
+            if combined_segmentation is None:
+                combined_segmentation = np.zeros(materials[mat].shape, dtype=np.uint16)
+            material_mask = np.asarray(materials[mat] > 0)
+            combined_segmentation[material_mask] = mat_id
+            material_dict[mat] = mat_id
+        return material_dict, combined_segmentation
 
     @property
     def shape(self) -> Tuple[int, int, int]:

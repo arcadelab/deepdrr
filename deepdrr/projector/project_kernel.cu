@@ -386,13 +386,44 @@ projectKernel(const cudaTextureObject_t * __restrict__ volume_texs, // array of 
     // trace (if doing the last segment separately, need to use num_steps - 1
     for (int t = 0; t < num_steps; t++) {
         for (int vol_id = 0; vol_id < NUM_VOLUMES; vol_id++) {
-            px[vol_id] = sx_ijk_local[vol_id] + alpha * rx_ijk[vol_id] - 0.5f;
-            py[vol_id] = sy_ijk_local[vol_id] + alpha * ry_ijk[vol_id] - 0.5f;
-            pz[vol_id] = sz_ijk_local[vol_id] + alpha * rz_ijk[vol_id] - 0.5f;
+            // we offset by -1.0f because we manually calculate the the trilinear filtering value in the surrounding area
+            // -0.5 offset for cuda texture and additional -0.5 offset to recenter for a standard grid
+            px[vol_id] = sx_ijk_local[vol_id] + alpha * rx_ijk[vol_id] - 1.0f;
+            py[vol_id] = sy_ijk_local[vol_id] + alpha * ry_ijk[vol_id] - 1.0f;
+            pz[vol_id] = sz_ijk_local[vol_id] + alpha * rz_ijk[vol_id] - 1.0f;
 
+            // Reset segmentation values
             for (int mat_id = 0; mat_id < NUM_MATERIALS; mat_id++) {
-                seg_at_alpha[vol_id][mat_id] = tex3D<float>(seg_texs[vol_id * NUM_MATERIALS + mat_id], px[vol_id], py[vol_id], pz[vol_id]);
-                // seg_at_alpha[vol_id][mat_id] = roundf(cubicTex3D<float>(seg_texs[vol_id * NUM_MATERIALS + mat_id], px[vol_id], py[vol_id], pz[vol_id]));
+                seg_at_alpha[vol_id][mat_id] = 0.0f;
+            }
+            
+            // fetch the 8 surrounding material ids for the current voxel coordinate
+            int voxels[2][2][2];
+            float weights[2][2][2];
+            for (int dz = 0; dz <= 1; ++dz)
+            for (int dy = 0; dy <= 1; ++dy)
+            for (int dx = 0; dx <= 1; ++dx) {
+                voxels[dx][dy][dz] = tex3D<int>(seg_texs[vol_id], (px[vol_id] + dx), (py[vol_id] + dy), (pz[vol_id] + dz));
+            }
+            // subtract floored value from voxel coordinate to translate to 0..1 4x4 grid
+            float fx = px[vol_id] - floorf(px[vol_id]);
+            float fy = py[vol_id] - floorf(py[vol_id]);
+            float fz = pz[vol_id] - floorf(pz[vol_id]);
+
+            weights[0][0][0]  = (1.0f - fx) * (1.0f - fy) * (1.0f - fz);
+            weights[1][0][0]  = (fx)        * (1.0f - fy) * (1.0f - fz);
+            weights[0][1][0]  = (1.0f - fx) * (fy)        * (1.0f - fz);
+            weights[1][1][0]  = (fx)        * (fy)        * (1.0f - fz);
+            weights[0][0][1]  = (1.0f - fx) * (1.0f - fy) * (fz);
+            weights[1][0][1]  = (fx)        * (1.0f - fy) * (fz);
+            weights[0][1][1]  = (1.0f - fx) * (fy)        * (fz);
+            weights[1][1][1]  = (fx)        * (fy)        * (fz);
+
+            // sum the weights for each material id
+            for (int dz = 0; dz <= 1; ++dz)
+            for (int dy = 0; dy <= 1; ++dy)
+            for (int dx = 0; dx <= 1; ++dx) {
+                seg_at_alpha[vol_id][voxels[dx][dy][dz]] += weights[dx][dy][dz];
             }
         }
 
