@@ -4,10 +4,10 @@ from numpy.typing import NDArray
 
 
 def log_interp(
-    xInterp: Union[float, NDArray[np.float_]],
-    x: NDArray[np.float_],
-    y: NDArray[np.float_],
-) -> Union[float, NDArray[np.float_]]:
+    xInterp: Union[float, NDArray[np.float64]],
+    x: NDArray[np.float64],
+    y: NDArray[np.float64],
+) -> Union[float, NDArray[np.float64]]:
     """
     Performs logarithmic interpolation of y values at given x values.
     The function takes the logarithm of the x values and performs linear interpolation in the log space.
