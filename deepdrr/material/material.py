@@ -262,9 +262,14 @@ class Material:
                 name = row["Name"]
                 composition = ""
                 for key, val in row.items():
-                    if key in ("Name", "MassDensity", "comment"):
+                    if key in ("Name", "MassDensity", "comment", "density_l", "density_u", "OrganID", "tissue_group", "Comment"):
                         continue
-                    val = float(val)
+                    try:
+                        val = float(val)
+                    except ValueError: 
+                        raise ValueError(
+                            f"Invalid value for {key} in row {row}: {val}"
+                        )
                     if val > 0.0:
                         composition += f"{key}{val:.6f}"
                 # Register with DeepDRR
