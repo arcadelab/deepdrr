@@ -1,4 +1,5 @@
 from dataclasses import dataclass
+import numpy as np
 
 
 @dataclass
@@ -12,7 +13,11 @@ class CoefficientEntry:
             coefficient in cm^2/g.
     """
 
-    energy: float          # MeV
-    mu_over_rho: float     # cm^2/g
+    energy: float  # MeV
+    mu_over_rho: float  # cm^2/g
     mu_en_over_rho: float  # cm^2/g
-    
+
+    def __array__(self, dtype=None):
+        return np.array(
+            [self.energy, self.mu_over_rho, self.mu_en_over_rho], dtype=dtype
+        )

@@ -29,7 +29,9 @@ class Material:
 
     def __init__(self, name: str, coefficients: List[CoefficientEntry]):
         """
-        Initialize a Material object with a name and coefficients.
+        DO NOT USE! Use `from_string` to initialize materials!
+
+        Initializes a Material object with a name and coefficients.
 
         Args:
             name (str): Name of the material.
@@ -46,6 +48,16 @@ class Material:
     def __str__(self):
         return self.name
 
+    def __hash__(self):
+        """Return the hash of the material based on its name."""
+        return hash(self.name)
+
+    def __eq__(self, other):
+        """Check equality based on the material name."""
+        if not isinstance(other, Material):
+            return NotImplemented
+        return self.name == other.name
+
     @property
     def energy(self) -> NDArray[Any]:
         """Return the energy values of the coefficients."""
@@ -61,11 +73,9 @@ class Material:
         """Return the mass energy-absorption coefficient."""
         return np.array([e.mu_en_over_rho for e in self.coefficients])
 
-    def as_array(self) -> NDArray[Any]:
+    def __array__(self) -> NDArray[Any]:
         """Return coefficients as a 2D numpy array."""
-        return np.array(
-            [[e.energy, e.mu_over_rho, e.mu_en_over_rho] for e in self.coefficients]
-        )
+        return np.array(self.coefficients)
 
     def get(self, energy: float) -> CoefficientEntry:
         """Lookup coefficients for a given energy value.
@@ -98,10 +108,6 @@ class Material:
         # Convert MeV to keV
         energy = energy_keV / 1000
         return self.get(energy)
-
-    @classmethod
-    def __getattr__(cls, name: str):
-        return cls.from_string(name)
 
     @classmethod
     def register_map(cls, mapping: dict[str, str]):
@@ -138,7 +144,7 @@ class Material:
         # 2. Normal material name from file (default mode)
         path = os.path.join(cls._material_dir, mapped_name)
         if not os.path.isfile(path):
-            raise AttributeError(f"Material '{name}' not found at {path}")
+            raise AttributeError(f"Material '{mapped_name}' not found at {path}")
 
         lines = []
         with open(path, "r") as f:
