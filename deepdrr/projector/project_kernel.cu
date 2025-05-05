@@ -383,6 +383,10 @@ projectKernel(const cudaTextureObject_t * __restrict__ volume_texs, // array of 
         sz_ijk_local[i] = sz_ijk[i];
     }
 
+    
+    int voxels[2][2][2];
+    float weights[2][2][2];
+    float previous_coordinates[3] = {-1.f, -1.f, -1.f};
     // trace (if doing the last segment separately, need to use num_steps - 1
     for (int t = 0; t < num_steps; t++) {
         for (int vol_id = 0; vol_id < NUM_VOLUMES; vol_id++) {
@@ -397,19 +401,23 @@ projectKernel(const cudaTextureObject_t * __restrict__ volume_texs, // array of 
                 seg_at_alpha[vol_id][mat_id] = 0.0f;
             }
             
-            // fetch the 8 surrounding material ids for the current voxel coordinate
-            int voxels[2][2][2];
-            float weights[2][2][2];
-            for (int dz = 0; dz <= 1; ++dz)
-            for (int dy = 0; dy <= 1; ++dy)
-            for (int dx = 0; dx <= 1; ++dx) {
-                voxels[dx][dy][dz] = tex3D<int>(seg_texs[vol_id], (px[vol_id] + dx), (py[vol_id] + dy), (pz[vol_id] + dz));
+            //only fetch new voxel values if the coordinates have changed
+            if(floorf(px[vol_id]) == previous_coordinates[0] &&
+               floorf(py[vol_id]) == previous_coordinates[1] &&
+               floorf(pz[vol_id]) == previous_coordinates[2]) {
+                // fetch the 8 surrounding material ids for the current voxel coordinate
+                for (int dz = 0; dz <= 1; ++dz)
+                for (int dy = 0; dy <= 1; ++dy)
+                for (int dx = 0; dx <= 1; ++dx) {
+                    voxels[dx][dy][dz] = tex3D<int>(seg_texs[vol_id], (px[vol_id] + dx), (py[vol_id] + dy), (pz[vol_id] + dz));
+                }
             }
+            
             // subtract floored value from voxel coordinate to translate to 0..1 4x4 grid
             float fx = px[vol_id] - floorf(px[vol_id]);
             float fy = py[vol_id] - floorf(py[vol_id]);
             float fz = pz[vol_id] - floorf(pz[vol_id]);
-
+            
             weights[0][0][0]  = (1.0f - fx) * (1.0f - fy) * (1.0f - fz);
             weights[1][0][0]  = (fx)        * (1.0f - fy) * (1.0f - fz);
             weights[0][1][0]  = (1.0f - fx) * (fy)        * (1.0f - fz);
