@@ -1,5 +1,5 @@
 from pyrender.material import MetallicRoughnessMaterial
-from ..projector.material_coefficients import material_coefficients
+from ..material import Material
 
 
 class DRRMaterial(MetallicRoughnessMaterial):
@@ -114,16 +114,21 @@ class DRRMaterial(MetallicRoughnessMaterial):
         if value is None:
             if self.name is None:
                 raise ValueError("Please specify drrMatName")
-            if self.name not in material_coefficients:
+            try:
+                Material.from_string(self.name)
+            except Exception:
                 raise ValueError(
-                    f"Attempted to use material name {self.name} for drrMatName, but it was not found in material coefficients. Please specify drrMatName"
+                    f"Attempted to use material name {self.name} for drrMatName, "
+                    "but it was not found in material coefficients. Please specify drrMatName."
                 )
             self._drrMatName = self.name
 
     @classmethod
     def from_name(cls, name: str, **kwargs):
         """Make a material with default parameters."""
-        if name not in material_coefficients:
+        try:
+            Material.from_string(name)
+        except Exception:
             raise ValueError(
                 f"Attempted to use material name {name}, but it was not found in material coefficients. Please specify drrMatName"
             )

@@ -18,7 +18,7 @@ from .. import utils
 from ..utils import data_utils
 from ..utils import mesh_utils
 from ..device import Device
-from ..projector.material_coefficients import material_coefficients
+from ..material import Material
 
 vtk, nps, vtk_available = utils.try_import_vtk()
 
