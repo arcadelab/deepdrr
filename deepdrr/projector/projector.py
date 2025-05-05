@@ -1449,22 +1449,29 @@ class Projector(object):
         self.volumes_texobs = []
         self.volumes_texarrs = []
         for vol_id, volume in enumerate(self.volumes):
-            volume = np.array(volume)
-            volume = np.moveaxis(volume, [0, 1, 2], [2, 1, 0]).copy()
-            vol_texobj, vol_texarr = create_cuda_texture(volume)
-
+            volume_gpu = cp.asarray(volume)  # Move volume to GPU
+            volume_gpu = cp.moveaxis(volume_gpu, [0, 1, 2], [2, 1, 0])  # Adjust axes on GPU
+            vol_texobj, vol_texarr = create_cuda_texture(cp.asnumpy(volume_gpu))  # Create texture
             self.volumes_texarrs.append(vol_texarr)
             self.volumes_texobs.append(vol_texobj)
 
         self.seg_texobs = []
         self.seg_texarrs = []
         for vol_id, _vol in enumerate(self.volumes):
-            # segmentation labels are reorderd via the list/set inintialization and sorting above, so we have to remap our segmentation indices
-            # first evaluate new index mapping based on old (vol.materials[0]) and new (self.all_materials) material list
-            label_dict_index_remapping = np.array([_vol.materials[0][k] for k in self.all_materials], dtype=np.uint16).argsort()
-            # then remap the segmentation array and cast it to uint16 datatype, and adjust the axis for cuda indices
-            segmentation = np.moveaxis(label_dict_index_remapping[_vol.materials[1]].astype(np.uint16), [0, 1, 2], [2, 1, 0]).copy()
-            combined_texobj, combined_texarr = create_cuda_texture(segmentation, sampling_mode="nearest", dtype=np.uint16)
+            # Remap segmentation indices using cupy
+            label_dict_index_remapping = cp.array(
+                [_vol.materials[0][k] for k in self.all_materials], dtype=cp.uint16
+            ).argsort()
+
+            # Perform remapping and axis adjustment on GPU
+            segmentation_gpu = cp.asarray(_vol.materials[1])
+            segmentation_gpu = label_dict_index_remapping[segmentation_gpu]
+            segmentation_gpu = cp.moveaxis(segmentation_gpu.astype(cp.uint16), [0, 1, 2], [2, 1, 0])
+
+            # Create CUDA texture
+            combined_texobj, combined_texarr = create_cuda_texture(
+                cp.asnumpy(segmentation_gpu), sampling_mode="nearest", dtype=np.uint16
+            )
             self.seg_texobs.append(combined_texobj)
             self.seg_texarrs.append(combined_texarr)
 

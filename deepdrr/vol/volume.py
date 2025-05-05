@@ -19,6 +19,7 @@ from scipy import ndimage
 from scipy.ndimage import label, generate_binary_structure
 import skimage
 import skimage.measure
+import cupy as cp
 
 import itertools
 
@@ -959,11 +960,13 @@ class Volume(Renderable):
         combined_segmentation = None
         material_dict = {}
         for mat_id, mat in enumerate(materials):
+            mat_gpu = cp.asarray(materials[mat])  # Move material array to GPU
             if combined_segmentation is None:
-                combined_segmentation = np.zeros(materials[mat].shape, dtype=np.uint16)
-            material_mask = np.asarray(materials[mat] > 0)
+                combined_segmentation = cp.zeros(mat_gpu.shape, dtype=cp.uint16)
+            material_mask = mat_gpu > 0
             combined_segmentation[material_mask] = mat_id
             material_dict[mat] = mat_id
+        combined_segmentation = cp.asnumpy(combined_segmentation)  # Move result back to CPU
         return material_dict, combined_segmentation
 
     @property
