@@ -150,8 +150,8 @@ class Material:
         with open(path, "r") as f:
             lines = f.readlines()
 
-        instance = cls(name, coefficients=cls.load_material_coeffs_from_lines(lines))
-        cls._cache[name] = instance
+        instance = cls(mapped_name, coefficients=cls.load_material_coeffs_from_lines(lines))
+        cls._cache[mapped_name] = instance
         return instance
 
     @staticmethod
