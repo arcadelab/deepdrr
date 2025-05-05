@@ -406,9 +406,9 @@ projectKernel(const cudaTextureObject_t * __restrict__ volume_texs, // array of 
             int base_z = floorf(pz[vol_id]);
             
             //only fetch new voxel values if the coordinates have changed
-            if(base_x == previous_coordinates[0] &&
-                base_y == previous_coordinates[1] &&
-                base_z == previous_coordinates[2]) {
+            if(base_x != previous_coordinates[0] &&
+                base_y != previous_coordinates[1] &&
+                base_z != previous_coordinates[2]) {
                 // fetch the 8 surrounding material ids for the current voxel coordinate
                 for (int dz = 0; dz <= 1; ++dz)
                 for (int dy = 0; dy <= 1; ++dy)
@@ -425,14 +425,14 @@ projectKernel(const cudaTextureObject_t * __restrict__ volume_texs, // array of 
             float fy = py[vol_id] - base_y;
             float fz = pz[vol_id] - base_z;
             
-            weights[0][0][0]  = (1.0f - fx) * (1.0f - fy) * (1.0f - fz);
-            weights[1][0][0]  = (fx)        * (1.0f - fy) * (1.0f - fz);
-            weights[0][1][0]  = (1.0f - fx) * (fy)        * (1.0f - fz);
-            weights[1][1][0]  = (fx)        * (fy)        * (1.0f - fz);
-            weights[0][0][1]  = (1.0f - fx) * (1.0f - fy) * (fz);
-            weights[1][0][1]  = (fx)        * (1.0f - fy) * (fz);
-            weights[0][1][1]  = (1.0f - fx) * (fy)        * (fz);
-            weights[1][1][1]  = (fx)        * (fy)        * (fz);
+            weights[0][0][0] = (1.0f - fx) * (1.0f - fy) * (1.0f - fz);
+            weights[1][0][0] = (fx)        * (1.0f - fy) * (1.0f - fz);
+            weights[0][1][0] = (1.0f - fx) * (fy)        * (1.0f - fz);
+            weights[1][1][0] = (fx)        * (fy)        * (1.0f - fz);
+            weights[0][0][1] = (1.0f - fx) * (1.0f - fy) * (fz);
+            weights[1][0][1] = (fx)        * (1.0f - fy) * (fz);
+            weights[0][1][1] = (1.0f - fx) * (fy)        * (fz);
+            weights[1][1][1] = (fx)        * (fy)        * (fz);
 
             // sum the weights for each material id
             for (int dz = 0; dz <= 1; ++dz)
