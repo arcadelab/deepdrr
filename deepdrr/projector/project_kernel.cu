@@ -406,15 +406,17 @@ projectKernel(const cudaTextureObject_t * __restrict__ volume_texs, // array of 
             int base_z = floorf(pz[vol_id]);
             
             //only fetch new voxel values if the coordinates have changed
-            if(base_x != previous_coordinates[0] &&
-                base_y != previous_coordinates[1] &&
-                base_z != previous_coordinates[2]) {
-                // fetch the 8 surrounding material ids for the current voxel coordinate
-                for (int dz = 0; dz <= 1; ++dz)
-                for (int dy = 0; dy <= 1; ++dy)
-                for (int dx = 0; dx <= 1; ++dx) {
-                    voxels[dx][dy][dz] = tex3D<int>(seg_texs[vol_id], (px[vol_id] + dx), (py[vol_id] + dy), (pz[vol_id] + dz));
-                }
+            // if(base_x != previous_coordinates[0] &&
+            //     base_y != previous_coordinates[1] &&
+            //     base_z != previous_coordinates[2]) {
+                
+            // }
+            
+            // fetch the 8 surrounding material ids for the current voxel coordinate
+            for (int dz = 0; dz <= 1; ++dz)
+            for (int dy = 0; dy <= 1; ++dy)
+            for (int dx = 0; dx <= 1; ++dx) {
+                voxels[dx][dy][dz] = tex3D<int>(seg_texs[vol_id], (px[vol_id] + dx), (py[vol_id] + dy), (pz[vol_id] + dz));
             }
             previous_coordinates[0] = base_x;
             previous_coordinates[1] = base_y;
