@@ -386,12 +386,13 @@ projectKernel(const cudaTextureObject_t * __restrict__ volume_texs, // array of 
     
     int voxels[2][2][2];
     float weights[2][2][2];
-    int previous_coordinates[3] = {-1, -1, -1};
+    float previous_coordinates[3] = {-1, -1, -1};
     // trace (if doing the last segment separately, need to use num_steps - 1
     for (int t = 0; t < num_steps; t++) {
         for (int vol_id = 0; vol_id < NUM_VOLUMES; vol_id++) {
             // we offset by -1.0f because we manually calculate the the trilinear filtering value in the surrounding area
             // -0.5 offset for cuda texture and additional -0.5 offset to recenter for a standard grid
+            // TODO offset error
             px[vol_id] = sx_ijk_local[vol_id] + alpha * rx_ijk[vol_id] - 1.0f;
             py[vol_id] = sy_ijk_local[vol_id] + alpha * ry_ijk[vol_id] - 1.0f;
             pz[vol_id] = sz_ijk_local[vol_id] + alpha * rz_ijk[vol_id] - 1.0f;
@@ -401,40 +402,44 @@ projectKernel(const cudaTextureObject_t * __restrict__ volume_texs, // array of 
                 seg_at_alpha[vol_id][mat_id] = 0.0f;
             }
 
-            int base_x = floorf(px[vol_id]);
-            int base_y = floorf(py[vol_id]);
-            int base_z = floorf(pz[vol_id]);
+            float base_x = floorf(px[vol_id]);
+            float base_y = floorf(py[vol_id]);
+            float base_z = floorf(pz[vol_id]);
             
-            //only fetch new voxel values if the coordinates have changed
-            // if(base_x != previous_coordinates[0] &&
-            //     base_y != previous_coordinates[1] &&
-            //     base_z != previous_coordinates[2]) {
-                
-            // }
-            
-            // fetch the 8 surrounding material ids for the current voxel coordinate
-            for (int dz = 0; dz <= 1; ++dz)
-            for (int dy = 0; dy <= 1; ++dy)
-            for (int dx = 0; dx <= 1; ++dx) {
-                voxels[dx][dy][dz] = tex3D<int>(seg_texs[vol_id], (px[vol_id] + dx), (py[vol_id] + dy), (pz[vol_id] + dz));
+            // only fetch new voxel values if the coordinates have changed
+            if(base_x != previous_coordinates[0] ||
+                base_y != previous_coordinates[1] ||
+                base_z != previous_coordinates[2]) {
+
+                // fetch the 8 surrounding material ids for the current voxel coordinate
+                for (int dz = 0; dz <= 1; ++dz)
+                for (int dy = 0; dy <= 1; ++dy)
+                for (int dx = 0; dx <= 1; ++dx) {
+                    voxels[dx][dy][dz] = tex3D<int>(seg_texs[vol_id], (px[vol_id] + dx), (py[vol_id] + dy), (pz[vol_id] + dz));
+                }
+
+                // update previous coordinates
+                previous_coordinates[0] = base_x;
+                previous_coordinates[1] = base_y;
+                previous_coordinates[2] = base_z;
             }
-            previous_coordinates[0] = base_x;
-            previous_coordinates[1] = base_y;
-            previous_coordinates[2] = base_z;
-            
+        
             // subtract floored value from voxel coordinate to translate to 0..1 4x4 grid
             float fx = px[vol_id] - base_x;
             float fy = py[vol_id] - base_y;
             float fz = pz[vol_id] - base_z;
+            float fx_inv = 1.0f - fx;
+            float fy_inv = 1.0f - fy;
+            float fz_inv = 1.0f - fz;
             
-            weights[0][0][0] = (1.0f - fx) * (1.0f - fy) * (1.0f - fz);
-            weights[1][0][0] = (fx)        * (1.0f - fy) * (1.0f - fz);
-            weights[0][1][0] = (1.0f - fx) * (fy)        * (1.0f - fz);
-            weights[1][1][0] = (fx)        * (fy)        * (1.0f - fz);
-            weights[0][0][1] = (1.0f - fx) * (1.0f - fy) * (fz);
-            weights[1][0][1] = (fx)        * (1.0f - fy) * (fz);
-            weights[0][1][1] = (1.0f - fx) * (fy)        * (fz);
-            weights[1][1][1] = (fx)        * (fy)        * (fz);
+            weights[0][0][0] = fx_inv * fy_inv * fz_inv;
+            weights[1][0][0] = fx     * fy_inv * fz_inv;
+            weights[0][1][0] = fx_inv * fy     * fz_inv;
+            weights[1][1][0] = fx     * fy     * fz_inv;
+            weights[0][0][1] = fx_inv * fy_inv * fz;
+            weights[1][0][1] = fx     * fy_inv * fz;
+            weights[0][1][1] = fx_inv * fy     * fz;
+            weights[1][1][1] = fx     * fy     * fz;
 
             // sum the weights for each material id
             for (int dz = 0; dz <= 1; ++dz)
