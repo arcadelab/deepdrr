@@ -2161,7 +2161,7 @@ class CameraProjection(Transform):
         Returns:
             CameraProjection: the camera projection.
         """
-        return cls(intrinsic=K, extrinsic=FrameTransform.from_rt(K, R, t))
+        return cls(intrinsic=K, extrinsic=FrameTransform.from_rt(R, t))
 
     @classmethod
     def from_rtk(
