@@ -1,4 +1,4 @@
-name: deepdrr-test
+name: deepdrr
 channels:
   - "nvidia/label/cuda-12.2.0"
   - pytorch
@@ -15,4 +15,4 @@ dependencies:
   - cuda-profiler-api
   - numba
   - pip:
-      - -e ".[dev,cuda12x]"
+    - -e ".[dev,cuda12x]"
