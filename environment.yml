@@ -1,4 +1,4 @@
-name: deepdrr-test
+name: deepdrr
 channels:
   - pytorch
   - "nvidia/label/cuda-12.2.0"
