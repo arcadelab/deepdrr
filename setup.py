@@ -28,13 +28,14 @@ setuptools.setup(
         "seaborn",
         "graphviz",
         "pyglet>=1.4.11",
-        "PyOpenGL>=3.1.7",
-        "PyOpenGL_accelerate>=3.1.7",
+        "PyOpenGL==3.1.7",
+        "PyOpenGL_accelerate==3.1.7",
         "trimesh",
         "pyrender @ git+https://github.com/liamjwang/pyrender.git@master",  # pyrender without hard PyOpenGL version requirement, TODO replace this when new version is released
         "cuda-python",
         "killeengeo",
         "strenum",
+        "open3d",
     ],
     extras_require={
         "dev": [

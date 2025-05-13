@@ -48,21 +48,13 @@ import cupy
 
 import numpy
 from cuda import cudart
-from cupyx.profiler import time_range
+
 from ..utils.cuda_utils import check_cudart_err, format_cudart_err
-import cupyx.profiler
+
+# from cupyx.profiler import time_range
+# import cupyx.profiler
 
 from matplotlib import pyplot as plt
-
-# try:
-#     from pycuda.tools import make_default_context
-#     from pycuda.driver import Context as context
-#     import pycuda.driver as cuda
-#     import pycuda.gl
-#     import pycuda
-#     from pycuda.compiler import SourceModule
-# except ImportError:
-#     logging.warning('pycuda unavailable')
 
 from ..utils.output_logger import OutputLogger
 import contextlib
@@ -75,7 +67,7 @@ NUMBYTES_INT32 = 4
 NUMBYTES_FLOAT32 = 4
 
 
-@cupyx.profiler.time_range()
+# @cupyx.profiler.time_range()
 def gl_tex_to_gpu(reg_img, dst_ptr, width, height, num_channels):
     check_cudart_err(cudart.cudaGraphicsMapResources(1, reg_img, None))
 
@@ -98,7 +90,7 @@ def gl_tex_to_gpu(reg_img, dst_ptr, width, height, num_channels):
     check_cudart_err(cudart.cudaGraphicsUnmapResources(1, reg_img, None))
 
 
-@time_range()
+# @time_range()
 def gl_gpu_to_tex(reg_img, src_ptr, width, height, num_channels):
     check_cudart_err(cudart.cudaGraphicsMapResources(1, reg_img, None))
 
@@ -619,7 +611,7 @@ class Projector(object):
     def output_size(self) -> int:
         return int(np.prod(self.output_shape))
 
-    @time_range()
+    # @time_range()
     def _prepare_project(self, camera_projections: geo.CameraProjection):
         if not self.initialized:
             raise RuntimeError("Projector has not been initialized.")
@@ -629,18 +621,17 @@ class Projector(object):
                 "must provide a camera projection object to the projector, unless imaging device (e.g. CArm) is provided"
             )
         elif not camera_projections and self.device is not None:
-            with time_range("get_projections"):
-                camera_projections = [self.device.get_camera_projection()]
-                # log.debug(
-                # f"projecting with source at {camera_projections[0].center_in_world}, pointing in {self.device.principle_ray_in_world}..."
-                # )
-                self.max_ray_length = (
-                    math.sqrt(  # TODO: can these really change after construction?
-                        self.device.source_to_detector_distance**2
-                        + self.device.detector_height**2
-                        + self.device.detector_width**2
-                    )
+            camera_projections = [self.device.get_camera_projection()]
+            # log.debug(
+            # f"projecting with source at {camera_projections[0].center_in_world}, pointing in {self.device.principle_ray_in_world}..."
+            # )
+            self.max_ray_length = (
+                math.sqrt(  # TODO: can these really change after construction?
+                    self.device.source_to_detector_distance**2
+                    + self.device.detector_height**2
+                    + self.device.detector_width**2
                 )
+            )
         else:
             # self.max_ray_length = -1
             self.max_ray_length = self.source_to_detector_distance * 4
@@ -676,33 +667,28 @@ class Projector(object):
             intensities.append(intensity)
             photon_probs.append(photon_prob)
 
-        with time_range("stacking"):
-            images = np.stack(intensities)
-            photon_prob = np.stack(photon_probs)
-            log.debug("Completed projection and attenuation")
+        images = np.stack(intensities)
+        photon_prob = np.stack(photon_probs)
+        log.debug("Completed projection and attenuation")
 
         if self.add_noise:  # TODO: add tests
-            with time_range("add_noise"):
-                log.info("adding Poisson noise")
-                images = analytic_generators.add_noise(
-                    images, photon_prob, self.photon_count
-                )
+            log.info("adding Poisson noise")
+            images = analytic_generators.add_noise(
+                images, photon_prob, self.photon_count
+            )
 
         if self.intensity_upper_bound is not None:
-            with time_range("clipping"):
-                images = np.clip(images, None, self.intensity_upper_bound)
+            images = np.clip(images, None, self.intensity_upper_bound)
 
         if self.neglog:
-            with time_range("neglog"):
-                log.debug("applying negative log transform")
-                images = utils.neglog(images)
+            log.debug("applying negative log transform")
+            images = utils.neglog(images)
 
         if images.shape[0] == 1:
             return images[0]
         else:
             return images
 
-    @time_range()
     def _render_single(self, proj: geo.CameraProjection) -> np.ndarray:
         # Only re-allocates if the output shape has changed.
         self.initialize_output_arrays(proj.intrinsic.sensor_size)
@@ -712,68 +698,66 @@ class Projector(object):
         if self.mesh_additive_enabled:
             self._render_mesh(proj)
 
-        with time_range("prep_args"):
-            args = [
-                np.uint64(self.volumes_texobs_gpu.data.ptr),
-                np.uint64(self.seg_texobs_gpu.data.ptr),
-                np.int32(proj.sensor_width),  # out_width
-                np.int32(proj.sensor_height),  # out_height
-                np.float32(self.step),  # step
-                np.uint64(self.priorities_gpu.data.ptr),  # priority
-                np.uint64(self.minPointX_gpu.data.ptr),  # gVolumeEdgeMinPointX
-                np.uint64(self.minPointY_gpu.data.ptr),  # gVolumeEdgeMinPointY
-                np.uint64(self.minPointZ_gpu.data.ptr),  # gVolumeEdgeMinPointZ
-                np.uint64(self.maxPointX_gpu.data.ptr),  # gVolumeEdgeMaxPointX
-                np.uint64(self.maxPointY_gpu.data.ptr),  # gVolumeEdgeMaxPointY
-                np.uint64(self.maxPointZ_gpu.data.ptr),  # gVolumeEdgeMaxPointZ
-                np.uint64(self.voxelSizeX_gpu.data.ptr),  # gVoxelElementSizeX
-                np.uint64(self.voxelSizeY_gpu.data.ptr),  # gVoxelElementSizeY
-                np.uint64(self.voxelSizeZ_gpu.data.ptr),  # gVoxelElementSizeZ
-                np.uint64(self.sourceX_gpu.data.ptr),  # sx_ijk
-                np.uint64(self.sourceY_gpu.data.ptr),  # sy_ijk
-                np.uint64(self.sourceZ_gpu.data.ptr),  # sz_ijk
-                np.float32(self.max_ray_length),  # max_ray_length
-                np.uint64(self.world_from_index_gpu.data.ptr),  # world_from_index
-                np.uint64(self.ijk_from_world_gpu.data.ptr),  # ijk_from_world
-                np.int32(self.spectrum_arr.shape[0]),  # n_bins
-                np.uint64(self.energies_gpu.data.ptr),  # energies
-                np.uint64(self.pdf_gpu.data.ptr),  # pdf
-                np.uint64(self.absorption_coef_table_gpu.data.ptr),  # absorb_coef_table
-                np.uint64(self.intensity_gpu.data.ptr),  # intensity
-                np.uint64(self.photon_prob_gpu.data.ptr),  # photon_prob
-                self.solid_angle_gpu,  # solid_angle
-                np.uint64(self.mesh_hit_alphas_gpu.data.ptr),
-                np.uint64(self.mesh_hit_facing_gpu.data.ptr),
-                np.uint64(self.mesh_sub_layer_valid.data.ptr),
-                np.uint64(self.additive_densities_gpu.data.ptr),
-                np.uint64(self.prim_unique_materials_gpu.data.ptr),
-                np.int32(len(self.prim_unique_materials)),
-                # np.int32(self.mesh_layers),
-                # np.int32(self.max_mesh_hits),
-            ]
+        args = [
+            np.uint64(self.volumes_texobs_gpu.data.ptr),
+            np.uint64(self.seg_texobs_gpu.data.ptr),
+            np.int32(proj.sensor_width),  # out_width
+            np.int32(proj.sensor_height),  # out_height
+            np.float32(self.step),  # step
+            np.uint64(self.priorities_gpu.data.ptr),  # priority
+            np.uint64(self.minPointX_gpu.data.ptr),  # gVolumeEdgeMinPointX
+            np.uint64(self.minPointY_gpu.data.ptr),  # gVolumeEdgeMinPointY
+            np.uint64(self.minPointZ_gpu.data.ptr),  # gVolumeEdgeMinPointZ
+            np.uint64(self.maxPointX_gpu.data.ptr),  # gVolumeEdgeMaxPointX
+            np.uint64(self.maxPointY_gpu.data.ptr),  # gVolumeEdgeMaxPointY
+            np.uint64(self.maxPointZ_gpu.data.ptr),  # gVolumeEdgeMaxPointZ
+            np.uint64(self.voxelSizeX_gpu.data.ptr),  # gVoxelElementSizeX
+            np.uint64(self.voxelSizeY_gpu.data.ptr),  # gVoxelElementSizeY
+            np.uint64(self.voxelSizeZ_gpu.data.ptr),  # gVoxelElementSizeZ
+            np.uint64(self.sourceX_gpu.data.ptr),  # sx_ijk
+            np.uint64(self.sourceY_gpu.data.ptr),  # sy_ijk
+            np.uint64(self.sourceZ_gpu.data.ptr),  # sz_ijk
+            np.float32(self.max_ray_length),  # max_ray_length
+            np.uint64(self.world_from_index_gpu.data.ptr),  # world_from_index
+            np.uint64(self.ijk_from_world_gpu.data.ptr),  # ijk_from_world
+            np.int32(self.spectrum_arr.shape[0]),  # n_bins
+            np.uint64(self.energies_gpu.data.ptr),  # energies
+            np.uint64(self.pdf_gpu.data.ptr),  # pdf
+            np.uint64(self.absorption_coef_table_gpu.data.ptr),  # absorb_coef_table
+            np.uint64(self.intensity_gpu.data.ptr),  # intensity
+            np.uint64(self.photon_prob_gpu.data.ptr),  # photon_prob
+            self.solid_angle_gpu,  # solid_angle
+            np.uint64(self.mesh_hit_alphas_gpu.data.ptr),
+            np.uint64(self.mesh_hit_facing_gpu.data.ptr),
+            np.uint64(self.mesh_sub_layer_valid.data.ptr),
+            np.uint64(self.additive_densities_gpu.data.ptr),
+            np.uint64(self.prim_unique_materials_gpu.data.ptr),
+            np.int32(len(self.prim_unique_materials)),
+            # np.int32(self.mesh_layers),
+            # np.int32(self.max_mesh_hits),
+        ]
 
-            # Calculate required blocks
-            blocks_w = int(np.ceil(self.output_shape[0] / self.threads))
-            blocks_h = int(np.ceil(self.output_shape[1] / self.threads))
-            block = (self.threads, self.threads, 1)
-            log.debug(
-                f"Running: {blocks_w}x{blocks_h} blocks with {self.threads}x{self.threads} threads each"
-            )
+        # Calculate required blocks
+        blocks_w = int(np.ceil(self.output_shape[0] / self.threads))
+        blocks_h = int(np.ceil(self.output_shape[1] / self.threads))
+        block = (self.threads, self.threads, 1)
+        log.debug(
+            f"Running: {blocks_w}x{blocks_h} blocks with {self.threads}x{self.threads} threads each"
+        )
 
         log.debug("args: {}".format("\n".join(map(str, args))))
-        with time_range("project_kernel"):
-            if blocks_w <= self.max_block_index and blocks_h <= self.max_block_index:
-                offset_w = np.int32(0)
-                offset_h = np.int32(0)
-                self.project_kernel(
-                    block=block,
-                    grid=(blocks_w, blocks_h),
-                    args=(*args, offset_w, offset_h),
-                )
-            else:
-                raise DeprecationWarning(
-                    "Patchwise projection is deprecated, try increasing max_block_index and/or threads. Please raise an issue if you need this feature."
-                )
+        if blocks_w <= self.max_block_index and blocks_h <= self.max_block_index:
+            offset_w = np.int32(0)
+            offset_h = np.int32(0)
+            self.project_kernel(
+                block=block,
+                grid=(blocks_w, blocks_h),
+                args=(*args, offset_w, offset_h),
+            )
+        else:
+            raise DeprecationWarning(
+                "Patchwise projection is deprecated, try increasing max_block_index and/or threads. Please raise an issue if you need this feature."
+            )
 
             # def fast_host_to_device(d_a, a):
             #     d_a.data.copy_from(a.ctypes.data, a.nbytes)
@@ -781,15 +765,13 @@ class Projector(object):
             # def fast_device_to_host(a, d_a):
             #     a.ctypes.data.copy_from(d_a.data, a.nbytes)
 
-        with time_range("intensity copy to host"):
-            intensity = cp.asnumpy(self.intensity_gpu)
-            intensity = intensity.reshape(self.output_shape)
-            intensity = np.swapaxes(intensity, 0, 1).copy()
+        intensity = cp.asnumpy(self.intensity_gpu)
+        intensity = intensity.reshape(self.output_shape)
+        intensity = np.swapaxes(intensity, 0, 1).copy()
 
-        with time_range("photon_prob copy to host"):
-            photon_prob = cp.asnumpy(self.photon_prob_gpu)
-            photon_prob = photon_prob.reshape(self.output_shape)
-            photon_prob = np.swapaxes(photon_prob, 0, 1).copy()
+        photon_prob = cp.asnumpy(self.photon_prob_gpu)
+        photon_prob = photon_prob.reshape(self.output_shape)
+        photon_prob = np.swapaxes(photon_prob, 0, 1).copy()
 
         collected_energy_data = intensity
         if self.collected_energy:
@@ -799,7 +781,6 @@ class Projector(object):
 
         return collected_energy_data, photon_prob
 
-    @time_range()
     def _update_object_locations(self, proj: geo.CameraProjection) -> None:
         world_from_index = np.array(proj.world_from_index[:-1, :]).astype(np.float32)
         self.world_from_index_gpu = cp.asarray(world_from_index)
@@ -831,7 +812,6 @@ class Projector(object):
         self.sourceY_gpu = cp.asarray(sourceY)
         self.sourceZ_gpu = cp.asarray(sourceZ)
 
-    @time_range()
     def _calculate_collected_energy_per_pixel(
         self, proj: geo.CameraProjection, intensity: np.ndarray
     ) -> np.ndarray:
@@ -854,33 +834,30 @@ class Projector(object):
         deposited_energy /= pixel_size_x * pixel_size_y
         return deposited_energy
 
-    @time_range()
     def _setup_pyrender_scene(self, proj: geo.CameraProjection):
-        with time_range("set_mesh_poses"):
-            for mesh_id, mesh in enumerate(self.meshes):
-                self.mesh_nodes[mesh_id]._matrix = mesh.world_from_ijk
+        for mesh_id, mesh in enumerate(self.meshes):
+            self.mesh_nodes[mesh_id]._matrix = mesh.world_from_ijk
 
-        with time_range("mesh_camera_setup"):
-            self.cam.fx = proj.intrinsic.fx
-            self.cam.fy = proj.intrinsic.fy
-            self.cam.cx = proj.intrinsic.cx
-            self.cam.cy = proj.intrinsic.sensor_height - proj.intrinsic.cy
+        self.cam.fx = proj.intrinsic.fx
+        self.cam.fy = proj.intrinsic.fy
+        self.cam.cx = proj.intrinsic.cx
+        self.cam.cy = proj.intrinsic.sensor_height - proj.intrinsic.cy
 
-            self.cam.znear = 1  # self.device.source_to_detector_distance / 1000
-            self.cam.zfar = self.source_to_detector_distance * 4
+        self.cam.znear = 1  # self.device.source_to_detector_distance / 1000
+        self.cam.zfar = self.source_to_detector_distance * 4
 
-            deepdrr_to_opengl_cam = np.array(
-                [
-                    [1, 0, 0, 0],
-                    [0, 1, 0, 0],
-                    [0, 0, -1, 0],
-                    [0, 0, 0, 1],
-                ]
-            )
+        deepdrr_to_opengl_cam = np.array(
+            [
+                [1, 0, 0, 0],
+                [0, 1, 0, 0],
+                [0, 0, -1, 0],
+                [0, 0, 0, 1],
+            ]
+        )
 
-            self.cam_node._matrix = np.array(proj.extrinsic.inv) @ deepdrr_to_opengl_cam
+        self.cam_node._matrix = np.array(proj.extrinsic.inv) @ deepdrr_to_opengl_cam
 
-            zfar = self.source_to_detector_distance * 4  # TODO (liam)
+        zfar = self.source_to_detector_distance * 4  # TODO (liam)
 
         return zfar
 
@@ -1061,7 +1038,6 @@ class Projector(object):
                 res.append(out_im)
         return res
 
-    @time_range()
     def _render_mesh(self, proj: geo.CameraProjection) -> None:
         zfar = self._setup_pyrender_scene(proj)
 
@@ -1070,7 +1046,6 @@ class Projector(object):
         self._subtract_from_additive(proj, zfar)
         self._transfer_additive_to_cuda(proj, zfar)
 
-    @time_range()
     def _render_mesh_additive(
         self, proj: geo.CameraProjection, zfar: float, density_override=None
     ) -> None:
@@ -1087,19 +1062,17 @@ class Projector(object):
 
         for layer_idx in range(self.mesh_layers):
             for mat_idx, mat in enumerate(self.prim_unique_materials):
-                with time_range("additive_render"):
-                    self.gl_renderer.render(
-                        self.scene,
-                        drr_mode=DRRMode.DENSITY,
-                        flags=RenderFlags.RGBA,
-                        zfar=zfar,
-                        mat=mat,
-                        mat_idx=mat_idx,
-                        layer_idx=layer_idx,
-                        density_override=density_override,
-                    )
+                self.gl_renderer.render(
+                    self.scene,
+                    drr_mode=DRRMode.DENSITY,
+                    flags=RenderFlags.RGBA,
+                    zfar=zfar,
+                    mat=mat,
+                    mat_idx=mat_idx,
+                    layer_idx=layer_idx,
+                    density_override=density_override,
+                )
 
-    @time_range()
     def _render_mesh_seg(
         self, proj: geo.CameraProjection, zfar: float, tags: Optional[List[str]] = None
     ) -> None:
@@ -1108,7 +1081,6 @@ class Projector(object):
         # log.info(f"sensor size: {width}x{height}")
         total_pixels = width * height
 
-        # with time_range("seg_render"):
         #     res = self.gl_renderer.render(
         #         self.scene,
         #         drr_mode=DRRMode.SEG,
@@ -1123,20 +1095,18 @@ class Projector(object):
             batched.append(tags[i : i + batch_size])
         res = []
         for batch in batched:
-            with time_range("seg_render"):
-                res_batch = self.gl_renderer.render(
-                    self.scene,
-                    drr_mode=DRRMode.SEG,
-                    flags=RenderFlags.RGBA,
-                    zfar=zfar,
-                    tags=batch,
-                )
-                for i in range(len(batch)):
-                    res.append(res_batch[:, :, i])
+            res_batch = self.gl_renderer.render(
+                self.scene,
+                drr_mode=DRRMode.SEG,
+                flags=RenderFlags.RGBA,
+                zfar=zfar,
+                tags=batch,
+            )
+            for i in range(len(batch)):
+                res.append(res_batch[:, :, i])
 
         return res
 
-    @time_range()
     def _render_mesh_subtractive(
         self, proj: geo.CameraProjection, zfar: float, hits_mode: bool = False
     ) -> None:
@@ -1169,16 +1139,15 @@ class Projector(object):
         height = proj.intrinsic.sensor_height
         total_pixels = width * height
 
-        with time_range("subtractive_render"):
-            self.gl_renderer.render(
-                self.scene,
-                drr_mode=DRRMode.DIST,
-                flags=RenderFlags.RGBA,
-                zfar=zfar,
-                layer_idx=None if hits_mode else layer_idx,
-                force_all_subtract=hits_mode,
-                tags=tags,
-            )
+        self.gl_renderer.render(
+            self.scene,
+            drr_mode=DRRMode.DIST,
+            flags=RenderFlags.RGBA,
+            zfar=zfar,
+            layer_idx=None if hits_mode else layer_idx,
+            force_all_subtract=hits_mode,
+            tags=tags,
+        )
 
         for tex_idx in range(self.gl_renderer.num_peel_passes):
             pointer_into_hit_alphas = int(
@@ -1305,17 +1274,16 @@ class Projector(object):
 
                 for minuend_layer_idx in range(subtrahend_layer_idx):
                     for mat_idx, mat in enumerate(self.prim_unique_materials):
-                        with time_range("mesh_mesh_sub_render"):
-                            self.gl_renderer.render(
-                                self.scene,
-                                drr_mode=DRRMode.MESH_SUB,
-                                flags=RenderFlags.RGBA,
-                                zfar=zfar,
-                                mat=mat,
-                                mat_idx=mat_idx,
-                                layer_idx=minuend_layer_idx,
-                                tex_idx=tex_idx,
-                            )
+                        self.gl_renderer.render(
+                            self.scene,
+                            drr_mode=DRRMode.MESH_SUB,
+                            flags=RenderFlags.RGBA,
+                            zfar=zfar,
+                            mat=mat,
+                            mat_idx=mat_idx,
+                            layer_idx=minuend_layer_idx,
+                            tex_idx=tex_idx,
+                        )
 
     def _transfer_additive_to_cuda(
         self, proj: geo.CameraProjection, zfar: float
@@ -1380,7 +1348,6 @@ class Projector(object):
 
         return self.project(*camera_projections)
 
-    @time_range()
     def initialize_output_arrays(self, sensor_size: Tuple[int, int]) -> None:
         """Allocate arrays dependent on the output size. Frees previously allocated arrays.
 
@@ -1651,7 +1618,9 @@ class Projector(object):
         for bin in range(n_bins):  # , energy in enumerate(energies):
             for m, mat_name in enumerate(self.all_materials):
                 absorption_coef_table[bin * len(self.all_materials) + m] = (
-                    Material.from_string(mat_name).get_coefficients(contiguous_energies[bin]).mu_over_rho
+                    Material.from_string(mat_name)
+                    .get_coefficients(contiguous_energies[bin])
+                    .mu_over_rho
                 )
         self.absorption_coef_table_gpu = cp.asarray(absorption_coef_table)
         log.debug(

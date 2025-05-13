@@ -12,30 +12,27 @@ import killeengeo as kg
 
 def main():
     output_dir = test_utils.get_output_dir()
-    # data_dir = test_utils.download_sampledata("CTPelvic1K_sample")
-    # print(data_dir)
-    # ct = deepdrr.Volume.from_nifti(
-    #     data_dir / "dataset6_CLINIC_0001_data.nii.gz",
-    #     use_thresholding=True,
-    # )
-    # ct.supine()
+    data_dir = test_utils.download_sampledata("CTPelvic1K_sample")
+    ct = deepdrr.Volume.from_nifti(
+        data_dir / "dataset6_CLINIC_0001_data.nii.gz",
+        use_thresholding=True,
+    )
+    ct.supine()
 
     # define the simulated C-arm
-    carm = deepdrr.device.SimpleDevice()
+    device = deepdrr.device.SimpleDevice()
 
     tool_path = "data/6.5mmD_32mmThread_L130mm.STL"
     mesh: Mesh = Mesh.from_stl(tool_path)
     dense_mesh = Mesh.from_stl(tool_path, material=DRRMaterial("iron", density=7.87))
 
     # project in the anterior direction
-    with Projector(
-        [mesh, dense_mesh], device=carm, intensity_upper_bound=4
-    ) as projector:
+    with Projector([ct], device=device, intensity_upper_bound=4) as projector:
         # p = ct.center_in_world
         # v = ct.world_from_anatomical @ geo.vector(0, 1, 0)
         p = kg.p(0, 0, 0)
         v = kg.v(0, 0, 1)
-        carm.set_view(
+        device.set_view(
             p,
             v,
             source_to_point_fraction=0.7,

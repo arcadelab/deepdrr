@@ -1,7 +1,7 @@
-name: deepdrr
+name: deepdrr-test
 channels:
   - pytorch
-  - "nvidia/label/cuda-11.8.0"
+  - "nvidia/label/cuda-12.2.0"
   - conda-forge
 dependencies:
   - python=3.11
