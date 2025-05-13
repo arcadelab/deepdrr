@@ -1,6 +1,4 @@
-"""Volume class for CT volume.
-
-"""
+"""Volume class for CT volume."""
 
 from __future__ import annotations
 from typing import Any, Union, Tuple, List, Optional, Dict, Type, TYPE_CHECKING

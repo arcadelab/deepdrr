@@ -12,9 +12,8 @@ import killeengeo as kg
 
 def main():
     output_dir = test_utils.get_output_dir()
-    data_dir = test_utils.download_sampledata("CTPelvic1K_sample")
     ct = deepdrr.Volume.from_nifti(
-        data_dir / "dataset6_CLINIC_0001_data.nii.gz",
+        "/home/killeen/Downloads/case-100366/real-case-100366/nifti/FULL_BODY_COMBINED/case-100366/case-100366.nii.gz",
         use_thresholding=True,
     )
     ct.supine()
