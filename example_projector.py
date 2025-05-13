@@ -12,6 +12,7 @@ import killeengeo as kg
 
 def main():
     output_dir = test_utils.get_output_dir()
+    print("loading ct")
     ct = deepdrr.Volume.from_nifti(
         "/home/killeen/Downloads/case-100366/real-case-100366/nifti/FULL_BODY_COMBINED/case-100366/case-100366.nii.gz",
         use_thresholding=True,
@@ -25,6 +26,7 @@ def main():
     mesh: Mesh = Mesh.from_stl(tool_path)
     dense_mesh = Mesh.from_stl(tool_path, material=DRRMaterial("iron", density=7.87))
 
+    print("initializing projector")
     # project in the anterior direction
     with Projector([ct], device=device, intensity_upper_bound=4) as projector:
         # p = ct.center_in_world
