@@ -2,7 +2,6 @@
 """Minimal projection example with DeepDRR."""
 
 import deepdrr
-from deepdrr import geo
 from deepdrr.utils import test_utils, image_utils
 from deepdrr.projector import Projector
 from deepdrr.vol import Mesh
@@ -14,7 +13,8 @@ def main():
     output_dir = test_utils.get_output_dir()
     print("loading ct")
     ct = deepdrr.Volume.from_nifti(
-        "/home/killeen/Downloads/case-100366/real-case-100366/nifti/FULL_BODY_COMBINED/case-100366/case-100366.nii.gz",
+        "/mnt/oracle_data/killeen/NMDID-ARCADE_2024-12-08/nifti/case-100065/LOWER_EXTREMITY/THIN_BONE_L-EXT_LOWER_EXTREMITY_Orthoped_73918_11764.nii.gz",
+        # "/home/killeen/Downloads/case-100366/real-case-100366/nifti/FULL_BODY_COMBINED/case-100366/case-100366.nii.gz",
         use_thresholding=True,
     )
     ct.supine()
