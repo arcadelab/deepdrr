@@ -14,3 +14,5 @@ dependencies:
   - cuda-gdb
   - cuda-profiler-api
   - numba
+  - pip:
+    - -e ".[dev,cuda12x]"
