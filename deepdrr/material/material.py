@@ -167,6 +167,9 @@ class Material:
 
         parsed = {elem: float(fraction) for elem, fraction in matches}
         total = sum(parsed.values())
+        if np.isclose(total, 100, atol=1e-2):
+            parsed = {elem: fraction / 100.0 for elem, fraction in parsed.items()}
+            total = sum(parsed.values())
         if not np.isclose(total, 1.0, atol=1e-4):
             raise ValueError(f"Fractions must sum to 1.0, got {total} for {name}")
         return parsed

@@ -1451,7 +1451,9 @@ class Projector(object):
         for vol_id, volume in enumerate(self.volumes):
             volume_gpu = cp.asarray(volume)  # Move volume to GPU
             volume_gpu = cp.moveaxis(volume_gpu, [0, 1, 2], [2, 1, 0])  # Adjust axes on GPU
-            vol_texobj, vol_texarr = create_cuda_texture(cp.asnumpy(volume_gpu))  # Create texture
+            volume = cp.asnumpy(volume_gpu)  # Move volume back to CPU for texture creation
+            volume_gpu = None  # Free GPU memory
+            vol_texobj, vol_texarr = create_cuda_texture(volume)  # Create texture
             self.volumes_texarrs.append(vol_texarr)
             self.volumes_texobs.append(vol_texobj)
 
@@ -1462,18 +1464,23 @@ class Projector(object):
             label_dict_index_remapping = cp.array(
                 [_vol.materials[0][k] for k in self.all_materials], dtype=cp.uint16
             ).argsort()
-
             # Perform remapping and axis adjustment on GPU
             segmentation_gpu = cp.asarray(_vol.materials[1])
             segmentation_gpu = label_dict_index_remapping[segmentation_gpu]
             segmentation_gpu = cp.moveaxis(segmentation_gpu.astype(cp.uint16), [0, 1, 2], [2, 1, 0])
 
+            segmentation = cp.asnumpy(segmentation_gpu)  # Move segmentation to CPU for texture creation
+            segmentation_gpu = None # Free GPU memory
+
             # Create CUDA texture
             combined_texobj, combined_texarr = create_cuda_texture(
-                cp.asnumpy(segmentation_gpu), sampling_mode="nearest", dtype=np.uint16
+                segmentation, sampling_mode="nearest", dtype=np.uint16
             )
             self.seg_texobs.append(combined_texobj)
             self.seg_texarrs.append(combined_texarr)
+        
+        cp.get_default_memory_pool().free_all_blocks()
+        cp.get_default_pinned_memory_pool().free_all_blocks()
 
         self.volumes_texobs_gpu = cp.array(
             [x.ptr for x in self.volumes_texobs], dtype=np.uint64
@@ -1642,6 +1649,10 @@ class Projector(object):
         log.debug(
             f"time elapsed after intializing rest of stuff: {init_tock - init_tick}"
         )
+        
+        # Free unused GPU memory blocks by cupy
+        cp.get_default_memory_pool().free_all_blocks()
+        cp.get_default_pinned_memory_pool().free_all_blocks()
 
         # Mark self as initialized.
         self.initialized = True

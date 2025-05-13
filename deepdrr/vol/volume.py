@@ -966,8 +966,16 @@ class Volume(Renderable):
             material_mask = mat_gpu > 0
             combined_segmentation[material_mask] = mat_id
             material_dict[mat] = mat_id
-        combined_segmentation = cp.asnumpy(combined_segmentation)  # Move result back to CPU
-        return material_dict, combined_segmentation
+            # Free GPU memory
+            mat_gpu = None  
+            material_mask = None
+        segmentation = cp.asnumpy(combined_segmentation)  # Move result back to CPU
+        # Free GPU memory
+        mat_gpu = None  # Free GPU memory
+        combined_segmentation = None # Free GPU memory
+        cp.get_default_memory_pool().free_all_blocks()
+        cp.get_default_pinned_memory_pool().free_all_blocks()
+        return material_dict, segmentation
 
     @property
     def shape(self) -> Tuple[int, int, int]:
