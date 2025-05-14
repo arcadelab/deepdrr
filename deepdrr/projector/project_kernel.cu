@@ -392,10 +392,9 @@ projectKernel(const cudaTextureObject_t * __restrict__ volume_texs, // array of 
         for (int vol_id = 0; vol_id < NUM_VOLUMES; vol_id++) {
             // we offset by -1.0f because we manually calculate the the trilinear filtering value in the surrounding area
             // -0.5 offset for cuda texture and additional -0.5 offset to recenter for a standard grid
-            // TODO offset error
-            px[vol_id] = sx_ijk_local[vol_id] + alpha * rx_ijk[vol_id] - 0.5f;
-            py[vol_id] = sy_ijk_local[vol_id] + alpha * ry_ijk[vol_id] - 0.5f;
-            pz[vol_id] = sz_ijk_local[vol_id] + alpha * rz_ijk[vol_id] - 0.5f;
+            px[vol_id] = sx_ijk_local[vol_id] + alpha * rx_ijk[vol_id] - 1.0f;
+            py[vol_id] = sy_ijk_local[vol_id] + alpha * ry_ijk[vol_id] - 1.0f;
+            pz[vol_id] = sz_ijk_local[vol_id] + alpha * rz_ijk[vol_id] - 1.0f;
 
             // Reset segmentation values
             for (int mat_id = 0; mat_id < NUM_MATERIALS; mat_id++) {
