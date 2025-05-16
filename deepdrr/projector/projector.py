@@ -554,7 +554,9 @@ class Projector(object):
         if attenuate_outside_volume:
             all_mats.append("air")
 
+        # print("HELLO")
         self.all_materials = list(set(all_mats))
+        # print(self.all_materials)
         self.all_materials.sort()
         log.debug(f"MATERIALS: {self.all_materials}")
 
@@ -956,16 +958,16 @@ class Projector(object):
             raise NotImplementedError("multiple projections")
 
         camera_projections = self._prepare_project(camera_projections)
-        log.info(type(camera_projections))
-        log.info(camera_projections)
+        # log.info(type(camera_projections))
+        # log.info(camera_projections)
         return self._render_seg(camera_projections[0], tags=tags)
 
     def _render_seg(
         self, proj: geo.CameraProjection, tags: Optional[List[str]] = None
     ) -> np.ndarray:
         zfar = self._setup_pyrender_scene(proj)
-        log.info(zfar)
-        log.info(proj)
+        # log.info(zfar)
+        # log.info(proj)
         res = self._render_mesh_seg(proj, zfar, tags=tags)
         return res
 
@@ -1445,6 +1447,8 @@ class Projector(object):
         self.kernel_tide = self.peel_postprocess_mod.get_function("kernelTide")
         self.kernel_reorder = self.peel_postprocess_mod.get_function("kernelReorder")
         self.kernel_reorder2 = self.peel_postprocess_mod.get_function("kernelReorder2")
+        
+        log.info(f"Used: {cp.get_default_memory_pool().used_bytes() / (1024**2):.2f} MB Total: {cp.get_default_memory_pool().total_bytes() / (1024**2):.2f}")
 
         self.volumes_texobs = []
         self.volumes_texarrs = []
@@ -1452,35 +1456,44 @@ class Projector(object):
             volume_gpu = cp.asarray(volume)  # Move volume to GPU
             volume_gpu = cp.moveaxis(volume_gpu, [0, 1, 2], [2, 1, 0])  # Adjust axes on GPU
             volume = cp.asnumpy(volume_gpu)  # Move volume back to CPU for texture creation
+            log.info(np.shape(volume))
             volume_gpu = None  # Free GPU memory
             vol_texobj, vol_texarr = create_cuda_texture(volume)  # Create texture
             self.volumes_texarrs.append(vol_texarr)
             self.volumes_texobs.append(vol_texobj)
+
+        cp.get_default_memory_pool().free_all_blocks()
+        cp.get_default_pinned_memory_pool().free_all_blocks()
+        log.info(f"Used: {cp.get_default_memory_pool().used_bytes() / (1024**2):.2f} MB Total: {cp.get_default_memory_pool().total_bytes() / (1024**2):.2f}")
 
         self.seg_texobs = []
         self.seg_texarrs = []
         for vol_id, _vol in enumerate(self.volumes):
             # Remap segmentation indices using cupy
             label_dict_index_remapping = cp.array(
-                [_vol.materials[0][k] for k in self.all_materials], dtype=cp.uint16
+                [_vol.materials[0][k] for k in self.all_materials if k in _vol.materials[0]],
+                dtype=cp.uint16
             ).argsort()
             # Perform remapping and axis adjustment on GPU
             segmentation_gpu = cp.asarray(_vol.materials[1])
             segmentation_gpu = label_dict_index_remapping[segmentation_gpu]
-            segmentation_gpu = cp.moveaxis(segmentation_gpu.astype(cp.uint16), [0, 1, 2], [2, 1, 0])
+            segmentation_gpu = cp.moveaxis(segmentation_gpu.astype(cp.uint8), [0, 1, 2], [2, 1, 0])
 
             segmentation = cp.asnumpy(segmentation_gpu)  # Move segmentation to CPU for texture creation
+            log.info(np.shape(segmentation))
             segmentation_gpu = None # Free GPU memory
 
             # Create CUDA texture
             combined_texobj, combined_texarr = create_cuda_texture(
-                segmentation, sampling_mode="nearest", dtype=np.uint16
+                segmentation, sampling_mode="nearest", dtype=np.uint8
             )
             self.seg_texobs.append(combined_texobj)
             self.seg_texarrs.append(combined_texarr)
-        
+
         cp.get_default_memory_pool().free_all_blocks()
         cp.get_default_pinned_memory_pool().free_all_blocks()
+        log.info(f"Used: {cp.get_default_memory_pool().used_bytes() / (1024**2):.2f} MB Total: {cp.get_default_memory_pool().total_bytes() / (1024**2):.2f}")
+        
 
         self.volumes_texobs_gpu = cp.array(
             [x.ptr for x in self.volumes_texobs], dtype=np.uint64

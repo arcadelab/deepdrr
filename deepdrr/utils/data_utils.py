@@ -146,12 +146,10 @@ def save_fcsv(
         file.writelines(lines)
 
 
-def load_fcsv(path: str) -> Tuple[np.ndarray, np.ndarray]:
+def load_fcsv(path: str, to_RAS: bool = False) -> Tuple[np.ndarray, np.ndarray]:
     """Load a fcsv file.
-
     Args:
         path (str): The path to the fcsv file.
-
     Returns:
         np.ndarray: The points. Shape: (N, 3)
         np.ndarray: The names of the points. Shape: (N,)
@@ -169,4 +167,7 @@ def load_fcsv(path: str) -> Tuple[np.ndarray, np.ndarray]:
         name = line.split(",")[11].strip()
         names.append(name)
     points = np.array(points)
+    if to_RAS:
+        points[:, 0] *= -1
+        points[:, 1] *= -1
     return points, names
