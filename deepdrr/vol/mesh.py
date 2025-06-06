@@ -216,7 +216,7 @@ class LinearToolMesh(Mesh):
         distance: Optional[float] = None,
     ):
         """Align the renderable so that base and tip are aligned with a_in_world and b_in_world."""
-        super().align(
+        return super().align(
             a_in_world,
             b_in_world,
             progress=progress,
