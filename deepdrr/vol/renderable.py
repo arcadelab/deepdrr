@@ -232,3 +232,5 @@ class Renderable(ABC):
         self.world_from_anatomical = geo.FrameTransform.from_line_segments(
             desired_tip_in_world, desired_base_in_world, b, a
         )
+
+        return desired_tip_in_world
