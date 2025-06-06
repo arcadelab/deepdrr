@@ -1470,17 +1470,17 @@ class Projector(object):
         self.seg_texarrs = []
         for vol_id, _vol in enumerate(self.volumes):
             # Remap segmentation indices using cupy
-            label_dict_index_remapping = cp.array(
-                [_vol.materials[0][k] for k in self.all_materials if k in _vol.materials[0]],
-                dtype=cp.uint16
-            ).argsort()
+            label_list = []
+            for k in _vol.materials[0]:
+                if k in self.all_materials:
+                    label_list.append(self.all_materials.index(k))
+            label_dict_index_remapping = cp.array(label_list, dtype=cp.uint16)
             # Perform remapping and axis adjustment on GPU
             segmentation_gpu = cp.asarray(_vol.materials[1])
             segmentation_gpu = label_dict_index_remapping[segmentation_gpu]
             segmentation_gpu = cp.moveaxis(segmentation_gpu.astype(cp.uint8), [0, 1, 2], [2, 1, 0])
 
             segmentation = cp.asnumpy(segmentation_gpu)  # Move segmentation to CPU for texture creation
-            log.info(np.shape(segmentation))
             segmentation_gpu = None # Free GPU memory
 
             # Create CUDA texture
@@ -1494,7 +1494,6 @@ class Projector(object):
         cp.get_default_pinned_memory_pool().free_all_blocks()
         log.info(f"Used: {cp.get_default_memory_pool().used_bytes() / (1024**2):.2f} MB Total: {cp.get_default_memory_pool().total_bytes() / (1024**2):.2f}")
         
-
         self.volumes_texobs_gpu = cp.array(
             [x.ptr for x in self.volumes_texobs], dtype=np.uint64
         )

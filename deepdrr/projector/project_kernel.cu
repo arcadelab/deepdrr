@@ -527,7 +527,7 @@ projectKernel(const cudaTextureObject_t * __restrict__ volume_texs, // array of 
                 // Loop through volumes and add to the area_density.
                 for (int vol_id = 0; vol_id < NUM_VOLUMES; vol_id++) {
                     if (do_trace[vol_id] && (priority_local[vol_id] == curr_priority)) {
-                        float vol_density = tex3D<float>(volume_texs[vol_id], px[vol_id], py[vol_id], pz[vol_id]);
+                        float vol_density = tex3D<float>(volume_texs[vol_id], px[vol_id] + 0.5f, py[vol_id] + 0.5f, pz[vol_id] + 0.5f);
                         for (int mat_id = 0; mat_id < NUM_MATERIALS; mat_id++) {
                             area_density[mat_id] +=
                                 (weight)*vol_density *
