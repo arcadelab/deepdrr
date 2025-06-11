@@ -161,6 +161,8 @@ class LineAnnotation(object):
         self,
         path: str,
         color: List[float] = [1.0, 0.5000076295109484, 0.5000076295109484],
+        startpoint_label: Optional[str] = None,
+        endpoint_label: Optional[str] = None,
     ):
         """Save the Line annotation to a mrk.json file, which can be opened by 3D Slicer.
 
@@ -194,7 +196,7 @@ class LineAnnotation(object):
                     "controlPoints": [
                         {
                             "id": "1",
-                            "label": "startpoint",
+                            "label": startpoint_label or "",
                             "description": "",
                             "associatedNodeID": "",
                             "position": list(self.startpoint),
@@ -216,7 +218,7 @@ class LineAnnotation(object):
                         },
                         {
                             "id": "2",
-                            "label": "endpoint",
+                            "label": endpoint_label or "",
                             "description": "",
                             "associatedNodeID": "",
                             "position": list(self.endpoint),
@@ -252,7 +254,8 @@ class LineAnnotation(object):
                         "selectedColor": color,
                         "activeColor": [0.4, 1.0, 0.0],
                         "propertiesLabelVisibility": False,
-                        "pointLabelsVisibility": False,
+                        "pointLabelsVisibility": startpoint_label is not None
+                        or endpoint_label is not None,
                         "textScale": 3.0,
                         "glyphType": "Sphere3D",
                         "glyphScale": 5.800000000000001,
