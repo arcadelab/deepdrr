@@ -233,4 +233,4 @@ class Renderable(ABC):
             desired_tip_in_world, desired_base_in_world, b, a
         )
 
-        return desired_tip_in_world
+        return desired_tip_in_world, desired_base_in_world
