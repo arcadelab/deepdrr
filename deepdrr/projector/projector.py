@@ -599,6 +599,19 @@ class Projector(object):
                 "No device provided. Set the device attribute by passing `device=<device>` to the constructor."
             )
 
+    @camera_intrinsics.setter
+    def camera_intrinsics(self, value: geo.CameraIntrinsicTransform):
+        if self.device is not None:
+            raise RuntimeError(
+                "Cannot set camera intrinsics when a device is provided. Use the device's camera_intrinsics instead."
+            )
+        elif isinstance(value, geo.CameraIntrinsicTransform):
+            self._camera_intrinsics = value
+        else:
+            raise TypeError(
+                f"Expected geo.CameraIntrinsicTransform, got {type(value)} instead."
+            )
+
     @property
     def volume(self):
         if len(self.volumes) != 1:
@@ -1326,27 +1339,9 @@ class Projector(object):
         Ignores the CArm's internal pose, except for its isocenter.
 
         """
-        if self.device is None:
-            raise RuntimeError("must provide carm device to projector")
-
-        if not isinstance(self.device, Device):
-            raise TypeError("device must be a CArm")
-
-        camera_projections = []
-        phis, thetas = utils.generate_uniform_angles(phi_range, theta_range)
-        for phi, theta in zip(phis, thetas):
-            extrinsic = self.device.get_camera3d_from_world(
-                self.device.isocenter,
-                phi,
-                theta,
-                degrees=degrees,
-            )
-
-            camera_projections.append(
-                geo.CameraProjection(self.camera_intrinsics, extrinsic)
-            )
-
-        return self.project(*camera_projections)
+        raise DeprecationError(
+            "project_over_carm_range is deprecated. See README for alternatives."
+        )
 
     def initialize_output_arrays(self, sensor_size: Tuple[int, int]) -> None:
         """Allocate arrays dependent on the output size. Frees previously allocated arrays.

@@ -327,7 +327,7 @@ class Renderer(object):
                     color = np.zeros(4, dtype=np.float32)
                     if tags is not None:
                         for i in range(len(tags)):
-                            if tags[i] in primitive.material.tag:
+                            if tags[i] == primitive.material.tag:
                                 color[i] = 1.0
                     if np.sum(color) == 0.0:
                         continue
