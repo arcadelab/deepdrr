@@ -673,8 +673,10 @@ class Projector(object):
         camera_projections = self._prepare_project(camera_projections)
 
         # check for enabled/disabled volumes
-        for _vol in self.volumes:
-            self.volume_enabled_gpu[_vol.index] = 1 if _vol.enabled else 0
+        for vol_id, _vol in enumerate(self.volumes):
+            self.volume_enabled_gpu[vol_id] = 1 if _vol.enabled else 0
+
+        print(self.volume_enabled_gpu)
 
         intensities = []
         photon_probs = []
