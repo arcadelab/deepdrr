@@ -554,9 +554,7 @@ class Projector(object):
         if attenuate_outside_volume:
             all_mats.append("air")
 
-        # print("HELLO")
         self.all_materials = list(set(all_mats))
-        # print(self.all_materials)
         self.all_materials.sort()
         log.debug(f"MATERIALS: {self.all_materials}")
 
@@ -675,8 +673,6 @@ class Projector(object):
         # check for enabled/disabled volumes
         for vol_id, _vol in enumerate(self.volumes):
             self.volume_enabled_gpu[vol_id] = 1 if _vol.enabled else 0
-
-        print(self.volume_enabled_gpu)
 
         intensities = []
         photon_probs = []
@@ -965,16 +961,12 @@ class Projector(object):
             raise NotImplementedError("multiple projections")
 
         camera_projections = self._prepare_project(camera_projections)
-        # log.info(type(camera_projections))
-        # log.info(camera_projections)
         return self._render_seg(camera_projections[0], tags=tags)
 
     def _render_seg(
         self, proj: geo.CameraProjection, tags: Optional[List[str]] = None
     ) -> np.ndarray:
         zfar = self._setup_pyrender_scene(proj)
-        # log.info(zfar)
-        # log.info(proj)
         res = self._render_mesh_seg(proj, zfar, tags=tags)
         return res
 
