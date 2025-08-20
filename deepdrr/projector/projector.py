@@ -672,6 +672,10 @@ class Projector(object):
 
         camera_projections = self._prepare_project(camera_projections)
 
+        # check for enabled/disabled volumes
+        for _vol in self.volumes:
+            self.volume_enabled_gpu[_vol.index] = 1 if _vol.enabled else 0
+
         intensities = []
         photon_probs = []
         for i, proj in enumerate(camera_projections):
@@ -720,6 +724,7 @@ class Projector(object):
             np.int32(proj.sensor_height),  # out_height
             np.float32(self.step),  # step
             np.uint64(self.priorities_gpu.data.ptr),  # priority
+            np.uint64(self.volume_enabled_gpu.data.ptr),  # volume_enabled
             np.uint64(self.minPointX_gpu.data.ptr),  # gVolumeEdgeMinPointX
             np.uint64(self.minPointY_gpu.data.ptr),  # gVolumeEdgeMinPointY
             np.uint64(self.minPointZ_gpu.data.ptr),  # gVolumeEdgeMinPointZ
@@ -1563,6 +1568,9 @@ class Projector(object):
         for vol_id, prio in enumerate(self.priorities):
             self.priorities_gpu[vol_id] = prio
 
+        # allocate volume enabled flags on the GPU (all enabled by default)
+        self.volume_enabled_gpu = cp.ones(len(self.volumes), dtype=np.int32)
+
         # allocate gVolumeEdge{Min,Max}Point{X,Y,Z} and gVoxelElementSize{X,Y,Z} on the GPU
         self.minPointX_gpu = cp.zeros(len(self.volumes), dtype=np.float32)
         self.minPointY_gpu = cp.zeros(len(self.volumes), dtype=np.float32)
@@ -1687,6 +1695,7 @@ class Projector(object):
             self.prim_unique_materials_gpu = None
 
             self.priorities_gpu = None
+            self.volume_enabled_gpu = None
             self.minPointX_gpu = None
             self.minPointY_gpu = None
             self.minPointZ_gpu = None

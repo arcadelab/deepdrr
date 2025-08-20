@@ -140,6 +140,7 @@ projectKernel(const cudaTextureObject_t * __restrict__ volume_texs, // array of 
               const float step, // step size (TODO: in world)
               const int * __restrict__ priority, // volumes with smaller priority-ID have higher priority
                              // when determining which volume we are in
+              const int * __restrict__ volume_enabled, // array indicating which volumes are enabled (1) or disabled (0)
               const float * __restrict__ gVolumeEdgeMinPointX, // These give a bounding box in world-space around each volume.
               const float * __restrict__ gVolumeEdgeMinPointY, // These give a bounding box in world-space around each volume.
               const float * __restrict__ gVolumeEdgeMinPointZ, // These give a bounding box in world-space around each volume.
@@ -262,6 +263,12 @@ projectKernel(const cudaTextureObject_t * __restrict__ volume_texs, // array of 
     float rz_ijk[NUM_VOLUMES];
 
     for (int i = 0; i < NUM_VOLUMES; i++) {
+        // Skip disabled volumes
+        if (volume_enabled[i] == 0) {
+            do_trace[i] = 0;
+            continue;
+        }
+        
         // Homogeneous transform of a vector.
 # define OFFS 12 // TODO: fix bad style
         rx_ijk[i] = ijk_from_world[OFFS * i + 0] * rx + ijk_from_world[OFFS * i + 1] * ry +
@@ -454,6 +461,11 @@ projectKernel(const cudaTextureObject_t * __restrict__ volume_texs, // array of 
             if (0 == do_trace[i]) {
                 continue;
             }
+            
+            // Skip disabled volumes
+            if (volume_enabled[i] == 0) {
+                continue;
+            }
 
             // If alpha is outside the volume bounds, then we can skip this
             // volume.
@@ -526,7 +538,7 @@ projectKernel(const cudaTextureObject_t * __restrict__ volume_texs, // array of 
 
                 // Loop through volumes and add to the area_density.
                 for (int vol_id = 0; vol_id < NUM_VOLUMES; vol_id++) {
-                    if (do_trace[vol_id] && (priority_local[vol_id] == curr_priority)) {
+                    if (do_trace[vol_id] && (priority_local[vol_id] == curr_priority) && (volume_enabled[vol_id] == 1)) {
                         float vol_density = tex3D<float>(volume_texs[vol_id], px[vol_id] + 0.5f, py[vol_id] + 0.5f, pz[vol_id] + 0.5f);
                         for (int mat_id = 0; mat_id < NUM_MATERIALS; mat_id++) {
                             area_density[mat_id] +=
