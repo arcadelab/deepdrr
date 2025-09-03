@@ -959,22 +959,36 @@ class Volume(Renderable):
         """Standardize the input material segmentation."""
         combined_segmentation = None
         material_dict = {}
-        for mat_id, mat in enumerate(materials):
-            mat_gpu = cp.asarray(materials[mat])  # Move material array to GPU
-            if combined_segmentation is None:
-                combined_segmentation = cp.zeros(mat_gpu.shape, dtype=cp.uint16)
-            material_mask = mat_gpu > 0
-            combined_segmentation[material_mask] = mat_id
-            material_dict[mat] = mat_id
+
+        # Check available memory and calculate needed memory for mat_gpu with a bit of buffer
+        data_size = materials[mat].nbytes * 2
+        available_memory = cp.cuda.Device().mem_info[0]
+
+        if available_memory > data_size:
+            for mat_id, mat in enumerate(materials):
+                mat_gpu = cp.asarray(materials[mat])  # Move material array to GPU
+                if combined_segmentation is None:
+                    combined_segmentation = cp.zeros(mat_gpu.shape, dtype=cp.uint16)
+                material_mask = mat_gpu > 0
+                combined_segmentation[material_mask] = mat_id
+                material_dict[mat] = mat_id
+                # Free GPU memory
+                mat_gpu = None  
+                material_mask = None
+            segmentation = cp.asnumpy(combined_segmentation)  # Move result back to CPU
             # Free GPU memory
-            mat_gpu = None  
-            material_mask = None
-        segmentation = cp.asnumpy(combined_segmentation)  # Move result back to CPU
-        # Free GPU memory
-        mat_gpu = None  # Free GPU memory
-        combined_segmentation = None # Free GPU memory
-        cp.get_default_memory_pool().free_all_blocks()
-        cp.get_default_pinned_memory_pool().free_all_blocks()
+            mat_gpu = None  # Free GPU memory
+            combined_segmentation = None # Free GPU memory
+            cp.get_default_memory_pool().free_all_blocks()
+            cp.get_default_pinned_memory_pool().free_all_blocks
+        else:
+            for mat_id, mat in enumerate(materials):
+                if combined_segmentation is None:
+                    combined_segmentation = np.zeros(materials[mat].shape, dtype=np.uint16)
+                material_mask = materials[mat] > 0
+                combined_segmentation[material_mask] = mat_id
+                material_dict[mat] = mat_id
+            segmentation = combined_segmentation
         return material_dict, segmentation
 
     @property

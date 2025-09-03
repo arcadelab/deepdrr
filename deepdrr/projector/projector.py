@@ -1447,51 +1447,88 @@ class Projector(object):
         self.kernel_reorder = self.peel_postprocess_mod.get_function("kernelReorder")
         self.kernel_reorder2 = self.peel_postprocess_mod.get_function("kernelReorder2")
         
-        log.info(f"Used: {cp.get_default_memory_pool().used_bytes() / (1024**2):.2f} MB Total: {cp.get_default_memory_pool().total_bytes() / (1024**2):.2f}")
+        data_size_volume = 0
+        data_size_materials = 0
+        for vol_id, volume in enumerate(self.volumes):
+            data_size_volume = volume.data.nbytes if volume.data.nbytes > data_size_volume else data_size_volume
+            data_size_materials = volume.materials[1].nbytes if volume.materials[1].nbytes > data_size_materials else data_size_materials
+            
+        available_memory = cp.cuda.Device().mem_info[0]
 
+        # log.debug(f"Available Memory on CUDA device: {available_memory / (1024**2):.2f} MB")
+        
+        # if enough memory is available on the GPU we use CuPy for Volume data transformations to speed up projector initialization process
         self.volumes_texobs = []
         self.volumes_texarrs = []
-        for vol_id, volume in enumerate(self.volumes):
-            volume_gpu = cp.asarray(volume)  # Move volume to GPU
-            volume_gpu = cp.moveaxis(volume_gpu, [0, 1, 2], [2, 1, 0])  # Adjust axes on GPU
-            volume = cp.asnumpy(volume_gpu)  # Move volume back to CPU for texture creation
-            log.info(np.shape(volume))
-            volume_gpu = None  # Free GPU memory
-            vol_texobj, vol_texarr = create_cuda_texture(volume)  # Create texture
-            self.volumes_texarrs.append(vol_texarr)
-            self.volumes_texobs.append(vol_texobj)
+        if available_memory > data_size_volume:
+            for vol_id, volume in enumerate(self.volumes):
+                volume_gpu = cp.asarray(volume)  # Move volume to GPU
+                volume_gpu = cp.moveaxis(volume_gpu, [0, 1, 2], [2, 1, 0])  # Adjust axes on GPU
+                volume = cp.asnumpy(volume_gpu)  # Move volume back to CPU for texture creation
+                volume_gpu = None  # Free GPU memory
+                vol_texobj, vol_texarr = create_cuda_texture(volume)  # Create texture
+                self.volumes_texarrs.append(vol_texarr)
+                self.volumes_texobs.append(vol_texobj)
+            cp.get_default_memory_pool().free_all_blocks()
+            cp.get_default_pinned_memory_pool().free_all_blocks()
+        else:
+            self.volumes_texobs = []
+            self.volumes_texarrs = []
+            for vol_id, volume in enumerate(self.volumes):
+                volume = np.moveaxis(volume, [0, 1, 2], [2, 1, 0])  # Adjust axes on CPU
+                vol_texobj, vol_texarr = create_cuda_texture(volume)  # Create texture
+                self.volumes_texarrs.append(vol_texarr)
+                self.volumes_texobs.append(vol_texobj)
 
-        cp.get_default_memory_pool().free_all_blocks()
-        cp.get_default_pinned_memory_pool().free_all_blocks()
-        log.info(f"Used: {cp.get_default_memory_pool().used_bytes() / (1024**2):.2f} MB Total: {cp.get_default_memory_pool().total_bytes() / (1024**2):.2f}")
+        available_memory = cp.cuda.Device().mem_info[0]
 
+        # log.debug(f"Available Memory on CUDA device: {available_memory / (1024**2):.2f} MB")
+        
+        # if enough memory is available on the GPU we use CuPy for Segmentation data transformations to speed up projector initialization process
         self.seg_texobs = []
         self.seg_texarrs = []
-        for vol_id, _vol in enumerate(self.volumes):
-            # Remap segmentation indices using cupy
-            label_list = []
-            for k in _vol.materials[0]:
-                if k in self.all_materials:
-                    label_list.append(self.all_materials.index(k))
-            label_dict_index_remapping = cp.array(label_list, dtype=cp.uint16)
-            # Perform remapping and axis adjustment on GPU
-            segmentation_gpu = cp.asarray(_vol.materials[1])
-            segmentation_gpu = label_dict_index_remapping[segmentation_gpu]
-            segmentation_gpu = cp.moveaxis(segmentation_gpu.astype(cp.uint8), [0, 1, 2], [2, 1, 0])
+        if data_size_materials > available_memory:
+            for vol_id, _vol in enumerate(self.volumes):
+                # Remap segmentation indices using cupy
+                label_list = []
+                for k in _vol.materials[0]:
+                    if k in self.all_materials:
+                        label_list.append(self.all_materials.index(k))
+                label_dict_index_remapping = cp.array(label_list, dtype=cp.uint16)
+                # Perform remapping and axis adjustment on GPU
+                segmentation_gpu = cp.asarray(_vol.materials[1])
+                segmentation_gpu = label_dict_index_remapping[segmentation_gpu]
+                segmentation_gpu = cp.moveaxis(segmentation_gpu.astype(cp.uint8), [0, 1, 2], [2, 1, 0])
 
-            segmentation = cp.asnumpy(segmentation_gpu)  # Move segmentation to CPU for texture creation
-            segmentation_gpu = None # Free GPU memory
+                segmentation = cp.asnumpy(segmentation_gpu)  # Move segmentation to CPU for texture creation
+                segmentation_gpu = None # Free GPU memory
 
-            # Create CUDA texture
-            combined_texobj, combined_texarr = create_cuda_texture(
-                segmentation, sampling_mode="nearest", dtype=np.uint8
-            )
-            self.seg_texobs.append(combined_texobj)
-            self.seg_texarrs.append(combined_texarr)
+                # Create CUDA texture
+                combined_texobj, combined_texarr = create_cuda_texture(
+                    segmentation, sampling_mode="nearest", dtype=np.uint8
+                )
+                self.seg_texobs.append(combined_texobj)
+                self.seg_texarrs.append(combined_texarr)
+            cp.get_default_memory_pool().free_all_blocks()
+            cp.get_default_pinned_memory_pool().free_all_blocks()
+        else:
+            for vol_id, _vol in enumerate(self.volumes):
+                # Remap segmentation indices using cupy
+                label_list = []
+                for k in _vol.materials[0]:
+                    if k in self.all_materials:
+                        label_list.append(self.all_materials.index(k))
+                label_dict_index_remapping = np.array(label_list, dtype=np.uint16)
+                # Perform remapping and axis adjustment on CPU
+                segmentation = label_dict_index_remapping[_vol.materials[1]]
+                segmentation = np.moveaxis(segmentation.astype(np.uint8), [0, 1, 2], [2, 1, 0])
 
-        cp.get_default_memory_pool().free_all_blocks()
-        cp.get_default_pinned_memory_pool().free_all_blocks()
-        log.info(f"Used: {cp.get_default_memory_pool().used_bytes() / (1024**2):.2f} MB Total: {cp.get_default_memory_pool().total_bytes() / (1024**2):.2f}")
+                # Create CUDA texture
+                combined_texobj, combined_texarr = create_cuda_texture(
+                    segmentation, sampling_mode="nearest", dtype=np.uint8
+                )
+                self.seg_texobs.append(combined_texobj)
+                self.seg_texarrs.append(combined_texarr)
         
         self.volumes_texobs_gpu = cp.array(
             [x.ptr for x in self.volumes_texobs], dtype=np.uint64
