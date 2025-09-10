@@ -961,7 +961,7 @@ class Volume(Renderable):
         material_dict = {}
 
         # Check available memory and calculate needed memory for mat_gpu with a bit of buffer
-        data_size = materials[mat].nbytes * 2
+        data_size = next(iter(materials.values())).nbytes * 2
         available_memory = cp.cuda.Device().mem_info[0]
 
         if available_memory > data_size:
