@@ -21,10 +21,20 @@ class FiducialList:
         points: List[geo.Point3D],
         world_from_anatomical: Optional[geo.FrameTransform] = None,
         anatomical_coordinate_system: Literal["RAS", "LPS"] = "RAS",
+        names: Optional[List[str]] = None,
     ):
         self.points = points
         self.world_from_anatomical = world_from_anatomical
         self.anatomical_coordinate_system = anatomical_coordinate_system
+
+        if names is None:
+            num_digits = len(str(len(points)))
+            self.names = [f"P{str(i).zfill(num_digits)}" for i in range(len(points))]
+        else:
+            assert len(names) == len(
+                points
+            ), "Number of names must match number of points"
+            self.names = names
 
     def __getitem__(self, index):
         return self.points[index]
@@ -109,18 +119,34 @@ class FiducialList:
         coordinate_system = data["markups"][0]["coordinateSystem"]
         # TODO: not sure if this works.
         points = [
-            geo.point(*row[["x", "y", "z"]].values)
-            for _, row in control_points_table.iterrows()
+            geo.point(*row["position"]) for _, row in control_points_table.iterrows()
         ]
+        names = control_points_table["label"].values.tolist()
 
         return cls(
             points,
             world_from_anatomical=world_from_anatomical,
             anatomical_coordinate_system=coordinate_system,
+            names=names,
         )
 
     def save(self, path: Path):
-        raise NotImplementedError()
+        """Save the fiducials to a FCSV file
+        Args:
+            path (Path): Path to the FCSV file
+        """
+        points = self.to_LPS()
+
+        with open(path, "w") as f:
+            f.write("# Markups fiducial file version = 4.11\n")
+            f.write("# CoordinateSystem = LPS\n")
+            f.write(
+                "# columns = id,x,y,z,ow,ox,oy,oz,vis,sel,lock,label,desc,associatedNodeID"
+            )
+            for i, point in enumerate(points):
+                f.write(
+                    f"{i},{point[0]},{point[1]},{point[2]},0,0,0,1,1,1,1,{self.names[i]},,,2,0\n"
+                )
 
 
 class Fiducial(geo.Point3D):
@@ -145,4 +171,4 @@ class Fiducial(geo.Point3D):
         raise NotImplementedError
 
     def save(self, path: Path):
-        raise NotImplementedError
+        FiducialList([self]).save(path)

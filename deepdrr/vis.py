@@ -60,7 +60,7 @@ def show(
     os.environ["MESA_GL_VERSION_OVERRIDE"] = "3.2"
     os.environ["MESA_GLSL_VERSION_OVERRIDE"] = "150"
 
-    log.debug("display: {}".format(os.environ["DISPLAY"]))
+    # log.debug("display: {}".format(os.environ["DISPLAY"]))
     if offscreen and os.environ.get("DISPLAY") != ":99":
         os.environ["DISPLAY"] = ":99"
         os.system("Xvfb :99 -screen 0 1024x768x24 > /dev/null 2>&1 &")
@@ -100,6 +100,7 @@ def get_frustum_mesh(
     pixel_size: float,
     image_path: Optional[str] = None,
     image_plane_distance: Optional[float] = None,
+    frustum_type: str | None = None,
     full_frustum: bool = True,
 ) -> pv.PolyData:
     """Get a really simple camera mesh for the camera projections.
@@ -110,15 +111,18 @@ def get_frustum_mesh(
         image_path (str, optional): The path to the image. Defaults to None.
         image_plane_distance (float, optional): The distance from the camera to the image plane visualization. Defaults to None,
             which uses the distance from the camera to the image plane.
-        full_frustum (bool, optional): Whether to show the full frustum, or just the principle ray. Defaults to True.
+        full_frustum (bool, optional): Specify frustum type (deprecated, see frustum_type).
+            True corresponds to "ray" mode, False to "short_ray." False Defaults to True.
+        frustum_type (str, optional): How to visualize the frustum. Options are "frustum", "ray", "short_ray". Defaults to None.
 
     Returns:
         pv.PolyData: Mesh representing the C-arm frustum.
     """
 
+    if frustum_type is None:
+        frustum_type = "ray" if full_frustum else "short_ray"
+
     focal_length_mm = camera_projection.intrinsic.focal_length * pixel_size
-    sensor_height = camera_projection.intrinsic.sensor_height
-    sensor_width = camera_projection.intrinsic.sensor_width
     sensor_height_mm = camera_projection.intrinsic.sensor_height * pixel_size
     sensor_width_mm = camera_projection.intrinsic.sensor_width * pixel_size
 
@@ -127,13 +131,20 @@ def get_frustum_mesh(
     c = s + geo.v(0, 0, focal_length_mm)
     cx = pixel_size * camera_projection.intrinsic.cx
     cy = pixel_size * camera_projection.intrinsic.cy
-    ul = geo.p(-cx, cy, focal_length_mm)
-    ur = geo.p(cx, cy, focal_length_mm)
+
     bl = geo.p(-cx, -cy, focal_length_mm)
-    br = geo.p(cx, -cy, focal_length_mm)
+    br = bl + geo.v(sensor_width_mm, 0, 0)
+    ul = bl + geo.v(0, sensor_height_mm, 0)
+    ur = bl + geo.v(sensor_width_mm, sensor_height_mm, 0)
+
+    log.debug(
+        f"sensor_width_mm: {sensor_width_mm}, sensor_height_mm: {sensor_height_mm}"
+    )
+    log.debug(f"cx: {cx}, cy: {cy}")
+    log.debug(f"bl: {bl}, br: {br}, ul: {ul}, ur: {ur}")
 
     mesh = pv.Sphere(10, center=s)
-    if full_frustum:
+    if frustum_type == "frustum":
         mesh += (
             pv.Line(ur, ul)
             + pv.Line(br, bl)
@@ -144,8 +155,13 @@ def get_frustum_mesh(
             + pv.Line(s, bl)
             + pv.Line(s, br)
         )
-    else:
+    elif frustum_type == "ray":
+        mesh += pv.Line(ur, ul) + pv.Line(br, bl) + pv.Line(ur, br) + pv.Line(ul, bl)
         mesh += pv.Line(s, c)
+    elif frustum_type == "short_ray":
+        mesh += pv.Line(s, s.lerp(c, 0.1))
+    else:
+        raise ValueError(f"Invalid frustum type: {frustum_type}")
 
     if image_plane_distance is not None:
         pixel_size_at_plane = pixel_size / focal_length_mm * image_plane_distance
@@ -160,7 +176,7 @@ def get_frustum_mesh(
     if image_path is not None:
         image = pv.read(image_path)
         # This is just a hack because some of rob's images are rotated by 180 degrees
-        if camera_projection.intrinsic.fx > 0:
+        if camera_projection.intrinsic.fx > 0 and False:
             image = image.transform(
                 np.array(
                     [
@@ -184,7 +200,6 @@ def get_frustum_mesh(
                 ),
                 inplace=False,
             )
-
     else:
         image = pv.Plane(
             center=[0, 0, focal_length_mm],

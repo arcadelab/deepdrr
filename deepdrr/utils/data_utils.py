@@ -50,7 +50,10 @@ def download(
     Returns:
         Path: The path of the downloaded file, or the extracted directory.
     """
-    root = deepdrr_data_dir()
+    if root is None:
+        root = deepdrr_data_dir()
+    else:
+        root = Path(root)
 
     if filename is None:
         filename = os.path.basename(url)
@@ -60,14 +63,12 @@ def download(
     except urllib.error.HTTPError:
         log.warning(f"Pretty download failed. Attempting with wget...")
         subprocess.call(["wget", "-O", str(root / filename), url])
-    except FileNotFoundError:
-        log.warning(
+    except FileNotFoundError as e:
+        raise RuntimeError(
             f"Download failed. Try installing wget. This is probably because you are on windows."
         )
-        exit()
     except Exception as e:
-        log.error(f"Download failed: {e}")
-        exit()
+        raise RuntimeError(f"Download failed: {e}")
 
     path = root / filename
     if extract_name is not None:
@@ -145,12 +146,10 @@ def save_fcsv(
         file.writelines(lines)
 
 
-def load_fcsv(path: str) -> Tuple[np.ndarray, np.ndarray]:
+def load_fcsv(path: str, to_RAS: bool = False) -> Tuple[np.ndarray, np.ndarray]:
     """Load a fcsv file.
-
     Args:
         path (str): The path to the fcsv file.
-
     Returns:
         np.ndarray: The points. Shape: (N, 3)
         np.ndarray: The names of the points. Shape: (N,)
@@ -168,4 +167,7 @@ def load_fcsv(path: str) -> Tuple[np.ndarray, np.ndarray]:
         name = line.split(",")[11].strip()
         names.append(name)
     points = np.array(points)
+    if to_RAS:
+        points[:, 0] *= -1
+        points[:, 1] *= -1
     return points, names

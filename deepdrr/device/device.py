@@ -1,8 +1,7 @@
 from abc import ABC, abstractmethod
 from typing import TYPE_CHECKING
 import pyvista as pv
-
-from .. import geo
+import killeengeo as geo
 
 
 class Device(ABC):
@@ -193,3 +192,18 @@ class Device(ABC):
         )
         mesh.transform(geo.get_data(self.world_from_camera3d), inplace=True)
         return mesh
+
+    def get_frustum_points(self) -> list[geo.Point3D]:
+        """Get points for the frustum to check for collisions."""
+
+        # In camera frame
+        s = geo.p(0, 0, 0)
+        c = s + geo.v(0, 0, self.source_to_detector_distance)
+        cx = self.pixel_size * self.sensor_height / 2.0
+        cy = self.pixel_size * self.sensor_width / 2.0
+        ul = geo.p(-cx, cy, self.source_to_detector_distance)
+        ur = geo.p(cx, cy, self.source_to_detector_distance)
+        bl = geo.p(-cx, -cy, self.source_to_detector_distance)
+        br = geo.p(cx, -cy, self.source_to_detector_distance)
+
+        return [self.world_from_camera3d @ p for p in [s, c, ul, ur, bl, br]]

@@ -14,7 +14,7 @@ class SimpleDevice(Device):
     is the direction from the source to the detector. The up-vector of images can also be provided,
     not necessarily in the image plane (projected onto it).
 
-    Any of the device's attributes can be set directly. The default values are not based on any
+    Any of the device's attributes below can be set directly at any time. The default values are not based on any
     particular device.
 
     This class may be useful for understanding basic concepts.
@@ -30,9 +30,9 @@ class SimpleDevice(Device):
 
     def __init__(
         self,
-        sensor_height: int = 300,
-        sensor_width: int = 300,
-        pixel_size: float = 0.1,
+        sensor_height: int = 384,
+        sensor_width: int = 384,
+        pixel_size: float = 1.0,
         source_to_detector_distance: float = 1000.0,
         world_from_device: Optional[geo.FrameTransform] = None,
     ):
@@ -44,6 +44,17 @@ class SimpleDevice(Device):
 
         # Default view centered on the origin. Sets the device_from_camera3d
         self.set_view([0, 0, 0], [0, 0, 1], [0, -1, 0])
+
+    def scale_sensor(self, detector_size: float):
+        """Scale the pixel_size so the shorter side is `detector_size`.
+
+        Args:
+            detector_size (float): the size of the detector in mm.
+        """
+        if self.sensor_height < self.sensor_width:
+            self.pixel_size = detector_size / self.sensor_height
+        else:
+            self.pixel_size = detector_size / self.sensor_width
 
     @property
     def camera_intrinsics(self) -> geo.CameraIntrinsicTransform:
@@ -119,7 +130,10 @@ class SimpleDevice(Device):
         z_axis = geo.vector(0, 0, 1)
         if (rotvec := z_axis.cross(direction_in_device)).norm() < 1e-6:
             # The direction is parallel to the z-axis. The ray frame is the device frame.
-            rotvec = geo.vector(0, 0, 0)
+            if z_axis.dot(direction_in_device) < 0:
+                rotvec = geo.vector(np.pi, 0, 0)
+            else:
+                rotvec = geo.vector(0, 0, 0)
         else:
             rotvec = rotvec.hat() * z_axis.angle(direction_in_device)
         rot = geo.Rotation.from_rotvec(rotvec)
@@ -153,3 +167,12 @@ class SimpleDevice(Device):
     @property
     def device_from_camera3d(self) -> geo.FrameTransform:
         return self._device_from_camera3d
+
+    def __str__(self):
+        return (
+            f"SimpleDevice(sensor_height={self.sensor_height}, "
+            f"sensor_width={self.sensor_width}, "
+            f"pixel_size={self.pixel_size}, "
+            f"source_to_detector_distance={self.source_to_detector_distance}"
+            f")"
+        )

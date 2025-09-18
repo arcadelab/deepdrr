@@ -1,15 +1,18 @@
 name: deepdrr
 channels:
+  - "nvidia/label/cuda-12.2.0"
   - pytorch
-  - nvidia
   - conda-forge
 dependencies:
-  - python=3.8
+  - python=3.11
+  - pip
   - pytorch
   - torchvision
-  - cudatoolkit=11.1
-  - pycuda
-  - pip
+  - cuda-toolkit
+  - cuda-runtime
+  - cuda-nvprof
+  - cuda-gdb
+  - cuda-profiler-api
+  - numba
   - pip:
-      - -r requirements.txt
-      - -e .
+    - -e ".[dev,cuda12x]"

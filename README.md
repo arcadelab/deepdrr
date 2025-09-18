@@ -26,51 +26,177 @@
 
 </div>
 
-DeepDRR provides state-of-the-art tools to generate realistic radiographs and fluoroscopy from 3D CTs on a training set scale.
+DeepDRR is a GPU-based framework for efficient simulation of X-ray images—or digitally reconstructed radiographs (DRRs)—from 3D CT images and meshes. It is intended for large-scale generation of synthetic X-ray datasets for training machine learning models.
+
+DeepDRR has been used for a variety of applications, including:
+- Voice control of robotic X-ray devices [here](https://link.springer.com/article/10.1007/s11548-025-03351-y) and [here](https://link.springer.com/article/10.1007/s11548-024-03120-3).
+- [Sim-to-real learning in X-ray guided procedures](https://www.nature.com/articles/s42256-023-00629-1).
+- [Foundation models for X-ray image segmentation](https://arxiv.org/abs/2403.08059).
+- [Virtual reality simulation of X-ray guided procedures](https://link.springer.com/article/10.1007/s11548-024-03138-7).
+- [Augmented reality visualization and control of robotic C-arms](https://doi.org/10.1080/21681163.2022.2154272)
+- [Automated standard view acquisition in orthopedic surgery](https://link.springer.com/article/10.1007/s11548-020-02204-0).
+- [Autonomous image acquisition and interpretation for AR-assisted pelvic trauma surgery](https://link.springer.com/article/10.1007/s11548-023-02941-y)
+- 2D/3D X-ray Image Registration with [CT images](https://doi.org/10.1109/TMI.2021.3073815) and [atlases](https://link.springer.com/article/10.1007/s11548-022-02586-3).
+- [Biplanar CT reconstruction](https://link.springer.com/chapter/10.1007/978-3-031-43999-5_66)
+- [Closed-loop control of a surgical robot using fluoroscopic navigation](https://doi.org/10.1109/TBME.2021.3097631)
+- [Surgical phase recognition in X-ray guided pelvic trauma surgery](https://link.springer.com/chapter/10.1007/978-3-031-43996-4_13)
+- [Instrument pose estimation in X-ray images](https://link.springer.com/article/10.1007/s11548-020-02157-4).
+
+If you have other appplications that could be highlighted here, please let us know!
+
+DeepDRR is not a differentiable renderer, but it is fast and realistic, supporting multiple overlapping volumes and meshes with different materials. For a differentiable DRR framework, we recommend [ProST](https://github.com/gaocong13/Projective-Spatial-Transformers) or [DiffDRR](https://github.com/gaocong13/Projective-Spatial-Transformers), which follow the same physics-based simulation principles as DeepDRR.
+
+## Usage
+
+The following example loads a CT volume from a NifTi `.nii.gz` file and simulates a single X-ray projection:
+
+```python
+from deepdrr import Volume, SimpleDevice, Projector
+import killeengeo as kg
+
+device = SimpleDevice()
+ct = Volume.from_nifti('/path/to/ct_image.nii.gz')
+
+with Projector(ct, device=device) as projector:
+    device.set_view(
+        point=ct.center_in_world, 
+        direction=ct.world_from_anatomical @ kg.vector(0, 1, 0),
+        up=ct.world_from_anatomical @ kg.vector(0, 0, 1), 
+        source_to_point_fraction=0.5, 
+    )
+
+    image = projector()
+```
+
+A more involved example that samples many projections from a CT volume and a tool mesh is below:
+
+```python
+from deepdrr import Volume, SimpleDevice, Projector, Mesh
+import killeengeo as kg
+from PIL import Image
+
+device = SimpleDevice(
+    sensor_height=384,
+    sensor_width=384,
+    pixel_size=0.3, # pixel size in mm
+    source_to_detector_distance=1000, # distance from source to detector in mm
+)
+ct = Volume.from_nifti('/path/to/ct_image.nii.gz')
+
+# Load a tool mesh from an STL file, with homogeneous titanium material, called "tool"
+tool = Mesh.from_stl("/path/to/tool_mesh.stl", material="titanium", tag="tool")
+
+# Create a projector that combines the CT volume and the tool mesh
+projector = Projector(
+    [ct, tool], 
+    device=device,
+    neglog=False, # do not apply negative log transform
+)
+
+right = ct.world_from_anatomical @ kg.vector(1, 0, 0) # right direction in world coordinates
+anterior = ct.world_from_anatomical @ kg.vector(0, 1, 0) # anterior direction in world coordinates
+superior = ct.world_from_anatomical @ kg.vector(0, 0, 1) # superior direction in world coordinates
+
+# Initialize the projector (allocates GPU memory, takes the most time)
+projector.initialize() 
+
+for i in range(100): 
+    # Sample a point in world coordinates uniformly *in* a sphere
+    point = kg.random.uniform(
+        center=ct.center_in_world,
+        radius=100, # 100 mm radius around the CT center
+    )
+
+    # Sample a direction in world coordinates within a cone around the anterior
+    direction = kg.random.spherical_uniform(
+        center=anterior,
+        d_phi=np.pi / 6, # 30 degrees around the anterior direction
+    )
+
+    # Sample how far the source is from the patient
+    source_to_point_fraction = np.random.uniform(0.5, 0.9) # Depends on application
+
+    # Randomly sample a pose for the C-arm
+    device.set_view( 
+        point=point,
+        direction=direction,
+        up=superior,
+        source_to_point_fraction=source_to_point_fraction
+    )
+
+    # Place the tool in the center of the CT volume (or any other position)
+    tool.place_center(ct.center_in_world)
+
+    # Generate the X-ray image, (float32, not normalized)
+    image = projector()
+
+    # Save out the image as a float32 numpy array, with no normalization
+    Image.fromarray(image).save(f"path/to/output/{i:04d}.tiff")
+
+    # Get the segmentation of the tool in the image
+    seg = projector.project_seg(tags=["tool"]) # [H, W, 1] array with 1 for tool pixels, 0 otherwise
+
+    # Save the segmentation as a binary image
+    Image.fromarray(seg.squeeze().astype(np.uint8) * 255).save(f"path/to/output/{i:04d}_seg.png")
+
+projector.free()
+```
+
+The script `example_projector.py` gives an alternative example. Additional tutorials are in progress at [deepdrr.readthedocs.io](https://deepdrr.readthedocs.io). Contributions are welcome.
 
 ## Installation
 
-DeepDRR requires an NVIDIA GPU, preferably with >11 GB of memory.
+Because DeepDRR is a complex package with many dependencies, we recommend installing it from source using [mamba](https://github.com/conda-forge/miniforge) or [conda](https://docs.conda.io/en/latest/). It requires a linux machine with an NVIDIA GPU and CUDA support. 
 
-1. Install CUDA. Version 11 is recommended, but DeepDRR has been used with 8.0
-2. Make sure your C compiler is on the path. DeepDRR has been used with `gcc 9.3.0`
-3. We recommend installing pycuda separately, as it may need to be built. If you are using [Anaconda](https://www.anaconda.com/), run
-
-```bash
-conda install -c conda-forge pycuda
-```
-
-to install it in your environment.
-
-4. You may also wish to [install PyTorch](https://pytorch.org/get-started/locally/) separately, depending on your setup.
-5. Install from `PyPI`
+1. Install the nvidia drivers for your system. [ubuntu guide](https://help.ubuntu.com/community/NvidiaDriversInstallation) 
+    - _e.g._ on ubuntu 22, we use `sudo ubuntu-drivers install --gpgpu nvidia:535-server`
+2. Install conda (we recommend [mambaforge](https://github.com/conda-forge/miniforge)).
+3. Run the following commands:
 
 ```bash
-pip install deepdrr
+git clone https://github.com/arcadelab/deepdrr.git
+cd deepdrr
+sudo ./scripts/setup_ubuntu.sh # installs apt dependencies and sets up the EGL driver
+conda env create -f environment.yml # installs CUDA 12 and pytorch
+conda activate deepdrr
+pip install .[cuda11x] # this should match your CUDA version, see installation notes below
 ```
 
-### Development
+### Installation Notes
 
-Installing from the `dev` branch is risky, as it is unstable. However, this installation method can be used for the `main` branch as well, perhaps somewhat more reliably.
+#### Other CUDA Versions
+DeepDRR depends on cupy which needs a version compiled for your CUDA version. 
+When installing DeepDRR, you can specify the CUDA version you want to use by appending the appropriate option to the `pip install` command:
+```bash
+pip install .[cuda102] # for CUDA 10.2
+pip install .[cuda110] # for CUDA 11.0
+pip install .[cuda111] # for CUDA 11.1
+pip install .[cuda11x] # for CUDA 11.2 - 11.8
+pip install .[cuda12x] # for CUDA 12.x
+```
+See [https://docs.cupy.dev/en/stable/install.html](https://docs.cupy.dev/en/stable/install.html) for more information.
 
-Dependencies:
+## Installing for Development
 
-1. CUDA 11.1
-2. Anaconda
+Installing from the `dev` branch is risky, as it is unstable.
 
-The `dev` branch contains the most up-to-date code and can be easily installed using Anaconda. To create an environment with DeepDRR, run
+1. Install the nvidia drivers for your system. [guide](https://help.ubuntu.com/community/NvidiaDriversInstallation) 
+2. Install conda (we recommend [mambaforge](https://github.com/conda-forge/miniforge)).
+3. Run the following commands:
 
 ```bash
 git clone https://github.com/arcadelab/deepdrr.git
 cd deepdrr
 git checkout dev
-conda env create -f environment.yaml
+sudo ./scripts/setup_ubuntu.sh
+conda env create -f environment.yml
 conda activate deepdrr
+pip install -e .[dev,cuda12x] # this should match your CUDA version
 ```
 
 ## Documentation
 
-Documentation is available at [deepdrr.readthedocs.io](https://deepdrr.readthedocs.io/).
+Documentation is in progress at [deepdrr.readthedocs.io](https://deepdrr.readthedocs.io/).
 
 To create the autodocs, run
 
@@ -79,32 +205,6 @@ sphinx-apidoc -f -o docs/source deepdrr
 ```
 
 in the base directory. Then do `cd docs` and `make html` to build the static site locally.
-
-## Usage
-
-The following minimal example loads a CT volume from a NifTi `.nii.gz` file and simulates an X-ray projection:
-
-```python
-from deepdrr import geo, Volume, MobileCArm
-from deepdrr.projector import Projector # separate import for CUDA init
-
-carm = MobileCArm()
-ct = Volume.from_nifti('/path/to/ct_image.nii.gz')
-
-# Initialize the Projector object (allocates GPU memory)
-with Projector(ct, carm=carm) as projector:
-    # Orient and position the patient model in world space.
-    ct.orient_patient(head_first=True, supine=True)
-    ct.place_center(carm.isocenter_in_world)
-    
-    # Move the C-arm to the desired pose.
-    carm.move_to(alpha=30, beta=10, degrees=True)
-    
-    # Run projection
-    image = projector()
-```
-
-The script `example_projector.py` gives an alternative example. Additional tutorials are in progress at [deepdrr.readthedocs.io](https://deepdrr.readthedocs.io). Contributions are welcome.
 
 ## Contributing
 
@@ -138,64 +238,33 @@ This capability has not been tested in version 1.0. For tool insertion, we recom
 
 ![Robot Insertion and Detection](https://raw.githubusercontent.com/arcadelab/deepdrr/master/images/tool_insertion.png)
 
-### Potential Challenges - General
+### Known Limitations
+
+#### General
 
 1. Our material decomposition V-net was trained on NIH Cancer Imagign Archive data. In case it does not generalize perfectly to other acquisitions, the use of intensity thresholds (as is done in conventional Monte Carlo) is still supported. In this case, however, thresholds will likely need to be selected on a per-dataset, or worse, on a per-region basis since bone density can vary considerably.
 2. Scatter estimation is currently limited to Rayleigh scatter and we are working on improving this. Scatter estimation was trained on images with 1240x960 pixels with 0.301 mm. The scatter signal is a composite of Rayleigh, Compton, and multi-path scattering. While all scatter sources produce low frequency signals, Compton and multi-path are more blurred compared to Rayleigh, suggesting that simple scatter reduction techniques may do an acceptable job. In most clinical products, scatter reduction is applied as pre-processing before the image is displayed and accessible. Consequently, the current shortcoming of not providing _full scatter estimation_ is likely not critical for many applications, in fact, scatter can even be turned off completely. We would like to refer to the **Applications** section above for some preliminary evidence supporting this reasoning.
-3. Due to the nature of volumetric image processing, DeepDRR consumes a lot of GPU memory. We have successfully tested on 12 GB of GPU memory but cannot tell about 8 GB at the moment. The bottleneck is volumetric segmentation, which can be turned off and replaced by thresholds (see 1.).
-4. We currently provide the X-ray source sprectra from MC-GPU that are fairly standard. Additional spectra can be implemented in spectrum_generator.py.
-5. The current detector reading is _the average energy deposited by a single photon in a pixel_. If you are interested in modeling photon counting or energy resolving detectors, then you may want to take a look at `mass_attenuation(_gpu).py` to implement your detector.
-6. Currently we do not support import of full projection matrices. But you will need to define K, R, and T seperately or use camera.py to define projection geometry online.
-7. It is important to check proper import of CT volumes. We have tried to account for many variations (HU scale offsets, slice order, origin, file extensions) but one can never be sure enough, so please double check for your files.
+3. GPU memory consumption.
+4. We currently provide the X-ray source sprectra from MC-GPU that are fairly standard. Additional spectra can be implemented.
+5. The current detector reading is _the average energy deposited by a single photon in a pixel_. We do not support photon counting or energy resolving detectors (yet!).
+6. It is important to check proper import of CT volumes. We have tried to account for many variations (HU scale offsets, slice order, origin, file extensions) but one can never be sure enough, so please double check for your files.
 
-### Potential Challenges - Tool Modeling
+#### Mesh Rendering
 
-1. Currently, the tool/implant model must be represented as a binary 3D volume, rather than a CAD surface model. However, this 3D volume can be of different resolution than the CT volume; particularly, it can be much higher to preserve fine structures of the tool/implant.
-2. The density of the tool needs to be provided via hard coding in the file 'load_dicom_tool.py' (line 127). The pose of the tool/implant with respect to the CT volume requires manual setup. We provide one example origin setting at line 23-24.
-3. The tool/implant will supersede the anatomy defined by the CT volume intensities. To this end, we sample the CT materials and densities at the location of the tool in the tool volume, and subtract them from the anatomy forward projections in detector domain (to enable different resolutions of CT and tool volume). Further information can be found in the IJCARS article.
+DeepDRR uses PyRender, which is no longer actively maintained. As a result, there are some known bugs when using meshes in the pipeline.
 
-### Using DeepDRR Simultaneously with PyTorch
+1. A segfault may occur when the version of PyOpenGL is not compatible or if the version of numpy is 2.0 or higher. To fix this, we require `PyOpenGL==3.1.6` and `numpy<2.0`. 
+2. Mesh rendering uses depth peeling to render the mesh, which can lead to errors for very intricate meshes. Meshes are also assumed to be watertight and to **not** contain the source. See the `Projector` class for details.
+3. A common error indicates that `EGL` is not available. In other contexts, this indicates that a display is needed, but _not here._ DeepDRR should not require a display to run. This error most likely indicates that the EGL driver is not installed correctly. Please run `sudo ./scripts/setup_ubuntu.sh` to install the EGL driver. 
 
-Some issues may arise when using DeepDRR at the same time as PyTorch due to conflicts between pycuda's CUDA initialization and PyTorch CUDA initialization. The best workaround we know of is to first initialize the PyCUDA context (by importing `deepdrr.projector`) and then run your model on a dummy batch before creating a `Projector` object. For mysterious reasons (likely involving overlapping GPU resources and the retrograde of Mercury), this seems to work.
+## Citation
 
-```Python
-import torch
-from torch import nn
-from torchvision import models
+We hope this proves useful for medical imaging research. If you use our work, please consider citing our work.
 
-import deepdrr
-from deepdrr.projector import Projector # initializes PyCUDA
+The 2018 MICCAI article covers the basic DeepDRR pipeline and task-based evaluation:
 
-# Before creating a Projector, run backprop to initialize PyTorch
-criterion = nn.CrossEntropyLoss()
-model = models.resnet50() # Your model here
-model.cuda()
-optimizer = optim.SGD(model.parameters(), lr=0.001, momentum=0.9)
-optimizer.zero_grad()
-x = torch.ones((32, 3, 224, 224), dtype=torch.float32).cuda() # Your image size
-y = torch.ones(32, dtype=torch.int64).cuda()
-y_pred = model(x)
-loss = criterion(y_pred, y)
-loss.backward()
-optimizer.step()
-log.info(f"Ran dummy batch to initialize torch.")
-
-volume = ...
-carm = ...
-with Projector(volume, carm=carm):
-  image = projector()
-  image = image.unsqueeze(0) # add batch dim
-  y_pred = model(image)
-  ...
-```
-
-## Reference
-
-We hope this proves useful for medical imaging research. If you use our work, we would kindly ask you to reference our work.
-The MICCAI article covers the basic DeepDRR pipeline and task-based evaluation:
-
-```
-@inproceedings{DeepDRR2018,
+```bibtex
+@inproceedings{unberath2018deepdrr,
   author       = {Unberath, Mathias and Zaech, Jan-Nico and Lee, Sing Chun and Bier, Bastian and Fotouhi, Javad and Armand, Mehran and Navab, Nassir},
   title        = {{DeepDRR--A Catalyst for Machine Learning in Fluoroscopy-guided Procedures}},
   date         = {2018},
@@ -204,14 +273,26 @@ The MICCAI article covers the basic DeepDRR pipeline and task-based evaluation:
 }
 ```
 
-The IJCARS paper describes the integration of tool modeling and provides quantitative results:
+The 2019 IJCARS paper describes the integration of tool modeling and provides quantitative results:
 
-```
-@article{DeepDRR2019,
+```bibtex
+@article{unberath2019enabling,
   author       = {Unberath, Mathias and Zaech, Jan-Nico and Gao, Cong and Bier, Bastian and Goldmann, Florian and Lee, Sing Chun and Fotouhi, Javad and Taylor, Russell and Armand, Mehran and Navab, Nassir},
   title        = {{Enabling Machine Learning in X-ray-based Procedures via Realistic Simulation of Image Formation}},
   year         = {2019},
   journal      = {International journal of computer assisted radiology and surgery (IJCARS)},
+  publisher    = {Springer},
+}
+```
+
+The 2025 MICCAI article describes the use of mesh-based rendering for efficient, large-scale simulation of X-ray images with surgical tools and ground-truth projections of many objects:
+
+```bibtex
+@inproceedings{killeen2025fluorosam,
+  author       = {Killeen, Benjamin D. and Wang, Liam J. and Inigo, Blanca and Zhang, Han and Mehran, Armand and Taylor, Russell H. and Osgood, Greg and Unberath, Mathias},
+  title        = {{FluoroSAM: A Language-promptable Foundation Model for Flexible X-ray Image Segmentation}},
+  date         = {2025},
+  booktitle    = {Proc. Medical Image Computing and Computer Assisted Intervention (MICCAI)},
   publisher    = {Springer},
 }
 ```

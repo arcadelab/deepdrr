@@ -15,6 +15,50 @@ from .. import geo
 log = logging.getLogger(__name__)
 
 
+def _neglog(image: np.ndarray, epsilon: float = 0.01) -> np.ndarray:
+    """Take the negative log transform of an intensity image.
+
+    Args:
+        image (np.ndarray): a single 2D image, or N such images.
+        epsilon (float, optional): positive offset from 0 before taking the logarithm.
+
+    Returns:
+        np.ndarray: the image or images after a negative log transform, scaled to [0, 1]
+    """
+    image = np.array(image)
+    shape = image.shape
+    if len(shape) == 2:
+        image = image[np.newaxis, :, :]
+
+    # shift image to avoid invalid values
+    image += image.min(axis=(1, 2), keepdims=True) + epsilon
+
+    # negative log transform
+    image = -np.log(image)
+
+    # linear interpolate to range [0, 1]
+    image_min = image.min(axis=(1, 2), keepdims=True)
+    image_max = image.max(axis=(1, 2), keepdims=True)
+    if np.any(image_max == image_min):
+        log.debug(
+            f"mapping constant image to 0. This probably indicates the projector is pointed away from the volume."
+        )
+        # TODO(killeen): for multiple images, only fill the bad ones
+        image[:] = 0
+        if image.shape[0] > 1:
+            log.error("TODO: zeroed all images, even though only one might be bad.")
+    else:
+        image = (image - image_min) / (image_max - image_min)
+
+    if np.any(np.isnan(image)):
+        log.warning(f"got NaN values from negative log transform.")
+
+    if len(shape) == 2:
+        return image[0]
+    else:
+        return image
+
+
 def as_uint8(image: np.ndarray) -> np.ndarray:
     """Convert the image to uint8.
 
@@ -71,6 +115,24 @@ def save(path: Path, image: np.ndarray, mkdir: bool = True) -> Path:
         image = image.transpose(1, 2, 0)
 
     image = as_uint8(image)
+
+    Image.fromarray(image).save(str(path))
+    return path
+
+
+def save_raw(path: Path, image: np.ndarray, mkdir: bool = True) -> Path:
+    """Save the given image using PIL.
+
+    Args:
+        path (Path): the path to write the image to. Also determines the type.
+        image (np.ndarray): the image, in [C, H, W] or [H, W, C] order. (If the former, transposes).
+    """
+    path = Path(path)
+    if not path.parent.exists() and mkdir:
+        path.parent.mkdir(parents=True)
+
+    if len(image.shape) == 3 and image.shape[0] in [3, 4]:
+        image = image.transpose(1, 2, 0)
 
     Image.fromarray(image).save(str(path))
     return path
@@ -276,3 +338,89 @@ def draw_masks(
             )
         )
     return (image * 255).astype(np.uint8)
+
+
+def process_drr(
+    image: np.ndarray,
+    neglog: bool = True,
+    clahe: bool = True,
+    invert: bool = True,
+) -> np.ndarray:
+    """Process a raw DRR for visualization."""
+    # Cast to uint8
+    if neglog:
+        image = _neglog(image)
+    image = as_uint8(image)
+
+    # apply clahe and invert
+    if clahe:
+        clahe = cv2.createCLAHE(clipLimit=4, tileGridSize=(8, 8))
+        image = clahe.apply(image)
+
+    if invert:
+        image = 255 - image
+    image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+    return image
+
+
+def resize_by_height(image: np.ndarray, height: int) -> np.ndarray:
+    """Resize a numpy array image"""
+    h, w, _ = image.shape
+
+    new_w = int(height * w / h)
+    new_h = height
+
+    return cv2.resize(image, (new_w, new_h), interpolation=cv2.INTER_NEAREST)
+
+
+def resize_by_width(image: np.ndarray, width: int) -> np.ndarray:
+    """Resize a numpy array image"""
+    h, w, _ = image.shape
+
+    new_w = width
+    new_h = int(width * h / w)
+
+    return cv2.resize(image, (new_w, new_h), interpolation=cv2.INTER_NEAREST)
+
+
+def resize_by_short_side(image: np.ndarray, size: int) -> np.ndarray:
+    """Resize a numpy array image"""
+    h, w, _ = image.shape
+
+    if h < w:
+        return resize_by_height(image, size)
+    else:
+        return resize_by_width(image, size)
+
+
+def pad_to_square(image: np.ndarray, cval: float = 0) -> tuple[np.ndarray, np.ndarray]:
+    """Resize a numpy array image to the given width and height.
+
+    Maintain the aspect ratio of the image and pad extra space with 0s."""
+
+    h, w = image.shape[:2]
+    width = max(h, w)
+    height = max(h, w)
+
+    if w / h > width / height:
+        # Image is wider than target
+        new_w = width
+        new_h = int(width * h / w)
+        pad_top = int((height - new_h) / 2)
+        pad_bottom = height - new_h - pad_top
+        pad_left = 0
+        pad_right = 0
+    else:
+        # Image is taller than target
+        new_w = int(height * w / h)
+        new_h = height
+        pad_top = 0
+        pad_bottom = 0
+        pad_left = int((width - new_w) / 2)
+        pad_right = width - new_w - pad_left
+
+    # image = cv2.resize(image, (new_w, new_h), interpolation=cv2.INTER_NEAREST)
+    image = cv2.copyMakeBorder(
+        image, pad_top, pad_bottom, pad_left, pad_right, cv2.BORDER_CONSTANT, value=cval
+    )
+    return image, np.array([pad_top, pad_bottom, pad_left, pad_right])

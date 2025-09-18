@@ -2,25 +2,45 @@
 """Minimal projection example with DeepDRR."""
 
 import deepdrr
-from deepdrr import geo
 from deepdrr.utils import test_utils, image_utils
 from deepdrr.projector import Projector
+from deepdrr.vol import Mesh
+from deepdrr.pyrenderdrr import DRRMaterial
+import killeengeo as kg
 
 
 def main():
     output_dir = test_utils.get_output_dir()
-    data_dir = test_utils.download_sampledata("CTPelvic1K_sample")
-    patient = deepdrr.Volume.from_nifti(
-        data_dir / "dataset6_CLINIC_0001_data.nii.gz", use_thresholding=True
+    print("loading ct")
+    ct = deepdrr.Volume.from_nifti(
+        "/mnt/oracle_data/killeen/NMDID-ARCADE_2024-12-08/nifti/case-100065/LOWER_EXTREMITY/THIN_BONE_L-EXT_LOWER_EXTREMITY_Orthoped_73918_11764.nii.gz",
+        # "/home/killeen/Downloads/case-100366/real-case-100366/nifti/FULL_BODY_COMBINED/case-100366/case-100366.nii.gz",
+        use_thresholding=True,
     )
-    patient.faceup()
+    ct.supine()
 
     # define the simulated C-arm
-    carm = deepdrr.MobileCArm(patient.center_in_world + geo.v(0, 0, -300))
+    device = deepdrr.device.SimpleDevice()
 
-    # project in the AP view
-    with Projector(patient, carm=carm) as projector:
-        carm.move_to(alpha=0, beta=0)
+    tool_path = "data/6.5mmD_32mmThread_L130mm.STL"
+    mesh: Mesh = Mesh.from_stl(tool_path)
+    dense_mesh = Mesh.from_stl(tool_path, material=DRRMaterial("iron", density=7.87))
+
+    print("initializing projector")
+    # project in the anterior direction
+    with Projector([ct], device=device, intensity_upper_bound=4) as projector:
+        # p = ct.center_in_world
+        # v = ct.world_from_anatomical @ geo.vector(0, 1, 0)
+        p = kg.p(0, 0, 0)
+        v = kg.v(0, 0, 1)
+        device.set_view(
+            p,
+            v,
+            source_to_point_fraction=0.7,
+        )
+
+        mesh.place_center(p)
+
         image = projector()
 
     path = output_dir / "example_projector.png"

@@ -32,7 +32,7 @@ policies, either expressed or implied.
 
 When using this code in a scientific project, please cite one or all of the
 following papers:
-*  Daniel Ruijters and Philippe Thévenaz,
+*  Daniel Ruijters and Philippe Thï¿½venaz,
    GPU Prefilter for Accurate Cubic B-Spline Interpolation, 
    The Computer Journal, vol. 55, no. 1, pp. 15-20, January 2012.
    http://dannyruijters.nl/docs/cudaPrefilter3.pdf
@@ -50,18 +50,18 @@ following papers:
 //! This function merely serves as a reference for the tricubic versions.
 //! @param tex  3D texture
 //! @param coord  unnormalized 3D texture coordinate
-template<class T, enum cudaTextureReadMode mode>
-__device__ float linearTex3D(texture<T, 3, mode> tex, float3 coord)
+template<class T>
+__device__ float linearTex3D(cudaTextureObject_t tex, float3 coord)
 {
-	return tex3D(tex, coord.x, coord.y, coord.z);
+	return tex3D<T>(tex, coord.x, coord.y, coord.z);
 }
 
 //! Tricubic interpolated texture lookup, using unnormalized coordinates.
 //! Straight forward implementation, using 64 nearest neighbour lookups.
 //! @param tex  3D texture
 //! @param coord  unnormalized 3D texture coordinate
-template<class T, enum cudaTextureReadMode mode>
-__device__ float cubicTex3DSimple(texture<T, 3, mode> tex, float3 coord)
+template<class T>
+__device__ float cubicTex3DSimple(cudaTextureObject_t tex, float3 coord)
 {
 	// transform the coordinate from [0,extent] to [-0.5, extent-0.5]
 	const float3 coord_grid = coord - 0.5f;
@@ -82,7 +82,7 @@ __device__ float cubicTex3DSimple(texture<T, 3, mode> tex, float3 coord)
 			{
 				float bsplineXYZ = bspline(x-fraction.x) * bsplineYZ;
 				float u = index.x + x;
-				result += bsplineXYZ * tex3D(tex, u, v, w);
+				result += bsplineXYZ * tex3D<T>(tex, u, v, w);
 			}
 		}
 	}

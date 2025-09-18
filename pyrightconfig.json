@@ -1,0 +1,26 @@
+{
+    "include": [
+        "deepdrr",
+        "tests",
+        "scripts",
+        "setup.py",
+    ],
+    "exclude": [
+        "**/__pycache__",
+        "results",
+        "datasets",
+        "cache",
+        "data",
+        "**/data",
+        "conf",
+        "images",
+        "logs/**",
+        "src/configs",
+        "commands",
+        "imgs",
+        "mmconfigs",
+        ".git",
+    ],
+    "verboseOutput": true,
+    "typeCheckingMode": "off",
+}

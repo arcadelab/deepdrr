@@ -1,0 +1,60 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "deepdrr"
+version = "1.2"
+description = "A Catalyst for Machine Learning in Fluoroscopy-guided Procedures."
+readme = "README.md"
+authors = [
+    { name = "Benjamin D. Killeen", email = "killeen@jhu.edu" },
+    { name = "Mathias Unberath", email = "unberath@jhu.edu" },
+    { name = "Cong Gao" },
+    { name = "Liam J. Wang" },
+    { name = "Max Judish" }
+]
+license = { file = "LICENSE" }
+requires-python = ">=3.7"
+dependencies = [
+    "numpy<2.0.0",
+    "torch",
+    "torchvision",
+    "nibabel",
+    "scikit-image",
+    "pydicom",
+    "scipy",
+    "pyvista",
+    "pynrrd",
+    "rich",
+    "tqdm",
+    "opencv-python",
+    "seaborn",
+    "graphviz",
+    "pyglet>=1.4.11",
+    "PyOpenGL==3.1.6",
+    "PyOpenGL_accelerate>=3.1.7",
+    "pyrender @ git+https://github.com/arcadelab/pyrender.git@main",
+    "trimesh",
+    "cuda-python",
+    "killeengeo",
+    "strenum",
+    "open3d",
+]
+
+[project.optional-dependencies]
+dev = [
+    "black",
+    "pytest",
+    "trame",
+    "ipykernel",
+    "ipywidgets"
+]
+cuda102 = ["cupy-cuda102"]
+cuda110 = ["cupy-cuda110"]
+cuda111 = ["cupy-cuda111"]
+cuda11x = ["cupy-cuda11x"]
+cuda12x = ["cupy-cuda12x"]
+
+[tool.setuptools.packages.find]
+where = ["."]

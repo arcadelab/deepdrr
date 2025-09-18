@@ -1,0 +1,1 @@
+pytest --cov=deepdrr --cov-report=xml .

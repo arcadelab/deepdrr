@@ -15,22 +15,6 @@ deepdrr.projector.analytic\_generators module
 deepdrr.projector.mass\_attenuation module
 ------------------------------------------
 
-.. automodule:: deepdrr.projector.mass_attenuation
-   :members:
-   :undoc-members:
-   :show-inheritance:
-
-deepdrr.projector.material\_coefficients module
------------------------------------------------
-
-.. automodule:: deepdrr.projector.material_coefficients
-   :members:
-   :undoc-members:
-   :show-inheritance:
-
-deepdrr.projector.network\_scatter module
------------------------------------------
-
 .. automodule:: deepdrr.projector.network_scatter
    :members:
    :undoc-members:

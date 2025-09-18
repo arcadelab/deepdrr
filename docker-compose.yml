@@ -1,0 +1,15 @@
+version: "3.9"
+services:
+  deepdrr:
+    # image: ghcr.io/arcadelab/deepdrr:master
+    pull_policy: build
+    build:
+      context: ./
+      dockerfile: ./Dockerfile
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu, utility, compute, graphics]

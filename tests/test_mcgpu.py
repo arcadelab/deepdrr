@@ -139,7 +139,16 @@ def test_mcgpu():
     projector.initialize()
     deepdrr_image = projector.project()
     #deepdrr_image = (deepdrr_image * 255).astype(np.uint8) # only if using neglog
-    Image.fromarray(deepdrr_image).save("output/test_mcgpu_deepdrr.png")
+    
+    try:
+        d = Path(__file__).resolve().parent
+        truth = d / "reference"
+        output_dir = d / "output"
+        output_dir.mkdir(exist_ok=True)
+        Image.fromarray(image).save(output_dir / "test_mcgpu_deepdrr.png")
+    except e:
+        print(e)
+        
     projector.free()
     
     output_dir = test_utils.get_output_dir()

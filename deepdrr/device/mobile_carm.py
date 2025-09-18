@@ -3,7 +3,6 @@ from typing import Any, Dict, Optional, Tuple, Union, List
 
 import logging
 import numpy as np
-from numpy.lib.utils import source
 from scipy.spatial.transform import Rotation
 
 from .device import Device
@@ -39,6 +38,14 @@ class MobileCArm(Device):
     """A C-arm imaging device with orbital movement (alpha, beta) and isocenter movement (x, y, z).
 
     Default parameters are based on the Siemens CIOS Spin.
+
+    Intrinsic matrix:
+
+    -5257.73 0 767.5
+    0 -5257.73 767.5
+    0 0 1
+
+    Source to detector distance: 1020 mm
 
     """
 
