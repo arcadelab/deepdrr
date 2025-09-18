@@ -28,6 +28,24 @@
 
 DeepDRR is a GPU-based framework for efficient simulation of X-ray images—or digitally reconstructed radiographs (DRRs)—from 3D CT images and meshes. It is intended for large-scale generation of synthetic X-ray datasets for training machine learning models.
 
+DeepDRR has been used for a variety of applications, including:
+- Voice control of robotic X-ray devices [here](https://link.springer.com/article/10.1007/s11548-025-03351-y) and [here](https://link.springer.com/article/10.1007/s11548-024-03120-3).
+- [Sim-to-real learning in X-ray guided procedures](https://www.nature.com/articles/s42256-023-00629-1).
+- [Foundation models for X-ray image segmentation](https://arxiv.org/abs/2403.08059).
+- [Virtual reality simulation of X-ray guided procedures](https://link.springer.com/article/10.1007/s11548-024-03138-7).
+- [Augmented reality visualization and control of robotic C-arms](https://doi.org/10.1080/21681163.2022.2154272)
+- [Automated standard view acquisition in orthopedic surgery](https://link.springer.com/article/10.1007/s11548-020-02204-0).
+- [Autonomous image acquisition and interpretation for AR-assisted pelvic trauma surgery](https://link.springer.com/article/10.1007/s11548-023-02941-y)
+- 2D/3D X-ray Image Registration with [CT images](https://doi.org/10.1109/TMI.2021.3073815) and [atlases](https://link.springer.com/article/10.1007/s11548-022-02586-3).
+- [Biplanar CT reconstruction](https://link.springer.com/chapter/10.1007/978-3-031-43999-5_66)
+- [Closed-loop control of a surgical robot using fluoroscopic navigation](https://doi.org/10.1109/TBME.2021.3097631)
+- [Surgical phase recognition in X-ray guided pelvic trauma surgery](https://link.springer.com/chapter/10.1007/978-3-031-43996-4_13)
+- [Instrument pose estimation in X-ray images](https://link.springer.com/article/10.1007/s11548-020-02157-4).
+
+If you have other appplications that could be highlighted here, please let us know!
+
+DeepDRR is not a differentiable renderer, but it is fast and realistic, supporting multiple overlapping volumes and meshes with different materials. For a differentiable DRR framework, we recommend [ProST](https://github.com/gaocong13/Projective-Spatial-Transformers) or [DiffDRR](https://github.com/gaocong13/Projective-Spatial-Transformers), which follow the same physics-based simulation principles as DeepDRR.
+
 ## Usage
 
 The following example loads a CT volume from a NifTi `.nii.gz` file and simulates a single X-ray projection:
@@ -178,7 +196,7 @@ pip install -e .[dev,cuda12x] # this should match your CUDA version
 
 ## Documentation
 
-Documentation is available at [deepdrr.readthedocs.io](https://deepdrr.readthedocs.io/).
+Documentation is in progress at [deepdrr.readthedocs.io](https://deepdrr.readthedocs.io/).
 
 To create the autodocs, run
 
@@ -246,7 +264,7 @@ We hope this proves useful for medical imaging research. If you use our work, pl
 The 2018 MICCAI article covers the basic DeepDRR pipeline and task-based evaluation:
 
 ```bibtex
-@inproceedings{DeepDRR2018,
+@inproceedings{unberath2018deepdrr,
   author       = {Unberath, Mathias and Zaech, Jan-Nico and Lee, Sing Chun and Bier, Bastian and Fotouhi, Javad and Armand, Mehran and Navab, Nassir},
   title        = {{DeepDRR--A Catalyst for Machine Learning in Fluoroscopy-guided Procedures}},
   date         = {2018},
@@ -258,11 +276,23 @@ The 2018 MICCAI article covers the basic DeepDRR pipeline and task-based evaluat
 The 2019 IJCARS paper describes the integration of tool modeling and provides quantitative results:
 
 ```bibtex
-@article{DeepDRR2019,
+@article{unberath2019enabling,
   author       = {Unberath, Mathias and Zaech, Jan-Nico and Gao, Cong and Bier, Bastian and Goldmann, Florian and Lee, Sing Chun and Fotouhi, Javad and Taylor, Russell and Armand, Mehran and Navab, Nassir},
   title        = {{Enabling Machine Learning in X-ray-based Procedures via Realistic Simulation of Image Formation}},
   year         = {2019},
   journal      = {International journal of computer assisted radiology and surgery (IJCARS)},
+  publisher    = {Springer},
+}
+```
+
+The 2025 MICCAI article describes the use of mesh-based rendering for efficient, large-scale simulation of X-ray images with surgical tools and ground-truth projections of many objects:
+
+```bibtex
+@inproceedings{killeen2025fluorosam,
+  author       = {Killeen, Benjamin D. and Wang, Liam J. and Inigo, Blanca and Zhang, Han and Mehran, Armand and Taylor, Russell H. and Osgood, Greg and Unberath, Mathias},
+  title        = {{FluoroSAM: A Language-promptable Foundation Model for Flexible X-ray Image Segmentation}},
+  date         = {2025},
+  booktitle    = {Proc. Medical Image Computing and Computer Assisted Intervention (MICCAI)},
   publisher    = {Springer},
 }
 ```
