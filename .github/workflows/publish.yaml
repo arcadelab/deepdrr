@@ -3,7 +3,6 @@ name: Publish to PyPI
 on:
   release:
     types: [created]
-  workflow_dispatch: # allows manual triggering
 
 jobs:
   build-and-publish:
