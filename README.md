@@ -74,6 +74,7 @@ A more involved example that samples many projections from a CT volume and a too
 from deepdrr import Volume, SimpleDevice, Projector, Mesh
 import killeengeo as kg
 from PIL import Image
+import numpy as np
 
 device = SimpleDevice(
     sensor_height=384,
