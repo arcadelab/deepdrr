@@ -38,7 +38,16 @@ from .mcgpu_compton_data import COMPTON_DATA
 from .mcgpu_mfp_data import MFP_DATA
 from .mcgpu_rita_samplers import rita_samplers
 
-from pyrender.platforms import egl
+import sys
+if sys.platform.startswith("win"):
+    # Windows support
+    os.environ["PYOPENGL_PLATFORM"] = "pyglet"
+else:
+    # Linux support
+    os.environ.setdefault("PYOPENGL_PLATFORM", "egl")
+
+import pyrender
+
 from ..pyrenderdrr.renderer import Renderer
 
 from functools import lru_cache
@@ -1407,13 +1416,26 @@ class Projector(object):
         height = self.camera_intrinsics.sensor_height
         total_pixels = width * height
 
-        device_id = int(os.environ.get("EGL_DEVICE_ID", "0"))
-        egl_device = egl.get_device_by_index(device_id)
-        self._egl_platform = egl.EGLPlatform(
-            viewport_width=width, viewport_height=height, device=egl_device
-        )
-        self._egl_platform.init_context()
-        self._egl_platform.make_current()
+        if os.environ["PYOPENGL_PLATFORM"] == "egl":
+            # On Linux, use EGL to create window + context
+            from pyrender.platforms import egl
+            device_id = int(os.environ.get("EGL_DEVICE_ID", "0"))
+            egl_device = egl.get_device_by_index(device_id)
+            egl_platform = egl.EGLPlatform(
+                viewport_width=width, viewport_height=height, device=egl_device
+            )
+            egl_platform.init_context()
+            egl_platform.make_current()
+        else:
+            # On Windows, use headless pyglet backend
+            import pyglet
+            from pyglet import gl
+            pyglet.options['headless'] = True
+            config = gl.Config(double_buffer=False)
+            window = pyglet.window.Window(
+                width=width, height=height, config=config, visible=False
+            )
+            window.switch_to()
 
         self.cupy_device = cupy.cuda.Device(self.cuda_device_id)
         self.cupy_device.__enter__()
