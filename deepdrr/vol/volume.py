@@ -1621,9 +1621,17 @@ class Volume(Renderable):
             np.ndarray: The bounding box as a [3, 2] array.
             None, if the volume is empty.
         """
-        any_material = np.zeros_like(self.data, dtype=bool)
-        for d in self.materials.values():
-            any_material = np.logical_or(any_material, d)
+        if isinstance(self.materials, tuple):
+            # New materials format
+            material_map, label_volume = self.materials
+            valid_ids = list(material_map.values())
+            any_material = np.isin(label_volume, valid_ids) if valid_ids else np.zeros_like(self.data, dtype=bool)
+        else:
+            # Legacy materials format
+            any_material = np.zeros_like(self.data, dtype=bool)
+            for d in self.materials.values():
+                any_material = np.logical_or(any_material, d)
+
         indices = np.nonzero(any_material)
         if len(indices[0]) == 0:
             return None
