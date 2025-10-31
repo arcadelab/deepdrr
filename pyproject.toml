@@ -18,6 +18,7 @@ license = { file = "LICENSE" }
 requires-python = ">=3.7"
 dependencies = [
     "numpy<2.0.0",
+    "numba",
     "torch",
     "torchvision",
     "nibabel",
@@ -36,7 +37,7 @@ dependencies = [
     "PyOpenGL_accelerate>=3.1.7",
     "arcade-pyrender",
     "trimesh",
-    "cuda-python",
+    "cuda-python<=13.0.0",
     "killeengeo",
     "strenum",
     "open3d",
